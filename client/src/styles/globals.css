@@ -1,0 +1,130 @@
+@import url('https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@100..900&display=swap');
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --color-accent: #FA4033;
+  --color-primary: white;
+  --color-background: #161819;
+  --color-foreground: #1E2021;
+  --color-borders: #424242;
+  --color-muted: #D4D4D4;
+  --breakpoint-2xl: 132rem; 
+  --toastify-text-color-dark: #F5F7F8;
+}
+
+.theme-light {
+  --color-accent: #E6392E;
+  --color-primary: black;
+  --color-background: #FFFFFF; 
+  --color-foreground: #F5F7F8; 
+  --color-borders: #E2E8F0; 
+  --color-muted: #4A4A4A;
+  --toastify-color-dark: #F5F7F8;
+  --toastify-text-color-dark: #161819;
+
+}
+
+@utility container {
+  margin-inline: auto;
+  width: 100%;
+  
+  padding-inline: 1rem;
+
+  @variant sm { padding-inline: 2rem; }
+  @variant lg { padding-inline: 4rem; }
+  @variant sm { max-width: var(--breakpoint-sm); }
+  @variant md { max-width: var(--breakpoint-md); }
+  @variant lg { max-width: var(--breakpoint-lg); }
+  @variant xl { max-width: var(--breakpoint-xl); }
+  @variant 2xl { max-width: var(--breakpoint-2xl); }
+}
+
+
+* {
+  font-family: "Lexend Deca", sans-serif;
+  font-weight: 400;
+}
+
+html {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+
+.container {
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+/* Overright the close button for toasts */
+.Toastify__close-button {
+  color: var(--toastify-text-color-dark);
+}
+
+/* Animations */
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-float-aggressive { animation: float-aggressive 6s ease-in-out infinite; }
+
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  animation: shimmer 2s linear infinite;
+  background-size: 200% 100%;
+}
+
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes float-aggressive { 
+  0%, 100% { transform: translateY(0) rotate(0deg) scale(1); } 50% { transform: translateY(-40px) rotate(5deg) scale(1.1); } 
+}
+
+@keyframes custom-pulse {
+0%, 100% { opacity: 1; transform: scale(1); }
+50% { opacity: 0.4; transform: scale(0.95); }
+}
+.animate-manga-pulse { animation: custom-pulse 1.2s ease-in-out infinite; }
+
+::-webkit-scrollbar {
+  width: 8px; /* Makes it thin */
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-background); /* Match your background (bg-background) */
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-foreground); /* A subtle gray/blue thumb */
+  border-radius: 10px;
+  border: 2px solid var(--color-background); /* Creates a "padding" effect around the thumb */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent); /* Match your blue accent color on hover */
+}
+
+/* For Firefox support */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-foreground) var(--color-background);
+}

@@ -1,0 +1,19 @@
+Server Side Fetching
+    import { authClient } from "@/lib/auth";
+    import { headers } from "next/headers";
+
+    const session = await authClient.getSession({
+        fetchOptions: { headers: await headers() }
+    });
+
+    {session.data?.user.name}
+
+
+Client Side Fetching
+
+    import { useSession } from "@/lib/auth";
+    const { data: session, isPending, error } = useSession();
+
+    if (isPending) return <div>Loading...</div>;
+    if (!session) return <div>Please log in.</div>;
+    {session.user.name}

@@ -1,0 +1,23 @@
+-- Speed up your 2.5GB Importer (Uses the 'content_hash' column)
+CREATE INDEX IF NOT EXISTS idx_series_content_hash ON series (content_hash);
+
+-- Homepage: 'Most Popular' and 'Trending'
+CREATE INDEX IF NOT EXISTS idx_series_rating ON series (rating DESC);
+
+-- Homepage: 'Recently Updated'
+CREATE INDEX IF NOT EXISTS idx_series_last_updated ON series (last_updated_at DESC);
+
+-- Search Inside Genres and Tags
+-- These allow queries like: series.genres_v2 ? 'Action'
+CREATE INDEX IF NOT EXISTS idx_series_genres_v2 ON series USING gin (genres_v2);
+CREATE INDEX IF NOT EXISTS idx_series_tags_v2 ON series USING gin (tags_v2);
+
+-- Search Bar (Fuzzy Search)
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS idx_series_title_trgm ON series USING gin (title gin_trgm_ops);
+
+-- Composite for Filter Sidebar: Type + Status + Rating
+-- Useful when users filter 'Manga' + 'Ongoing' and sort by 'Rating'
+CREATE INDEX IF NOT EXISTS idx_series_filter_logic ON series (type, status, rating DESC);
+
+CREATE INDEX IF NOT EXISTS idx_series_status_rating ON series (status, rating DESC);
