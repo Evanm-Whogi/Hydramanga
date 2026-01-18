@@ -8,15 +8,7 @@ import { createComment, deleteComment, fetchComments, likeComment } from '@/cont
 import { fetchAnnouncements, createAnnouncement } from '@/controllers/announcementController';
 import { importStatus, triggerMangaSync } from '@/controllers/mangaImportController';
 import { fetchChaptersWeebCentral } from '@/controllers/mangaController'; // Part of testing suite
-import { 
-    getTrending, 
-    getMangaAnalytics, 
-    getMyProgress, 
-    getMangaProgress, 
-    updateProgress, 
-    deleteProgress,
-    getMyStats
-} from '@/controllers/analyticsController';
+import { getTrending, getMangaAnalytics, getMyProgress, getMangaProgress, updateProgress, deleteProgress,getMyStats} from '@/controllers/analyticsController';
 
 // Aggregator Controllers
 import getHomePage from '@/controllers/homeController';
@@ -55,7 +47,6 @@ module.exports = (app: Express) => {
     app.get('/home', authMiddleware, getHomePage as RequestHandler); // Aggregator
     app.get('/index', getIndexPage as RequestHandler); // Aggregator
 
-    app.get('/test', fetchChaptersWeebCentral as RequestHandler); // Testing Suite
 
     // Admin Routes
     app.get('/import-status', authMiddleware, importStatus as RequestHandler);

@@ -27,7 +27,7 @@ export default function Lists() {
 
     return (
         <>
-        <div className="flex flex-col space-y-2 w-full ml-5 mb-5">
+        <div className="flex flex-col space-y-2 w-full ml-0 md:ml-5 mb-5">
             <div className="flex gap-3">
                 {TABS.map((tab) => (
                     <button key={tab} onClick={() => setPage(tab)} className={`px-4 py-2 rounded-lg inline-flex items-center text-lg cursor-pointer transition-colors capitalize ${page === tab ? 'bg-foreground text-primary border border-borders' : 'bg-foreground text-muted hover:bg-foreground/50'}`}>

@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { fetchMangaPages, updateProgress } from '@/services/mangaService';
 import { useUser } from '@/providers/UserProvider';
+import { MenuIcon, X } from 'lucide-react';
 
 interface Chapter {
   id: number;
@@ -24,8 +25,10 @@ const ReadPage = () => {
   const [allChapters, setAllChapters] = useState<Chapter[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   
   const containerRef = useRef<HTMLDivElement>(null);
+  const mobileHeaderRef = useRef<HTMLDivElement>(null);
   // Use a Ref for scroll tracking to prevent stale closures/missing hide triggers
   const lastScrollPos = useRef(0);
   const hasScrolledToPage = useRef(false);
@@ -52,20 +55,31 @@ const ReadPage = () => {
     if (!mainNav) return;
 
     const handleScroll = () => {
+      const mobileHeader = mobileHeaderRef.current;
       const currentScrollY = window.scrollY;
       
       // If we are near the top, show the nav
       if (currentScrollY < 50) {
         mainNav.style.transform = 'translateY(0)';
+        if (mobileHeader) {
+          mobileHeader.style.transform = 'translateY(0)';
+        }
       } 
       // If scrolling down, hide it
       else if (currentScrollY > lastScrollPos.current) {
         mainNav.style.transform = 'translateY(-100%)';
         mainNav.style.transition = 'transform 0.3s ease-in-out';
+        if (mobileHeader) {
+          mobileHeader.style.transform = 'translateY(-200%)';
+          mobileHeader.style.transition = 'transform 0.3s ease-in-out';
+        }
       } 
       // If scrolling up, show it
       else {
         mainNav.style.transform = 'translateY(0)';
+        if (mobileHeader) {
+          mobileHeader.style.transform = 'translateY(0)';
+        }
       }
 
       lastScrollPos.current = currentScrollY;
@@ -75,8 +89,10 @@ const ReadPage = () => {
     return () => {
       window.removeEventListener('scroll', handleScroll);
       if (mainNav) mainNav.style.transform = 'translateY(0)';
+      const mobileHeader = mobileHeaderRef.current;
+      if (mobileHeader) mobileHeader.style.transform = 'translateY(0)';
     };
-  }, []); // Empty dependency array because we use a Ref
+  }, []);
 
   useEffect(() => {
     if (!loading && allChapters.length > 0) {
@@ -196,9 +212,9 @@ const ReadPage = () => {
   const nextChapter = allChapters[currentIndex + 1];
 
   return (
-    <div className="reader-root flex bg-background min-h-screen text-primary">
-      
-      <aside className="sidebar w-65 h-screen fixed left-0 top-0 bg-foreground border-r border-r-borders flex flex-col z-100">
+    <div className="reader-root flex bg-background min-h-screen text-primary flex-col md:flex-row">
+      {/* Desktop Sidebar */}
+      <aside className="sidebar hidden md:flex md:w-65 md:h-screen md:fixed md:left-0 md:top-0 md:bg-foreground md:border-r md:border-r-borders md:flex-col md:z-100">
         <div className="sidebar-header px-6 py-4 border-b-borders">
           <h2 className="text-[1.25rem] font-bold mb-4 text-white">Chapter {data?.chapterNumber}</h2>
           <div className="flex gap-2">
@@ -207,15 +223,37 @@ const ReadPage = () => {
           </div>
         </div>
         <div className="chapter-list-scroll flex-1 overflow-y-auto p-4">
-          <div className="grid-list grid grid-cols-3 gap-1.5">
+          <div className="grid-list grid grid-cols-1 md:grid-cols-3 gap-1.5">
             {allChapters.map((ch) => (
-              <button key={ch.id} id={`chapter-${ch.id}`} onClick={() => { router.push(`/manga/${id}/read/${ch.id}`); window.scrollTo(0,0); }} className={`p-[10px_2px] text-[0.75rem] border cursor-pointer rounded-sm text-primary ${ch.id === Number(chapterId) ? 'font-bold bg-accent border-accent' : 'font-normal bg-background border-background'}`}>
+              <button key={ch.id} id={`chapter-${ch.id}`} onClick={() => { router.push(`/manga/${id}/read/${ch.id}`); window.scrollTo(0,0); setSidebarOpen(false); }} className={`p-[10px_2px] text-[0.75rem] border cursor-pointer rounded-sm text-primary ${ch.id === Number(chapterId) ? 'font-bold bg-accent border-accent' : 'font-normal bg-background border-background'}`}>
                 {ch.chapterNumber}
               </button>
             ))}
           </div>
         </div>
       </aside>
+
+      {/* Mobile Sidebar Drawer */}
+      {sidebarOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />
+          <aside className="sidebar fixed top-0 left-0 h-screen w-72 bg-foreground border-r border-r-borders flex flex-col z-50 md:hidden">
+            <div className="sidebar-header px-6 py-4 border-b border-borders flex justify-between items-center">
+              <h2 className="text-[1.25rem] font-bold text-white">Chapter {data?.chapterNumber}</h2>
+              <button onClick={() => setSidebarOpen(false)} className="text-primary hover:text-accent"><X className="size-6" /></button>
+            </div>
+            <div className="chapter-list-scroll flex-1 overflow-y-auto p-4">
+              <div className="grid-list grid grid-cols-1 gap-2">
+                {allChapters.map((ch) => (
+                  <button key={ch.id} id={`chapter-${ch.id}`} onClick={() => { router.push(`/manga/${id}/read/${ch.id}`); window.scrollTo(0,0); setSidebarOpen(false); }} className={`p-2 text-sm border cursor-pointer rounded text-primary ${ch.id === Number(chapterId) ? 'font-bold bg-accent border-accent' : 'font-normal bg-background border-background'}`}>
+                    Chapter {ch.chapterNumber}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </aside>
+        </>
+      )}
 
       {/* Page Progress Indicator - Right Side */}
       <div className="fixed right-0 top-0 h-screen w-2 bg-foreground/30 z-50 pointer-events-none">
@@ -234,8 +272,15 @@ const ReadPage = () => {
         )}
       </div>
 
-  <main className="content py-18.25 ml-65 w-[calc(100%-260px)] relative flex flex-col items-center">
-    <div className="click-zones fixed top-0 right-0 bottom-0 left-65 flex z-10 pointer-events-none">
+      {/* Mobile Header with Menu */}
+      <div ref={mobileHeaderRef} id="mobile-reader-header" className="md:hidden fixed top-16 left-0 right-0 bg-foreground/90 border-b border-borders px-4 py-3 z-40 flex items-center justify-between transition-transform duration-300">
+        <button onClick={() => setSidebarOpen(true)} className="text-primary hover:text-accent p-2"><MenuIcon className="size-6" /></button>
+        <span className="text-sm font-semibold">{currentPage}/{data?.images?.length || 0}</span>
+        <div className="w-8" />
+      </div>
+
+  <main className="content w-full md:py-18.25 md:ml-65 md:w-[calc(100%-260px)] pt-24 md:pt-18.25 pb-20 md:pb-0 relative flex flex-col items-center">
+    <div className="click-zones fixed top-0 right-0 bottom-0 left-0 md:left-65 flex z-10 pointer-events-none pt-24 md:pt-0">
       <div 
         onClick={() => handlePageClick('prev')} 
         className="prev-zone flex-1 pointer-events-auto cursor-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2232%22%20height%3D%2232%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%2215%2018%209%2012%2015%206%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E'),pointer]" />
@@ -250,7 +295,7 @@ const ReadPage = () => {
       ))}
     </div>
 
-    <div className="footer-nav py-20 text-center z-100">
+    <div className="footer-nav py-20 text-center z-100 hidden md:block">
       {nextChapter && (
         <button onClick={() => { router.push(`/manga/${id}/read/${nextChapter.id}`); window.scrollTo(0,0); }} className="px-12 py-4 bg-[#3b82f6] text-white border-none rounded-md text-[1.1rem] font-bold cursor-pointer">
           Read Chapter {nextChapter.chapterNumber} →

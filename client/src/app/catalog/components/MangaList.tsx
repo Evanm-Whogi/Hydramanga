@@ -35,7 +35,7 @@ export default function MangaList({ filters }: MangaListProps) {
     <section id="MangaList" className="pb-25">
         <div className="container mx-auto text-primary space-y-2">
             <div className="text-sm text-gray-400">Total: {meta?.total || 0} items</div>
-            <div className="grid grid-cols-8 gap-6">
+            <div className="grid grid-cols-2 md:grid-cols-8 gap-6">
                 {items.map((item, index) => {
                     const isLastElement = items.length === index + 1;
                     return ( 

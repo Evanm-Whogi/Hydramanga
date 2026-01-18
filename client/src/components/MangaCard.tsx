@@ -5,8 +5,6 @@ import { formatToRating } from "@/lib/utils";
 
 export default function MangaCard({ manga }: { manga?: any }) {
     const viewCount = manga.totalViews || manga.viewStats?.totalViews || 0;
-
-    console.log(manga)
     
     return (
         <>

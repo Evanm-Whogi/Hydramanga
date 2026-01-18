@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { HouseIcon, BookOpenIcon, ZapIcon, ClockPlus, SearchIcon, BellIcon, MoonIcon, SunIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, MegaphoneIcon, PaletteIcon, LanguagesIcon } from 'lucide-react';
+import { HouseIcon, BookOpenIcon, ZapIcon, ClockPlus, SearchIcon, BellIcon, MoonIcon, SunIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon } from 'lucide-react';
 import NavItem from './NavItem';
 import { authClient } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
@@ -15,12 +15,16 @@ export default function NavbarClient({ initialTheme }: {initialTheme: string }) 
     const [theme, setTheme] = useState(initialTheme);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const profileRef = useRef<HTMLDivElement>(null);
+    const mobileMenuRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
     const { user } = useUser();
 
     const closeDropdown = () => setIsProfileOpen(false);
     useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => { if (profileRef.current && !profileRef.current.contains(event.target as Node)) { setIsProfileOpen(false); } };
+        const handleClickOutside = (event: MouseEvent) => {
+            if (profileRef.current && !profileRef.current.contains(event.target as Node)) { setIsProfileOpen(false); }
+            if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target as Node) && !(event.target as HTMLElement).closest('button[aria-label="Menu"]')) { setIsOpen(false); }
+        };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
@@ -117,14 +121,76 @@ export default function NavbarClient({ initialTheme }: {initialTheme: string }) 
                                 </div>
                         )}
                     </div>
-                    <button onClick={() => setIsOpen(!isOpen)} className="md:hidden p-2 text-muted"><ListIcon className="size-6" /></button>
+                    <button onClick={() => setIsOpen(!isOpen)} aria-label="Menu" className="md:hidden p-2 text-muted"><ListIcon className="size-6" /></button>
                 </div>
             </div>
 
-            {/* Mobile Nav Logic Preserved */}
+            {/* Mobile Nav */}
             {isOpen && (
-                <div className="md:hidden absolute top-0 w-full"><div className="bg-foreground w-full text-lg p-5 space-y-2 rounded-b-md pt-24"><NavItem href='/home' icon={<HouseIcon className="size-5 inline" />} label='Home' /></div></div>
+                <div ref={mobileMenuRef} className="md:hidden border-t border-borders bg-foreground/95 backdrop-blur-sm">
+                    <div className="px-5 py-4 space-y-4">
+                        {user ? (
+                            <>
+                                <div className="flex items-center gap-3">
+                                    <Image src={user.image || "/default-avatar.jpg"} alt="ProfileImage" width={48} height={48} className="rounded-full border border-borders" />
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-semibold truncate capitalize">{user.name}</p>
+                                        <p className="text-xs text-muted-foreground truncate capitalize">{user.role}</p>
+                                        <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <Link href="/home" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                        <HouseIcon className="size-4" /> Home
+                                    </Link>
+                                    <Link href="/catalog" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                        <BookOpenIcon className="size-4" /> Catalog
+                                    </Link>
+                                    <Link href="/catalog?sort=weightedScore" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                        <ZapIcon className="size-4" /> Popular
+                                    </Link>
+                                    <Link href="/catalog?sort=lastUpdatedAt" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                        <ClockPlus className="size-4" /> Latest
+                                    </Link>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <Link href="/catalog" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                        <SearchIcon className="size-4" /> Search
+                                    </Link>
+                                    <Link href="/announcements" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                        <BellIcon className="size-4" /> Alerts
+                                    </Link>
+                                    <Link href="/profile?tab=lists" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                        <ListIcon className="size-4" /> My Lists
+                                    </Link>
+                                    <Link href="/profile?tab=overview" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                        <UserIcon className="size-4" /> Profile
+                                    </Link>
+                                    <Link href="/profile?tab=settings" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                        <SettingsIcon className="size-4" /> Settings
+                                    </Link>
+                                    <button onClick={() => { toggleTheme(); setIsOpen(false); }} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 text-left">
+                                        {theme === 'theme-dark' ? <SunIcon className="size-4" /> : <MoonIcon className="size-4" />} Theme
+                                    </button>
+                                    <button onClick={async () => { setIsOpen(false); await handleSignOut(); }} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm text-red-500 hover:bg-red-500/20">
+                                        <LogOutIcon className="size-4" /> Sign Out
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="space-y-3">
+                                <div className="grid grid-cols-2 gap-3">
+                                    <Link href="/login" onClick={() => setIsOpen(false)} className="w-full text-center rounded-lg bg-background px-4 py-2 text-sm font-medium hover:bg-foreground/80">Login</Link>
+                                    <Link href="/register" onClick={() => setIsOpen(false)} className="w-full text-center rounded-lg bg-background px-4 py-2 text-sm font-medium hover:bg-foreground/80">Sign Up</Link>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
             )}
+
         </nav>
     );
 }

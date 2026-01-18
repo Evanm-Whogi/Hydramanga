@@ -35,8 +35,8 @@ export default function Login() {
         <section id="header" className="py-45">
             <div className="container mx-auto">
                 <div className="flex flex-row">
-                    <div className="w-3/4 -z-50"><MasonryGrid /></div>
-                    <div className="flex flex-col w-1/4 p-5 space-y-2">
+                    <div className="hidden md:block w-3/4 -z-50"><MasonryGrid /></div>
+                    <div className="flex flex-col w-full md:w-1/4 p-5 space-y-2">
                         <Image src="/logo.png" width="192" height="192" alt="Login Logo" className="mx-auto"/>
                         <h1 className="text-4xl font-bold text-center">{process.env.NEXT_PUBLIC_NAME}</h1>
                         <h2 className="text-muted text-center">Your one stop spot for endless Manga.</h2>
