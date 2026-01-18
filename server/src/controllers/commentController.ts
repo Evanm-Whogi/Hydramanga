@@ -5,20 +5,10 @@ import dotenv from 'dotenv';
 import { auth } from '@/utils/auth';
 dotenv.config();
 
-
-
+// Fetch comments for a manga series
 export async function fetchComments(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const seriesId = parseInt(req.query.seriesId as string, 10);
-
-    if(isNaN(seriesId)) {
-        return res.status(400).json({ message: 'Invalid seriesId parameter' });
-    }
-
-    // Get current user ID from session
-    const headers = new Headers();
-    Object.entries(req.headers).forEach(([k, v]) => { if(v) headers.append(k, Array.isArray(v) ? v[0] : v) });
-    const session = await auth.api.getSession({headers: headers});
-    const userId = (session?.user.id)!;
+    if(isNaN(seriesId))  return res.status(400).json({ message: 'Invalid seriesId parameter' });
     
     try {
         const mangaComments = await db.query.comments.findMany({
@@ -47,14 +37,10 @@ export async function fetchComments(req: Request, res: Response, next: NextFunct
     }
 }
 
+// Create a new comment
 export async function createComment(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const { content, seriesId, parentId, stars, isSpoiler } = req.body;
-
-    // Get current user ID from session
-    const headers = new Headers();
-    Object.entries(req.headers).forEach(([k, v]) => { if(v) headers.append(k, Array.isArray(v) ? v[0] : v) });
-    const session = await auth.api.getSession({headers: headers});
-    const userId = (session?.user.id)!;
+    const userId = req.user.id;
 
     try {
         const newComment = await db.insert(schema.comments).values({
@@ -74,12 +60,7 @@ export async function createComment(req: Request, res: Response, next: NextFunct
 
 export async function likeComment(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const { commentId } = req.body;
-
-    // Get current user ID from session
-    const headers = new Headers();
-    Object.entries(req.headers).forEach(([k, v]) => { if(v) headers.append(k, Array.isArray(v) ? v[0] : v) });
-    const session = await auth.api.getSession({headers: headers});
-    const userId = (session?.user.id)!;
+    const userId = req.user.id;
 
     try {
         // Check if the user has already liked the comment
@@ -112,12 +93,7 @@ export async function likeComment(req: Request, res: Response, next: NextFunctio
 
 export async function deleteComment(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const commentId = parseInt(req.params.commentId, 10);
-
-    // Get current user ID from session
-    const headers = new Headers();
-    Object.entries(req.headers).forEach(([k, v]) => { if(v) headers.append(k, Array.isArray(v) ? v[0] : v) });
-    const session = await auth.api.getSession({headers: headers});
-    const userId = (session?.user.id)!;
+    const userId = req.user.id;
 
     try {
         // Verify that the comment belongs to the user
@@ -128,10 +104,8 @@ export async function deleteComment(req: Request, res: Response, next: NextFunct
             )
         });
 
-        if (!comment) {
-            return res.status(403).json({ message: 'You do not have permission to delete this comment' });
-        }
-
+        if (!comment) return res.status(403).json({ message: 'You do not have permission to delete this comment' });
+        
         // Delete the comment
         await db.delete(schema.comments).where(eq(schema.comments.id, commentId));
 

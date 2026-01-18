@@ -48,15 +48,51 @@ class QueueService {
     }
 
     // Add Job to Queue
-    public addJob: queueJobFunction = async (queueName, jobName, jobData) => {
+    public addJob: queueJobFunction = async (queueName, jobName, jobData, options = {}) => {
         const queue = this.getQueue(queueName);
-        const job = await queue.add(jobName, jobData);
+        
+        // For chapter download queue, prioritize by series FIRST, then by chapter number
+        // BullMQ max priority is 2,097,152
+        // Each series gets its own 100,001-point range to prevent overlap and interleaving
+        // Priority = (seriesId % 20) * 100,001 + (100,000 - chapterNumber * 100)
+        // This ensures ALL chapters of Series A complete before ANY chapter of Series B starts
+        let priority = 0;
+        if (queueName === 'mangaChapterDownloadQueue' && jobData.seriesId && jobData.chapterNumber) {
+            const seriesId = jobData.seriesId;
+            const chapterNum = parseFloat(jobData.chapterNumber);
+            
+            // Each series gets a distinct 100,001-point range
+            // (0-100,000 for series 0, 100,001-200,001 for series 1, etc.)
+            // Max: (19 * 100,001) + 100,000 = 1,999,219 (safely under 2,097,152)
+            const seriesPriority = (seriesId % 20) * 100001;
+            const chapterPriority = Math.max(0, 100000 - (chapterNum * 100));
+            priority = seriesPriority + chapterPriority;
+        }
+        
+        // Default cleanup so queues do not bloat
+        const job = await queue.add(jobName, jobData, {
+            removeOnComplete: true,
+            removeOnFail: 25,
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 30000 },
+            timeout: 15 * 60 * 1000, // 15 minute timeout per job (increased from 5 to allow retries)
+            priority: priority,
+            ...options
+        });
         return job;
     }
 
     // Create Worker
     private createWorker(queueName: string) {
         const limiter = { max: 10, duration: 1000 };  // Standard global limit
+        
+        // Per-queue concurrency settings
+        let concurrency = 1; // Default: 1 job at a time
+        if (queueName === 'mangaChapterDownloadQueue') {
+            concurrency = Number(process.env.CHAPTER_DOWNLOAD_CONCURRENCY) || 1;
+        } else if (queueName === 'mangaChapterImportQueue') {
+            concurrency = Number(process.env.CHAPTER_SCAN_CONCURRENCY) || 1;
+        }
 
         const worker = new Worker(queueName, async (job: any) => {
             const { name, data } = job;
@@ -70,11 +106,9 @@ class QueueService {
                     await mangaImporterService.fullSyncManga(data.filePath, job);
                     break;
                 case 'mangaChapterImportQueue':
-                    // Logic moved to Scraper Service
-                    await MangaChapterScraperService.processSync(data.mangaTitle, data.seriesId);
+                    await MangaChapterScraperService.processSync(data.mangaTitle, data.seriesId, data.romanizedTitle, data.isFirstScan);
                     break;
                 case 'mangaChapterDownloadQueue':
-                    // Logic moved to Scraper Service
                     await MangaChapterScraperService.processDownload(data);
                     break;
                 default:
@@ -82,7 +116,8 @@ class QueueService {
             }
         }, {
             connection: this.redisConnection,
-            limiter: limiter
+            limiter: limiter,
+            concurrency: concurrency
         });
 
         worker.on('completed', (job: any) => {
@@ -90,7 +125,20 @@ class QueueService {
         });
 
         worker.on('failed', (job: any, err) => {
-            logger.error(`Job: ${job.id} in Queue: ${queueName} failed with error: ${err.message}`, { service: 'queueService' });
+            const errorMessage = err?.message || 'Unknown error';
+            const errorStack = err?.stack || '';
+            
+            // Log detailed error information for debugging
+            logger.error(
+                `Job: ${job?.id} in Queue: ${queueName} failed with error: ${errorMessage}`,
+                { 
+                    service: 'queueService',
+                    jobName: job?.name,
+                    attempts: job?.attemptsMade,
+                    maxAttempts: job?.opts?.attempts,
+                    errorStack: errorStack.split('\n').slice(0, 5).join(' | ') // First 5 lines of stack
+                }
+            );
         });
     }
 
@@ -105,8 +153,6 @@ class QueueService {
             logger.error(`Error clearing Queue: ${queueName}: ${error}`, { service: 'queueService' });
         });
     }
-
-    // Inside class QueueService
 
     // Stop (Pause) all workers for a specific queue
     public async pauseQueue(queueName: string): Promise<void> {

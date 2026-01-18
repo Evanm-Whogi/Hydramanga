@@ -15,7 +15,7 @@ const [filters, setFilters] = useState({
         sort: searchParams.get('sort') || 'weightedScore',
         type: searchParams.get('type') || '',
         status: searchParams.get('status') || '',
-        nsfw: searchParams.get('nsfw') || 'false'
+        nsfw: searchParams.get('nsfw') || 'true'
     });
 
     useEffect(() => {
@@ -25,7 +25,7 @@ const [filters, setFilters] = useState({
             sort: searchParams.get('sort') || 'weightedScore',
             type: searchParams.get('type') || '',
             status: searchParams.get('status') || '',
-            nsfw: searchParams.get('nsfw') || 'false'
+            nsfw: searchParams.get('nsfw') || 'true'
         });
     }, [searchParams]);
 
@@ -36,6 +36,10 @@ const [filters, setFilters] = useState({
   return (
     <>
       <PageHeader title="Discover" description="Discover your next favorite: Manga"/>
+      {/* Alpha Marker */}
+        <div className="my-4 bg-foreground p-4 rounded-md text-center border-accent border w-1/2 mx-auto">
+            <h1>Please Note: Hentai is currently disabled while in Alpha</h1>
+        </div>
       <CatalogFilters filters={filters} onFilterChange={updateFilters} />
       <MangaList filters={filters} />
     </>

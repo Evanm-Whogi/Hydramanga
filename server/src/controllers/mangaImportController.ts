@@ -5,15 +5,12 @@ import logger from '@/services/loggerService';
 import dotenv from 'dotenv';
 dotenv.config();
 
-
+// Get current import status
 export const importStatus = async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
     const queue = queueService.getQueue('mangaImportQueue');
     const activeJobs = await queue.getActive();
+    if (activeJobs.length === 0)  return res.json({ status: 'idle' });
     
-    if (activeJobs.length === 0) {
-        return res.json({ status: 'idle' });
-    }
-
     const job = activeJobs[0];
     res.json({
         status: 'processing',
@@ -23,6 +20,7 @@ export const importStatus = async (req: Request, res: Response, next: NextFuncti
     });
 }
 
+// Trigger manga metadata sync manually
 export const triggerMangaSync = async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
     try {
         const queue = queueService.getQueue('mangaImportQueue');

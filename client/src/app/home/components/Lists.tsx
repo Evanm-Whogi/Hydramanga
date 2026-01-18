@@ -1,10 +1,10 @@
 "use server";
 import SectionHeader from "./SectionHeader";
 import MangaCard from "@/components/MangaCard";
+import TrendingMangaCard from "@/components/TrendingMangaCard";
 import { getHomepage } from '@/services/mangaService'
 import CommentCard from "@/app/home/components/CommentCard";
-export default async function Lists() {
-    const mangaData = await getHomepage();
+export default async function Lists({ mangaData }: any) {
 
     return (
     <section id="lists" className="pb-25">
@@ -14,8 +14,8 @@ export default async function Lists() {
                 <>
                     <SectionHeader title="Trending This Week" filters="status=releasing&sort=rating&order=desc"/>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-4 md:gap-6">
-                        {mangaData.trending.map((manga: any) => (
-                            <MangaCard key={manga.id} manga={manga} />
+                        {mangaData.trending.map((manga: any, index: number) => (
+                            <TrendingMangaCard key={manga.id} manga={manga} rank={index + 1} />
                         ))}
                     </div>
                 </>

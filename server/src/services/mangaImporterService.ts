@@ -1,3 +1,5 @@
+// This is the greated trash you will ever see, provided as a way to import 2.5GB JSON dumps into Postgres efficiently
+
 // src/services/mangaImporterService.ts
 import fs from 'fs';
 import { Pool } from 'pg';
@@ -8,6 +10,9 @@ import { streamArray } from 'stream-json/streamers/StreamArray';
 import { Transform } from 'stream';
 import crypto from 'crypto';
 import { Job } from 'bullmq';
+import logger from '@/services/loggerService';
+import { discordService } from '@/services/discordService';
+import path from 'path';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -21,7 +26,11 @@ class MangaImporterService {
 
   public async fullSyncManga(filePath: string, job?: Job) {
     const client = await pool.connect();
+    const fileName = path.basename(filePath);
+    const startTime = Date.now();
+    
     try {
+      await discordService.notifyImportStarted(fileName);
       console.time('SyncProcess');
       
       // 1. START TRANSACTION
@@ -75,7 +84,7 @@ class MangaImporterService {
         }
       });
 
-      console.log('Streaming 2.5GB JSON to Postgres...');
+      logger.info('Streaming 2.5GB JSON to Postgres...');
       await pipeline(
         fs.createReadStream(filePath), 
         parser(), 
@@ -85,12 +94,12 @@ class MangaImporterService {
       );
 
       // 4. INDEX THE TEMP TABLE (Crucial for 500k row join speed)
-      console.log('Indexing staging table...');
+      logger.info('Indexing staging table...');
       await client.query(`CREATE INDEX idx_staging_id ON staging_series(id)`);
 
       // 5. PERFORM DELTA UPDATE
-      console.log('Performing Delta Update...');
-      await client.query(`
+      logger.info('Performing Delta Update...');
+      const updateResult = await client.query(`
         UPDATE series s SET 
           state = st.state, title = st.title, native_title = st.native_title,
           description = st.description, status = st.status, rating = st.rating,
@@ -100,8 +109,8 @@ class MangaImporterService {
       `);
 
       // 6. PERFORM INSERT
-      console.log('Inserting new records...');
-      await client.query(`
+      logger.info('Inserting new records...');
+      const insertResult = await client.query(`
         INSERT INTO series 
         SELECT st.* FROM staging_series st 
         LEFT JOIN series s ON st.id = s.id 
@@ -111,12 +120,24 @@ class MangaImporterService {
       // 7. COMMIT EVERYTHING
       await client.query('COMMIT');
       
+      const duration = `${((Date.now() - startTime) / 1000).toFixed(1)}s`;
+      const stats = {
+        inserted: insertResult.rowCount || 0,
+        updated: updateResult.rowCount || 0,
+        duration
+      };
+      
+      await discordService.notifyImportCompleted(fileName, stats);
+      
       if (job) await job.updateProgress(100);
+      logger.info(`Sync process completed: ${stats.inserted} inserted, ${stats.updated} updated in ${duration}`);
       console.timeEnd('SyncProcess');
 
     } catch (err) {
       await client.query('ROLLBACK');
-      console.error('Sync Error Details:', err);
+      const errorMsg = (err as Error).message;
+      logger.error('Sync Error Details:', err);
+      await discordService.notifyImportFailed(fileName, errorMsg);
       throw err; // Throw so BullMQ knows the job failed
     } finally {
       client.release();

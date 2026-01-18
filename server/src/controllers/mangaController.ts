@@ -2,21 +2,23 @@ import { Request, Response, NextFunction } from 'express';
 import { db, schema } from '@/db/index';
 import { eq, or, and, sql, asc, desc, count, inArray, isNull, ilike, ne, getTableColumns, isNotNull, gt } from 'drizzle-orm';
 import { chapters, series } from '@/db/schema';
+import path from 'path';
+import fs from 'fs-extra';
+import logger from '@/services/loggerService';
+import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
+import { metricsService } from '@/services/metricsService';
+
+// Part of testing 
 import { auth } from "@/utils/auth";
 import { mangaImporterService } from '@/services/mangaImporterService';
 import { queueService } from '@/services/queueService';
-import path from 'path/win32';
-import fs from 'fs-extra';
 
+// Search manga with filters, sorting, and pagination (Infinite Scroll)
 export async function searchManga(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
         const { genres, type, status, search, nsfw, sort = "weightedScore", order = "desc", cursor, limit = "40" } = req.query;
-
         const pageSize = Math.min(Number(limit), 40);
-        
-        // 1. Determine Sort Order
         const isAsc = String(order).toLowerCase() === 'asc';
-        
         const conditions = [];
 
         const parseParam = (param: any) => {
@@ -43,8 +45,13 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         const statusList = parseParam(status);
         if (statusList.length > 0) { conditions.push(inArray(schema.series.status, statusList)); }
 
+        // Hide NSFW content unless explicitly allowed
         if (nsfw === 'false') { conditions.push(and(ne(schema.series.contentRating, 'erotica'), ne(schema.series.contentRating, 'pornographic')));}
 
+        // Statically exlude Hentai while in Alpha 
+        conditions.push(sql`NOT (${schema.series.genres} @> '["Hentai"]'::jsonb)`);
+
+        // Exclude merged series
         conditions.push(or(ne(schema.series.state, 'merged'), isNull(schema.series.state)));
 
         // 2. Dynamic Sorting Logic
@@ -87,6 +94,25 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         const hasNextPage = data.length > pageSize;
         const items = hasNextPage ? data.slice(0, -1) : data;
         
+        // Enrich with view stats
+        const seriesIds = items.map(m => m.id);
+        const viewStats = seriesIds.length > 0 ? await db
+            .select()
+            .from(schema.mangaViewStats)
+            .where(inArray(schema.mangaViewStats.seriesId, seriesIds)) : [];
+        
+        const enrichedItems = items.map(manga => {
+            const stats = viewStats.find(s => s.seriesId === manga.id);
+            return {
+                ...manga,
+                viewStats: stats ? {
+                    totalViews: stats.totalViews,
+                    uniqueViews: stats.uniqueViews,
+                    lastViewedAt: stats.lastViewedAt,
+                } : null,
+            };
+        });
+        
         let nextCursor = null;
         if (hasNextPage) {
             const lastItem = items[items.length - 1];
@@ -97,13 +123,13 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         return res.json({
             meta: {
                 total: Number(totalCountResult?.count || 0),
-                count: items.length,
+                count: enrichedItems.length,
                 limit: pageSize,
                 hasMore: hasNextPage,
                 sort,
                 order: isAsc ? 'asc' : 'desc'
             },
-            items,
+            items: enrichedItems,
             nextCursor
         });
     } catch (error) {
@@ -113,17 +139,20 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
 
 export async function getOne(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const id = parseInt(req.params.id, 10);
+    const userId = req.user.id;
 
-    const headers = new Headers();
-        Object.entries(req.headers).forEach(([key, value]) => {
-            if (Array.isArray(value)) {
-                value.forEach(v => headers.append(key, v));
-            } else if (value) {
-                headers.append(key, value);
-            }
-        });
-    const session = await auth.api.getSession({headers: headers});
-    const userId = (session?.user.id)!;
+    // Validate ID before any operations
+    if (isNaN(id) || id <= 0) {
+        return res.status(400).json({ status: 400, message: "Invalid manga ID" });
+    }
+
+    // Track manga view (async, don't await to avoid slowing down response)
+    const trackingData = (req as any).trackingData;
+    if (trackingData) {
+        metricsService.trackMangaView(id, trackingData).catch(err => 
+            logger.error(`Failed to track manga view: ${err}`, { service: 'mangaController' })
+        );
+    }
 
     const mangaData = await db.query.series.findFirst({
         where: (series, { eq }) => eq(series.id, id),
@@ -165,13 +194,49 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
     });
     if(!mangaData) return res.json({status: 404, message: "Not found"});
 
+    // Trigger on-demand scrape for any manga with no chapters on first view
+    if ((mangaData.chapters?.length || 0) === 0) {
+        mangaOrchestratorService.enqueueOnDemand(mangaData.id, mangaData.title || 'Unknown')
+        .catch((err) => logger.error(`On-demand enqueue failed: ${err.message}`, { service: 'mangaController' }));
+    }
+
     const userStatus = mangaData.usersTracking?.[0]?.status || null;
     const { usersTracking, ...manga } = mangaData;
 
-    
+    // Fetch related series data
+    let enrichedRelationships: any = null;
+    if (manga.relationships && typeof manga.relationships === 'object' && !Array.isArray(manga.relationships)) {
+        // Extract all IDs from all relationship categories
+        const relationshipIds: number[] = [];
+        Object.values(manga.relationships).forEach((ids: any) => {
+            if (Array.isArray(ids)) {
+                relationshipIds.push(...ids.filter((id: any) => id !== undefined && id !== null));
+            }
+        });
+        
+        if (relationshipIds.length > 0) {
+            const relatedSeries = await db.select({
+                id: schema.series.id,
+                name: schema.series.title,
+                image: schema.series.cover,
+            })
+            .from(schema.series)
+            .where(inArray(schema.series.id, relationshipIds));
+            
+            // Enrich the relationships object with fetched data
+            enrichedRelationships = {};
+            Object.entries(manga.relationships).forEach(([category, ids]: [string, any]) => {
+                enrichedRelationships[category] = ids.map((id: number) => {
+                    const relatedData = relatedSeries.find((s) => s.id === id);
+                    return relatedData || { id };
+                });
+            });
+        }
+    }
+
     return res.json({
         status: 200,
-        manga,
+        manga: enrichedRelationships ? { ...manga, relationships: enrichedRelationships } : manga,
         userStatus
     })
 }
@@ -181,12 +246,7 @@ export async function updateMangaList(req: Request, res: Response, next: NextFun
         seriesId: number; 
         status: 'unread' | 'reading' | 'finished' | 'dropped'; 
     };
-
-    // Authentication
-    const headers = new Headers();
-    Object.entries(req.headers).forEach(([k, v]) => { if(v) headers.append(k, Array.isArray(v) ? v[0] : v) });
-    const session = await auth.api.getSession({headers: headers});
-    const userId = (session?.user.id)!;
+    const userId = req.user.id;
 
     const result = await db.insert(schema.userSeriesList)
         .values({
@@ -213,10 +273,7 @@ export async function updateMangaList(req: Request, res: Response, next: NextFun
 
 export async function removeFromList(req: Request, res: Response) {
     try {
-        const headers = new Headers();
-        Object.entries(req.headers).forEach(([k, v]) => { if(v) headers.append(k, Array.isArray(v) ? v[0] : v) });
-        const session = await auth.api.getSession({headers: headers});
-        const userId = (session?.user.id)!;
+        const userId = req.user.id;
 
         await db.delete(schema.userSeriesList).where(and(eq(schema.userSeriesList.userId, userId), eq(schema.userSeriesList.seriesId, req.body.seriesId)));
         return res.status(200).json({ success: true });
@@ -227,11 +284,7 @@ export async function removeFromList(req: Request, res: Response) {
 
 export async function getUserLists(req: Request, res: Response) {
     const { status }: any = req.query;
-
-    const headers = new Headers();
-    Object.entries(req.headers).forEach(([k, v]) => { if(v) headers.append(k, Array.isArray(v) ? v[0] : v) });
-    const session = await auth.api.getSession({headers: headers});
-    const userId = (session?.user.id)!;
+    const userId = req.user.id;
 
     if (!status) return res.status(400).json({ error: "Status is required" });
 
@@ -258,6 +311,17 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
     const { id, chapterId } = req.params;
 
     try {
+        // Track chapter view (async, don't await to avoid slowing down response)
+        // Only track if we have valid numeric IDs
+        const trackingData = (req as any).trackingData;
+        const numericId = Number(id);
+        const numericChapterId = Number(chapterId);
+        if (trackingData && !isNaN(numericId) && numericId > 0 && !isNaN(numericChapterId) && numericChapterId > 0) {
+            metricsService.trackChapterView(numericChapterId, numericId, trackingData).catch(err =>
+                logger.error(`Failed to track chapter view: ${err}`, { service: 'mangaController' })
+            );
+        }
+
         // 1. Fetch current chapter and verify it belongs to the manga ID
         const [chapter] = await db.select()
             .from(chapters)
@@ -301,16 +365,19 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
         const files = fs.readdirSync(directoryPath);
         
         // Define the base URL where your Express server serves static files
-        // Replace with your actual domain/port if different
-        const baseUrl = "http://localhost:3000/api/manga-files";
-        const baseSystemPath = "/home/whogi/projects/mang/server";
+        const baseUrl = process.env.CHAPTER_PUBLIC_BASE || "http://localhost:3000/api/manga-files";
+        const baseSystemPath = process.env.CHAPTER_STORAGE_ROOT || path.join(process.cwd(), 'chapters');
 
         const images = files
             .filter(file => /\.(jpe?g|png|webp|gif)$/i.test(file))
             .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
             .map(file => {
                 // Remove the base system path to get the relative folder structure
-                const relativePath = directoryPath.replace(baseSystemPath, "");
+                const legacyBase = process.cwd();
+                const relativePath = directoryPath.startsWith(baseSystemPath)
+                    ? directoryPath.replace(baseSystemPath, "")
+                    : directoryPath.replace(legacyBase, "");
+
                 // Clean up slashes and encode for URL safety
                 const cleanPath = path.join(relativePath, file).replace(/\\/g, "/");
                 return `${baseUrl}${cleanPath.startsWith('/') ? '' : '/'}${cleanPath}`;
@@ -330,14 +397,7 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
 }
 
 
+// The testing suite
 export async function fetchChaptersWeebCentral(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
-    const mangaTitle = "Sousou no Frieren"; 
-    const seriesId = 1995;
-
-    await queueService.addJob('mangaChapterImportQueue', `Sync ${mangaTitle}`, {
-        mangaTitle,
-        seriesId
-    });
-
-    return res.status(202).json({ success: true, message: "Scrape queued." });
+    mangaOrchestratorService.enqueueTrendingChapterScans(100)
 }

@@ -9,19 +9,13 @@ export default function ListContainer({ manga, comments, userStatus }: { manga: 
     const [page, setPage] = useState("chapters");
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
-    const sortedChapters = [...manga.chapters].sort((a: any, b: any) => {
-        const volA = parseFloat(a.volumeNumber) || 0;
-        const volB = parseFloat(b.volumeNumber) || 0;
-        const chapA = parseFloat(a.chapterNumber) || 0;
-        const chapB = parseFloat(b.chapterNumber) || 0;
-
-        if (sortOrder === "asc") {
-            if (volA !== volB) return volA - volB;
-            return chapA - chapB;
-        } else {
-            if (volA !== volB) return volB - volA;
-            return chapB - chapA;
-        }
+    // Sort chapters 0.1 -> 0.2 -> 1 -> 2 ... or reverse
+    const sortedChapters = [...(manga.chapters || [])].sort((a: any, b: any) => {
+        const order = a.chapterNumber.localeCompare(b.chapterNumber, undefined, {
+            numeric: true,
+            sensitivity: 'base'
+        });
+        return sortOrder === "asc" ? order : -order;
     });
 
     return (

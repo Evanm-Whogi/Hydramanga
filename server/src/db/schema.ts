@@ -229,3 +229,76 @@ export const seriesRelations = relations(series, ({ many }) => ({
   chapters: many(chapters),
   comments: many(comments),
 }));
+
+// Manga Views Table (for tracking unique views)
+export const mangaViews = pgTable('manga_views', {
+  id: serial('id').primaryKey(),
+  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }),
+  ipAddress: text('ip_address').notNull(),
+  userAgent: text('user_agent').notNull(),
+  userId: text('user_id').references(() => user.id, { onDelete: 'set null' }), // Optional: track authenticated users
+  viewedAt: timestamp('viewed_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  // Index for fetching views by series efficiently
+  seriesIdIdx: index('idx_manga_views_series_id').on(t.seriesId),
+  // Index for time-based queries (trending)
+  viewedAtIdx: index('idx_manga_views_viewed_at').on(t.viewedAt.desc()),
+  // Composite index for filtering duplicates
+  uniqueViewIdx: index('idx_manga_views_unique').on(t.seriesId, t.ipAddress, t.userAgent),
+}));
+
+// Manga View Stats (aggregated counts)
+export const mangaViewStats = pgTable('manga_view_stats', {
+  seriesId: integer('series_id').primaryKey().references(() => series.id, { onDelete: 'cascade' }),
+  totalViews: integer('total_views').notNull().default(0),
+  uniqueViews: integer('unique_views').notNull().default(0),
+  lastViewedAt: timestamp('last_viewed_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  // Index for sorting by popularity
+  totalViewsIdx: index('idx_manga_view_stats_total').on(t.totalViews.desc()),
+  uniqueViewsIdx: index('idx_manga_view_stats_unique').on(t.uniqueViews.desc()),
+}));
+
+// Chapter Views Table (for tracking unique views)
+export const chapterViews = pgTable('chapter_views', {
+  id: serial('id').primaryKey(),
+  chapterId: integer('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }),
+  ipAddress: text('ip_address').notNull(),
+  userAgent: text('user_agent').notNull(),
+  userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
+  viewedAt: timestamp('viewed_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  chapterIdIdx: index('idx_chapter_views_chapter_id').on(t.chapterId),
+  seriesIdIdx: index('idx_chapter_views_series_id').on(t.seriesId),
+  viewedAtIdx: index('idx_chapter_views_viewed_at').on(t.viewedAt.desc()),
+  uniqueViewIdx: index('idx_chapter_views_unique').on(t.chapterId, t.ipAddress, t.userAgent),
+}));
+
+// Chapter View Stats (aggregated counts)
+export const chapterViewStats = pgTable('chapter_view_stats', {
+  chapterId: integer('chapter_id').primaryKey().references(() => chapters.id, { onDelete: 'cascade' }),
+  totalViews: integer('total_views').notNull().default(0),
+  uniqueViews: integer('unique_views').notNull().default(0),
+  lastViewedAt: timestamp('last_viewed_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  totalViewsIdx: index('idx_chapter_view_stats_total').on(t.totalViews.desc()),
+  uniqueViewsIdx: index('idx_chapter_view_stats_unique').on(t.uniqueViews.desc()),
+}));
+
+// User Reading Progress (for authenticated users)
+export const userReadingProgress = pgTable('user_reading_progress', {
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }),
+  lastChapterId: integer('last_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
+  lastPageNumber: integer('last_page_number').notNull().default(0),
+  totalPagesRead: integer('total_pages_read').notNull().default(0),
+  percentageCompleted: real('percentage_completed').notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.seriesId] }),
+  userIdIdx: index('idx_user_reading_progress_user_id').on(t.userId),
+  seriesIdIdx: index('idx_user_reading_progress_series_id').on(t.seriesId),
+}));

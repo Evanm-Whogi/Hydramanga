@@ -32,3 +32,43 @@ export async function fetchUserLists(status: any): Promise<any> {
 export async function fetchMangaPages(id: any, chapterId: any): Promise<any> {
     return await apiGet(`/manga/${id}/${chapterId}`);
 }
+
+// Analytics & Metrics
+export async function getTrending(period: string = 'week', limit: number = 20): Promise<any> {
+    return await apiGet(`/analytics/trending?period=${period}&limit=${limit}`);
+}
+
+export async function getMangaAnalytics(id: number): Promise<any> {
+    return await apiGet(`/analytics/manga/${id}`);
+}
+
+// Reading Progress
+export async function getMyProgress(limit: number = 20): Promise<any> {
+    return await apiGet(`/progress?limit=${limit}`);
+}
+
+export async function getMangaProgress(id: number): Promise<any> {
+    return await apiGet(`/progress/manga/${id}`);
+}
+
+export async function updateProgress(data: {
+    seriesId: number;
+    chapterId: number;
+    pageNumber: number;
+    totalPagesInChapter: number;
+}): Promise<any> {
+    return await apiPost('/progress', data);
+}
+
+export async function deleteProgress(id: number): Promise<any> {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/progress/manga/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+    });
+    if (!response.ok) throw new Error('Failed to delete progress');
+    return await response.json();
+}
+
+export async function getUserStats(): Promise<any> {
+    return await apiGet('/progress/stats');
+}

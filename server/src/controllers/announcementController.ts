@@ -4,6 +4,7 @@ import { eq, or, and, sql, asc, desc, count, gte, inArray, isNotNull, not, isNul
 import dotenv from 'dotenv';
 dotenv.config();
 
+// Fetch published announcements
 export async function fetchAnnouncements(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
         const announcements = await db.select().from(schema.announcements).where(eq(schema.announcements.isPublished, true)).orderBy(desc(schema.announcements.publishedAt)).limit(10);
@@ -13,6 +14,7 @@ export async function fetchAnnouncements(req: Request, res: Response, next: Next
     }
 }
 
+// Create a new announcement
 export async function createAnnouncement(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
         const { title, content, type, isPublished, publishedAt } = req.body;

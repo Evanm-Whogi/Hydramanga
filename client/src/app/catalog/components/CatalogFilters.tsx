@@ -4,14 +4,17 @@ import Dropdown from "@/components/Dropdown"
 import Checkbox from "@/components/Checkbox"
 import { useState } from "react"
 
-
-const genres = ["Action", "Adult", "Adventure", "Avant Garde", "Award Winning", "Boys Love", "Comedy", "Doujinshi", "Drama", "Ecchi", "Erotica", "Fantasy", "Gender Bender", "Girls Love", "Gourmet", "Harem", "Hentai", "Historical", "Horror", "Josei", "Lolicon", "Mahou Shoujo", "Martial Arts", "Mature", "Mecha", "Music", "Mystery", "Psychological", "Romance", "School Life", "Sci-Fi", "Seinen", "Shotacon", "Shoujo", "Shoujo Ai", "Shounen", "Shounen Ai", "Slice of Life", "Smut", "Sports", "Supernatural", "Suspense", "Thriller", "Tragedy", "Yaoi", "Yuri"];
+// Removed for now: Hentai, Lolicon, Shotacon 
+const genres = ["Action", "Adult", "Adventure", "Avant Garde", "Award Winning", "Boys Love", "Comedy", "Doujinshi", "Drama", "Ecchi", "Erotica", "Fantasy", "Gender Bender", "Girls Love", "Gourmet", "Harem", "Historical", "Horror", "Josei", "Mahou Shoujo", "Martial Arts", "Mature", "Mecha", "Music", "Mystery", "Psychological", "Romance", "School Life", "Sci-Fi", "Seinen", "Shoujo", "Shoujo Ai", "Shounen", "Shounen Ai", "Slice of Life", "Smut", "Sports", "Supernatural", "Suspense", "Thriller", "Tragedy", "Yaoi", "Yuri"];
 const types = ["Manga", "Manhua", "Manhwa", "Novel", "Oel", "Other"];
 
 const sort = [
     { label: "Popular", value: "weightedScore"},
     { label: "Total Chapters", value: "totalChapters"},
-    { label: "Recently Added", value: "lastUpdatedAt"}
+    { label: "Recently Added", value: "lastUpdatedAt"},
+    { label: "Title", value: "title"},
+    { label: "Year", value: "year" },
+    
 ]
 
 const order = [
@@ -28,7 +31,7 @@ const status = [
 ]
 
 export default function CatalogFilters({ filters, onFilterChange }: any) {
-    const [Nsfw, setNsfw] = useState<string>('false');
+    const [Nsfw, setNsfw] = useState<string>('true');
 
     const handleNsfwToggle = () => {
         const newValue = Nsfw === 'true' ? 'false' : 'true';

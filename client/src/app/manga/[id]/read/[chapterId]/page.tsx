@@ -1,7 +1,8 @@
 "use client";
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, useRouter } from "next/navigation";
-import { fetchMangaPages } from '@/services/mangaService';
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { fetchMangaPages, updateProgress } from '@/services/mangaService';
+import { useUser } from '@/providers/UserProvider';
 
 interface Chapter {
   id: number;
@@ -17,13 +18,17 @@ interface Chapter {
 const ReadPage = () => {
   const { id, chapterId } = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { user } = useUser();
   const [data, setData] = useState<Chapter | null>(null);
   const [allChapters, setAllChapters] = useState<Chapter[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(0);
   
   const containerRef = useRef<HTMLDivElement>(null);
   // Use a Ref for scroll tracking to prevent stale closures/missing hide triggers
   const lastScrollPos = useRef(0);
+  const hasScrolledToPage = useRef(false);
 
   useEffect(() => {
     const loadMangaPages = async () => {
@@ -79,6 +84,80 @@ const ReadPage = () => {
       if (activeBtn) activeBtn.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
   }, [loading, chapterId, allChapters]);
+
+  // Scroll to specific page from continue reading
+  useEffect(() => {
+    if (!loading && data && containerRef.current && !hasScrolledToPage.current) {
+      const pageParam = searchParams?.get('page');
+      if (pageParam) {
+        const pageNumber = parseInt(pageParam, 10);
+        if (!isNaN(pageNumber) && pageNumber > 0) {
+          const images = Array.from(containerRef.current.querySelectorAll('img'));
+          const targetImage = images[pageNumber - 1]; // Convert to 0-indexed
+          
+          if (targetImage) {
+            // Wait for images to load before scrolling
+            setTimeout(() => {
+              const imgAbsoluteMiddle = targetImage.getBoundingClientRect().top + window.scrollY + (targetImage.offsetHeight / 2);
+              window.scrollTo({ top: imgAbsoluteMiddle - (window.innerHeight / 2), behavior: 'smooth' });
+            }, 300);
+          }
+          hasScrolledToPage.current = true;
+        }
+      }
+    }
+  }, [loading, data, searchParams]);
+
+  // Track reading progress
+  useEffect(() => {
+    if (!user || !data || !id || !chapterId) return;
+
+    const trackProgress = async () => {
+      try {
+        await updateProgress({
+          seriesId: Number(id),
+          chapterId: Number(chapterId),
+          pageNumber: currentPage,
+          totalPagesInChapter: data.images?.length || 0,
+        });
+      } catch (error) {
+        // Silently fail - don't disrupt reading experience
+        console.error('Failed to update progress:', error);
+      }
+    };
+
+    // Debounce progress updates
+    const timeoutId = setTimeout(trackProgress, 2000);
+    return () => clearTimeout(timeoutId);
+  }, [user, data, id, chapterId, currentPage]);
+
+  // Track current page based on scroll position
+  useEffect(() => {
+    if (!containerRef.current || !data?.images) return;
+
+    const handleScroll = () => {
+      if (!containerRef.current) return; // Guard against unmount
+      const images = Array.from(containerRef.current.querySelectorAll('img'));
+      const viewportMiddle = window.scrollY + (window.innerHeight / 2);
+
+      // Find which page is currently in view
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        const rect = img.getBoundingClientRect();
+        const imgMiddle = rect.top + window.scrollY + (img.offsetHeight / 2);
+        
+        if (imgMiddle >= viewportMiddle - 200 && imgMiddle <= viewportMiddle + 200) {
+          setCurrentPage(i + 1);
+          break;
+        }
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll(); // Initial check
+    
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [data]);
 
   const handlePageClick = (direction: 'next' | 'prev') => {
     if (!containerRef.current) return;
@@ -137,6 +216,23 @@ const ReadPage = () => {
           </div>
         </div>
       </aside>
+
+      {/* Page Progress Indicator - Right Side */}
+      <div className="fixed right-0 top-0 h-screen w-2 bg-foreground/30 z-50 pointer-events-none">
+        <div 
+          className="w-full bg-accent transition-all duration-200 ease-out"
+          style={{ 
+            height: data?.images ? `${((currentPage / data.images.length) * 100).toFixed(1)}%` : '0%'
+          }}
+        />
+        {/* Page number indicator */}
+        {currentPage > 0 && data?.images && (
+          <div className="absolute top-0 right-0 transform -translate-y-1/2 bg-accent text-white text-xs font-bold px-2 py-1 rounded-l shadow-lg pointer-events-auto"
+               style={{ top: `${((currentPage / data.images.length) * 100)}%` }}>
+            {currentPage}/{data.images.length}
+          </div>
+        )}
+      </div>
 
   <main className="content py-18.25 ml-65 w-[calc(100%-260px)] relative flex flex-col items-center">
     <div className="click-zones fixed top-0 right-0 bottom-0 left-65 flex z-10 pointer-events-none">
