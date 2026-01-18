@@ -34,7 +34,7 @@ export default function ContinueReading() {
     return (
         <section className="container mx-auto text-primary mb-24">
             <SectionHeader title="Continue Reading" link="/profile?tab=overview" />
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
                 {progress.slice(0, 8).map((item) => (
                     <ContinueReadingCard key={item.seriesId} progress={item} />
                 ))}

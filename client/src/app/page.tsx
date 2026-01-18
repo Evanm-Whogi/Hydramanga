@@ -24,12 +24,12 @@ export default async function Index() {
                     <h2 className="text-5xl font-semibold">Favorite Manga</h2>
                     <p className="text-lg text-muted max-w-2xl mt-3 mx-auto">Dive into an endless world of manga. Browse, read, and track your favorite series all in one place. Join thousands of readers on {process.env.NEXT_PUBLIC_NAME}</p>
                     <div className="flex space-x-3 mt-4 place-content-center">
-                        <a href="/read/1" className="inline-flex items-center bg-accent px-6 py-3 rounded-lg text-xl hover:bg-foreground transition"><PlayIcon className="size-5 mr-2" />Start Reading</a>
+                        <a href="/home" className="inline-flex items-center bg-accent px-6 py-3 rounded-lg text-xl hover:bg-foreground transition"><PlayIcon className="size-5 mr-2" />Start Reading</a>
                         <a href="/catalog" className="inline-flex items-center bg-foreground px-6 py-3 rounded-lg text-xl hover:bg-foreground/50 border border-foreground hover:border-accent transition">Browse Catalog</a>
                     </div>
                 </div>
                 <div className="flex flex-col space-y-4 mx-auto text-center w-full">
-                    <div className="grid grid-cols-4 gap-12 pt-5 w-full">
+                    <div className="grid grids-cols-1 md:grid-cols-4 gap-12 pt-5 w-full">
                         <div className="flex flex-col p-5 bg-foreground rounded-md">
                             <BookMarkedIcon className="size-9 mx-auto mb-3" />
                             <h1 className="text-3xl">{indexData.mangaTitles}</h1>

@@ -107,8 +107,8 @@ export default function Settings({user}: {user: any}) {
     return (
         <>
         <div className="flex flex-col">
-            <div className="flex w-full gap-6">
-                <div className="flex flex-col p-5 bg-foreground w-1/2 rounded-md">
+            <div className="flex flex-col md:flex-row w-full gap-6">
+                <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md">
                 <h1 className="text-xl font-bold">Basic Info</h1>
                 <p className="text-sm text-gray-400">Update your basic profile information such as username and email address.</p>
                     <div className="flex flex-col pt-5 grow">
@@ -123,7 +123,7 @@ export default function Settings({user}: {user: any}) {
                         <button onClick={handleUpdateInfo} className="bg-background hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer mt-5">Save</button>
                     </div>
                 </div>
-                <div className="flex flex-col p-5 bg-foreground w-1/2 rounded-md">
+                <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md">
                     <h1 className="text-xl font-bold">Change Password</h1>
                     <p className="text-sm text-gray-400">Update your account password to keep your account secure.</p>
                     <div className="flex flex-col pt-5 grow">
@@ -135,10 +135,10 @@ export default function Settings({user}: {user: any}) {
                     </div>
                 </div>
             </div>
-            <div className="container my-5 bg-foreground rounded-md">
-                <div className="flex w-full py-5 items-center place-content-evenly gap-6">
-                    <button onClick={handleResendVerification} className="bg-background hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-1/2">Resend Email Verification</button>
-                    <button className="bg-background hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-1/2 text-red-500">Delete Account</button>
+            <div className="container my-5 bg-foreground rounded-md px-5">
+                <div className="flex flex-col md:flex-row w-full py-5 items-center place-content-evenly gap-6">
+                    <button onClick={handleResendVerification} className="bg-background hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-full md:w-1/2">Resend Email Verification</button>
+                    <button className="bg-background hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-full md:w-1/2 text-red-500">Delete Account</button>
                 </div>
             </div>
 

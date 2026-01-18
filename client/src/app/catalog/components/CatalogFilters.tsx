@@ -43,7 +43,7 @@ export default function CatalogFilters({ filters, onFilterChange }: any) {
     return (
         <section id="lists" className="py-12">
             <div className="container mx-auto">
-                <div className="flex grid-cols-7 gap-4 place-content-betwen w-full">
+                <div className="grid grid-cols-2 md:grid-cols-7 gap-4 place-content-betwen w-full">
                     <div>
                         <label className="block text-lg font-medium leading-6 text-primary mb-2">Search</label>
                         <SearchBar onChange={(val: string) => onFilterChange({ search: val })}/>

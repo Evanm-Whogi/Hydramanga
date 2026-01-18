@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { Bounce, ToastContainer, toast } from 'react-toastify';
 import type { Metadata } from "next";
 import "@/styles/globals.css";
@@ -7,11 +9,42 @@ import { useSession } from '@/lib/useUser';
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 
-export const metadata = {
-    title: `${process.env.NEXT_PUBLIC_NAME} - ${process.env.NEXT_PUBLIC_SLOGAN}`,
-    description: `${process.env.NEXT_PUBLIC_DESC}`,
+export async function generateMetadata(): Promise<Metadata> {
+   const siteConfig = {
+    name: process.env.NEXT_PUBLIC_NAME,
+    slogan: process.env.NEXT_PUBLIC_SLOGAN,
+    description: process.env.NEXT_PUBLIC_DESC,
+    url: process.env.NEXT_PUBLIC_URL,
+  };
 
-} as Metadata;
+  return {
+    title: `${siteConfig.name} - ${siteConfig.slogan}`,
+    description: siteConfig.description,
+    keywords: ["manga", "reader", "anime", "comics", "webtoons"],
+    openGraph: {
+      title: `${siteConfig.name} - ${siteConfig.slogan}`,
+      description: siteConfig.description,
+      url: siteConfig.url,
+      siteName: siteConfig.name,
+      images: [
+        {
+          url: `${siteConfig.url}/logo.png`,
+          width: 1200,
+          height: 630,
+          alt: siteConfig.name,
+        }
+      ],
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: siteConfig.name,
+      description: siteConfig.description,
+      images: [`${siteConfig.url}/logo.png`],
+    },
+    authors: [{ name: "Whogi" }],
+  };
+}
 
 export default async function RootLayout({children}: Readonly<{children: React.ReactNode;}>) {
   const session = await useSession();
@@ -30,7 +63,7 @@ export default async function RootLayout({children}: Readonly<{children: React.R
           `}
         </script>
       </head>
-      <body className="bg-background text-primary min-h-screen flex flex-col" suppressHydrationWarning>
+      <body className="bg-background text-primary min-h-screen flex flex-col" suppressHydrationWarning={true}>
         <UserProvider initialSession={session}>
           <Navbar />
           <main className="flex-1">
@@ -45,7 +78,7 @@ export default async function RootLayout({children}: Readonly<{children: React.R
           newestOnTop={false}
           closeOnClick={false}
           rtl={false}
-          pauseOnFocusLoss
+          pauseOnFocusLoss={true}
           draggable
           pauseOnHover
           transition={Bounce}

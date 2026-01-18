@@ -36,11 +36,7 @@ export default function Chapters({ manga }: { manga: any }) {
             
             {hasMore && (
                 <div className="flex justify-center pt-4">
-                    <button
-                        onClick={() => setShowAll(true)}
-                        className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-accent/80 transition-colors font-semibold"
-                    >
-                        Show All ({chapters.length} chapters)
+                    <button onClick={() => setShowAll(true)} className="hover:cursor-pointer px-6 py-2 bg-accent text-white rounded-lg hover:bg-accent/80 transition-colors font-semibold">Show All ({chapters.length} chapters)
                     </button>
                 </div>
             )}

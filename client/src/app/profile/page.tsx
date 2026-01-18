@@ -44,11 +44,11 @@ export default function ProfileContainer () {
 
     return (
         <>
-        <div className="h-82 z-10 absolute lg:relative overflow-hidden before:content-[''] before:absolute before:inset-0 before:-z-10 before:bg-(image:--manga-cover) before:bg-cover before:bg-center before:brightness-[0.7] before:blur-[6px] before:scale-110" style={{ '--manga-cover': `url(https://images7.alphacoders.com/666/thumb-1920-666343.jpg)` } as React.CSSProperties}></div>
-            <div className="container mx-auto pt-5">
-                <div className="flex flex-row place-content-center">
-                    <div className="relative -top-35 flex flex-col w-79.75 z-25">
-                        <div className="w-full aspect-square overflow-hidden rounded-md border-4 border-background shadow-lg">
+        <div className="h-82 z-10 absolute lg:relative overflow-hidden before:content-[''] before:absolute before:inset-0 before:-z-10 before:bg-(image:--manga-cover) before:bg-cover before:bg-center before:brightness-[0.7] before:blur-[6px] before:scale-110" style={{ '--manga-cover': `url(${user?.image})` } as React.CSSProperties}></div>
+            <div className="container mx-auto pt-5 px-4 md:px-0 mb-5 md:mb-0">
+                <div className="flex flex-col lg:flex-row lg:place-content-center">
+                    <div className="relative mt-25 md:mt-0 md:-top-35 flex flex-col w-full lg:w-79.75 z-25 items-center lg:items-start">
+                        <div className="w-48 lg:w-full aspect-square overflow-hidden rounded-md border-4 border-background shadow-lg">
                             <img src={(user?.image)!} alt="manga" className="w-full h-full object-cover" />
                         </div>
 
@@ -66,11 +66,11 @@ export default function ProfileContainer () {
                             <button className="bg-foreground hover:bg-foreground/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer"><FlagTriangleRight className="size-5 mr-2"/> Report</button>
                         </div>
                     </div>
-                    <div className="flex flex-col space-y-2 w-2/3 ml-5">
-                        <div className="flex gap-3">
-                            <button onClick={() => setPage("overview")} className={`${page === 'overview' ? 'bg-foreground text-primary border border-borders' : 'bg-foreground text-muted'} hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-lg cursor-pointer transition-colors`}><LayoutDashboardIcon className="size-5 mr-2"/> Overview</button>
-                            <button onClick={() => setPage("lists")} className={`${page === 'lists' ? 'bg-foreground text-primary border border-borders' : 'bg-foreground text-muted'} hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-lg cursor-pointer transition-colors`}><ListIcon className="size-5 mr-2"/> Lists</button>
-                            <button onClick={() => setPage("settings")} className={`${page === 'settings' ? 'bg-foreground text-primary border border-borders' : 'bg-foreground text-muted'} hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-lg cursor-pointer transition-colors`}><SettingsIcon className="size-5 mr-2"/> Settings</button>
+                    <div className="flex flex-col space-y-2 w-full lg:w-2/3 lg:ml-5 mt-5 lg:mt-0">
+                        <div className="flex flex-wrap gap-3">
+                            <button onClick={() => setPage("overview")} className={`${page === 'overview' ? 'bg-foreground text-primary border border-borders' : 'bg-foreground text-muted'} hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-base lg:text-lg cursor-pointer transition-colors`}><LayoutDashboardIcon className="size-5 mr-2"/> Overview</button>
+                            <button onClick={() => setPage("lists")} className={`${page === 'lists' ? 'bg-foreground text-primary border border-borders' : 'bg-foreground text-muted'} hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-base lg:text-lg cursor-pointer transition-colors`}><ListIcon className="size-5 mr-2"/> Lists</button>
+                            <button onClick={() => setPage("settings")} className={`${page === 'settings' ? 'bg-foreground text-primary border border-borders' : 'bg-foreground text-muted'} hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-base lg:text-lg cursor-pointer transition-colors`}><SettingsIcon className="size-5 mr-2"/> Settings</button>
                         </div>
 
                         <div className="mt-4">
