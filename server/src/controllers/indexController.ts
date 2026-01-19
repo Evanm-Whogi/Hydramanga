@@ -7,15 +7,19 @@ dotenv.config();
 
 export default async function getIndexPage(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
 
-    const [mangaTitlesResult, userResult] = await Promise.all([
+    const [mangaTitlesResult, userResult, commentResult, chaptersReadResult] = await Promise.all([
         db.select({ count: sql<number>`count(*)` }).from(schema.series),
         db.select({ count: sql<number>`count(*)` }).from(schema.user),
+        db.select({ count: sql<number>`count(*)` }).from(schema.comments),
+        db.select({ count: sql<number>`count(*)` }).from(schema.chapterViews),
     ]);
 
 
     return res.json({
        mangaTitles: mangaTitlesResult[0]['count'],
-       userCount: userResult[0]['count']
+       userCount: userResult[0]['count'],
+       commentCount: commentResult[0]['count'],
+       chaptersRead: chaptersReadResult[0]['count'],
 
     });
 

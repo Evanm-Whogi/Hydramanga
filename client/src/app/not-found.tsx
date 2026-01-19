@@ -46,14 +46,14 @@ export default function NotFound() {
                             Go Home
                         </Link>
                         <Link
-                            href="/catalog"
+                            href="/discover"
                             className="flex items-center gap-2 px-6 py-3 bg-foreground text-primary rounded-lg hover:bg-foreground/70 transition-colors font-semibold"
                         >
                             <Compass className="size-5" />
                             Browse Manga
                         </Link>
                         <Link
-                            href="/catalog"
+                            href="/discover"
                             className="flex items-center gap-2 px-6 py-3 bg-foreground text-primary rounded-lg hover:bg-foreground/70 transition-colors font-semibold"
                         >
                             <ArrowLeft className="size-5" />

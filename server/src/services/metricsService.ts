@@ -208,11 +208,18 @@ class MetricsService {
         .where(eq(schema.mangaViewStats.seriesId, seriesId))
         .limit(1);
 
-      return stats[0] || {
+      const totalBookmarks = await db
+        .select({count: sql<number>`COUNT(*)`.as('count')})
+        .from(schema.userSeriesList)
+        .where(eq(schema.userSeriesList.seriesId, seriesId))
+        .limit(1);
+
+      return {
         seriesId,
-        totalViews: 0,
-        uniqueViews: 0,
-        lastViewedAt: null,
+        totalViews: stats[0]?.totalViews || 0,
+        uniqueViews: stats[0]?.uniqueViews || 0,
+        bookmarks: totalBookmarks[0]?.count || 0,
+        lastViewedAt: stats[0]?.lastViewedAt || null,
       };
     } catch (error) {
       logger.error(`Failed to get manga stats: ${error}`, { service: 'metricsService' });
