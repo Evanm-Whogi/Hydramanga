@@ -1,5 +1,5 @@
 import express, { RequestHandler } from 'express';
-import { searchManga, getOne, updateMangaList, removeFromList, getUserLists, getPages }  from '@/controllers/mangaController';
+import { searchManga, getOne, updateMangaList, removeFromList, getUserLists, getPages, getAllLists }  from '@/controllers/mangaController';
 
 const router = express.Router();
 
@@ -8,6 +8,7 @@ router.get('/search', searchManga as RequestHandler);
 // Lists - Must be before /:id to avoid matching "list" as an id
 router.get('/list', getUserLists as RequestHandler)
 router.post('/list', updateMangaList as RequestHandler);
+router.get('/lists', getAllLists as RequestHandler);
 router.post('/list/remove', removeFromList as RequestHandler)
 
 // Dynamic routes - Keep these last

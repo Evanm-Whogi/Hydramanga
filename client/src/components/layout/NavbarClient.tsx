@@ -2,10 +2,10 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { HouseIcon, BookOpenIcon, ZapIcon, ClockPlus, SearchIcon, BellIcon, MoonIcon, SunIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon } from 'lucide-react';
+import { HouseIcon, BookOpenIcon, ZapIcon, ClockPlus, SearchIcon, BellIcon, MoonIcon, SunIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon } from 'lucide-react';
 import NavItem from './NavItem';
 import { authClient } from '@/lib/auth';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { useUser } from "@/providers/UserProvider";
 
@@ -17,6 +17,7 @@ export default function NavbarClient({ initialTheme }: {initialTheme: string }) 
     const profileRef = useRef<HTMLDivElement>(null);
     const mobileMenuRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
+    const pathname = usePathname();
     const { user } = useUser();
 
     const closeDropdown = () => setIsProfileOpen(false);
@@ -76,9 +77,8 @@ export default function NavbarClient({ initialTheme }: {initialTheme: string }) 
                         {user ? (
                             <>
                             <NavItem href='/home' icon={<HouseIcon className="size-4 inline" />} label='Home' />
-                            <NavItem href='/catalog' icon={<BookOpenIcon className="size-4 inline" />} label='Catalog' />
-                            <NavItem href='/catalog?sort=weightedScore' icon={<ZapIcon className="size-4 inline" />} label='Popular' />
-                            <NavItem href='/catalog?sort=lastUpdatedAt' icon={<ClockPlus className="size-4 inline" />} label='Latest' />
+                            <NavItem href='/discover' icon={<BookOpenIcon className="size-4 inline" />} label='Discover' />
+                            <NavItem href='/lists' icon={<BookTextIcon className="size-4 inline" />} label='My Lists' />
                             </>
                         ) : (<></>) }
                     </nav>
@@ -89,7 +89,7 @@ export default function NavbarClient({ initialTheme }: {initialTheme: string }) 
                     <div className="hidden md:flex items-center gap-3">
                         {user ? (
                             <>
-                            <Link href="/catalog" className="bg-background hover:bg-background/50 p-3 rounded-full"><SearchIcon className="size-5 hover:cursor-pointer" /></Link>
+                            <Link href="/discover" className="bg-background hover:bg-background/50 p-3 rounded-full"><SearchIcon className="size-5 hover:cursor-pointer" /></Link>
                             <Link href="/announcements" className="bg-background hover:bg-background/50 p-3 rounded-full"><BellIcon className="size-5 hover:cursor-pointer" /></Link>
                             
                             <div className="relative" ref={profileRef}>
@@ -103,7 +103,7 @@ export default function NavbarClient({ initialTheme }: {initialTheme: string }) 
                                             <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                                         </div>
                                         <Link href="/profile?tab=overview" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><UserIcon className="size-4" /> My Profile</Link>
-                                        <Link href="/profile?tab=lists" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><ListIcon className="size-4" /> My Lists</Link>
+                                        <Link href="/lists" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><ListIcon className="size-4" /> My Lists</Link>
                                         <hr className="my-1 border-borders" />
                                         <div className="flex place-content-between w-fit">
                                             <Link href="/profile?tab=settings" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><SettingsIcon className="size-4" /> Settings</Link>
@@ -141,34 +141,34 @@ export default function NavbarClient({ initialTheme }: {initialTheme: string }) 
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-3">
-                                    <Link href="/home" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                    <Link href="/home" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/home' ? 'text-primary' : 'text-muted'}`}>
                                         <HouseIcon className="size-4" /> Home
                                     </Link>
-                                    <Link href="/catalog" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
-                                        <BookOpenIcon className="size-4" /> Catalog
+                                    <Link href="/discover" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/discover' ? 'text-primary' : 'text-muted'}`}>
+                                        <BookOpenIcon className="size-4" /> Discover
                                     </Link>
-                                    <Link href="/catalog?sort=weightedScore" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                    <Link href="/discover?sort=weightedScore" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/discover' ? 'text-primary' : 'text-muted'}`}>
                                         <ZapIcon className="size-4" /> Popular
                                     </Link>
-                                    <Link href="/catalog?sort=lastUpdatedAt" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                    <Link href="/discover?sort=lastUpdatedAt" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/discover' ? 'text-primary' : 'text-muted'}`}>
                                         <ClockPlus className="size-4" /> Latest
                                     </Link>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-3">
-                                    <Link href="/catalog" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                    <Link href="/discover" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/discover' ? 'text-primary' : 'text-muted'}`}>
                                         <SearchIcon className="size-4" /> Search
                                     </Link>
-                                    <Link href="/announcements" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                    <Link href="/announcements" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/announcements' ? 'text-primary' : 'text-muted'}`}>
                                         <BellIcon className="size-4" /> Alerts
                                     </Link>
-                                    <Link href="/profile?tab=lists" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                    <Link href="/lists" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/lists' ? 'text-primary' : 'text-muted'}`}>
                                         <ListIcon className="size-4" /> My Lists
                                     </Link>
-                                    <Link href="/profile?tab=overview" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                    <Link href="/profile?tab=overview" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/profile' ? 'text-primary' : 'text-muted'}`}>
                                         <UserIcon className="size-4" /> Profile
                                     </Link>
-                                    <Link href="/profile?tab=settings" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70">
+                                    <Link href="/profile?tab=settings" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/profile' ? 'text-primary' : 'text-muted'}`}>
                                         <SettingsIcon className="size-4" /> Settings
                                     </Link>
                                     <button onClick={() => { toggleTheme(); setIsOpen(false); }} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 text-left">

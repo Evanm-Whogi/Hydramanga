@@ -307,6 +307,62 @@ export async function getUserLists(req: Request, res: Response) {
     return res.json(formattedData);
 }
 
+export async function getAllLists(req: Request, res: Response) {
+    const userId = req.user.id;
+
+    const results = await db.query.userSeriesList.findMany({
+        where: eq(schema.userSeriesList.userId, userId),
+        with: {
+            series: true,
+        },
+        orderBy: (userSeriesList, { desc }) => [desc(userSeriesList.updatedAt)],
+    });
+
+    const added = results
+        .sort((a, b) => b.updatedAt!.getTime() - a.updatedAt!.getTime())
+        .slice(0, 20)
+        .map(item => ({
+            ...item.series,
+            listStatus: item.status,
+            addedAt: item.updatedAt 
+        }));
+
+    const unread = results
+        .filter(item => item.status === 'unread')
+        .map(item => ({
+            ...item.series,
+            listStatus: item.status,
+            addedAt: item.updatedAt 
+        }));
+
+    const reading = results
+        .filter(item => item.status === 'reading')
+        .map(item => ({
+            ...item.series,
+            listStatus: item.status,
+            addedAt: item.updatedAt 
+        }));
+
+    const finished = results
+        .filter(item => item.status === 'finished')
+        .map(item => ({
+            ...item.series,
+            listStatus: item.status,
+            addedAt: item.updatedAt 
+        }));
+
+    const dropped = results
+        .filter(item => item.status === 'dropped')
+        .map(item => ({
+            ...item.series,
+            listStatus: item.status,
+            addedAt: item.updatedAt 
+        }));
+
+
+    return res.json({ added, unread, reading, finished, dropped });
+}
+
 export async function getPages(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const { id, chapterId } = req.params;
 

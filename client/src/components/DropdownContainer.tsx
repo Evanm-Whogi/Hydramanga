@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, ReactNode } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
-export default function DropdownContainer({ title, size, selectedLabel, children }: { title: string; size?: string; selectedLabel: string; children: (setIsOpen: (open: boolean) => void) => ReactNode }) {
+export default function DropdownContainer({ title, size, selectedLabel, children }: { title?: string; size?: string; selectedLabel: string; children: (setIsOpen: (open: boolean) => void) => ReactNode }) {
     const [isOpen, setIsOpen] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
 

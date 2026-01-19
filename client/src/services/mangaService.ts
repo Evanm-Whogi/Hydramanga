@@ -29,6 +29,10 @@ export async function fetchUserLists(status: any): Promise<any> {
     return await apiGet(`/manga/list?status=${status}`);
 }
 
+export async function fetchAllLists(): Promise<any> {
+    return await apiGet(`/manga/lists`);
+}
+
 export async function fetchMangaPages(id: any, chapterId: any): Promise<any> {
     return await apiGet(`/manga/${id}/${chapterId}`);
 }

@@ -8,7 +8,7 @@ interface Option {
     value: string;
 }
 
-export default function SingleDropdown({ title, options, size, onChange }: { title: string; options?: Option[]; size?: string; onChange: (val: string) => void }) {
+export default function SingleDropdown({ title, options, size, onChange }: { title?: string; options?: Option[]; size?: string; onChange: (val: string) => void }) {
     const [selectedLabel, setSelectedLabel] = useState(options?.[0]?.label || "");
 
     const handleSelect = (option: Option | null, setIsOpen: (open: boolean) => void) => {

@@ -20,7 +20,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: `${siteConfig.name} - ${siteConfig.slogan}`,
     description: siteConfig.description,
-    keywords: ["manga", "reader", "anime", "comics", "webtoons"],
+    keywords: ["manga", "reader", "anime", "comics", "webtoons", "mangaplus", "mangadex", "free manga", "online manga", "manga library", "weebcentral"],
     openGraph: {
       title: `${siteConfig.name} - ${siteConfig.slogan}`,
       description: siteConfig.description,
