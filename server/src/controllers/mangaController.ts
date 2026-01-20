@@ -146,14 +146,6 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
         return res.status(400).json({ status: 400, message: "Invalid manga ID" });
     }
 
-    // Track manga view (async, don't await to avoid slowing down response)
-    const trackingData = (req as any).trackingData;
-    if (trackingData) {
-        metricsService.trackMangaView(id, trackingData).catch(err => 
-            logger.error(`Failed to track manga view: ${err}`, { service: 'mangaController' })
-        );
-    }
-
     const mangaData = await db.query.series.findFirst({
         where: (series, { eq }) => eq(series.id, id),
         with: {
@@ -193,12 +185,6 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
         },
     });
     if(!mangaData) return res.json({status: 404, message: "Not found"});
-
-    // Trigger on-demand scrape for any manga with no chapters on first view
-    if ((mangaData.chapters?.length || 0) === 0) {
-        mangaOrchestratorService.enqueueOnDemand(mangaData.id, mangaData.title || 'Unknown')
-        .catch((err) => logger.error(`On-demand enqueue failed: ${err.message}`, { service: 'mangaController' }));
-    }
 
     const userStatus = mangaData.usersTracking?.[0]?.status || null;
     const { usersTracking, ...manga } = mangaData;
@@ -367,17 +353,6 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
     const { id, chapterId } = req.params;
 
     try {
-        // Track chapter view (async, don't await to avoid slowing down response)
-        // Only track if we have valid numeric IDs
-        const trackingData = (req as any).trackingData;
-        const numericId = Number(id);
-        const numericChapterId = Number(chapterId);
-        if (trackingData && !isNaN(numericId) && numericId > 0 && !isNaN(numericChapterId) && numericChapterId > 0) {
-            metricsService.trackChapterView(numericChapterId, numericId, trackingData).catch(err =>
-                logger.error(`Failed to track chapter view: ${err}`, { service: 'mangaController' })
-            );
-        }
-
         // 1. Fetch current chapter and verify it belongs to the manga ID
         const [chapter] = await db.select()
             .from(chapters)
@@ -421,7 +396,8 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
         const files = fs.readdirSync(directoryPath);
         
         // Define the base URL where your Express server serves static files
-        const baseUrl = process.env.CHAPTER_PUBLIC_BASE || "http://localhost:3000/api/manga-files";
+        const publicApp = process.env.PUBLIC_APP_URL || "http://localhost:3000";
+        const baseUrl = process.env.CHAPTER_PUBLIC_BASE || `${publicApp}/api/manga-files`;
         const baseSystemPath = process.env.CHAPTER_STORAGE_ROOT || path.join(process.cwd(), 'chapters');
 
         const images = files
@@ -452,6 +428,73 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
     }
 }
 
+
+// Trigger on-demand chapter scan for a manga
+export async function triggerMangaScan(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+    try {
+        const { id } = req.params;
+        
+        if (!id) {
+            return res.status(400).json({ error: 'Manga ID is required' });
+        }
+        
+        const mangaId = parseInt(id as string);
+        if (isNaN(mangaId)) {
+            return res.status(400).json({ error: 'Invalid manga ID' });
+        }
+        
+        // Get manga title from database
+        const [manga] = await db.select({ title: series.title }).from(series).where(eq(series.id, mangaId));
+        if (!manga) {
+            return res.status(404).json({ error: 'Manga not found' });
+        }
+        
+        // Trigger the on-demand scan
+        await mangaOrchestratorService.enqueueOnDemand(mangaId, manga.title || 'Unknown');
+        
+        return res.status(200).json({ message: 'Scan queued', seriesId: mangaId });
+    } catch (error) {
+        logger.error(`Failed to trigger manga scan: ${(error as Error).message}`, { service: 'mangaController' });
+        return res.status(500).json({ error: 'Failed to trigger scan' });
+    }
+}
+
+// Client-side view tracking endpoints
+export async function trackMangaViewEndpoint(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+    const id = parseInt(req.params.id, 10);
+    const trackingData = (req as any).trackingData;
+
+    if (isNaN(id) || id <= 0) {
+        return res.status(400).json({ status: 400, message: "Invalid manga ID" });
+    }
+
+    if (trackingData) {
+        metricsService.trackMangaView(id, trackingData).catch(err => 
+            logger.error(`Failed to track manga view: ${err}`, { service: 'mangaController' })
+        );
+    }
+
+    return res.status(200).json({ success: true });
+}
+
+export async function trackChapterViewEndpoint(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+    const { id, chapterId } = req.params;
+    const trackingData = (req as any).trackingData;
+    const numericId = Number(id);
+    const numericChapterId = Number(chapterId);
+
+    if (isNaN(numericId) || numericId <= 0 || isNaN(numericChapterId) || numericChapterId <= 0) {
+        return res.status(400).json({ status: 400, message: "Invalid manga or chapter ID" });
+    }
+
+    if (trackingData) {
+        metricsService.trackChapterView(numericChapterId, numericId, trackingData).catch(err =>
+            logger.error(`Failed to track chapter view: ${err}`, { service: 'mangaController' })
+        );
+    }
+
+    return res.status(200).json({ success: true });
+}
 
 // The testing suite
 export async function fetchChaptersWeebCentral(req: Request, res: Response, next: NextFunction): Promise<Response | void> {

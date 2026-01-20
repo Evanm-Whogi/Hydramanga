@@ -38,7 +38,7 @@ export default function Hero({ mangaData }: any) {
                                     <EyeIcon className="size-4 text-yellow-400" />
                                 </div>
                                 <div className="flex flex-col pl-3">
-                                    <span className="text-primary">{mangaData.trendingStats.viewCount}</span>
+                                    <span className="text-primary">{mangaData?.trendingStats?.viewCount || 0}</span>
                                     <span className="text-muted text-sm">Views</span>
                                 </div>
                             </div>

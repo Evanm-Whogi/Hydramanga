@@ -2,18 +2,21 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db/index";
 import { emailService } from "@/services/emailService";
+
+const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'http://localhost:3000';
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || `${PUBLIC_APP_URL}/api/auth/callback/google`;
+const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || `${PUBLIC_APP_URL}/api/auth/callback/discord`;
  
 export const auth = betterAuth({
-    baseURL: "http://localhost:3000",
+    // Public site URL (frontend) used for links and redirects
+    baseURL: PUBLIC_APP_URL,
     basePath: "/auth",
     advanced: {
-        useSecureCookies: false // Set to true only in production (HTTPS)
+        // Use secure cookies only in production; allow HTTP in development
+        useSecureCookies: process.env.NODE_ENV === 'production'
     },
     secret: process.env.BETTER_AUTH_SECRET,
-    trustedOrigins: [
-        "http://localhost:3000",
-        "http://localhost:3001"
-    ],
+    trustedOrigins: [PUBLIC_APP_URL],
     database: drizzleAdapter(db, {
         provider: "mysql",
     }),
@@ -21,19 +24,20 @@ export const auth = betterAuth({
         google: {
             clientId: process.env.GOOGLE_CLIENT_ID!,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-            redirectURI: "http://localhost:3001/auth/callback/google",
+            redirectURI: GOOGLE_REDIRECT_URI,
         },
         discord: {
             clientId: process.env.DISCORD_CLIENT_ID!,
             clientSecret: process.env.DISCORD_CLIENT_SECRET!,
-            redirectURI: "http://localhost:3001/auth/callback/discord",
+            redirectURI: DISCORD_REDIRECT_URI,
         },
     },
     emailAndPassword: { 
         enabled: true, 
         minPasswordLength: 4,
         maxPasswordLength: 26,
-        requireEmailVerification: true,
+        requireEmailVerification: false,
+        autoSignIn: true
     },
     account: {
         accountLinking: {
@@ -75,7 +79,7 @@ export const auth = betterAuth({
             await emailService.sendEmail(user.email, "verifyEmail", "Verify your email address", { 
                 username: user.name,
                 verificationLink: url,
-                customUrl: `http://localhost:3000/api/auth/verify-email?token=${token}&callbackURL=http%3A%2F%2Flocalhost%3A3000%2Fprofile%3Fverified%3Dtrue`
+                customUrl: `${PUBLIC_APP_URL}/api/auth/verify-email?token=${token}&callbackURL=${encodeURIComponent(`${PUBLIC_APP_URL}/profile?verified=true`)}`
             });
         }
     }

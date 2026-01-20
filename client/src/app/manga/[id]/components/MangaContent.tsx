@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, memo, useTransition } from 'react';
-import { getMangaAnalytics } from '@/services/mangaService';
+import { getMangaAnalytics, triggerMangaScan } from '@/services/mangaService';
 import { formatDate, formatToStars, formatToRating } from '@/lib/utils';
 import Link from 'next/link';
 import MangaActions from './MangaActions';
@@ -98,6 +98,14 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
 
   useEffect(() => {
     let isMounted = true;
+    
+    // Trigger on-demand scan if manga has no chapters
+    if ((manga.chapters?.length || 0) === 0) {
+      triggerMangaScan(Number(manga.id)).catch((err) => {
+        console.error('Failed to trigger manga scan:', err);
+      });
+    }
+    
     const getAnalyticsData = async () => {
       try {
         const analyticsData = await getMangaAnalytics(Number(manga.id)).catch(() => null);

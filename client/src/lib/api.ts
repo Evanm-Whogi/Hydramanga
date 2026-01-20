@@ -2,9 +2,10 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { getServerApiBase } from './env';
 
 const instance = axios.create({
-    baseURL: 'http://localhost:3000/api',
+    baseURL: getServerApiBase(),
     withCredentials: true,
     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
     validateStatus: (status) => status >= 200 && status < 400, // Only accept 2xx and 3xx
@@ -14,6 +15,24 @@ const instance = axios.create({
 instance.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
     const cookieStore = await cookies();
     config.headers['Cookie'] = cookieStore.toString();
+    
+    // Forward the real client IP from Next.js to backend for tracking
+    // Next.js provides this via headers() in server components/actions
+    try {
+        const { headers } = await import('next/headers');
+        const headersList = await headers();
+        const forwarded = headersList.get('x-forwarded-for');
+        const realIp = headersList.get('x-real-ip');
+        
+        if (forwarded) {
+            config.headers['x-forwarded-for'] = forwarded;
+        } else if (realIp) {
+            config.headers['x-real-ip'] = realIp;
+        }
+    } catch (e) {
+        // Silently ignore - headers might not be available in all contexts
+    }
+    
     return config;
 });
 

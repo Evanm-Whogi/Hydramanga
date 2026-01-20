@@ -7,17 +7,33 @@ dotenv.config();
 
 // Get current import status
 export const importStatus = async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
-    const queue = queueService.getQueue('mangaImportQueue');
-    const activeJobs = await queue.getActive();
-    if (activeJobs.length === 0)  return res.json({ status: 'idle' });
-    
-    const job = activeJobs[0];
-    res.json({
-        status: 'processing',
-        progress: job.progress,
-        id: job.id,
-        timestamp: job.timestamp
-    });
+    try {
+        const queue = queueService.getQueue('mangaImportQueue');
+        logger.info('Fetching active jobs from mangaImportQueue', { service: 'mangaImportController' });
+        
+        const activeJobs = await queue.getActive();
+        logger.info(`Active jobs count: ${activeJobs.length}`, { service: 'mangaImportController' });
+        
+        if (activeJobs.length === 0) {
+            logger.debug('No active jobs, checking waiting jobs', { service: 'mangaImportController' });
+            const waitingJobs = await queue.getWaiting();
+            logger.debug(`Waiting jobs count: ${waitingJobs.length}`, { service: 'mangaImportController' });
+            return res.json({ status: 'idle', activeJobs: 0, waitingJobs: waitingJobs.length });
+        }
+        
+        const job = activeJobs[0];
+        logger.info(`Job active: ${job.id}, progress: ${job.progress}%`, { service: 'mangaImportController' });
+        
+        res.json({
+            status: 'processing',
+            progress: job.progress,
+            id: job.id,
+            timestamp: job.timestamp
+        });
+    } catch (error: any) {
+        logger.error(`Error in importStatus: ${error.message}`, { service: 'mangaImportController', stack: error.stack });
+        return res.status(500).json({ status: 'error', message: error.message });
+    }
 }
 
 // Trigger manga metadata sync manually
@@ -35,7 +51,7 @@ export const triggerMangaSync = async (req: Request, res: Response, next: NextFu
             });
         }
 
-        const filePath = path.resolve(process.cwd(), 'src/series.json');
+        const filePath = process.env.SERIES_JSON_PATH || path.resolve(process.cwd(), 'src/series.json');
 
         const job = await queueService.addJob('mangaImportQueue', 'fullSync', { 
             filePath,

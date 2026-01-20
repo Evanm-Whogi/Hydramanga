@@ -13,6 +13,7 @@
         - Use clearQueue method to clear the queue
 */
 import { Queue, Worker, QueueOptions, Job } from 'bullmq';
+import Redis from 'ioredis';
 import logger from '@/services/loggerService';
 import { emailService } from '@/services/emailService'; // Import emailService
 import { queueJobFunction } from '@/types/types'; // Import types
@@ -25,6 +26,7 @@ import { mangaImporterService } from './mangaImporterService';
 class QueueService {
     private queues: { [key: string]: Queue } = {};
     private redisConnection: any;
+    private redisClient: Redis;
 
     constructor() {
       this.redisConnection = {
@@ -32,6 +34,12 @@ class QueueService {
         port: Number(process.env.REDIS_PORT) || 6379,
         password: process.env.REDIS_PASS || undefined
       };
+      this.redisClient = new Redis(this.redisConnection);
+      logger.info(`QueueService initialized with Redis connection: ${this.redisConnection.host}:${this.redisConnection.port}`, { service: 'queueService' });
+    }
+
+    public getRedisClient(): Redis {
+        return this.redisClient;
     }
 
     // Dynamic Queue
@@ -41,6 +49,7 @@ class QueueService {
                 connection: this.redisConnection,
             };
 
+            logger.info(`Creating queue '${queueName}' with connection: ${this.redisConnection.host}:${this.redisConnection.port}`, { service: 'queueService' });
             this.queues[queueName] = new Queue(queueName, queueOptions);
             this.createWorker(queueName);
         }

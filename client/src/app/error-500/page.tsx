@@ -11,7 +11,7 @@ export default function Error500Page() {
             setAttempts(prev => prev + 1);
             
             try {
-                const response = await fetch('http://localhost:3000/api/heartbeat', {
+                const response = await fetch('/api/heartbeat', {
                     method: 'GET',
                     cache: 'no-store',
                 });

@@ -1,15 +1,17 @@
 "use client";
-import { FlagTriangleRight, LayoutDashboardIcon, SettingsIcon, UserPlusIcon } from 'lucide-react';
+import { FlagTriangleRight, LayoutDashboardIcon, SettingsIcon, UserPlusIcon, Share2 } from 'lucide-react';
 import { useSearchParams, useRouter } from "next/navigation";
 import { useState, useEffect } from 'react';
 import Overview from '@/app/profile/components/Overview';
 import Settings from '@/app/profile/components/Settings';
+import Invites from '@/app/profile/components/Invites';
 import { toast } from 'react-toastify';
 import { useUser } from "@/providers/UserProvider";
 
 const VIEWS: { [key: string]: React.FC<{ user: any; isOwner: boolean }> } = {
   overview: Overview,
   settings: Settings,
+  invites: Invites,
 };
 
 
@@ -95,6 +97,14 @@ export default function ProfileContent() {
                 } hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-base lg:text-lg cursor-pointer transition-colors`}
               >
                 <SettingsIcon className="size-5 mr-2" /> Settings
+              </button>
+              <button
+                onClick={() => setPage("invites")}
+                className={`${
+                  page === "invites" ? "bg-foreground text-primary border border-borders" : "bg-foreground text-muted"
+                } hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-base lg:text-lg cursor-pointer transition-colors`}
+              >
+                <Share2 className="size-5 mr-2" /> Invites
               </button>
             </div>
 

@@ -2,12 +2,13 @@
 import { createAuthClient } from "better-auth/react";
 import { nextCookies } from "better-auth/next-js";
 import { inferAdditionalFields } from "better-auth/client/plugins";
+import { getBackendInternalUrl } from "./env";
 
 
 export const authClient = createAuthClient({
-    // This is a bit weird but for clientSide Components we fetch using the rewrite /api/auth and for server components we fetch through the backend url directly.
+    // Client components use Next rewrite (/api/auth); server components hit backend directly
     baseURL: typeof window === "undefined" 
-        ? "http://localhost:3001" 
+        ? `${getBackendInternalUrl()}`
         : `${window.location.origin}/api/auth`,
     basePath: "/auth",
     plugins: [

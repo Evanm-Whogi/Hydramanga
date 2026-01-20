@@ -9,6 +9,7 @@ import { fetchAnnouncements, createAnnouncement } from '@/controllers/announceme
 import { importStatus, triggerMangaSync } from '@/controllers/mangaImportController';
 import { fetchChaptersWeebCentral } from '@/controllers/mangaController'; // Part of testing suite
 import { getTrending, getMangaAnalytics, getMyProgress, getMangaProgress, updateProgress, deleteProgress,getMyStats} from '@/controllers/analyticsController';
+import { generateInviteCode, getUserInviteCodes, validateInviteCode, useInviteCode } from '@/controllers/inviteController';
 
 // Aggregator Controllers
 import getHomePage from '@/controllers/homeController';
@@ -43,14 +44,20 @@ module.exports = (app: Express) => {
     app.post('/comments/like', authMiddleware, likeComment as RequestHandler);
     app.delete('/comments/:commentId', authMiddleware, deleteComment as RequestHandler);
 
+    // Invite Routes
+    app.post('/invites/generate', authMiddleware, generateInviteCode as RequestHandler);
+    app.get('/invites', authMiddleware, getUserInviteCodes as RequestHandler);
+    app.post('/invites/validate', validateInviteCode as RequestHandler);
+    app.post('/invites/use', useInviteCode as RequestHandler);
+
     // Page Routes
     app.get('/home', authMiddleware, getHomePage as RequestHandler); // Aggregator
     app.get('/index', getIndexPage as RequestHandler); // Aggregator
 
 
     // Admin Routes
-    app.get('/import-status', authMiddleware, importStatus as RequestHandler);
-    app.post('/manga/sync', authMiddleware, triggerMangaSync as RequestHandler);
+    app.get('/admin/import-status', authMiddleware, importStatus as RequestHandler);
+    app.get('/admin/manga/sync', authMiddleware, triggerMangaSync as RequestHandler);
     app.get('/heartbeat', (req, res) => {
         res.json({status: 200, message: `Service is healthy`});
     });
