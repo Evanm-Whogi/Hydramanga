@@ -54,7 +54,11 @@ app.all("/auth/{*any}", toNodeHandler(auth));
 // Middlewares
 app.use(bodyParser.json());
 app.use(isMaintenance);
-process.env.NODE_ENV === 'production' ? app.use(rateLimiter) : null; // Rate limit
+
+// Enable rate limiting only in production
+if (process.env.NODE_ENV === 'production') {
+    app.use(rateLimiter);
+}
 
 // Routes
 require('@/routes')(app);

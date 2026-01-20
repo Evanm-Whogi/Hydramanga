@@ -1,67 +1,49 @@
-'use client'
-import SearchBar from "@/components/SearchBar"
-import Dropdown from "@/components/Dropdown"
-import Checkbox from "@/components/Checkbox"
-import { useState } from "react"
+'use client';
 
-// Removed for now: Hentai, Lolicon, Shotacon 
-const genres = ["Action", "Adult", "Adventure", "Avant Garde", "Award Winning", "Boys Love", "Comedy", "Doujinshi", "Drama", "Ecchi", "Erotica", "Fantasy", "Gender Bender", "Girls Love", "Gourmet", "Harem", "Historical", "Horror", "Josei", "Mahou Shoujo", "Martial Arts", "Mature", "Mecha", "Music", "Mystery", "Psychological", "Romance", "School Life", "Sci-Fi", "Seinen", "Shoujo", "Shoujo Ai", "Shounen", "Shounen Ai", "Slice of Life", "Smut", "Sports", "Supernatural", "Suspense", "Thriller", "Tragedy", "Yaoi", "Yuri"];
-const types = ["Manga", "Manhua", "Manhwa", "Novel", "Oel", "Other"];
+import { memo } from 'react';
+import FiltersPanel from '@/components/FiltersPanel';
 
-const sort = [
-    { label: "Popular", value: "weightedScore"},
-    { label: "Total Chapters", value: "totalChapters"},
-    { label: "Recently Added", value: "lastUpdatedAt"},
-    { label: "Title", value: "title"},
-    { label: "Year", value: "year" },
-    
-]
-
-const order = [
-  { label: "Descending", value: "desc" },
-  { label: "Ascending", value: "asc" }
-];
-
-const status = [
-    { label: "Ongoing", value: "releasing"},
-    { label: "Complete", value: "completed"},
-    { label: "Hiatus", value: "hiatus"},
-    { label: "canceled", value: "cancelled" },
-    { label: "Upcoming", value: "upcoming" },
-]
-
-export default function CatalogFilters({ filters, onFilterChange }: any) {
-    const [Nsfw, setNsfw] = useState<string>('true');
-
-    const handleNsfwToggle = () => {
-        const newValue = Nsfw === 'true' ? 'false' : 'true';
-        setNsfw(newValue);
-        onFilterChange({ nsfw: newValue });
-    };
-
-
-    return (
-        <section id="lists" className="py-12">
-            <div className="container mx-auto">
-                <div className="grid grid-cols-2 md:grid-cols-7 gap-4 place-content-betwen w-full">
-                    <div>
-                        <label className="block text-lg font-medium leading-6 text-primary mb-2">Search</label>
-                        <SearchBar onChange={(val: string) => onFilterChange({ search: val })}/>
-                    </div>
-                    <Checkbox title="Tags" options={genres} onChange={(val: any) => onFilterChange({ genres: val })} />
-                    <Dropdown title="Sort" options={sort} onChange={(val: string) => onFilterChange({ sort: val })} />
-                    <Dropdown title="Order" options={order} onChange={(val: string) => onFilterChange({ order: val })}/>
-                    <Checkbox title="Type" options={types} onChange={(val: any) => onFilterChange({ type: val })} />
-                    <Checkbox title="Series Status" options={status} onChange={(val: any) => onFilterChange({ status: val })} />
-                    <div className="w-1/2">
-                        <label className=" blocktext-lg font-medium leading-6 text-primary mb-2">NSFW</label>
-                        <div className="mt-3 rounded-md shadow-sm text-primary w-fit" onClick={() => handleNsfwToggle()}>
-                            <button className={`px-3 py-1 rounded-l-md text-primary hover:cursor-pointer ${Nsfw === 'true' ? 'bg-accent' : 'bg-foreground'}`}>True</button>
-                            <button className={`px-3 py-1 rounded-r-md text-primary hover:cursor-pointer ${Nsfw === 'false' ? 'bg-accent' : 'bg-foreground'}`}>False</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-    )
+interface CatalogFiltersProps {
+  filters: {
+    search: string;
+    genres: string[];
+    type: string;
+    status: string;
+    years: string[];
+    sort: string;
+    nsfw: string;
+  };
+  onFilterChange: (filters: Partial<any>) => void;
+  params?: any;
 }
+
+function CatalogFilters({
+  filters,
+  onFilterChange,
+  params,
+}: CatalogFiltersProps) {
+  return (
+    <section id="catalog-filters" className="py-12">
+      <div className="container mx-auto">
+        <FiltersPanel
+          onSearchChange={(val) => onFilterChange({ search: val })}
+          onGenresChange={(val) => onFilterChange({ genres: val })}
+          onTypesChange={(val) => onFilterChange({ type: val })}
+          onStatusesChange={(val) => onFilterChange({ status: val })}
+          onYearsChange={(val) => onFilterChange({ years: val })}
+          onSortChange={(val) => onFilterChange({ sort: val })}
+          onNsfwChange={(val) => onFilterChange({ nsfw: val })}
+          initialSearch={params?.search}
+          initialGenres={params?.genres}
+          initialTypes={params?.type}
+          initialStatuses={params?.status}
+          initialYears={params?.years}
+          initialSort={params?.sort}
+          initialNsfw={params?.nsfw}
+        />
+      </div>
+    </section>
+  );
+}
+
+export default memo(CatalogFilters);

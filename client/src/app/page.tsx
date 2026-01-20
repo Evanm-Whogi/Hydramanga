@@ -16,8 +16,6 @@ export const metadata: Metadata = {
 export default async function Index() {
   const indexData = await getIndex();
 
-  console.log(indexData)
-
   return (
     <>
       <section id="hero" className="pt-25">

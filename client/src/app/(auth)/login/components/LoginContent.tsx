@@ -21,7 +21,7 @@ export default function LoginContent() {
         ? await signIn.email({ email, password })
         : await signIn.social({
             provider: type,
-            callbackURL: "http://localhost:3000/home",
+            callbackURL: `${process.env.NEXT_PUBLIC_URL || window.location.origin}/home`,
           });
 
     if (result.error) {

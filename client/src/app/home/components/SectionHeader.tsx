@@ -1,6 +1,6 @@
 import { TrendingUp, ArrowRight } from "lucide-react";
 
-export default function SectionHeader({ title, subtitle, filters, link }: { title: string, subtitle: string, filters?: any, link?: string }) {
+export default function SectionHeader({ title, subtitle, filters, link }: { title: string, subtitle?: string, filters?: any, link?: string }) {
     return (
         <div className="flex items-center justify-between mb-6">
             <div className="flex items-center space-x-2">

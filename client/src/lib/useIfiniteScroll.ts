@@ -43,7 +43,7 @@ export function useInfiniteScroll(filters: any) {
       }
 
 
-      const response = await fetch(`http://localhost:3000/api/manga/search?${params.toString()}`);
+      const response = await fetch(`/api/manga/search?${params.toString()}`);
       if (!response.ok) throw new Error('Network response was not ok');
       const data = await response.json();
 

@@ -73,7 +73,7 @@ export default async function RootLayout({children}: Readonly<{children: React.R
         </UserProvider>
         <ToastContainer
           position="top-right"
-          autoClose={2000}
+          autoClose={5000}
           hideProgressBar={false}
           newestOnTop={false}
           closeOnClick={false}

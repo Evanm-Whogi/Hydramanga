@@ -1,11 +1,17 @@
 import type { NextConfig } from "next";
 
+const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || 'http://localhost:4000';
+
 const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
         source: '/api/:path*',
-        destination: `http://localhost:3001/:path*`,
+        destination: `${BACKEND_INTERNAL_URL}/:path*`,
+      },
+      {
+        source: '/admin/queues/:path*',
+        destination: `${BACKEND_INTERNAL_URL}/admin/queues/:path*`,
       },
     ];
   },
@@ -23,7 +29,9 @@ const nextConfig: NextConfig = {
         pathname: '/**',
         search: '',
       }
-    ]
+    ],
+    // In Docker/production, skip optimization to avoid permission/server overhead
+    unoptimized: process.env.NODE_ENV === 'production',
   },
 };
 export default nextConfig;

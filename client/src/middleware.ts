@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 export default async function middleware(request: NextRequest) {
-    const sessionToken = request.cookies.get("better-auth.session_token") || request.cookies.get("__Host-better-auth.session_token");
+    // Accept all common Better Auth cookie names (secure/host variants)
+    const sessionToken =
+        request.cookies.get("better-auth.session_token")?.value ||
+        request.cookies.get("__Secure-better-auth.session_token")?.value ||
+        request.cookies.get("__Host-better-auth.session_token")?.value;
     
     const protectedPaths = ["/announcements", "/discover", "/home", "/manga", "/profile", "/lists"];
     const isProtectedRoute = protectedPaths.some(path => request.nextUrl.pathname === path || request.nextUrl.pathname.startsWith(path + "/"));

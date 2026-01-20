@@ -26,8 +26,9 @@ const logger = winston.createLogger({
     ]
 });
 
-// If not in production, log to console with CLI colors and timestamps
-if (process.env.NODE_ENV !== 'production') {
+// Always log to console in Docker (for docker logs visibility)
+// or if not in production
+if (process.env.NODE_ENV !== 'production' || process.env.DOCKER === 'true') {
     logger.add(new winston.transports.Console({
         format: winston.format.combine(
             winston.format.colorize(),

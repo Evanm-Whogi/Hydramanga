@@ -1,19 +1,66 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { signUp } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import InputField from '@/components/InputField';
 import MasonryGrid from "@/components/MasonryGrid";
 import { toast } from "react-toastify";
+import { validateInviteCode, useInviteCode } from "@/services/inviteService";
+import { CheckCircle, AlertCircle } from "lucide-react";
 
 export default function RegisterContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
+  const [isValidating, setIsValidating] = useState(false);
+  const [inviteValid, setInviteValid] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
   const router = useRouter();
+  const debounceTimer = useRef<NodeJS.Timeout | undefined>(undefined);
+
+  useEffect(() => {
+    // Clear previous timer
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current);
+    }
+
+    // If code is empty, reset validation
+    if (!inviteCode.trim()) {
+      setInviteValid(false);
+      setInviteError(null);
+      return;
+    }
+
+    // Set new timer to validate after 500ms of no typing
+    setIsValidating(true);
+    debounceTimer.current = setTimeout(async () => {
+      try {
+        await validateInviteCode(inviteCode);
+        setInviteValid(true);
+        setInviteError(null);
+      } catch (error: any) {
+        setInviteValid(false);
+        setInviteError(error.message || "Invalid invite code");
+      } finally {
+        setIsValidating(false);
+      }
+    }, 500);
+
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+      }
+    };
+  }, [inviteCode]);
 
   const handleRegister = async () => {
+    if (!inviteValid) {
+      toast("Please validate an invite code first", { type: "error" });
+      return;
+    }
+
     const { data, error } = await signUp.email({
       email,
       password,
@@ -25,6 +72,13 @@ export default function RegisterContent() {
     if (error) {
       toast(`${error.message}`, { type: "error" });
     } else {
+      // Mark invite code as used
+      try {
+        await useInviteCode(inviteCode, data.user.id);
+      } catch (err: any) {
+        console.error("Failed to mark invite as used:", err.message);
+      }
+
       toast(`Welcome ${data.user.name}! Your account has been created.`, {
         type: "success",
       });
@@ -54,6 +108,27 @@ export default function RegisterContent() {
               Your one stop spot for endless Manga.
             </h2>
             <div className="flex flex-col space-y-3 mt-5">
+              <div>
+                <label className="text-sm font-semibold text-muted mb-1 block">
+                  Invite Code *
+                </label>
+                  <div className="flex gap-2 relative">
+                  <input
+                    type="text"
+                    placeholder="Enter invite code"
+                    value={inviteCode}
+                    onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                      className={`flex-1 px-3 py-2 bg-background rounded-lg text-primary placeholder-muted border transition-colors ${
+                        inviteValid ? 'border-green-500' : inviteError ? 'border-red-500' : 'border-foreground'
+                      }`}
+                  />
+                    {isValidating && <div className="absolute right-3 top-2.5 animate-spin">⟳</div>}
+                    {inviteValid && <CheckCircle className="absolute right-3 top-2.5 size-5 text-green-500" />}
+                    {inviteError && !isValidating && <AlertCircle className="absolute right-3 top-2.5 size-5 text-red-500" />}
+                </div>
+                  {inviteError && <p className="text-xs text-red-500 mt-1">{inviteError}</p>}
+                  {inviteValid && <p className="text-xs text-green-500 mt-1">✓ Invite code is valid</p>}
+              </div>
               <InputField
                 label="Full Name"
                 placeholder="Your Name"
@@ -76,7 +151,8 @@ export default function RegisterContent() {
             </div>
             <button
               onClick={handleRegister}
-              className="p-3 mt-5 bg-foreground text-primary hover:bg-foreground/50 hover:cursor-pointer rounded-lg"
+              disabled={!inviteValid}
+              className="p-3 mt-5 bg-foreground text-primary hover:bg-foreground/50 hover:cursor-pointer rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Create Account
             </button>

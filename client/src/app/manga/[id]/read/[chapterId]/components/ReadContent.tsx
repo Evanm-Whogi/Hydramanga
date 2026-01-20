@@ -4,6 +4,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { fetchMangaPages, updateProgress } from '@/services/mangaService';
 import { useUser } from '@/providers/UserProvider';
 import { MenuIcon, X } from 'lucide-react';
+import { useChapterViewTracking } from '@/hooks/useViewTracking';
 
 interface Chapter {
   id: number;
@@ -26,6 +27,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Track chapter view on client-side mount
+  useChapterViewTracking(id as string, chapterId as string);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const mobileHeaderRef = useRef<HTMLDivElement>(null);

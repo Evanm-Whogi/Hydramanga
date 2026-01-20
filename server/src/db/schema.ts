@@ -8,7 +8,7 @@ export const user = pgTable("user", {
   role: text("role").notNull().default("user"),
   bio: text("bio"),
   emailVerified: boolean("emailVerified").notNull(),
-  image: text("image"),
+  image: text("image").default('/default-avatar.jpg'),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
@@ -301,4 +301,32 @@ export const userReadingProgress = pgTable('user_reading_progress', {
   pk: primaryKey({ columns: [t.userId, t.seriesId] }),
   userIdIdx: index('idx_user_reading_progress_user_id').on(t.userId),
   seriesIdIdx: index('idx_user_reading_progress_series_id').on(t.seriesId),
+}));
+
+// Invite Codes
+export const inviteCodes = pgTable('invite_codes', {
+  id: text('id').primaryKey(),
+  code: text('code').notNull().unique(),
+  createdBy: text('created_by').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  usedBy: text('used_by').references(() => user.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+}, (t) => ({
+  codeIdx: index('idx_invite_codes_code').on(t.code),
+  createdByIdx: index('idx_invite_codes_created_by').on(t.createdBy),
+  usedByIdx: index('idx_invite_codes_used_by').on(t.usedBy),
+}));
+
+// Relations
+export const inviteCodesRelations = relations(inviteCodes, ({ one }) => ({
+  creator: one(user, {
+    fields: [inviteCodes.createdBy],
+    references: [user.id],
+    relationName: 'inviteCodesCreated',
+  }),
+  usedByUser: one(user, {
+    fields: [inviteCodes.usedBy],
+    references: [user.id],
+    relationName: 'inviteCodesUsed',
+  }),
 }));
