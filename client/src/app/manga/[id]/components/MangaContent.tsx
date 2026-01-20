@@ -5,6 +5,7 @@ import { formatDate, formatToStars, formatToRating } from '@/lib/utils';
 import Link from 'next/link';
 import MangaActions from './MangaActions';
 import { Eye, TrendingUp, Bookmark } from 'lucide-react';
+import { useMangaViewTracking } from '@/hooks/useViewTracking';
 
 // Memoized Header to prevent blur/filter recalculations on state changes
 const MangaHeader = memo(({ cover }: { cover: string }) => {
@@ -95,6 +96,9 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
   const [analytics, setAnalytics] = useState<any>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  // Track manga views
+  useMangaViewTracking(Number(manga.id));
 
   useEffect(() => {
     let isMounted = true;
