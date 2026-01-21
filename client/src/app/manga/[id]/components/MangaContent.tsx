@@ -6,6 +6,9 @@ import Link from 'next/link';
 import MangaActions from './MangaActions';
 import { Eye, TrendingUp, Bookmark } from 'lucide-react';
 import { useMangaViewTracking } from '@/hooks/useViewTracking';
+import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
+import { showImportProgressToast, updateImportProgressToast, dismissImportProgressToast } from '@/components/ImportProgressToast';
+import { useRouter } from 'next/navigation';
 
 // Memoized Header to prevent blur/filter recalculations on state changes
 const MangaHeader = memo(({ cover }: { cover: string }) => {
@@ -96,16 +99,60 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
   const [analytics, setAnalytics] = useState<any>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [wasActiveOnLoad, setWasActiveOnLoad] = useState(false);
+  const router = useRouter();
+  const mangaId = Number(manga.id);
 
   // Track manga views
-  useMangaViewTracking(Number(manga.id));
+  useMangaViewTracking(mangaId);
+
+  // Always track import progress for this manga (works for all users)
+  const { progress } = useMangaImportProgress(
+    mangaId,
+    {
+      enabled: true,
+      onComplete: (finalProgress) => {
+        console.log('Import completed:', finalProgress);
+        // Refresh the page to show new chapters
+        router.refresh();
+      },
+      onError: (error) => {
+        console.error('Import failed:', error);
+      },
+    }
+  );
+
+  // Show/update toast only for active imports (not completed/failed on page load)
+  useEffect(() => {
+    if (progress) {
+      // Only show toast if import is actively running
+      if (progress.status === 'scanning' || progress.status === 'downloading') {
+        setWasActiveOnLoad(true);
+        updateImportProgressToast(mangaId, manga.title, progress);
+      } 
+      // Show completion/failure only if we were tracking an active import
+      else if (wasActiveOnLoad && (progress.status === 'completed' || progress.status === 'failed')) {
+        updateImportProgressToast(mangaId, manga.title, progress);
+      }
+    }
+  }, [progress, mangaId, manga.title, wasActiveOnLoad]);
+
+  // Cleanup: dismiss toast when navigating away
+  useEffect(() => {
+    return () => {
+      dismissImportProgressToast(mangaId);
+    };
+  }, [mangaId]);
 
   useEffect(() => {
     let isMounted = true;
     
     // Trigger on-demand scan if manga has no chapters
     if ((manga.chapters?.length || 0) === 0) {
-      triggerMangaScan(Number(manga.id)).catch((err) => {
+      setWasActiveOnLoad(true);
+      showImportProgressToast(mangaId, manga.title);
+      
+      triggerMangaScan(mangaId).catch((err) => {
         console.error('Failed to trigger manga scan:', err);
       });
     }
@@ -128,7 +175,7 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
       isMounted = false;
       clearInterval(intervalId);
     };
-  }, [manga.id]);
+  }, [manga.id, manga.chapters?.length, manga.title]);
 
   const lastChapterDate = manga.chapters.length > 0 ? manga.chapters[manga.chapters.length - 1].updatedAt : null;
 

@@ -317,6 +317,22 @@ export const inviteCodes = pgTable('invite_codes', {
   usedByIdx: index('idx_invite_codes_used_by').on(t.usedBy),
 }));
 
+// Manga Import Progress (for real-time progress tracking)
+export const importStatusEnum = pgEnum('import_status', ['scanning', 'downloading', 'completed', 'failed']);
+export const mangaImportProgress = pgTable('manga_import_progress', {
+  seriesId: integer('series_id').primaryKey().references(() => series.id, { onDelete: 'cascade' }),
+  totalChapters: integer('total_chapters').notNull().default(0),
+  downloadedChapters: integer('downloaded_chapters').notNull().default(0),
+  status: importStatusEnum('status').notNull().default('scanning'),
+  startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  errorMessage: text('error_message'),
+}, (t) => ({
+  statusIdx: index('idx_manga_import_progress_status').on(t.status),
+  updatedAtIdx: index('idx_manga_import_progress_updated_at').on(t.updatedAt.desc()),
+}));
+
 // Relations
 export const inviteCodesRelations = relations(inviteCodes, ({ one }) => ({
   creator: one(user, {
