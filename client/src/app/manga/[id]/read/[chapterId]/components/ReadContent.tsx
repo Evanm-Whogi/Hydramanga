@@ -207,6 +207,8 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       <aside className="sidebar hidden md:flex md:w-65 md:h-screen md:fixed md:left-0 md:top-0 md:bg-foreground md:border-r md:border-r-borders md:flex-col md:z-100">
         <div className="sidebar-header px-6 py-4 border-b-borders">
           <h2 className="text-[1.25rem] font-bold mb-4 text-white">Chapter {data?.chapterNumber}</h2>
+            <button onClick={() => { router.push(`/manga/${id}`) }} className="mb-4 w-full flex-1 p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 rounded">Back to Overview</button>
+
           <div className="flex gap-2">
             <button
               onClick={() => {
@@ -216,7 +218,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
                 }
               }}
               disabled={!prevChapter}
-              className="flex-1 p-2.5 bg-background border-0 text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 rounded"
+              className="flex-1 p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 rounded"
             >
               Prev
             </button>
@@ -228,7 +230,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
                 }
               }}
               disabled={!nextChapter}
-              className="flex-1 p-2.5 bg-background border-0 text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 rounded"
+              className="flex-1 p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 rounded"
             >
               Next
             </button>
@@ -246,7 +248,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
                   setSidebarOpen(false);
                 }}
                 className={`p-[10px_2px] text-[0.75rem] border cursor-pointer rounded-sm text-primary ${
-                  ch.id === Number(chapterId) ? 'font-bold bg-accent border-accent' : 'font-normal bg-background border-background'
+                  ch.id === Number(chapterId) ? 'font-bold bg-accent border-accent' : 'font-normal bg-background hover:bg-background/50 border-background'
                 }`}
               >
                 {ch.chapterNumber}
@@ -279,7 +281,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
                       setSidebarOpen(false);
                     }}
                     className={`p-2 text-sm border cursor-pointer rounded text-primary ${
-                      ch.id === Number(chapterId) ? 'font-bold bg-accent border-accent' : 'font-normal bg-background border-background'
+                      ch.id === Number(chapterId) ? 'font-bold bg-accent border-accent' : 'font-normal bg-background hover:bg-background/50 border-background'
                     }`}
                   >
                     Chapter {ch.chapterNumber}

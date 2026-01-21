@@ -55,11 +55,10 @@ export default async function RootLayout({children}: Readonly<{children: React.R
       <head>
         <script>
           {`
-            if (localStorage.getItem('theme')) {
-              document.documentElement.className = localStorage.getItem('theme');
-            } else {
-              document.documentElement.className = 'theme-dark';
-            }
+            (function() {
+              const theme = localStorage.getItem('theme') || 'theme-dark';
+              document.documentElement.className = theme;
+            })();
           `}
         </script>
       </head>

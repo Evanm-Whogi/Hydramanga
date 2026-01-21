@@ -13,13 +13,17 @@ export function useMangaViewTracking(mangaId: string | number) {
     if (tracked.current) return;
     tracked.current = true;
 
-    // Track view via client-side API call
-    fetch(`${getClientApiBase()}/manga/${mangaId}/track-view`, {
-      method: 'POST',
-      credentials: 'include',
-    }).catch(err => {
-      console.error('Failed to track manga view:', err);
-    });
+    // Track view via client-side API call - await to ensure cache is invalidated before stats are fetched
+    (async () => {
+      try {
+        await fetch(`${getClientApiBase()}/manga/${mangaId}/track-view`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+      } catch (err) {
+        console.error('Failed to track manga view:', err);
+      }
+    })();
   }, [mangaId]);
 }
 
@@ -34,12 +38,16 @@ export function useChapterViewTracking(mangaId: string | number, chapterId: stri
     if (tracked.current) return;
     tracked.current = true;
 
-    // Track view via client-side API call
-    fetch(`${getClientApiBase()}/manga/${mangaId}/chapter/${chapterId}/track-view`, {
-      method: 'POST',
-      credentials: 'include',
-    }).catch(err => {
-      console.error('Failed to track chapter view:', err);
-    });
+    // Track view via client-side API call - await to ensure cache is invalidated before stats are fetched
+    (async () => {
+      try {
+        await fetch(`${getClientApiBase()}/manga/${mangaId}/chapter/${chapterId}/track-view`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+      } catch (err) {
+        console.error('Failed to track chapter view:', err);
+      }
+    })();
   }, [mangaId, chapterId]);
 }

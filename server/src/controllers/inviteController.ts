@@ -15,7 +15,8 @@ export async function generateInviteCode(req: Request, res: Response, next: Next
     const usedCodes = await db
       .select()
       .from(schema.inviteCodes)
-      .where(and(eq(schema.inviteCodes.createdBy, userId), desc(schema.inviteCodes.usedBy)));
+      .where(eq(schema.inviteCodes.createdBy, userId))
+      .orderBy(desc(schema.inviteCodes.usedBy));
 
     const invitedCount = usedCodes.filter(code => code.usedBy !== null).length;
 

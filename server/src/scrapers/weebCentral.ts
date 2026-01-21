@@ -2,24 +2,16 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
-import { JSDOM } from 'jsdom';
 import { discordService } from '@/services/discordService';
 import logger from '@/services/loggerService';
+import { ChapterNumberParser } from '@/utils/chapterNumberParser';
+import { WeebCentralSearcher } from '@/services/weebCentralSearcher';
+import { appConfig } from '@/config/appConfig';
 
-const STORAGE_ROOT = process.env.CHAPTER_STORAGE_ROOT || path.join(process.cwd(), 'chapters');
+const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const safeName = (val: string) => {
     const cleaned = (val || 'chapter').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
     return cleaned || 'chapter';
-};
-
-// Normalize search strings to improve match rates on finicky search bars
-const normalizeQuery = (val?: string) => {
-    if (!val) return '';
-    return val
-        .replace(/[-_.]+/g, ' ')   // turn dashes/underscores/dots into spaces
-        .replace(/[^\p{L}\p{N}\s]/gu, '') // drop other punctuation
-        .replace(/\s+/g, ' ')
-        .trim();
 };
 
 export async function* scrapeWeebCentral(mangaName: string, checkExists: (num: string) => Promise<boolean>, seriesId?: number, romanizedTitle?: string, coverUrl?: string) {
@@ -28,105 +20,14 @@ export async function* scrapeWeebCentral(mangaName: string, checkExists: (num: s
     const page = await context.newPage();
 
     try {
-        const searchViAPI = async (variant: string) => {
-            try {
-                console.log(`[SEARCH] Querying API for "${variant}"`);
-                const response = await axios.post('https://weebcentral.com/search/simple?location=main', new URLSearchParams({ text: variant }),
-                    {
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded',
-                            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                        }
-                    }
-                );
-
-                // Parse the HTML response
-                const dom = new JSDOM(response.data);
-                const anchors = Array.from(dom.window.document.querySelectorAll('a[href*="/series/"]'));
-                const search = variant.toLowerCase().trim();
-
-                console.log(`[SEARCH] Found ${anchors.length} results for "${variant}"`);
-
-                // Scoring function for match quality
-                const scoreMatch = (a: Element) => {
-                    const text = a.querySelector('div.line-clamp-2')?.textContent?.trim().toLowerCase() || '';
-                    const urlHref = a.getAttribute('href')?.toLowerCase() || '';
-                    
-                    // Exact match gets highest score
-                    if (text === search) return 100;
-                    
-                    // Word boundary match
-                    const wordBoundary = new RegExp(`\\b${search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
-                    if (wordBoundary.test(text)) return 90;
-                    
-                    // URL slug exact match
-                    const searchSlug = search.replace(/\s+/g, '-');
-                    if (urlHref.includes(`/${searchSlug}`) || urlHref.endsWith(searchSlug)) return 80;
-                    
-                    // Starts with search term
-                    if (text.startsWith(search)) return 70;
-                    
-                    // Contains search (fallback)
-                    if (text.includes(search)) return 50;
-                    
-                    return 0;
-                };
-
-                const results = anchors.map((a: any) => {
-                    const href = (a as any).href;
-                    const title = a.querySelector('div.line-clamp-2')?.textContent?.trim();
-                    const score = scoreMatch(a);
-                    return { href, title, score };
-                }).sort((a, b) => b.score - a.score);
-
-                if (results.length > 0) {
-                    console.log(`[SEARCH] Top result: "${results[0].title}" (score: ${results[0].score})`);
-                    logger.info(`[SEARCH] Top result for "${variant}": "${results[0].title}" (score: ${results[0].score})`, { service: 'weebCentralScraper' });
-                }
-
-                return results;
-            } catch (error) {
-                console.error(`[SEARCH] API error for "${variant}":`, error);
-                return [];
-            }
-        };
-
-        // Build search variants to cope with variations
-        const searchVariants = [
-            mangaName,
-            normalizeQuery(mangaName),
-            romanizedTitle,
-            normalizeQuery(romanizedTitle)
-        ].filter((v): v is string => !!v)
-         .filter((v, idx, arr) => arr.indexOf(v) === idx); // unique
-
-        let bestMatch: { href: string; title?: string; score: number } | undefined;
-        let results: Array<{ href: string; title?: string; score: number }> = [];
-
-        for (const variant of searchVariants) {
-            results = await searchViAPI(variant);
-            bestMatch = results.find(r => r.score > 0);
-
-            if (bestMatch) break; // found a viable match
-        }
-
-        // If nothing scored, fall back to first result from the last search
-        if (!bestMatch && results.length > 0) {
-            const firstResult = results[0];
-            if (firstResult.title?.toLowerCase() !== 'random') {
-                console.log(`[DEFAULT] Using fallback result: "${firstResult.title}"`);
-                bestMatch = firstResult;
-            }
-        }
+        // Find best manga series match using search service
+        const bestMatch = await WeebCentralSearcher.findBestMatch(mangaName, romanizedTitle, {
+            seriesId,
+            coverUrl,
+        });
 
         if (!bestMatch) {
-            console.error(`[ERR] Could not find manga link for "${mangaName}". Titles found:`, results.slice(0, 3).map(r => r.title));
-            
-            if (seriesId) {
-                const foundTitles = results.slice(0, 3).map(r => ({ text: r.title || '', url: r.href }));
-                await discordService.notifyScraperFailed(mangaName, seriesId, foundTitles, coverUrl);
-            }
-            
+            console.error(`[ERR] Could not find manga link for "${mangaName}".`);
             return;
         }
 
@@ -147,30 +48,24 @@ export async function* scrapeWeebCentral(mangaName: string, checkExists: (num: s
             return links.map(anchor => {
                 const url = (anchor as HTMLAnchorElement).href;
                 const textElement = anchor.querySelector('span.grow span:not([x-show])');
-                let fullTitle = textElement?.textContent?.trim() || "";
+                const fullTitle = textElement?.textContent?.trim() || "";
 
-                const numMatch = fullTitle.match(/(\d+(\.\d+)?)/);
-                let chapterNumber = numMatch ? numMatch[0] : "0";
-
-                // FIX: If it's a Prologue, offset it so it doesn't clash with Chapter 1, 2, etc. I mostly did this for berserk but im sure it will apply 
-                // to other mangas as well.
-                if (fullTitle.toLowerCase().includes('prologue')) {
-                    chapterNumber = `0.${chapterNumber}`; // Converts "Prologue 1" to "0.1", "Prologue 2" to "0.2", etc.
-                }
-
-                if (!isNaN(Number(fullTitle))) {
-                    fullTitle = `Chapter ${fullTitle}`;
-                }
-
-                return { url, title: fullTitle, number: chapterNumber };
+                return { url, title: fullTitle };
             }).reverse();
         });
 
         console.log(`[SYNC] Scraper found ${chapterRows.length} total chapters.`);
 
         for (const chap of chapterRows) {
-            if (await checkExists(chap.number)) continue;
-            yield chap;
+            const parsed = ChapterNumberParser.parse(chap.title);
+            if (await checkExists(parsed.number)) continue;
+            yield { 
+                url: chap.url, 
+                title: parsed.title, 
+                number: parsed.number,
+                isSpecial: parsed.isSpecial,
+                specialType: parsed.specialType
+            };
         }
     } finally {
         await page.close().catch(() => {});

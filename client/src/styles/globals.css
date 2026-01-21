@@ -11,6 +11,7 @@
   --color-muted: #D4D4D4;
   --breakpoint-2xl: 132rem; 
   --toastify-text-color-dark: #F5F7F8;
+  --color-transparent-card: #000000;
 }
 
 .theme-light {
@@ -22,7 +23,7 @@
   --color-muted: #4A4A4A;
   --toastify-color-dark: #F5F7F8;
   --toastify-text-color-dark: #161819;
-
+  --color-transparent-card: #ffffff;
 }
 
 @utility container {

@@ -1,6 +1,19 @@
 import { db, schema } from '@/db/index';
 import { eq, and, sql } from 'drizzle-orm';
 import logger from '@/services/loggerService';
+import { cacheService } from '@/services/cacheService';
+
+// Cache constants
+const CACHE_TTL = {
+  USER_PROGRESS: 300, // 5 minutes - frequently accessed
+  USER_STATS: 1800, // 30 minutes - slower changing
+};
+
+const CACHE_KEYS = {
+  USER_PROGRESS: (userId: string, limit: number) => `user:${userId}:progress:${limit}`,
+  MANGA_PROGRESS: (userId: string, seriesId: number) => `user:${userId}:series:${seriesId}:progress`,
+  USER_STATS: (userId: string) => `user:${userId}:stats`,
+};
 
 interface ProgressUpdate {
   userId: string;
@@ -77,6 +90,10 @@ class UserProgressService {
       logger.info(`Progress updated: userId=${userId}, seriesId=${seriesId}, chapter=${chapterId}, page=${pageNumber}, completion=${percentageCompleted.toFixed(2)}%`, {
         service: 'userProgressService',
       });
+
+      // Invalidate cache - user progress changed
+      await cacheService.invalidatePattern(`user:${userId}:progress:*`);
+      await cacheService.invalidateTag('user_progress');
     } catch (error) {
       logger.error(`Failed to update progress: ${error}`, { service: 'userProgressService' });
       // Don't throw - we don't want tracking failures to break the user experience
@@ -103,12 +120,22 @@ class UserProgressService {
   }
 
   /**
-   * Get all reading progress for a user (for continue reading feature)
+   * Get all reading progress for a user (Optimized with caching)
+   * Used for "Continue Reading" feature
    * @param userId - The user ID
    * @param limit - Maximum number of results
    */
   async getUserProgress(userId: string, limit: number = 20) {
     try {
+      const cacheKey = CACHE_KEYS.USER_PROGRESS(userId, limit);
+
+      // Try cache first
+      const cached = await cacheService.get(cacheKey);
+      if (cached) {
+        logger.debug(`User progress cache hit for userId=${userId}`, { service: 'userProgressService' });
+        return cached;
+      }
+
       const progressList = await db
         .select({
           userId: schema.userReadingProgress.userId,
@@ -128,6 +155,9 @@ class UserProgressService {
         .where(eq(schema.userReadingProgress.userId, userId))
         .orderBy(sql`${schema.userReadingProgress.updatedAt} DESC`)
         .limit(limit);
+
+      // Cache the result
+      await cacheService.set(cacheKey, progressList, CACHE_TTL.USER_PROGRESS, ['user_progress']);
 
       return progressList;
     } catch (error) {
@@ -155,6 +185,10 @@ class UserProgressService {
       logger.info(`Progress deleted: userId=${userId}, seriesId=${seriesId}`, {
         service: 'userProgressService',
       });
+
+      // Invalidate cache - user progress changed
+      await cacheService.invalidatePattern(`user:${userId}:progress:*`);
+      await cacheService.invalidateTag('user_progress');
     } catch (error) {
       logger.error(`Failed to delete progress: ${error}`, { service: 'userProgressService' });
       throw error;
@@ -162,11 +196,20 @@ class UserProgressService {
   }
 
   /**
-   * Get reading statistics for a user
+   * Get reading statistics for a user (With caching)
    * @param userId - The user ID
    */
   async getUserStats(userId: string) {
     try {
+      const cacheKey = CACHE_KEYS.USER_STATS(userId);
+
+      // Try cache first
+      const cached = await cacheService.get(cacheKey);
+      if (cached) {
+        logger.debug(`User stats cache hit for userId=${userId}`, { service: 'userProgressService' });
+        return cached;
+      }
+
       const stats = await db
         .select({
           totalSeriesReading: sql<number>`COUNT(*)`.as('total_series_reading'),
@@ -176,11 +219,16 @@ class UserProgressService {
         .from(schema.userReadingProgress)
         .where(eq(schema.userReadingProgress.userId, userId));
 
-      return stats[0] || {
+      const result = stats[0] || {
         totalSeriesReading: 0,
         averageCompletion: 0,
         totalPagesRead: 0,
       };
+
+      // Cache the result
+      await cacheService.set(cacheKey, result, CACHE_TTL.USER_STATS, ['user_progress']);
+
+      return result;
     } catch (error) {
       logger.error(`Failed to get user stats: ${error}`, { service: 'userProgressService' });
       throw error;

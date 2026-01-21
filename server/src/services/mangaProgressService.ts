@@ -7,16 +7,48 @@ import logger from '@/services/loggerService';
 const PROGRESS_CHANNEL_PREFIX = 'manga:progress:';
 const PROGRESS_TTL = 3600; // 1 hour in seconds
 
+export type ProgressStatus = 'scanning' | 'downloading' | 'completed' | 'failed';
+
 export interface MangaProgress {
   seriesId: number;
   totalChapters: number;
   downloadedChapters: number;
-  status: 'scanning' | 'downloading' | 'completed' | 'failed';
+  status: ProgressStatus;
   percentage: number;
   startedAt: Date;
   updatedAt: Date;
   completedAt?: Date | null;
   errorMessage?: string | null;
+}
+
+/**
+ * State machine for manga progress validation
+ * Ensures only valid state transitions occur
+ */
+class ProgressStateMachine {
+  private static readonly VALID_TRANSITIONS: Record<ProgressStatus, ProgressStatus[]> = {
+    'scanning': ['downloading', 'failed', 'completed'], // completed if 0 chapters found
+    'downloading': ['completed', 'failed'],
+    'completed': [], // terminal state
+    'failed': ['scanning'], // can retry after failure
+  };
+
+  static canTransition(fromState: ProgressStatus, toState: ProgressStatus): boolean {
+    const validTransitions = this.VALID_TRANSITIONS[fromState] || [];
+    return validTransitions.includes(toState);
+  }
+
+  static assertTransition(fromState: ProgressStatus, toState: ProgressStatus): void {
+    if (!this.canTransition(fromState, toState)) {
+      throw new Error(
+        `Invalid state transition: ${fromState} -> ${toState}. Valid transitions from ${fromState}: ${this.VALID_TRANSITIONS[fromState].join(', ')}`
+      );
+    }
+  }
+
+  static getValidTransitions(state: ProgressStatus): ProgressStatus[] {
+    return this.VALID_TRANSITIONS[state] || [];
+  }
 }
 
 class MangaProgressService {
@@ -87,30 +119,34 @@ class MangaProgressService {
     }
   }
 
-  // Update total chapters found during scanning phase
+  // Update total chapters found during scanning
   async setTotalChapters(seriesId: number, totalChapters: number): Promise<void> {
     try {
       const progress = await this.getProgress(seriesId);
       if (!progress) {
         logger.warn(`No progress found for series ${seriesId}, initializing...`, { service: 'mangaProgressService' });
         await this.initializeProgress(seriesId);
+        return;
       }
+
+      // Validate state transition
+      const newStatus: ProgressStatus = 'downloading';
+      ProgressStateMachine.assertTransition(progress.status, newStatus);
 
       // Update database
       await db.update(mangaImportProgress)
         .set({
           totalChapters,
-          status: 'downloading',
+          status: newStatus,
           updatedAt: new Date(),
         })
         .where(eq(mangaImportProgress.seriesId, seriesId));
 
       // Update Redis
       const updatedProgress: MangaProgress = {
-        ...(progress || {} as MangaProgress),
-        seriesId,
+        ...progress,
         totalChapters,
-        status: 'downloading',
+        status: newStatus,
         percentage: 0,
         updatedAt: new Date(),
       };
@@ -127,6 +163,7 @@ class MangaProgressService {
       logger.info(`Total chapters set to ${totalChapters} for series ${seriesId}`, { service: 'mangaProgressService' });
     } catch (error) {
       logger.error(`Failed to set total chapters for series ${seriesId}: ${error}`, { service: 'mangaProgressService' });
+      throw error;
     }
   }
 
@@ -146,13 +183,22 @@ class MangaProgressService {
 
       // Check if completed
       const isCompleted = newDownloaded >= progress.totalChapters && progress.totalChapters > 0;
-      const status = isCompleted ? 'completed' : 'downloading';
+      const newStatus: ProgressStatus = isCompleted ? 'completed' : 'downloading';
+
+      // Validate state transition - should be in downloading state
+      if (progress.status !== 'downloading') {
+        logger.warn(
+          `Cannot increment progress for series ${seriesId}: current status is ${progress.status}, expected 'downloading'`,
+          { service: 'mangaProgressService' }
+        );
+        return;
+      }
 
       // Update database
       await db.update(mangaImportProgress)
         .set({
           downloadedChapters: newDownloaded,
-          status,
+          status: newStatus,
           updatedAt: new Date(),
           ...(isCompleted && { completedAt: new Date() }),
         })
@@ -162,7 +208,7 @@ class MangaProgressService {
       const updatedProgress: MangaProgress = {
         ...progress,
         downloadedChapters: newDownloaded,
-        status,
+        status: newStatus,
         percentage,
         updatedAt: new Date(),
         ...(isCompleted && { completedAt: new Date() }),
@@ -195,11 +241,19 @@ class MangaProgressService {
   async markFailed(seriesId: number, errorMessage: string): Promise<void> {
     try {
       const progress = await this.getProgress(seriesId);
-      
+      if (!progress) {
+        logger.warn(`No progress found for series ${seriesId} when marking as failed`, { service: 'mangaProgressService' });
+        return;
+      }
+
+      // Validate state transition - can fail from scanning or downloading
+      const newStatus: ProgressStatus = 'failed';
+      ProgressStateMachine.assertTransition(progress.status, newStatus);
+
       // Update database
       await db.update(mangaImportProgress)
         .set({
-          status: 'failed',
+          status: newStatus,
           errorMessage,
           updatedAt: new Date(),
           completedAt: new Date(),
@@ -208,9 +262,8 @@ class MangaProgressService {
 
       // Update Redis
       const updatedProgress: MangaProgress = {
-        ...(progress || {} as MangaProgress),
-        seriesId,
-        status: 'failed',
+        ...progress,
+        status: newStatus,
         errorMessage,
         updatedAt: new Date(),
         completedAt: new Date(),
@@ -303,6 +356,12 @@ class MangaProgressService {
       logger.error(`Failed to cleanup progress for series ${seriesId}: ${error}`, { service: 'mangaProgressService' });
     }
   }
+
+  // Get valid state transitions for a given status
+  getValidTransitions(status: ProgressStatus): ProgressStatus[] {
+    return ProgressStateMachine.getValidTransitions(status);
+  }
 }
 
 export const mangaProgressService = new MangaProgressService();
+export { ProgressStateMachine };
