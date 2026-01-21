@@ -1,5 +1,6 @@
 import { Express, RequestHandler } from 'express';
 import mangaRoutes from'@/routes/mangaRoutes';
+import progressRoutes from '@/routes/progressRoutes';
 import { authMiddleware } from '@/middlewares/auth';
 import { trackingMiddleware } from '@/middlewares/tracking';
 
@@ -22,6 +23,7 @@ module.exports = (app: Express) => {
 
     // Groups
     app.use('/manga', authMiddleware, mangaRoutes)
+    app.use('/manga/progress', authMiddleware, progressRoutes)
 
     // Analytics Routes
     app.get('/analytics/trending', authMiddleware, getTrending as RequestHandler);
