@@ -9,7 +9,7 @@ import { createComment, deleteComment, fetchComments, likeComment } from '@/cont
 import { fetchAnnouncements, createAnnouncement } from '@/controllers/announcementController';
 import { importStatus, triggerMangaSync } from '@/controllers/mangaImportController';
 import { fetchChaptersWeebCentral } from '@/controllers/mangaController'; // Part of testing suite
-import { getTrending, getMangaAnalytics, getMyProgress, getMangaProgress, updateProgress, deleteProgress,getMyStats} from '@/controllers/analyticsController';
+import { getTrending, getMangaAnalytics, getMyProgress, getMangaProgress, updateProgress, deleteProgress, getMyStats } from '@/controllers/analyticsController';
 import { generateInviteCode, getUserInviteCodes, validateInviteCode, useInviteCode } from '@/controllers/inviteController';
 
 // Aggregator Controllers

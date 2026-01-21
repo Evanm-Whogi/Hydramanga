@@ -23,13 +23,14 @@ export async function getTrending(req: Request, res: Response, next: NextFunctio
     const maxLimit = Math.min(Number(limit), 100);
 
     const trending = await metricsService.getTrendingManga(days, maxLimit);
+    const trendingList = Array.isArray(trending) ? trending : [];
 
     return res.json({
       status: 200,
       period: String(period),
       days,
-      count: trending.length,
-      manga: trending,
+      count: trendingList.length,
+      manga: trendingList,
     });
   } catch (error) {
     logger.error(`Failed to get trending manga: ${error}`, { service: 'analyticsController' });
@@ -52,6 +53,11 @@ export async function getMangaAnalytics(req: Request, res: Response, next: NextF
       metricsService.getMangaStats(seriesId),
       metricsService.getSeriesChapterStats(seriesId),
     ]);
+
+    // Disable browser caching for analytics - ensure fresh data
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
 
     return res.json({
       status: 200,
@@ -82,11 +88,12 @@ export async function getMyProgress(req: Request, res: Response, next: NextFunct
     const maxLimit = Math.min(Number(limit), 100);
 
     const progress = await userProgressService.getUserProgress(userId, maxLimit);
+    const progressList = Array.isArray(progress) ? progress : [];
 
     return res.json({
       status: 200,
-      count: progress.length,
-      progress,
+      count: progressList.length,
+      progress: progressList,
     });
   } catch (error) {
     logger.error(`Failed to get user progress: ${error}`, { service: 'analyticsController' });

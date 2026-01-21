@@ -9,7 +9,7 @@ import logger from '@/services/loggerService';
 
 export class MangaChapterScraperService {
     
-    // Phase 1: Scan for missing chapters and queue them
+    // Scan for missing chapters and queue them
     static async processSync(mangaTitle: string, seriesId: number, romanizedTitle?: string, isFirstScan = false) {
         let foundCount = 0;
         const newChapters: string[] = [];
@@ -45,7 +45,7 @@ export class MangaChapterScraperService {
 
             logger.info(`[SYNC] Finished scanning. Queued ${foundCount} new chapters.`);
             
-            // Update total chapters found and transition to downloading phase
+            // Update total chapters found and transition to downloading
             if (foundCount > 0) {
                 await mangaProgressService.setTotalChapters(seriesId, foundCount);
                 
@@ -63,7 +63,7 @@ export class MangaChapterScraperService {
         }
     }
 
-    // Phase 2: Perform actual download and DB insert
+    // Perform actual download and DB insert
     static async processDownload(data: any) {
         try {
             const localPath = await downloadChapterImagesStandalone(data.chapterUrl, data.mangaTitle, data.chapterTitle);
@@ -90,8 +90,7 @@ export class MangaChapterScraperService {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error during download';
             logger.error(`Failed to download chapter ${data.chapterNumber} for series ${data.seriesId}: ${errorMessage}`, { service: 'mangaChapterService' });
-            // Mark the import as failed so frontend stops waiting and surfaces error
-            await mangaProgressService.markFailed(data.seriesId, `Chapter ${data.chapterNumber} failed: ${errorMessage}`);
+            // Don't mark as failed here - let BullMQ retry, only mark failed after all attempts exhausted
             throw error;
         }
     }

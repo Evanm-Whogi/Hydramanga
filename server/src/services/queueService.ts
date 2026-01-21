@@ -15,25 +15,18 @@
 import { Queue, Worker, QueueOptions, Job } from 'bullmq';
 import Redis from 'ioredis';
 import logger from '@/services/loggerService';
-import { emailService } from '@/services/emailService'; // Import emailService
 import { queueJobFunction } from '@/types/types'; // Import types
-import dotenv from 'dotenv';
-dotenv.config();
-
-import { MangaChapterScraperService } from '@/services/mangaChapterService';
-import { mangaImporterService } from './mangaImporterService';
+import { jobHandlerRegistry } from '@/jobs/handlers/JobHandlerRegistry';
+import { appConfig } from '@/config/appConfig';
 
 class QueueService {
     private queues: { [key: string]: Queue } = {};
+    private workers: { [key: string]: Worker } = {};
     private redisConnection: any;
     private redisClient: Redis;
 
     constructor() {
-      this.redisConnection = {
-        host: process.env.REDIS_HOST || '127.0.0.1',
-        port: Number(process.env.REDIS_PORT) || 6379,
-        password: process.env.REDIS_PASS || undefined
-      };
+      this.redisConnection = appConfig.redis;
       this.redisClient = new Redis(this.redisConnection);
       logger.info(`QueueService initialized with Redis connection: ${this.redisConnection.host}:${this.redisConnection.port}`, { service: 'queueService' });
     }
@@ -93,47 +86,48 @@ class QueueService {
 
     // Create Worker
     private createWorker(queueName: string) {
+        // Skip if worker already exists for this queue
+        if (this.workers[queueName]) {
+            return;
+        }
+
         const limiter = { max: 10, duration: 1000 };  // Standard global limit
         
-        // Per-queue concurrency settings
-        let concurrency = 1; // Default: 1 job at a time
-        if (queueName === 'mangaChapterDownloadQueue') {
-            concurrency = Number(process.env.CHAPTER_DOWNLOAD_CONCURRENCY) || 1;
-        } else if (queueName === 'mangaChapterImportQueue') {
-            concurrency = Number(process.env.CHAPTER_SCAN_CONCURRENCY) || 1;
+        // Get queue-specific configuration
+        let concurrency = 1;
+        let timeout = 15 * 60 * 1000;
+        
+        const queueConfig = appConfig.queues[queueName as keyof typeof appConfig.queues];
+        if (queueConfig) {
+            concurrency = queueConfig.concurrency;
+            timeout = queueConfig.timeout;
         }
 
         const worker = new Worker(queueName, async (job: any) => {
             const { name, data } = job;
-            logger.info(`Processing Job: ${name} in Queue: ${queueName} with data: ${JSON.stringify(data)}`, { service: 'queueService' });
+            logger.info(`Processing Job: ${name} in Queue: ${queueName}`, { service: 'queueService' });
 
-            switch (queueName) { // Add switch case for each queue
-                case 'emailQueue':
-                    await emailService.processEmailJob(data);
-                    break;
-                case 'mangaImportQueue':
-                    await mangaImporterService.fullSyncManga(data.filePath, job);
-                    break;
-                case 'mangaChapterImportQueue':
-                    await MangaChapterScraperService.processSync(data.mangaTitle, data.seriesId, data.romanizedTitle, data.isFirstScan);
-                    break;
-                case 'mangaChapterDownloadQueue':
-                    await MangaChapterScraperService.processDownload(data);
-                    break;
-                default:
-                    logger.error(`Queue: ${queueName} not found`, { service: 'queueService' });
+            // Use job handler registry to route jobs
+            const handler = jobHandlerRegistry.getHandler(queueName);
+            if (!handler) {
+                throw new Error(`No handler registered for queue: ${queueName}`);
             }
+
+            await handler.handle(data, job);
         }, {
             connection: this.redisConnection,
             limiter: limiter,
             concurrency: concurrency
         });
 
-        worker.on('completed', (job: any) => {
-            logger.info(`Job: ${job.id} in Queue: ${queueName} completed`, { service: 'queueService' });
-        });
+        // Track worker for cleanup
+        this.workers[queueName] = worker;
 
-        worker.on('failed', (job: any, err) => {
+        const onCompleted = (job: any) => {
+            logger.info(`Job: ${job.id} in Queue: ${queueName} completed`, { service: 'queueService' });
+        };
+
+        const onFailed = async (job: any, err: any) => {
             const errorMessage = err?.message || 'Unknown error';
             const errorStack = err?.stack || '';
             
@@ -148,13 +142,52 @@ class QueueService {
                     errorStack: errorStack.split('\n').slice(0, 5).join(' | ') // First 5 lines of stack
                 }
             );
-        });
+
+            // Only mark as failed if all retries are exhausted (for chapter downloads)
+            if (queueName === 'mangaChapterDownloadQueue' && 
+                job?.attemptsMade >= (job?.opts?.attempts || 3)) {
+                try {
+                    const { mangaProgressService } = await import('@/services/mangaProgressService');
+                    const jobData = job?.data;
+                    if (jobData?.seriesId && jobData?.chapterNumber) {
+                        await mangaProgressService.markFailed(
+                            jobData.seriesId, 
+                            `Chapter ${jobData.chapterNumber} failed after ${job.attemptsMade} attempts: ${errorMessage}`
+                        );
+                    }
+                } catch (markFailedError) {
+                    logger.error(`Failed to mark import as failed: ${markFailedError}`, { service: 'queueService' });
+                }
+            }
+        };
+
+        // Attach listeners with named functions to allow cleanup
+        worker.on('completed', onCompleted);
+        worker.on('failed', onFailed);
+
+        // Graceful shutdown handler
+        const cleanup = async () => {
+            try {
+                worker.removeListener('completed', onCompleted);
+                worker.removeListener('failed', onFailed);
+                await worker.close();
+                delete this.workers[queueName];
+                logger.info(`Worker for queue ${queueName} cleaned up`, { service: 'queueService' });
+            } catch (error) {
+                logger.error(`Error cleaning up worker for queue ${queueName}: ${error}`, { service: 'queueService' });
+            }
+        };
+
+        // Attach cleanup to process exit
+        process.on('exit', cleanup);
+        process.on('SIGTERM', cleanup);
+        process.on('SIGINT', cleanup);
     }
 
     // Clear Queue
     public async clearQueue(queueName: string): Promise<void> {
         const queue = this.getQueue(queueName);
-        const time = Number(process.env.REDIS_CLEAR) || 0;
+        const time = appConfig.cache.redisCleanupInterval;
 
         queue.clean(time, 'completed' as any).then((jobs) => {
             logger.info(`Cleared ${jobs} completed jobs from Queue: ${queueName}`, { service: 'queueService' });

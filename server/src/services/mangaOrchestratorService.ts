@@ -18,10 +18,9 @@ class MangaOrchestratorService {
   // Fetch top N trending series by weighted score (cached)
   async getTopTrending(limit = 100) {
     try {
-      const cached = await cacheService.get(TRENDING_CACHE_KEY);
+      const cached = await cacheService.get<{ id: number; title: string }[]>(TRENDING_CACHE_KEY);
       if (cached) {
-        const parsed = JSON.parse(cached) as { id: number; title: string }[];
-        return parsed.filter((r) => !isIgnored(r.title));
+        return cached.filter((r) => !isIgnored(r.title));
       }
 
       const rows = await db
@@ -111,11 +110,23 @@ class MangaOrchestratorService {
       const trendingIds = trending.map(t => t.id);
       
       // Find all series with at least one chapter that aren't in top trending
-      const monitored = await db
-        .selectDistinct({ id: series.id, title: series.title })
-        .from(series)
-        .innerJoin(chapters, eq(chapters.seriesId, series.id))
-        .where(trendingIds.length > 0 ? sql`${series.id} NOT IN (${sql.join(trendingIds.map(id => sql`${id}`), sql`, `)})` : sql`1=1`);
+      let results: Array<{ id: number; title: string | null }>;
+      
+      if (trendingIds.length > 0) {
+        results = await db
+          .selectDistinct({ id: series.id, title: series.title })
+          .from(series)
+          .innerJoin(chapters, eq(chapters.seriesId, series.id))
+          .where(sql`NOT ${inArray(series.id, trendingIds)}`);
+      } else {
+        results = await db
+          .selectDistinct({ id: series.id, title: series.title })
+          .from(series)
+          .innerJoin(chapters, eq(chapters.seriesId, series.id));
+      }
+
+      // Filter out results with null titles
+      const monitored = results.filter((m): m is { id: number; title: string } => m.title !== null && m.title !== undefined);
       
       let enqueuedCount = 0;
       for (const manga of monitored) {

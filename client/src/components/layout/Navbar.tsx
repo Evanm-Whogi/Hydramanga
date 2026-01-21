@@ -1,11 +1,6 @@
-"use server"
-import { cookies } from 'next/headers';
+"use client";
 import NavbarClient from './NavbarClient';
 
-
-export default async function Navbar() {
-    const cookieStore = await cookies();
-    const theme = cookieStore.get('theme')?.value || 'theme-dark';
-    
-    return <NavbarClient initialTheme={theme} />;
+export default function Navbar() {
+    return <NavbarClient />;
 }

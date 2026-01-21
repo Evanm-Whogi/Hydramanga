@@ -9,10 +9,10 @@ import { useRouter, usePathname } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { useUser } from "@/providers/UserProvider";
 
-export default function NavbarClient({ initialTheme }: {initialTheme: string }) {
+export default function NavbarClient() {
     const [isOpen, setIsOpen] = useState(false);
     const [isScrolled, setIsScrolled] = useState(false);
-    const [theme, setTheme] = useState(initialTheme);
+    const [theme, setTheme] = useState('theme-dark');
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const profileRef = useRef<HTMLDivElement>(null);
     const mobileMenuRef = useRef<HTMLDivElement>(null);
@@ -21,6 +21,13 @@ export default function NavbarClient({ initialTheme }: {initialTheme: string }) 
     const { user } = useUser();
 
     const closeDropdown = () => setIsProfileOpen(false);
+    // Load theme from localStorage on mount
+    useEffect(() => {
+        const savedTheme = localStorage.getItem('theme') || 'theme-dark';
+        setTheme(savedTheme);
+        document.documentElement.className = savedTheme;
+    }, []);
+
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (profileRef.current && !profileRef.current.contains(event.target as Node)) { setIsProfileOpen(false); }
@@ -39,7 +46,7 @@ export default function NavbarClient({ initialTheme }: {initialTheme: string }) 
     const toggleTheme = () => {
         const newTheme = theme === 'theme-dark' ? 'theme-light' : 'theme-dark';
         setTheme(newTheme);
-        document.cookie = `theme=${newTheme}; path=/; max-age=31536000`;
+        localStorage.setItem('theme', newTheme);
         document.documentElement.className = newTheme;
     };
 

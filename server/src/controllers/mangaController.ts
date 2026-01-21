@@ -469,9 +469,11 @@ export async function trackMangaViewEndpoint(req: Request, res: Response, next: 
     }
 
     if (trackingData) {
-        metricsService.trackMangaView(id, trackingData).catch(err => 
-            logger.error(`Failed to track manga view: ${err}`, { service: 'mangaController' })
-        );
+        try {
+            await metricsService.trackMangaView(id, trackingData);
+        } catch (err) {
+            logger.error(`Failed to track manga view: ${err}`, { service: 'mangaController' });
+        }
     }
 
     return res.status(200).json({ success: true });
@@ -488,9 +490,11 @@ export async function trackChapterViewEndpoint(req: Request, res: Response, next
     }
 
     if (trackingData) {
-        metricsService.trackChapterView(numericChapterId, numericId, trackingData).catch(err =>
-            logger.error(`Failed to track chapter view: ${err}`, { service: 'mangaController' })
-        );
+        try {
+            await metricsService.trackChapterView(numericChapterId, numericId, trackingData);
+        } catch (err) {
+            logger.error(`Failed to track chapter view: ${err}`, { service: 'mangaController' });
+        }
     }
 
     return res.status(200).json({ success: true });

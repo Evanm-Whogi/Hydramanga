@@ -123,6 +123,9 @@ export const userSeriesList = pgTable('user_series_list', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 }, (t) => ({
   pk: primaryKey({ columns: [t.userId, t.seriesId] }), // A user can only have a specific series in one list
+  // Performance indexes for user manga queries
+  userIdIdx: index('idx_user_series_list_user_id').on(t.userId),
+  userStatusUpdatedIdx: index('idx_user_series_list_user_status_updated').on(t.userId, t.status, t.updatedAt.desc()),
 }));
 
 // Announcements
@@ -135,7 +138,10 @@ export const announcements = pgTable('announcements', {
   publishedAt: timestamp('published_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => ({
+  // Performance index for published announcements queries
+  publishedIdx: index('idx_announcements_published_published_at').on(t.isPublished, t.publishedAt.desc()).where(sql`${t.isPublished} = true`),
+}));
 
 // Comments
 export const comments = pgTable("comments", {
@@ -148,7 +154,13 @@ export const comments = pgTable("comments", {
   isSpoiler: boolean("isSpoiler").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-});
+}, (t) => ({
+  // Performance indexes for comment queries
+  seriesIdIdx: index("idx_comments_series_id").on(t.seriesId),
+  userIdIdx: index("idx_comments_user_id").on(t.userId),
+  seriesCreatedAtIdx: index("idx_comments_series_created_at").on(t.seriesId, t.createdAt.desc()).where(sql`${t.parentId} IS NULL`),
+  parentIdIdx: index("idx_comments_parent_id").on(t.parentId).where(sql`${t.parentId} IS NOT NULL`),
+}));
 
 // Comment Likes
 export const commentLikes = pgTable("comment_likes", {
@@ -157,6 +169,8 @@ export const commentLikes = pgTable("comment_likes", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (t) => ({
   pk: primaryKey({ columns: [t.userId, t.commentId] }),
+  // Performance index for comment-centric like lookups
+  commentIdIdx: index("idx_comment_likes_comment_id").on(t.commentId),
 }));
 
 
@@ -176,6 +190,8 @@ export const chapters = pgTable("chapters", {
   seriesIdIdx: index("idx_chapters_series_id").on(t.seriesId),
   // Unique constraint to prevent duplicate chapters per series
   unq: uniqueIndex("idx_chapters_series_unique").on(t.seriesId, t.chapterNumber),
+  // Performance indexes for chapter sorting and filtering
+  volumeNumberIdx: index("idx_chapters_volume_number").on(t.volumeNumber).where(sql`${t.volumeNumber} IS NOT NULL`),
 }));
 
 // Relationships 
