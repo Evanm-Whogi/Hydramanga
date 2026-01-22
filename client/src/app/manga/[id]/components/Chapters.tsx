@@ -89,9 +89,7 @@ export default function Chapters({ manga }: { manga: any }) {
             console.error('Failed to mark chapter as unread:', error);
         }
     };
-
-    console.log(manga)
-
+    
     return (
         <>
         <div className="space-y-4">

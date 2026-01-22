@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 export default function Settings({user}: {user: any}) {
     const [name, setName] = useState(user.name);
     const [email, setEmail] = useState(user.email);
+    const [avatarUrl, setAvatarUrl] = useState(user.image || "");
     const [oldPassword, setOldPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [sessions, setSessions] = useState<any[]>([]);
@@ -37,13 +38,20 @@ export default function Settings({user}: {user: any}) {
         }
     };
     
-    // Update Name and Email
+    // Update profile info (name, email, avatar)
     const handleUpdateInfo = async () => {
         try {
             // Update Name first if it changed
             if (name !== user.name) {
                 const { error: nameError } = await updateUser({ name: name });
                 if (nameError) throw new Error(nameError.message);
+                router.refresh();
+            }
+
+            // Update Avatar if it changed
+            if (avatarUrl && avatarUrl !== user.image) {
+                const { error: imageError } = await updateUser({ image: avatarUrl });
+                if (imageError) throw new Error(imageError.message);
                 router.refresh();
             }
 
@@ -115,10 +123,18 @@ export default function Settings({user}: {user: any}) {
                         <div className="flex flex-col space-y-3 grow">
                             <InputField label="Username" placeholder={user.name} value={name} onChange={(e: any) => setName(e.target.value)} />
                             <InputField label="Email" placeholder={user.email} value={email} onChange={(e: any) => setEmail(e.target.value)} />
-                            <div className="flex place-content-between pt-2">
+                            <InputField label="Avatar URL" placeholder="https://..." value={avatarUrl} onChange={(e: any) => setAvatarUrl(e.target.value)} />
+                            <div className="flex items-center gap-3 pt-1">
+                                <div className="w-14 h-14 rounded-md overflow-hidden border border-borders bg-background">
+                                    {/* Using img tag for user-provided URLs; Next.js Image requires domain config */}
+                                    <img src={avatarUrl || user.image || '/default-avatar.jpg'} alt="avatar preview" className="w-full h-full object-cover" />
+                                </div>
+                                <p className="text-xs text-muted">Paste an image URL (square works best).</p>
+                            </div>
+                            {/* <div className="flex place-content-between pt-2">
                                 <SingleCheckbox label="Private Profile" description="Hide your profile from discovery" onChange={(e) => console.log(e.target.checked)} />
                                 <SingleCheckbox label="Allow NSFW" description="Enable or Disable Pornography/Erotic Categories" onChange={(e) => console.log(e.target.checked)} />
-                            </div>
+                            </div> */}
                         </div>
                         <button onClick={handleUpdateInfo} className="bg-background hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer mt-5">Save</button>
                     </div>

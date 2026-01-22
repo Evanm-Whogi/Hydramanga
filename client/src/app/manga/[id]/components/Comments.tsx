@@ -92,7 +92,7 @@ export default function Comments({ manga, comments }: { manga: any, comments: an
                         <div className="relative flex flex-col p-5 bg-foreground hover:bg-foreground/50 rounded-md">
                             <div className="flex justify-between mb-3 items-center">
                                 <div className="flex items-center">
-                                    <Image src={comment.author.image || "/default-avatar.jpg"} alt="Avatar" width={52} height={52} className="rounded-full" />
+                                    <img src={comment.author.image || "/default-avatar.jpg"} alt="Avatar" width={52} height={52} className="rounded-full" />
                                     <div className="ml-3">
                                         <h2 className={`text-xl font-semibold ${comment.author.role === "Admin" ? "text-teal-600" : ""}`}>{comment.author.name}</h2>
                                         <h3 className="text-sm text-muted">{formatDate(comment.createdAt)}</h3>
@@ -133,7 +133,7 @@ export default function Comments({ manga, comments }: { manga: any, comments: an
                                 {comment.replies.map((reply: any) => (
                                     <div key={reply.id} className="relative flex flex-col p-4 bg-foreground rounded-md">
                                         <div className="flex items-center mb-2">
-                                            <Image src={reply.author.image || "/default-avatar.jpg"} alt="Avatar" width={32} height={32} className="rounded-full" />
+                                            <img src={reply.author.image || "/default-avatar.jpg"} alt="Avatar" width={32} height={32} className="rounded-full" />
                                             <div className="ml-2">
                                                 <h4 className="text-md font-semibold">{reply.author.name}</h4>
                                                 <span className="text-xs text-muted">{formatDate(reply.createdAt)}</span>

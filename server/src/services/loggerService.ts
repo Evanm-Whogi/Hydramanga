@@ -23,6 +23,15 @@ const logger = winston.createLogger({
     transports: [
         new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
         new winston.transports.File({ filename: 'logs/combined.log' }),
+        // Dedicated queue log file for queueService-only messages
+        new winston.transports.File({
+            filename: 'logs/queue.log',
+            level: 'info',
+            format: winston.format.combine(
+                winston.format((info) => info.service === 'queueService' ? info : false)(),
+                logFormat
+            )
+        }),
     ]
 });
 

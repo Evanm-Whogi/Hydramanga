@@ -25,11 +25,16 @@ class QueueService {
     private cleanupFunctions: (() => Promise<void>)[] = [];
     private redisConnection: any;
     private redisClient: Redis;
+    private metricsInterval?: NodeJS.Timeout;
 
     constructor() {
       this.redisConnection = appConfig.redis;
       this.redisClient = new Redis(this.redisConnection);
       logger.info(`QueueService initialized with Redis connection: ${this.redisConnection.host}:${this.redisConnection.port}`, { service: 'queueService' });
+
+            if (appConfig.metrics.queueMetricsEnabled && appConfig.metrics.queueMetricsIntervalMs > 0) {
+                    this.startQueueMetricsLogging();
+            }
     }
 
     public getRedisClient(): Redis {
@@ -54,22 +59,10 @@ class QueueService {
     public addJob: queueJobFunction = async (queueName, jobName, jobData, options = {}) => {
         const queue = this.getQueue(queueName);
         
-        // For chapter download queue, prioritize by series FIRST, then by chapter number
-        // BullMQ max priority is 2,097,152
-        // Each series gets its own 100,001-point range to prevent overlap and interleaving
-        // Priority = (seriesId % 20) * 100,001 + (100,000 - chapterNumber * 100)
-        // This ensures ALL chapters of Series A complete before ANY chapter of Series B starts
+        // Compute default priority for chapter downloads, allowing callers to override via options
         let priority = 0;
-        if (queueName === 'mangaChapterDownloadQueue' && jobData.seriesId && jobData.chapterNumber) {
-            const seriesId = jobData.seriesId;
-            const chapterNum = parseFloat(jobData.chapterNumber);
-            
-            // Each series gets a distinct 100,001-point range
-            // (0-100,000 for series 0, 100,001-200,001 for series 1, etc.)
-            // Max: (19 * 100,001) + 100,000 = 1,999,219 (safely under 2,097,152)
-            const seriesPriority = (seriesId % 20) * 100001;
-            const chapterPriority = Math.max(0, 100000 - (chapterNum * 100));
-            priority = seriesPriority + chapterPriority;
+        if (queueName === 'mangaChapterDownloadQueue') {
+            priority = this.computeChapterPriority(jobData);
         }
         
         // Default cleanup so queues do not bloat
@@ -92,7 +85,8 @@ class QueueService {
             return;
         }
 
-        const limiter = { max: 10, duration: 1000 };  // Standard global limit
+        // Default rate limit; overridden per queue config (especially chapter downloads)
+        let limiter = { max: 10, duration: 1000 };
         
         // Get queue-specific configuration
         let concurrency = 1;
@@ -102,6 +96,9 @@ class QueueService {
         if (queueConfig) {
             concurrency = queueConfig.concurrency;
             timeout = queueConfig.timeout;
+            if ((queueName === 'mangaChapterDownloadQueue') && (queueConfig as any).limiter) {
+                limiter = (queueConfig as any).limiter;
+            }
         }
 
         const worker = new Worker(queueName, async (job: any) => {
@@ -225,9 +222,34 @@ class QueueService {
         };
     }
 
+    // Snapshot with oldest waiting age for observability
+    public async getQueueSnapshot(queueName: string) {
+        const queue = this.getQueue(queueName);
+        const [counts, oldest] = await Promise.all([
+            queue.getJobCounts(),
+            this.getOldestWaiting(queue)
+        ]);
+
+        return {
+            queueName,
+            waiting: counts.waiting,
+            active: counts.active,
+            completed: counts.completed,
+            failed: counts.failed,
+            delayed: counts.delayed,
+            oldestWaitingMs: oldest?.ageMs ?? null,
+            oldestWaitingJobId: oldest?.jobId ?? null
+        };
+    }
+
     // Close all workers and queues for graceful shutdown
     public async closeAll(): Promise<void> {
         logger.info('Closing all queue workers and connections...', { service: 'queueService' });
+
+        if (this.metricsInterval) {
+            clearInterval(this.metricsInterval);
+            this.metricsInterval = undefined;
+        }
         
         // Run all cleanup functions
         await Promise.all(this.cleanupFunctions.map(fn => fn()));
@@ -239,6 +261,65 @@ class QueueService {
         await this.redisClient.quit();
         
         logger.info('All queue resources closed', { service: 'queueService' });
+    }
+
+    // Periodically log queue metrics for observability (opt-in via config)
+    private startQueueMetricsLogging() {
+        const interval = appConfig.metrics.queueMetricsIntervalMs;
+        this.metricsInterval = setInterval(async () => {
+            try {
+                for (const queueName of Object.keys(appConfig.queues)) {
+                    const queue = this.queues[queueName];
+                    // Only report queues that have been instantiated
+                    if (!queue) continue;
+                    const snapshot = await this.getQueueSnapshot(queueName);
+                    logger.info(
+                        `[QUEUE][${queueName}] waiting=${snapshot.waiting} active=${snapshot.active} failed=${snapshot.failed} delayed=${snapshot.delayed} oldestWaitingMs=${snapshot.oldestWaitingMs ?? 'n/a'}`,
+                        { service: 'queueService' }
+                    );
+                }
+            } catch (error) {
+                logger.error(`Failed to log queue metrics: ${error}`, { service: 'queueService' });
+            }
+        }, interval);
+
+        // Avoid keeping the process alive solely for metrics
+        this.metricsInterval.unref();
+    }
+
+    private async getOldestWaiting(queue: Queue): Promise<{ ageMs: number; jobId: string | number | undefined } | null> {
+        try {
+            const jobs = await queue.getJobs(['waiting'], 0, 0, true);
+            const job = jobs[0];
+            if (!job || typeof job.timestamp !== 'number') return null;
+            const age = Math.max(0, Date.now() - job.timestamp);
+            return { ageMs: age, jobId: job.id };
+        } catch (error) {
+            logger.warn(`Unable to read oldest waiting job: ${error}`, { service: 'queueService' });
+            return null;
+        }
+    }
+
+    // Compute a bounded priority that favors preview chapters first, then spreads series to reduce starvation
+    private computeChapterPriority(jobData: any): number {
+        const seriesId = Number(jobData?.seriesId);
+        const chapterNum = parseFloat(jobData?.chapterNumber);
+        const isPreview = Boolean(jobData?.isPreview);
+
+        // BullMQ: lower number = higher priority.
+        // Two tiers: preview jobs (0–499,999) run first, then backlog (500,000–1,999,999)
+        if (isPreview) {
+            // Preview tier: series spread + chapter weight within tier 0–499,999
+            const seriesOffset = (seriesId % 1000) * 200;  // 0–199,800
+            const chapterOffset = Math.min(199, Math.floor(chapterNum * 10));  // 0–199
+            return seriesOffset + chapterOffset;
+        } else {
+            // Backlog tier: add 500,000 base, then series spread + chapter weight
+            const BASE = 500_000;
+            const seriesOffset = (seriesId % 1000) * 200;  // 0–199,800
+            const chapterOffset = Math.min(199, Math.floor(chapterNum * 10));  // 0–199
+            return BASE + seriesOffset + chapterOffset;
+        }
     }
 
 }
