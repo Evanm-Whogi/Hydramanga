@@ -1,10 +1,12 @@
 "use client";
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { fetchMangaPages, updateProgress } from '@/services/mangaService';
 import { useUser } from '@/providers/UserProvider';
 import { MenuIcon, X } from 'lucide-react';
 import { useChapterViewTracking } from '@/hooks/useViewTracking';
+
+const SIDEBAR_WIDTH_PX = 260; // matches md:w-65 / md:w-[calc(100%-260px)]
 
 interface Chapter {
   id: number;
@@ -57,6 +59,17 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     const mainNav = document.querySelector('nav') || document.querySelector('header');
     if (!mainNav) return;
 
+    const applyNavOffset = () => {
+      const isDesktop = window.matchMedia('(min-width: 768px)').matches;
+      if (isDesktop) {
+        mainNav.style.left = `${SIDEBAR_WIDTH_PX}px`;
+        mainNav.style.width = `calc(100% - ${SIDEBAR_WIDTH_PX}px)`;
+      } else {
+        mainNav.style.left = '';
+        mainNav.style.width = '';
+      }
+    };
+
     const handleScroll = () => {
       const mobileHeader = mobileHeaderRef.current;
       const currentScrollY = window.scrollY;
@@ -83,12 +96,17 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       lastScrollPos.current = currentScrollY;
     };
 
+    applyNavOffset();
     window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', applyNavOffset);
     return () => {
       window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', applyNavOffset);
       if (mainNav) mainNav.style.transform = 'translateY(0)';
       const mobileHeader = mobileHeaderRef.current;
       if (mobileHeader) mobileHeader.style.transform = 'translateY(0)';
+      mainNav.style.left = '';
+      mainNav.style.width = '';
     };
   }, []);
 
@@ -168,7 +186,11 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     return () => window.removeEventListener('scroll', handleScroll);
   }, [data]);
 
-  const handlePageClick = (direction: 'next' | 'prev') => {
+  const currentIndex = allChapters.findIndex((ch) => ch.id === Number(chapterId));
+  const prevChapter = allChapters[currentIndex - 1];
+  const nextChapter = allChapters[currentIndex + 1];
+
+  const handlePageClick = useCallback((direction: 'next' | 'prev') => {
     if (!containerRef.current) return;
     const images = Array.from(containerRef.current.querySelectorAll('img'));
     const viewportMiddle = window.scrollY + window.innerHeight / 2;
@@ -196,13 +218,39 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+
+      if (loading) return;
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        handlePageClick('prev');
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        handlePageClick('next');
+      } else if (event.key === 'ArrowLeft') {
+        if (!prevChapter) return;
+        event.preventDefault();
+        router.push(`/manga/${id}/read/${prevChapter.id}`);
+        window.scrollTo(0, 0);
+      } else if (event.key === 'ArrowRight') {
+        if (!nextChapter) return;
+        event.preventDefault();
+        router.push(`/manga/${id}/read/${nextChapter.id}`);
+        window.scrollTo(0, 0);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handlePageClick, id, loading, nextChapter, prevChapter, router]);
 
   if (loading) return <div className="loading text-primary p-5 text-center">Loading Chapter...</div>;
-
-  const currentIndex = allChapters.findIndex((ch) => ch.id === Number(chapterId));
-  const prevChapter = allChapters[currentIndex - 1];
-  const nextChapter = allChapters[currentIndex + 1];
 
   return (
     <div className="reader-root flex bg-background min-h-screen text-primary flex-col md:flex-row">
@@ -237,6 +285,14 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
             >
               Next
             </button>
+          </div>
+          {/* Key */}
+          <div className="mt-4 text-sm text-primary/70">
+            <p className="mb-1">Keybinds:</p>
+            <ul className="list-disc list-inside">
+              <li>↑ / ↓ : Scroll Pages</li>
+              <li>← / → : Prev/Next Chapter</li>
+            </ul>
           </div>
         </div>
         <div className="chapter-list-scroll flex-1 overflow-y-auto p-4">
