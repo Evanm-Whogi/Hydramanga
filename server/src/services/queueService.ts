@@ -22,6 +22,7 @@ import { appConfig } from '@/config/appConfig';
 class QueueService {
     private queues: { [key: string]: Queue } = {};
     private workers: { [key: string]: Worker } = {};
+    private cleanupFunctions: (() => Promise<void>)[] = [];
     private redisConnection: any;
     private redisClient: Redis;
 
@@ -165,8 +166,8 @@ class QueueService {
         worker.on('completed', onCompleted);
         worker.on('failed', onFailed);
 
-        // Graceful shutdown handler
-        const cleanup = async () => {
+        // Store cleanup function for later
+        this.cleanupFunctions.push(async () => {
             try {
                 worker.removeListener('completed', onCompleted);
                 worker.removeListener('failed', onFailed);
@@ -176,12 +177,7 @@ class QueueService {
             } catch (error) {
                 logger.error(`Error cleaning up worker for queue ${queueName}: ${error}`, { service: 'queueService' });
             }
-        };
-
-        // Attach cleanup to process exit
-        process.on('exit', cleanup);
-        process.on('SIGTERM', cleanup);
-        process.on('SIGINT', cleanup);
+        });
     }
 
     // Clear Queue
@@ -227,6 +223,22 @@ class QueueService {
             failed: counts.failed,
             delayed: counts.delayed
         };
+    }
+
+    // Close all workers and queues for graceful shutdown
+    public async closeAll(): Promise<void> {
+        logger.info('Closing all queue workers and connections...', { service: 'queueService' });
+        
+        // Run all cleanup functions
+        await Promise.all(this.cleanupFunctions.map(fn => fn()));
+        
+        // Close all queues
+        await Promise.all(Object.values(this.queues).map(queue => queue.close()));
+        
+        // Disconnect Redis
+        await this.redisClient.quit();
+        
+        logger.info('All queue resources closed', { service: 'queueService' });
     }
 
 }

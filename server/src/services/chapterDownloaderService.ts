@@ -36,11 +36,14 @@ export class ChapterDownloaderService {
             );
 
             // Download images and get local storage path
-            const localPath = await downloadChapterImagesStandalone(
+            const downloadResult = await downloadChapterImagesStandalone(
                 data.chapterUrl,
                 data.mangaTitle,
                 data.chapterTitle
             );
+
+            const localPath = downloadResult.path;
+            const pageCount = downloadResult.pageCount;
 
             // Convert chapterNumber to string (database expects text)
             const chapterNumberStr = String(data.chapterNumber);
@@ -52,6 +55,7 @@ export class ChapterDownloaderService {
                     seriesId: data.seriesId,
                     chapterNumber: chapterNumberStr,
                     localPath,
+                    pageCount,
                     title: data.chapterTitle,
                     updatedAt: new Date(),
                 })
@@ -59,6 +63,7 @@ export class ChapterDownloaderService {
                     target: [chapters.seriesId, chapters.chapterNumber],
                     set: {
                         localPath,
+                        pageCount,
                         title: data.chapterTitle,
                         updatedAt: new Date(),
                     },

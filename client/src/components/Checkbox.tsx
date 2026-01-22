@@ -5,8 +5,8 @@ import DropdownContainer from "@/components/DropdownContainer";
 // Define a type that accepts either a string OR the new object format
 type DropdownOption = string | { label: string; value: string };
 
-export default function MultiDropdown({ title, options, size, onChange, label }: { title?: string; label?: string, options?: DropdownOption[]; size?: string; onChange: (vals: string[]) => void }) {
-    const [selectedValues, setSelectedValues] = useState<string[]>([]);
+export default function MultiDropdown({ title, options, size, onChange, label, initialValue }: { title?: string; label?: string, options?: DropdownOption[]; size?: string; onChange: (vals: string[]) => void; initialValue?: string[] }) {
+    const [selectedValues, setSelectedValues] = useState<string[]>(initialValue || []);
 
     const toggle = (val: string) => {
         const next = selectedValues.includes(val) ? selectedValues.filter(i => i !== val) : [...selectedValues, val];

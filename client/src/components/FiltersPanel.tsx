@@ -88,6 +88,7 @@ function FiltersPanel({
           label="All genres"
           options={FILTER_OPTIONS.genres as any}
           onChange={onGenresChange}
+          initialValue={initialGenres}
           size="w-full"
         />
         <SingleDropdown
@@ -99,18 +100,21 @@ function FiltersPanel({
           label="All formats"
           options={FILTER_OPTIONS.types as any}
           onChange={onTypesChange}
+          initialValue={initialTypes}
           size="w-full"
         />
         <MultiDropdown
           label="All statuses"
           options={FILTER_OPTIONS.status as any}
           onChange={onStatusesChange}
+          initialValue={initialStatuses}
           size="w-full"
         />
         <MultiDropdown
           label="Timeless"
           options={FILTER_OPTIONS.years as any}
           onChange={onYearsChange}
+          initialValue={initialYears}
           size="w-full"
         />
       </div>

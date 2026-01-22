@@ -5,11 +5,11 @@ export function truncate(text: string, maxLength: number) {
 }
 
 // Format Dates
-export function formatDate(date: string | Date) {
+export function formatDate(date: string | Date, noTime: boolean = false) {
   const actualDate = typeof date === "string" ? new Date(date) : date;
   return actualDate.toLocaleString("en-US", {
     dateStyle: "medium",
-    timeStyle: "short",
+    timeStyle: noTime ? undefined : "short",
     hour12: true,
   });
 }

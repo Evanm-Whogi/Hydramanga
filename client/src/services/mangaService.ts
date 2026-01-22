@@ -77,6 +77,10 @@ export async function getMangaProgress(id: number): Promise<any> {
     return await apiGet(`/progress/manga/${id}`);
 }
 
+export async function getSeriesChapterProgress(id: number): Promise<any> {
+    return await apiGet(`/progress/manga/${id}/chapters`);
+}
+
 export async function updateProgress(data: {
     seriesId: number;
     chapterId: number;
@@ -84,6 +88,14 @@ export async function updateProgress(data: {
     totalPagesInChapter: number;
 }): Promise<any> {
     return await apiPost('/progress', data);
+}
+
+export async function markChapterAsRead(seriesId: number, chapterId: number): Promise<any> {
+    return await apiPost('/progress/mark-read', { seriesId, chapterId });
+}
+
+export async function markChapterAsUnread(chapterId: number): Promise<any> {
+    return await apiPost('/progress/mark-unread', { chapterId });
 }
 
 export async function deleteProgress(id: number): Promise<any> {

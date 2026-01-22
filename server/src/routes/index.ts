@@ -9,7 +9,7 @@ import { createComment, deleteComment, fetchComments, likeComment } from '@/cont
 import { fetchAnnouncements, createAnnouncement } from '@/controllers/announcementController';
 import { importStatus, triggerMangaSync } from '@/controllers/mangaImportController';
 import { fetchChaptersWeebCentral } from '@/controllers/mangaController'; // Part of testing suite
-import { getTrending, getMangaAnalytics, getMyProgress, getMangaProgress, updateProgress, deleteProgress, getMyStats } from '@/controllers/analyticsController';
+import { getTrending, getMangaAnalytics, getMyProgress, getMangaProgress, updateProgress, deleteProgress, getMyStats, getSeriesChapterProgress, markChapterAsRead, markChapterAsUnread } from '@/controllers/analyticsController';
 import { generateInviteCode, getUserInviteCodes, validateInviteCode, useInviteCode } from '@/controllers/inviteController';
 
 // Aggregator Controllers
@@ -32,7 +32,10 @@ module.exports = (app: Express) => {
     // Progress Routes (require authentication)
     app.get('/progress', authMiddleware, getMyProgress as RequestHandler);
     app.get('/progress/manga/:id', authMiddleware, getMangaProgress as RequestHandler);
+    app.get('/progress/manga/:id/chapters', authMiddleware, getSeriesChapterProgress as RequestHandler);
     app.post('/progress', authMiddleware, updateProgress as RequestHandler);
+    app.post('/progress/mark-read', authMiddleware, markChapterAsRead as RequestHandler);
+    app.post('/progress/mark-unread', authMiddleware, markChapterAsUnread as RequestHandler);
     app.delete('/progress/manga/:id', authMiddleware, deleteProgress as RequestHandler);
     app.get('/progress/stats', authMiddleware, getMyStats as RequestHandler);
 

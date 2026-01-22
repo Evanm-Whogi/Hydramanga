@@ -9,7 +9,7 @@ import { auth } from '@/utils/auth';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
-import { initCronJobs } from '@/jobs/cron';
+import { initCronJobs, stopCronJobs } from '@/jobs/cron';
 import path from 'path';
 dotenv.config();
 
@@ -73,6 +73,40 @@ app.use((err: Error, req: any, res: any, next: any) => {
 });
 
 // Server
-app.listen(process.env.PORT, () => {
+const server = app.listen(process.env.PORT, () => {
   console.log(`Server is running on port: ${process.env.PORT}`);
 });
+
+// Graceful Shutdown
+const gracefulShutdown = async () => {
+  logger.info('Received shutdown signal, starting graceful shutdown...');
+
+  // Close HTTP server first
+  server.close(() => {
+    logger.info('HTTP server closed');
+  });
+
+  try {
+    // Stop cron jobs
+    stopCronJobs();
+    logger.info('Cron jobs stopped');
+
+    // Close queue workers and connections
+    await queueService.closeAll();
+    logger.info('Queue service closed');
+
+    // Close database pool
+    const { pool } = await import('@/db/index');
+    await pool.end();
+    logger.info('Database pool closed');
+
+    logger.info('Graceful shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    logger.error(`Error during shutdown: ${error}`);
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);

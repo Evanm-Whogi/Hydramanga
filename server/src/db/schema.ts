@@ -183,6 +183,7 @@ export const chapters = pgTable("chapters", {
   chapterNumber: text("chapter_number").notNull(), 
   volumeNumber: text("volume_number"),
   localPath: text("local_path").notNull(),
+  pageCount: integer("page_count").default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
@@ -317,6 +318,20 @@ export const userReadingProgress = pgTable('user_reading_progress', {
   pk: primaryKey({ columns: [t.userId, t.seriesId] }),
   userIdIdx: index('idx_user_reading_progress_user_id').on(t.userId),
   seriesIdIdx: index('idx_user_reading_progress_series_id').on(t.seriesId),
+}));
+
+// User Chapter Progress (per-chapter state)
+export const userChapterProgress = pgTable('user_chapter_progress', {
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  chapterId: integer('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  lastPageNumber: integer('last_page_number').notNull().default(0),
+  isRead: boolean('is_read').notNull().default(false),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.chapterId] }),
+  userIdIdx: index('idx_user_chapter_progress_user_id').on(t.userId),
+  chapterIdIdx: index('idx_user_chapter_progress_chapter_id').on(t.chapterId),
+  isReadIdx: index('idx_user_chapter_progress_is_read').on(t.isRead),
 }));
 
 // Invite Codes

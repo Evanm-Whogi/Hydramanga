@@ -175,7 +175,8 @@ export async function downloadChapterImagesStandalone(url: string, mangaName: st
             throw new Error(`No images found at ${url}`);
         }
 
-        return await downloadImages(finalImages, mangaName, folderName, url);
+        const result = await downloadImages(finalImages, mangaName, folderName, url);
+        return { path: result, pageCount: finalImages.length };
     } finally {
         await page.close().catch(() => {}); // Ensure page is closed
         await context.close().catch(() => {}); // Ensure context is closed
