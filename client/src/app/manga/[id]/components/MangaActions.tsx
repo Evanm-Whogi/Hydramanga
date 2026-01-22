@@ -1,22 +1,50 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { MoveUpIcon, MoveDownIcon, BookOpen, MessageCircleMore } from 'lucide-react';
 import Chapters from "./Chapters";
 import Comments from "./Comments";
 import ListDropdown from "./ListDropdown"
+import { fetchOne } from "@/services/mangaService";
 
-export default function ListContainer({ manga, comments, userStatus }: { manga: any, comments: any, userStatus: string }) {
+interface MangaActionsProps {
+  manga: any;
+  comments: any;
+  userStatus: string;
+  importProgress: any;
+}
+
+export default function ListContainer({ manga, comments, userStatus, importProgress }: MangaActionsProps) {
     const [page, setPage] = useState("chapters");
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+    const [chapters, setChapters] = useState(manga.chapters || []);
+    const lastDownloadedRef = useRef<number>(0);
+
+    // Refetch chapters when download progress increases
+    useEffect(() => {
+        if (importProgress?.status === 'downloading' && importProgress.downloadedChapters > lastDownloadedRef.current) {
+            lastDownloadedRef.current = importProgress.downloadedChapters;
+            
+            // Refetch chapters from API
+            fetchOne(manga.id).then((data) => {
+                if (data?.manga?.chapters) {
+                    setChapters(data.manga.chapters);
+                }
+            }).catch((err) => {
+                console.error('[MangaActions] Failed to refetch chapters:', err);
+            });
+        }
+    }, [importProgress, manga.id]);
 
     // Sort chapters 0.1 -> 0.2 -> 1 -> 2 ... or reverse
-    const sortedChapters = [...(manga.chapters || [])].sort((a: any, b: any) => {
-        const order = a.chapterNumber.localeCompare(b.chapterNumber, undefined, {
-            numeric: true,
-            sensitivity: 'base'
+    const sortedChapters = useMemo(() => {
+        return [...(chapters || [])].sort((a: any, b: any) => {
+            const order = a.chapterNumber.localeCompare(b.chapterNumber, undefined, {
+                numeric: true,
+                sensitivity: 'base'
+            });
+            return sortOrder === "asc" ? order : -order;
         });
-        return sortOrder === "asc" ? order : -order;
-    });
+    }, [chapters, sortOrder]);
 
     return (
         <>

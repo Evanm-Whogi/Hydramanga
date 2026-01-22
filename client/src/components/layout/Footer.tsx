@@ -1,4 +1,5 @@
 import ImportStatus from '@/components/ImportStatus';
+import Link from 'next/link';
 
 export default  function Footer() {
    return (
@@ -12,20 +13,27 @@ export default  function Footer() {
                     </div>
                     {/* Quick Links */}
                     <div className="flex flex-col w-full md:w-1/6 space-y-4 text-muted">
-                        <h1 className="text-2xl text-primary">Browse</h1>
-                        <a href="/" className="hover:text-primary">Popular</a>
-                        <a href="/apply" className="hover:text-primary">Latest</a>
-                        <a href="/cloud" className="hover:text-primary">Completed</a>
-                        <a href="/webhosting" className="hover:text-primary">All Manga</a>
+                        <h1 className="text-2xl text-primary">Quick Links</h1>
+                        <Link href="/" className="hover:text-primary">Home</Link>
+                        <Link href="/discover" className="hover:text-primary">Discover</Link>
+                        <Link href="/lists" className="hover:text-primary">My Lists</Link>
+                        <Link href="/profile" className="hover:text-primary">My Profile</Link>
+                        <Link href="/announcements" className="hover:text-primary">Announcements</Link>
                     </div>
-                    {/* Staff Links */}
-                    <div className="flex flex-col w-full md:w-2/6 space-y-4 text-muted">
-                        <h1 className="text-2xl text-primary">Genres</h1>
-                        <div className="grid grid-cols-4 space-y-2">
-                            <a href="#" className="hover:text-primary">Action</a>
-                            <a href="#" className="hover:text-primary">Adventure</a>
-                        </div>
-
+                    {/* Reading */}
+                    <div className="flex flex-col w-full md:w-1/6 space-y-4 text-muted">
+                        <h1 className="text-2xl text-primary">Reading</h1>
+                        <Link href="/discover?type=manga" className="hover:text-primary">Trending Manga</Link>
+                        <Link href="/discover?type=manhua" className="hover:text-primary">Trending Manhua</Link>
+                        <Link href="/discover?type=manhwa" className="hover:text-primary">Trending Manhwa</Link>
+                        <Link href="/discover?years=2025&sort=lastUpdatedAt" className="hover:text-primary">New Releases</Link>
+                    </div>
+                    {/* Information Links */}
+                    <div className="flex flex-col w-full md:w-1/6 space-y-4 text-muted">
+                        <h1 className="text-2xl text-primary">Information</h1>
+                        <Link href="/" className="hover:text-primary">Support Us</Link>
+                        <Link href="/" className="hover:text-primary">DMCA Notice</Link>
+                        <Link href="/" className="hover:text-primary">About Us</Link>
                     </div>
                 </div>
                 <div className="flex flex-col text-primary">

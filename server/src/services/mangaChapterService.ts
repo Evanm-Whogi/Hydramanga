@@ -6,6 +6,7 @@ import { queueService } from '@/services/queueService';
 import { discordService } from '@/services/discordService';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import logger from '@/services/loggerService';
+import { appConfig } from '@/config/appConfig';
 
 export class MangaChapterScraperService {
     
@@ -13,6 +14,7 @@ export class MangaChapterScraperService {
     static async processSync(mangaTitle: string, seriesId: number, romanizedTitle?: string, isFirstScan = false) {
         let foundCount = 0;
         const newChapters: string[] = [];
+        let previewRemaining = isFirstScan ? appConfig.queues.mangaChapterDownloadQueue.previewCount : 0;
 
         // Initialize progress tracking
         await mangaProgressService.initializeProgress(seriesId);
@@ -34,12 +36,15 @@ export class MangaChapterScraperService {
             for await (const chapter of scraper) {
                 foundCount++;
                 newChapters.push(chapter.number);
+                const isPreview = previewRemaining > 0;
+                if (isPreview) previewRemaining--;
                 await queueService.addJob('mangaChapterDownloadQueue', `Download ${chapter.title}`, {
                     seriesId,
                     mangaTitle,
                     chapterTitle: chapter.title,
                     chapterNumber: chapter.number,
-                    chapterUrl: chapter.url
+                    chapterUrl: chapter.url,
+                    isPreview,
                 }, { jobId: `chapter-${seriesId}-${chapter.number}` });
             }
 

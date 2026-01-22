@@ -100,6 +100,7 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
   const [showDetails, setShowDetails] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [wasActiveOnLoad, setWasActiveOnLoad] = useState(false);
+  const [initialProgressReceived, setInitialProgressReceived] = useState(false);
   const router = useRouter();
   const mangaId = Number(manga.id);
 
@@ -112,7 +113,6 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
     {
       enabled: true,
       onComplete: (finalProgress) => {
-        console.log('Import completed:', finalProgress);
         // Refresh the page to show new chapters
         router.refresh();
       },
@@ -124,18 +124,32 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
 
   // Show/update toast only for active imports (not completed/failed on page load)
   useEffect(() => {
-    if (progress) {
-      // Only show toast if import is actively running
-      if (progress.status === 'scanning' || progress.status === 'downloading') {
+    if (!progress) return;
+
+    const isActiveStatus = progress.status === 'scanning' || progress.status === 'downloading';
+    const isTerminalStatus = progress.status === 'completed' || progress.status === 'failed';
+
+    // First progress update received
+    if (!initialProgressReceived) {
+      setInitialProgressReceived(true);
+      // Only show toast if it's actively running on initial load
+      if (isActiveStatus) {
         setWasActiveOnLoad(true);
         updateImportProgressToast(mangaId, manga.title, progress);
-      } 
-      // Show completion/failure only if we were tracking an active import
-      else if (wasActiveOnLoad && (progress.status === 'completed' || progress.status === 'failed')) {
-        updateImportProgressToast(mangaId, manga.title, progress);
       }
+      return;
     }
-  }, [progress, mangaId, manga.title, wasActiveOnLoad]);
+
+    // Subsequent updates - show if actively running
+    if (isActiveStatus) {
+      setWasActiveOnLoad(true);
+      updateImportProgressToast(mangaId, manga.title, progress);
+    }
+    // Show completion/failure only if we were tracking an active import
+    else if (wasActiveOnLoad && isTerminalStatus) {
+      updateImportProgressToast(mangaId, manga.title, progress);
+    }
+  }, [progress, mangaId, manga.title, wasActiveOnLoad, initialProgressReceived]);
 
   // Cleanup: dismiss toast when navigating away
   useEffect(() => {
@@ -189,8 +203,7 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
             <h1 className="text-2xl md:text-3xl font-bold">
               {manga.title} <span className="text-sm md:text-base text-muted">{formatToStars(manga.weightedScore)} {formatToRating(manga.weightedScore)}</span>
             </h1>
-            {manga.nativeTitle && <h2 className="text-base md:text-lg text-muted font-semibold">({manga.nativeTitle})</h2>}
-
+            <h2 className="text-base md:text-lg text-muted font-semibold">[{manga.romanizedTitle} | {manga.nativeTitle}]</h2>
             <div className="flex gap-2 items-center flex-wrap">
               <span className="bg-green-400/20 w-fit px-2 py-1 rounded-lg capitalize text-sm">{manga.status}</span>
               {analytics?.manga && (
@@ -214,7 +227,7 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
               )}
             </div>
 
-            <p className="text-muted text-sm md:text-base">{manga.description}</p>
+            <p className="text-muted text-sm md:text-base line-clamp-4">{manga.description}</p>
             {showDetails && <MangaDetails manga={manga} />}
 
             <div className="flex gap-2 flex-wrap">
@@ -234,7 +247,7 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
               {showDetails ? 'Hide Details' : 'Show Details...'}
             </button>
 
-            <MangaActions manga={manga} comments={manga.comments} userStatus={userStatus} />
+            <MangaActions manga={manga} comments={manga.comments} userStatus={userStatus} importProgress={progress} />
           </div>
 
           {/* Sidebar */}

@@ -49,6 +49,11 @@ export interface QueueConfig {
         concurrency: number;
         timeout: number;
         retries: number;
+        previewCount: number;
+        limiter: {
+            max: number;
+            duration: number;
+        };
     };
 }
 
@@ -106,6 +111,11 @@ export interface TimeoutConfig {
     httpRequest: number; // milliseconds
 }
 
+export interface MetricsConfig {
+    queueMetricsEnabled: boolean;
+    queueMetricsIntervalMs: number;
+}
+
 /**
  * Main Application Configuration
  */
@@ -119,6 +129,7 @@ export interface AppConfig {
     logging: LoggingConfig;
     discord: DiscordConfig;
     timeouts: TimeoutConfig;
+    metrics: MetricsConfig;
 }
 
 /**
@@ -205,9 +216,14 @@ export class AppConfigService {
                     retries: parseEnvNumber('CHAPTER_SCAN_RETRIES', 1),
                 },
                 mangaChapterDownloadQueue: {
-                    concurrency: parseEnvNumber('CHAPTER_DOWNLOAD_CONCURRENCY', 1), // RESTORED to 1 (rate limiting)
+                    concurrency: parseEnvNumber('CHAPTER_DOWNLOAD_CONCURRENCY', 2), // modest parallelism
                     timeout: parseEnvNumber('CHAPTER_DOWNLOAD_TIMEOUT', 15 * 60 * 1000), // 15 minutes
                     retries: parseEnvNumber('CHAPTER_DOWNLOAD_RETRIES', 2),
+                    previewCount: parseEnvNumber('CHAPTER_PREVIEW_COUNT', 10),
+                    limiter: {
+                        max: parseEnvNumber('CHAPTER_DOWNLOAD_RATE_MAX', 3), // requests per duration window
+                        duration: parseEnvNumber('CHAPTER_DOWNLOAD_RATE_DURATION', 1000), // ms
+                    },
                 },
             },
 
@@ -252,6 +268,12 @@ export class AppConfigService {
                     error: 0xef4444,   // Red
                     info: 0x3b82f6,    // Blue
                 },
+            },
+
+            // Metrics / Observability
+            metrics: {
+                queueMetricsEnabled: parseEnvBoolean('QUEUE_METRICS_ENABLED', false),
+                queueMetricsIntervalMs: parseEnvNumber('QUEUE_METRICS_INTERVAL_MS', 60000),
             },
 
             // Timeout Settings

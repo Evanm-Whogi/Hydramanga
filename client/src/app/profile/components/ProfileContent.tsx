@@ -71,14 +71,14 @@ export default function ProfileContent() {
               </div>
             </div>
 
-            <div className="rounded-md w-full mt-5 flex flex-col space-y-3">
+            {/* <div className="rounded-md w-full mt-5 flex flex-col space-y-3">
               <button className="bg-foreground hover:bg-foreground/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer">
                 <UserPlusIcon className="size-5 mr-2" /> Follow
               </button>
               <button className="bg-foreground hover:bg-foreground/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer">
                 <FlagTriangleRight className="size-5 mr-2" /> Report
               </button>
-            </div>
+            </div> */}
           </div>
           <div className="flex flex-col space-y-2 w-full lg:w-2/3 lg:ml-5 mt-5 lg:mt-0">
             <div className="flex flex-wrap gap-3">
