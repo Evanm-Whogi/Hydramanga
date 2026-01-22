@@ -110,3 +110,7 @@ export async function deleteProgress(id: number): Promise<any> {
 export async function getUserStats(): Promise<any> {
     return await apiGet('/progress/stats');
 }
+
+export async function getRecommendedManga(id: number, limit: number = 8): Promise<any> {
+    return await apiGet(`/manga/${id}/recommendations?limit=${limit}`);
+}

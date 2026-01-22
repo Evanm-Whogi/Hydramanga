@@ -593,6 +593,173 @@ export async function trackChapterViewEndpoint(req: Request, res: Response, next
     return res.status(200).json({ success: true });
 }
 
+// Genre weight mapping: more specific/unique genres get higher weights
+// Keys are lowercase to make matching case-insensitive
+const GENRE_WEIGHTS: Record<string, number> = {
+    // Very High (5.0) - Very specific/unique/artistic genres
+    'psychological': 5.0,
+    'tragedy': 5.0,
+    'award winning': 5.0,
+    'avant garde': 5.0,
+    'gourmet': 5.0,
+    'gender bender': 5.0,
+    
+    // High (4.0-4.5) - Specific genres with strong themes
+    'horror': 4.5,
+    'mystery': 4.0,
+    'thriller': 4.0,
+    'suspense': 4.0,
+    'historical': 4.0,
+    'mecha': 4.0,
+    'music': 4.0,
+    'mahou shoujo': 4.0,
+    
+    // Medium-High (3.5) - Somewhat specific genres
+    'sci-fi': 3.5,
+    'sci fi': 3.5,
+    'supernatural': 3.5,
+    'sports': 3.5,
+    'martial arts': 3.5,
+    'boys love': 3.5,
+    'girls love': 3.5,
+    'yaoi': 3.5,
+    'yuri': 3.5,
+    'shoujo ai': 3.5,
+    'shounen ai': 3.5,
+    'lolicon': 3.5,
+    'shotacon': 3.5,
+    
+    // Medium (2.5-3.0) - Common but meaningful genres
+    'romance': 2.5,
+    'comedy': 2.5,
+    'drama': 2.5,
+    'fantasy': 2.5,
+    'harem': 2.5,
+    'erotica': 2.5,
+    'hentai': 2.5,
+    'smut': 2.5,
+    'slice of life': 3.0,
+    'school life': 3.0,
+    
+    // Low (1.5-2.0) - Very generic/common demographics
+    'action': 1.5,
+    'adventure': 1.5,
+    'shounen': 1.5,
+    'shoujo': 2.0,
+    'seinen': 2.0,
+    'josei': 2.0,
+    'adult': 2.0,
+    'mature': 2.0,
+    'ecchi': 2.0,
+    'doujinshi': 2.0,
+};
+
+const DEFAULT_GENRE_WEIGHT = 2.0;
+
+// Get recommended manga based on genres
+export async function getRecommendedManga(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+    try {
+        const id = parseInt(req.params.id, 10);
+        const limit = Math.min(parseInt(req.query.limit as string) || 8, 20);
+
+        if (isNaN(id) || id <= 0) {
+            return res.status(400).json({ status: 400, message: "Invalid manga ID" });
+        }
+
+        // Get the current manga's genres
+        const currentManga = await db.query.series.findFirst({
+            where: (series, { eq }) => eq(series.id, id),
+            columns: {
+                id: true,
+                genres: true,
+                type: true,
+                contentRating: true,
+            }
+        });
+
+        if (!currentManga || !currentManga.genres) {
+            return res.json([]);
+        }
+
+        const currentGenres = (currentManga.genres as string[]).map(g => g?.toLowerCase().trim()).filter(Boolean);
+        
+        // Build CASE statement for weighted genre matching (case-insensitive)
+        // Use raw SQL here because values originate from our DB and are sanitized to lowercase/trimmed
+        const genreCases = currentGenres.map(genre => {
+            const weight = GENRE_WEIGHTS[genre] || DEFAULT_GENRE_WEIGHT;
+            const escapedGenre = genre.replace(/'/g, "''");
+            return `WHEN lower(genre) = '${escapedGenre}' THEN ${weight}`;
+        }).join(' ');
+        
+        // Build a query to find manga with weighted matching genres
+        const recommendations = await db
+            .select({
+                id: schema.series.id,
+                title: schema.series.title,
+                cover: schema.series.cover,
+                genres: schema.series.genres,
+                weightedScore: schema.series.weightedScore,
+                status: schema.series.status,
+                type: schema.series.type,
+                contentRating: schema.series.contentRating,
+                // Calculate weighted match score using SQL
+                matchScore: sql<number>`(
+                    SELECT COALESCE(SUM(
+                        CASE ${sql.raw(genreCases)}
+                        ELSE 0
+                        END
+                    ), 0)::float
+                    FROM jsonb_array_elements_text(${schema.series.genres}) AS genre
+                )`.as('match_score')
+            })
+            .from(schema.series)
+            .where(
+                and(
+                    ne(schema.series.id, id), // Exclude current manga
+                    sql`${schema.series.genres} IS NOT NULL`,
+                    sql`jsonb_array_length(${schema.series.genres}) > 0`,
+                    // Optional: match same type (manga/manhwa/etc)
+                    currentManga.type ? eq(schema.series.type, currentManga.type) : undefined
+                )
+            )
+            .orderBy(
+                desc(sql`match_score`),
+                desc(schema.series.weightedScore)
+            )
+            .limit(limit * 2); // Get more to filter
+
+        // Filter and deduplicate
+        const seenIds = new Set<number>();
+        const seenTitles = new Set<string>();
+        const filtered = recommendations
+            .filter(manga => {
+                const matchScore = manga.matchScore as number;
+                // Must have at least one matching genre
+                if (matchScore <= 0) return false;
+                
+                // Deduplicate by ID
+                if (seenIds.has(manga.id)) return false;
+                seenIds.add(manga.id);
+                
+                // Deduplicate by title (in case there are duplicate entries with different IDs)
+                const normalizedTitle = manga.title?.toLowerCase().trim();
+                if (normalizedTitle && seenTitles.has(normalizedTitle)) return false;
+                if (normalizedTitle) seenTitles.add(normalizedTitle);
+                
+                return true;
+            })
+            .slice(0, limit);
+
+        // Enrich with view stats
+        const enriched = await enrichWithViewStats(filtered);
+
+        return res.json(enriched);
+    } catch (error) {
+        logger.error(`Failed to get recommendations: ${(error as Error).message}`, { service: 'mangaController' });
+        return next(error);
+    }
+}
+
 // The testing suite
 export async function fetchChaptersWeebCentral(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     mangaOrchestratorService.enqueueTrendingChapterScans(100)

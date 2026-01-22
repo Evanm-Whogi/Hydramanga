@@ -4,6 +4,7 @@ import { getMangaAnalytics, triggerMangaScan } from '@/services/mangaService';
 import { formatDate, formatToStars, formatToRating } from '@/lib/utils';
 import Link from 'next/link';
 import MangaActions from './MangaActions';
+import RecommendedManga from './RecommendedManga';
 import { Eye, TrendingUp, Bookmark } from 'lucide-react';
 import { useMangaViewTracking } from '@/hooks/useViewTracking';
 import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
@@ -324,6 +325,9 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
                 )}
               </div>
             </div>
+
+            {/* Recommended Manga */}
+            <RecommendedManga currentMangaId={mangaId} />
           </div>
         </div>
       </div>

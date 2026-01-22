@@ -1,5 +1,5 @@
 import express, { RequestHandler } from 'express';
-import { searchManga, getOne, updateMangaList, removeFromList, getUserLists, getPages, getAllLists, triggerMangaScan, trackMangaViewEndpoint, trackChapterViewEndpoint }  from '@/controllers/mangaController';
+import { searchManga, getOne, updateMangaList, removeFromList, getUserLists, getPages, getAllLists, triggerMangaScan, trackMangaViewEndpoint, trackChapterViewEndpoint, getRecommendedManga }  from '@/controllers/mangaController';
 
 const router = express.Router();
 
@@ -17,6 +17,9 @@ router.post('/:id/scan', triggerMangaScan as RequestHandler);
 // Client-side view tracking
 router.post('/:id/track-view', trackMangaViewEndpoint as RequestHandler);
 router.post('/:id/chapter/:chapterId/track-view', trackChapterViewEndpoint as RequestHandler);
+
+// Recommendations
+router.get('/:id/recommendations', getRecommendedManga as RequestHandler);
 
 // Dynamic routes - Keep these last
 router.get('/:id', getOne as RequestHandler);
