@@ -66,18 +66,22 @@ export class MangaChapterScraperService {
     // Perform actual download and DB insert
     static async processDownload(data: any) {
         try {
-            const localPath = await downloadChapterImagesStandalone(data.chapterUrl, data.mangaTitle, data.chapterTitle);
+            const downloadResult = await downloadChapterImagesStandalone(data.chapterUrl, data.mangaTitle, data.chapterTitle);
+            const localPath = downloadResult.path;
+            const pageCount = downloadResult.pageCount;
             
             await db.insert(chapters).values({
                 seriesId: data.seriesId,
                 chapterNumber: data.chapterNumber,
                 localPath,
+                pageCount,
                 title: data.chapterTitle,
                 updatedAt: new Date(),
             }).onConflictDoUpdate({
                 target: [chapters.seriesId, chapters.chapterNumber],
                 set: {
                     localPath,
+                    pageCount,
                     title: data.chapterTitle,
                     updatedAt: new Date(),
                 }

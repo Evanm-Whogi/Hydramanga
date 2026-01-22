@@ -257,7 +257,11 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
                   Total Chapters <span>{manga.totalChapters}</span>
                 </div>
                 <div className="flex justify-between text-muted">
-                  Has Anime? <span>{manga.hasAnime ? 'Yes' : 'No'}</span>
+                  Has Anime? { manga.hasAnime ? (
+                    <a href={`https://hianime.to/search?keyword=${encodeURIComponent(manga.title)}`} target="_blank" rel="noopener noreferrer" className="hover:text-accent text-primary">Yes</a>
+                    ): (
+                      <span className="text-muted">No</span>
+                    )}
                 </div>
                 <div className="flex justify-between text-muted">
                   Score <span>{Math.floor(manga.weightedScore)}</span>

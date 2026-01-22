@@ -15,6 +15,9 @@ const pool = new Pool({
 // Initialize Drizzle with PG
 const db = drizzle(pool, { schema });
 
+// Export pool for graceful shutdown
+export { pool };
+
 process.on('unhandledRejection', (error) => {
     logger.error('Unhandled Rejection:', error);
 });

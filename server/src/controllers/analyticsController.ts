@@ -131,6 +131,35 @@ export async function getMangaProgress(req: Request, res: Response, next: NextFu
 }
 
 /**
+ * Get per-chapter reading progress for a specific manga series
+ */
+export async function getSeriesChapterProgress(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const userId = req.user?.id;
+    const seriesId = parseInt(req.params.id, 10);
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (isNaN(seriesId)) {
+      return res.status(400).json({ error: 'Invalid series ID' });
+    }
+
+    const chapterProgress = await userProgressService.getSeriesChapterProgress(userId, seriesId);
+
+    return res.json({
+      status: 200,
+      seriesId,
+      chapters: chapterProgress,
+    });
+  } catch (error) {
+    logger.error(`Failed to get series chapter progress: ${error}`, { service: 'analyticsController' });
+    return next(error);
+  }
+}
+
+/**
  * Update reading progress for a manga chapter
  */
 export async function updateProgress(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
@@ -163,6 +192,73 @@ export async function updateProgress(req: Request, res: Response, next: NextFunc
     });
   } catch (error) {
     logger.error(`Failed to update progress: ${error}`, { service: 'analyticsController' });
+    return next(error);
+  }
+}
+
+/**
+ * Mark a chapter as fully read
+ */
+export async function markChapterAsRead(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const userId = req.user?.id;
+    const { seriesId, chapterId } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (!seriesId || !chapterId) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: seriesId, chapterId' 
+      });
+    }
+
+    await userProgressService.markChapterAsRead(
+      userId,
+      Number(seriesId),
+      Number(chapterId)
+    );
+
+    return res.json({
+      status: 200,
+      message: 'Chapter marked as read',
+    });
+  } catch (error) {
+    logger.error(`Failed to mark chapter as read: ${error}`, { service: 'analyticsController' });
+    return next(error);
+  }
+}
+
+/**
+ * Mark a chapter as unread
+ */
+export async function markChapterAsUnread(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const userId = req.user?.id;
+    const { chapterId } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (!chapterId) {
+      return res.status(400).json({ 
+        error: 'Missing required field: chapterId' 
+      });
+    }
+
+    await userProgressService.markChapterAsUnread(
+      userId,
+      Number(chapterId)
+    );
+
+    return res.json({
+      status: 200,
+      message: 'Chapter marked as unread',
+    });
+  } catch (error) {
+    logger.error(`Failed to mark chapter as unread: ${error}`, { service: 'analyticsController' });
     return next(error);
   }
 }

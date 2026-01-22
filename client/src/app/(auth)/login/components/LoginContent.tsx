@@ -16,13 +16,16 @@ export default function LoginContent() {
   const authHandler = async (type: "email" | "google" | "discord") => {
     setLoading(true);
 
-    const result =
-      type === "email"
-        ? await signIn.email({ email, password })
-        : await signIn.social({
-            provider: type,
-            callbackURL: `${process.env.NEXT_PUBLIC_URL || window.location.origin}/home`,
-          });
+    // const result =
+    //   type === "email"
+    //     ? await signIn.email({ email, password })
+    //     : await signIn.social({
+    //         provider: type,
+    //         callbackURL: `${process.env.NEXT_PUBLIC_URL || window.location.origin}/home`,
+    //       });
+
+
+    const result = await signIn.email({email,password}); // Temporarily disable social logins 
 
     if (result.error) {
       toast(result.error.message || "Authentication failed", { type: "error" });
@@ -88,7 +91,8 @@ export default function LoginContent() {
                 </span>
               </div>
             </div>
-            <div className="flex gap-3">
+            <span className="text-center underline font-bold mt-2">Social Login disabled in Alpha</span>
+            {/* <div className="flex gap-3">
               <button
                 onClick={() => authHandler("google")}
                 disabled={loading}
@@ -117,7 +121,7 @@ export default function LoginContent() {
                 />{" "}
                 Discord
               </button>
-            </div>
+            </div> */}
             <span className="text-center pt-5">
               Don't have an account?{" "}
               <a href="/register" className="text-accent hover:text-accent/50">

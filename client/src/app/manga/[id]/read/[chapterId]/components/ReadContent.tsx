@@ -26,6 +26,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const [allChapters, setAllChapters] = useState<Chapter[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(0);
+  const [lastTrackedPage, setLastTrackedPage] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Track chapter view on client-side mount
@@ -121,6 +122,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
   useEffect(() => {
     if (!user || !data || !id || !chapterId) return;
+    if (currentPage === 0 || currentPage === lastTrackedPage) return; // Skip if page 0 or already tracked
 
     const trackProgress = async () => {
       try {
@@ -130,14 +132,15 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           pageNumber: currentPage,
           totalPagesInChapter: data.images?.length || 0,
         });
+        setLastTrackedPage(currentPage);
       } catch (error) {
         console.error('Failed to update progress:', error);
       }
     };
 
-    const timeoutId = setTimeout(trackProgress, 2000);
-    return () => clearTimeout(timeoutId);
-  }, [user, data, id, chapterId, currentPage]);
+    // Track immediately when page changes
+    trackProgress();
+  }, [user, data, id, chapterId, currentPage, lastTrackedPage]);
 
   useEffect(() => {
     if (!containerRef.current || !data?.images) return;

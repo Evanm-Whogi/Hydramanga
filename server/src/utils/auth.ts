@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db/index";
 import { emailService } from "@/services/emailService";
+import { discordService } from "@/services/discordService";
 
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'http://localhost:3000';
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || `${PUBLIC_APP_URL}/api/auth/callback/google`;
@@ -37,7 +38,7 @@ export const auth = betterAuth({
         minPasswordLength: 4,
         maxPasswordLength: 26,
         requireEmailVerification: false,
-        autoSignIn: true
+        autoSignIn: true,
     },
     account: {
         accountLinking: {
@@ -82,5 +83,14 @@ export const auth = betterAuth({
                 customUrl: `${PUBLIC_APP_URL}/api/auth/verify-email?token=${token}&callbackURL=${encodeURIComponent(`${PUBLIC_APP_URL}/profile?verified=true`)}`
             });
         }
-    }
+    },
+    databaseHooks: {
+        user: {
+            create: {
+                after: async (user: any) => {
+                    await discordService.notifyUserSignup(user.name || 'Unknown', user.id);
+                }
+            }
+        }
+    },
 })

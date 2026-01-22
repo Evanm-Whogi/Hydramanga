@@ -145,6 +145,15 @@ const discordService = {
             ...(coverUrl && { thumbnail: { url: coverUrl } }),
         }));
     },
+
+    // Notify when a user signs up
+    async notifyUserSignup(username: string, userId: number) {
+        await this.sendEmbed(createEmbed({
+            title: '🆕 New User Signup',
+            description: `A new user has signed up: **${username}** (ID: ${userId})`,
+            color: 0x1abc9c,
+        }));
+    }
 };
 
 export { discordService };

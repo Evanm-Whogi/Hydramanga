@@ -13,10 +13,34 @@ import { auth } from "@/utils/auth";
 import { mangaImporterService } from '@/services/mangaImporterService';
 import { queueService } from '@/services/queueService';
 
+
+// Helper function to enrich manga data with view stats
+async function enrichWithViewStats(mangaList: any[]) {
+    if (mangaList.length === 0) return [];
+    
+    const seriesIds = mangaList.map(m => m.id);
+    const viewStats = await db
+        .select()
+        .from(schema.mangaViewStats)
+        .where(inArray(schema.mangaViewStats.seriesId, seriesIds));
+    
+    return mangaList.map(manga => {
+        const stats = viewStats.find(s => s.seriesId === manga.id);
+        return {
+            ...manga,
+            viewStats: stats ? {
+                totalViews: stats.totalViews,
+                uniqueViews: stats.uniqueViews,
+                lastViewedAt: stats.lastViewedAt,
+            } : null,
+        };
+    });
+}
+
 // Search manga with filters, sorting, and pagination (Infinite Scroll)
 export async function searchManga(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
-        const { genres, type, status, search, nsfw, sort = "weightedScore", order = "desc", cursor, limit = "40" } = req.query;
+        const { genres, type, status, search, years, nsfw, sort = "weightedScore", order = "desc", cursor, limit = "40" } = req.query;
         const pageSize = Math.min(Number(limit), 40);
         const isAsc = String(order).toLowerCase() === 'asc';
         const conditions = [];
@@ -44,6 +68,42 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
 
         const statusList = parseParam(status);
         if (statusList.length > 0) { conditions.push(inArray(schema.series.status, statusList)); }
+
+        // Handle year filtering
+        const yearList = parseParam(years);
+        if (yearList.length > 0) {
+            const yearConditions: any[] = [];
+            for (const year of yearList) {
+                if (year === 'timeless') {
+                    // Timeless means no year specified (year is null)
+                    yearConditions.push(isNull(schema.series.year));
+                } else if (year.endsWith('s')) {
+                    // Decade filter (e.g., "1950s", "2020s")
+                    const decadeStart = parseInt(year);
+                    const decadeEnd = decadeStart + 9;
+                    yearConditions.push(
+                        and(
+                            isNotNull(schema.series.year),
+                            sql`${schema.series.year} >= ${decadeStart}`,
+                            sql`${schema.series.year} <= ${decadeEnd}`
+                        )
+                    );
+                } else {
+                    // Specific year filter (e.g., "2024", "2025")
+                    const targetYear = parseInt(year);
+                    yearConditions.push(
+                        and(
+                            isNotNull(schema.series.year),
+                            sql`${schema.series.year} = ${targetYear}`
+                        )
+                    );
+                }
+            }
+            // Use OR logic - match any of the year conditions
+            if (yearConditions.length > 0) {
+                conditions.push(or(...yearConditions));
+            }
+        }
 
         // Hide NSFW content unless explicitly allowed
         if (nsfw === 'false') { conditions.push(and(ne(schema.series.contentRating, 'erotica'), ne(schema.series.contentRating, 'pornographic')));}
@@ -189,6 +249,29 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
     const userStatus = mangaData.usersTracking?.[0]?.status || null;
     const { usersTracking, ...manga } = mangaData;
 
+    // Fetch chapter view stats for all chapters
+    const chapterViewStats = await metricsService.getSeriesChapterStats(id);
+    
+    // Enrich chapters with view stats
+    const enrichedChapters = manga.chapters.map((chapter: any) => {
+        const stats = chapterViewStats.find((s: any) => s.chapterId === chapter.id);
+        return {
+            ...chapter,
+            viewStats: stats ? {
+                totalViews: stats.totalViews,
+                uniqueViews: stats.uniqueViews,
+                lastViewedAt: stats.lastViewedAt,
+            } : {
+                totalViews: 0,
+                uniqueViews: 0,
+                lastViewedAt: null,
+            },
+        };
+    });
+
+    // Replace chapters with enriched chapters
+    manga.chapters = enrichedChapters;
+
     // Fetch related series data
     let enrichedRelationships: any = null;
     if (manga.relationships && typeof manga.relationships === 'object' && !Array.isArray(manga.relationships)) {
@@ -304,7 +387,7 @@ export async function getAllLists(req: Request, res: Response) {
         orderBy: (userSeriesList, { desc }) => [desc(userSeriesList.updatedAt)],
     });
 
-    const added = results
+    var addedRaw = results
         .sort((a, b) => b.updatedAt!.getTime() - a.updatedAt!.getTime())
         .slice(0, 20)
         .map(item => ({
@@ -313,7 +396,7 @@ export async function getAllLists(req: Request, res: Response) {
             addedAt: item.updatedAt 
         }));
 
-    const unread = results
+    const unreadRaw = results
         .filter(item => item.status === 'unread')
         .map(item => ({
             ...item.series,
@@ -321,7 +404,7 @@ export async function getAllLists(req: Request, res: Response) {
             addedAt: item.updatedAt 
         }));
 
-    const reading = results
+    const readingRaw = results
         .filter(item => item.status === 'reading')
         .map(item => ({
             ...item.series,
@@ -329,7 +412,7 @@ export async function getAllLists(req: Request, res: Response) {
             addedAt: item.updatedAt 
         }));
 
-    const finished = results
+    const finishedRaw = results
         .filter(item => item.status === 'finished')
         .map(item => ({
             ...item.series,
@@ -337,13 +420,22 @@ export async function getAllLists(req: Request, res: Response) {
             addedAt: item.updatedAt 
         }));
 
-    const dropped = results
+    const droppedRaw = results
         .filter(item => item.status === 'dropped')
         .map(item => ({
             ...item.series,
             listStatus: item.status,
             addedAt: item.updatedAt 
         }));
+
+
+    let [added, unread, reading, finished, dropped] = await Promise.all([
+        enrichWithViewStats(addedRaw),
+        enrichWithViewStats(unreadRaw),
+        enrichWithViewStats(readingRaw),
+        enrichWithViewStats(finishedRaw),
+        enrichWithViewStats(droppedRaw),
+    ]);
 
 
     return res.json({ added, unread, reading, finished, dropped });
@@ -419,6 +511,7 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
         return res.json({
             ...chapter,
             images,
+            pageCount: chapter.pageCount || images.length, // Use DB pageCount or fallback to actual count
             allChapters
         });
 

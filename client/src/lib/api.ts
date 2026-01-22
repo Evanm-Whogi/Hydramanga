@@ -61,8 +61,14 @@ export const apiPost = async (url: string, data?: any) => {
     try {
         const res = await instance.post(url, data);
         return res.data;
-    } catch (error) {
+    } catch (error: any) {
         console.log('API POST error:', error);
+        // Extract error response if available and throw as proper Error
+        if (error.response?.data) {
+            const errorData = error.response.data;
+            const errorMessage = errorData.message || 'Request failed';
+            throw new Error(errorMessage);
+        }
         handleBackendError(error);
     }
 };
@@ -70,10 +76,15 @@ export const apiPost = async (url: string, data?: any) => {
 export const apiGet = async (url: string) => {
     try {
         const res = await instance.get(url);
-
         return res.data;
-    } catch (error) {
+    } catch (error: any) {
         console.log('API GET error:', error);
+        // Extract error response if available and throw as proper Error
+        if (error.response?.data) {
+            const errorData = error.response.data;
+            const errorMessage = errorData.message || 'Request failed';
+            throw new Error(errorMessage);
+        }
         handleBackendError(error);
     }
 };
@@ -82,8 +93,14 @@ export const apiDelete = async (url: string) => {
     try {
         const res = await instance.delete(url);
         return res.data;
-    } catch (error) {
+    } catch (error: any) {
         console.log('API DELETE error:', error);
+        // Extract error response if available and throw as proper Error
+        if (error.response?.data) {
+            const errorData = error.response.data;
+            const errorMessage = errorData.message || 'Request failed';
+            throw new Error(errorMessage);
+        }
         handleBackendError(error);
     }
 }
