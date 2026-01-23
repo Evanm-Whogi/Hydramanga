@@ -70,15 +70,15 @@ export async function getMangaAnalytics(id: number): Promise<any> {
 
 // Reading Progress
 export async function getMyProgress(limit: number = 20): Promise<any> {
-    return await apiGet(`/progress?limit=${limit}`);
+    return await apiGet(`/analytics/progress?limit=${limit}`);
 }
 
 export async function getMangaProgress(id: number): Promise<any> {
-    return await apiGet(`/progress/manga/${id}`);
+    return await apiGet(`/analytics/progress/manga/${id}`);
 }
 
 export async function getSeriesChapterProgress(id: number): Promise<any> {
-    return await apiGet(`/progress/manga/${id}/chapters`);
+    return await apiGet(`/analytics/progress/manga/${id}/chapters`);
 }
 
 export async function updateProgress(data: {
@@ -87,19 +87,19 @@ export async function updateProgress(data: {
     pageNumber: number;
     totalPagesInChapter: number;
 }): Promise<any> {
-    return await apiPost('/progress', data);
+    return await apiPost('/analytics/progress', data);
 }
 
 export async function markChapterAsRead(seriesId: number, chapterId: number): Promise<any> {
-    return await apiPost('/progress/mark-read', { seriesId, chapterId });
+    return await apiPost('/analytics/progress/mark-read', { seriesId, chapterId });
 }
 
 export async function markChapterAsUnread(chapterId: number): Promise<any> {
-    return await apiPost('/progress/mark-unread', { chapterId });
+    return await apiPost('/analytics/progress/mark-unread', { chapterId });
 }
 
 export async function deleteProgress(id: number): Promise<any> {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/progress/manga/${id}`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analytics/progress/manga/${id}`, {
         method: 'DELETE',
         credentials: 'include',
     });
@@ -108,7 +108,7 @@ export async function deleteProgress(id: number): Promise<any> {
 }
 
 export async function getUserStats(): Promise<any> {
-    return await apiGet('/progress/stats');
+    return await apiGet('/analytics/stats');
 }
 
 export async function getRecommendedManga(id: number, limit: number = 8): Promise<any> {

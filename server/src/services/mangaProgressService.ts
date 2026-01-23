@@ -1,6 +1,6 @@
 import { db } from '@/db';
 import { mangaImportProgress } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { queueService } from '@/services/queueService';
 import logger from '@/services/loggerService';
 
@@ -19,6 +19,14 @@ export interface MangaProgress {
   updatedAt: Date;
   completedAt?: Date | null;
   errorMessage?: string | null;
+  lastDownloadedChapter?: {
+    id?: number;
+    chapterNumber: string;
+    title: string;
+    pageCount: number;
+    createdAt?: string;
+    updatedAt?: string;
+  } | null;
 }
 
 /**
@@ -129,6 +137,55 @@ class MangaProgressService {
         return;
       }
 
+      // If no chapters found, mark as completed immediately
+      if (totalChapters === 0) {
+        const newStatus: ProgressStatus = 'completed';
+        ProgressStateMachine.assertTransition(progress.status, newStatus);
+
+        logger.debug(`No new chapters found for series ${seriesId}, transitioning from ${progress.status} to ${newStatus}`, { service: 'mangaProgressService' });
+
+        // Update database
+        await db.update(mangaImportProgress)
+          .set({
+            totalChapters: 0,
+            downloadedChapters: 0,
+            status: newStatus,
+            updatedAt: new Date(),
+            completedAt: new Date(),
+          })
+          .where(eq(mangaImportProgress.seriesId, seriesId));
+
+        logger.debug(`Database updated for series ${seriesId}: status=${newStatus}, totalChapters=0`, { service: 'mangaProgressService' });
+
+        // Update Redis
+        const updatedProgress: MangaProgress = {
+          ...progress,
+          totalChapters: 0,
+          downloadedChapters: 0,
+          status: newStatus,
+          percentage: 100,
+          updatedAt: new Date(),
+          completedAt: new Date(),
+        };
+
+        await this.getRedis().setex(
+          `${PROGRESS_CHANNEL_PREFIX}${seriesId}`,
+          PROGRESS_TTL,
+          JSON.stringify(updatedProgress)
+        );
+
+        logger.debug(`Redis updated for series ${seriesId}: published completion status`, { service: 'mangaProgressService' });
+
+        // Publish update to all listeners
+        await this.publishProgress(seriesId, updatedProgress);
+
+        logger.info(`No new chapters found for series ${seriesId}, marked as completed`, { service: 'mangaProgressService' });
+        
+        // Auto-cleanup after 5 minutes
+        setTimeout(() => this.cleanupProgress(seriesId), 5 * 60 * 1000);
+        return;
+      }
+
       // Validate state transition
       const newStatus: ProgressStatus = 'downloading';
       ProgressStateMachine.assertTransition(progress.status, newStatus);
@@ -168,22 +225,13 @@ class MangaProgressService {
   }
 
   // Increment downloaded chapters count
-  async incrementDownloaded(seriesId: number): Promise<void> {
+  async incrementDownloaded(seriesId: number, chapterInfo?: { id?: number; chapterNumber: string; title: string; pageCount: number; createdAt?: string; updatedAt?: string }): Promise<void> {
     try {
       const progress = await this.getProgress(seriesId);
       if (!progress) {
         logger.warn(`No progress found for series ${seriesId} when incrementing`, { service: 'mangaProgressService' });
         return;
       }
-
-      const newDownloaded = progress.downloadedChapters + 1;
-      const percentage = progress.totalChapters > 0
-        ? Math.round((newDownloaded / progress.totalChapters) * 100)
-        : 0;
-
-      // Check if completed
-      const isCompleted = newDownloaded >= progress.totalChapters && progress.totalChapters > 0;
-      const newStatus: ProgressStatus = isCompleted ? 'completed' : 'downloading';
 
       // Validate state transition - should be in downloading state
       if (progress.status !== 'downloading') {
@@ -194,23 +242,63 @@ class MangaProgressService {
         return;
       }
 
-      // Update database
+      // Use atomic increment to prevent race conditions when multiple chapters complete simultaneously
+      // This updates the database first, then fetches the new value
       await db.update(mangaImportProgress)
         .set({
-          downloadedChapters: newDownloaded,
-          status: newStatus,
+          downloadedChapters: sql`downloaded_chapters + 1`,
           updatedAt: new Date(),
-          ...(isCompleted && { completedAt: new Date() }),
         })
         .where(eq(mangaImportProgress.seriesId, seriesId));
 
-      // Update Redis
+      // Fetch updated progress to get the actual count after atomic increment
+      const [updatedRecord] = await db
+        .select()
+        .from(mangaImportProgress)
+        .where(eq(mangaImportProgress.seriesId, seriesId))
+        .limit(1);
+
+      if (!updatedRecord) {
+        logger.error(`Failed to fetch updated progress for series ${seriesId}`, { service: 'mangaProgressService' });
+        return;
+      }
+
+      const newDownloaded = updatedRecord.downloadedChapters;
+      
+      // Check if completed
+      const isCompleted = newDownloaded >= progress.totalChapters && progress.totalChapters > 0;
+      
+      // Calculate percentage - cap at 99% until actually completed to avoid false 100%
+      let percentage = progress.totalChapters > 0
+        ? Math.round((newDownloaded / progress.totalChapters) * 100)
+        : 0;
+      
+      // Don't show 100% unless actually completed
+      if (percentage === 100 && !isCompleted) {
+        percentage = 99;
+      }
+      
+      const newStatus: ProgressStatus = isCompleted ? 'completed' : 'downloading';
+
+      // Update status if completed
+      if (isCompleted) {
+        await db.update(mangaImportProgress)
+          .set({
+            status: newStatus,
+            completedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(mangaImportProgress.seriesId, seriesId));
+      }
+
+      // Update Redis with chapter info
       const updatedProgress: MangaProgress = {
         ...progress,
         downloadedChapters: newDownloaded,
         status: newStatus,
         percentage,
         updatedAt: new Date(),
+        lastDownloadedChapter: chapterInfo || null,
         ...(isCompleted && { completedAt: new Date() }),
       };
 
@@ -220,11 +308,11 @@ class MangaProgressService {
         JSON.stringify(updatedProgress)
       );
 
-      // Publish update
+      // Publish update (includes chapter info for SSE clients)
       await this.publishProgress(seriesId, updatedProgress);
 
       logger.info(
-        `Progress updated for series ${seriesId}: ${newDownloaded}/${progress.totalChapters} (${percentage}%)`,
+        `Progress updated for series ${seriesId}: ${newDownloaded}/${progress.totalChapters} (${percentage}%)${chapterInfo ? ` - Chapter ${chapterInfo.chapterNumber}` : ''}`,
         { service: 'mangaProgressService' }
       );
 
@@ -243,6 +331,43 @@ class MangaProgressService {
       const progress = await this.getProgress(seriesId);
       if (!progress) {
         logger.warn(`No progress found for series ${seriesId} when marking as failed`, { service: 'mangaProgressService' });
+        return;
+      }
+
+      // If already failed, update error message only to avoid state transition errors
+      // Multiple chapters may fail and call this method - we only care about first failure
+      if (progress.status === 'failed') {
+        logger.debug(
+          `Series ${seriesId} already in failed state, appending error message`,
+          { service: 'mangaProgressService' }
+        );
+        
+        // Update error message if new one is provided
+        if (errorMessage && errorMessage.length > 0) {
+          const combinedError = progress.errorMessage 
+            ? `${progress.errorMessage} | ${errorMessage}`
+            : errorMessage;
+
+          await db.update(mangaImportProgress)
+            .set({
+              errorMessage: combinedError,
+              updatedAt: new Date(),
+            })
+            .where(eq(mangaImportProgress.seriesId, seriesId));
+          
+          // Publish updated progress with accumulated errors
+          const updatedProgress: MangaProgress = {
+            ...progress,
+            errorMessage: combinedError,
+            updatedAt: new Date(),
+          };
+          await this.publishProgress(seriesId, updatedProgress);
+
+          logger.debug(
+            `Updated error message for failed series ${seriesId}`,
+            { service: 'mangaProgressService' }
+          );
+        }
         return;
       }
 
@@ -281,6 +406,61 @@ class MangaProgressService {
       logger.error(`Import failed for series ${seriesId}: ${errorMessage}`, { service: 'mangaProgressService' });
     } catch (error) {
       logger.error(`Failed to mark series ${seriesId} as failed: ${error}`, { service: 'mangaProgressService' });
+      // Don't rethrow - allow other retries to continue even if we can't update status
+    }
+  }
+
+  // Mark import as completed without downloading (for rescans with no new chapters)
+  async markCompleted(seriesId: number, totalChapters: number): Promise<void> {
+    try {
+      const progress = await this.getProgress(seriesId);
+      if (!progress) {
+        logger.warn(`No progress found for series ${seriesId} when marking as completed`, { service: 'mangaProgressService' });
+        return;
+      }
+
+      const newStatus: ProgressStatus = 'completed';
+      ProgressStateMachine.assertTransition(progress.status, newStatus);
+
+      logger.debug(`Marking series ${seriesId} as completed with ${totalChapters} chapters`, { service: 'mangaProgressService' });
+
+      // Update database
+      await db.update(mangaImportProgress)
+        .set({
+          totalChapters,
+          downloadedChapters: totalChapters, // All chapters already downloaded
+          status: newStatus,
+          updatedAt: new Date(),
+          completedAt: new Date(),
+        })
+        .where(eq(mangaImportProgress.seriesId, seriesId));
+
+      // Update Redis
+      const updatedProgress: MangaProgress = {
+        ...progress,
+        totalChapters,
+        downloadedChapters: totalChapters,
+        status: newStatus,
+        percentage: 100,
+        updatedAt: new Date(),
+        completedAt: new Date(),
+      };
+
+      await this.getRedis().setex(
+        `${PROGRESS_CHANNEL_PREFIX}${seriesId}`,
+        PROGRESS_TTL,
+        JSON.stringify(updatedProgress)
+      );
+
+      // Publish update
+      await this.publishProgress(seriesId, updatedProgress);
+
+      logger.info(`Marked series ${seriesId} as completed with ${totalChapters} chapters`, { service: 'mangaProgressService' });
+
+      // Auto-cleanup after 5 minutes
+      setTimeout(() => this.cleanupProgress(seriesId), 5 * 60 * 1000);
+    } catch (error) {
+      logger.error(`Failed to mark series ${seriesId} as completed: ${error}`, { service: 'mangaProgressService' });
     }
   }
 
@@ -314,7 +494,7 @@ class MangaProgressService {
         status: dbProgress.status,
         percentage: dbProgress.totalChapters > 0
           ? Math.round((dbProgress.downloadedChapters / dbProgress.totalChapters) * 100)
-          : 0,
+          : (dbProgress.status === 'completed' ? 100 : 0), // Show 100% if completed with 0 chapters, 0% if still scanning
         startedAt: dbProgress.startedAt,
         updatedAt: dbProgress.updatedAt,
         completedAt: dbProgress.completedAt,

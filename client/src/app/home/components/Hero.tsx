@@ -10,8 +10,9 @@ export default function Hero({ mangaData }: any) {
             <div className="container mx-auto text-primary flex flex-col pt-[6vh] min-h-[65vh] overflow-hidden">
                 <div className="absolute inset-0 -z-50 max-h-[65vh] overflow-hidden">
                     <div className="absolute inset-0 bg-cover bg-center scale-100" 
-                        style={{ backgroundImage: `url(${mangaData.cover.raw.url})` }}
+                        style={{ backgroundImage: `url(${mangaData.cover?.raw.url || "/notFound.png"})` }}
                     />
+
                     <div className="absolute inset-0 bg-linear-to-r from-background via-background/95 to-background/60" />
                     <div className="absolute inset-0 bg-linear-to-t from-background via-transparent to-background/80" />
                     <div className="absolute top-20 right-20 w-96 h-96 bg-accent/20 rounded-full blur-3xl animate-float-aggressive" />
@@ -59,7 +60,7 @@ export default function Hero({ mangaData }: any) {
                         </div>
                     </div>
                     <div className="hidden md:flex items-center mx-auto">
-                        <img src={mangaData.cover.raw.url} alt="Hero Image" className="w-82 object-contain" />
+                        <img src={mangaData.cover?.raw.url || "/notFound.png"} alt="Hero Image" className="w-82 object-contain" />
                     </div>
                 </div>
             </div>

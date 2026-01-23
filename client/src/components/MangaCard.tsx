@@ -10,7 +10,7 @@ export default function MangaCard({ manga }: { manga?: any }) {
         <>
         <Link href={`manga/${manga.id}`} className="flex flex-col w-full h-fit group">
             <div className="relative aspect-2/3 w-full overflow-hidden rounded-2xl">
-                <img src={`${manga.cover.raw.url}`} alt={manga.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                <img src={`${manga?.cover?.raw.url || '/notFound.png'}`} alt={manga.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                 <div className="absolute bottom-0 inset-x-0 flex justify-between items-center p-3 bg-linear-to-t from-transparent-card/80 to-transparent-card/50">
                     <div className="flex items-center font-bold text-primary"><Star className="size-3.5 text-yellow-400 mr-1 fill-yellow-400" />{formatToRating(manga.rating)}</div>
                     <div className="flex items-center font-bold text-primary">

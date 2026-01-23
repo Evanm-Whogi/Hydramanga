@@ -16,7 +16,7 @@ interface ContinueReadingCardProps {
 }
 
 export default function ContinueReadingCard({ progress }: ContinueReadingCardProps) {
-    const coverUrl = progress.seriesCover?.raw?.url || progress.seriesCover?.x350?.x3 || '/placeholder.jpg';
+    const coverUrl = progress.seriesCover?.raw?.url || progress.seriesCover?.x350?.x3 || '/notFound.png';
     const timeAgo = getTimeAgo(new Date(progress.updatedAt));
 
     return (

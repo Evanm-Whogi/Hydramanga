@@ -14,6 +14,7 @@ import { chapters } from '@/db/schema';
 import { downloadChapterImagesStandalone } from '@/scrapers/weebCentral';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import logger from '@/services/loggerService';
+import { eq, and } from 'drizzle-orm';
 
 export interface ChapterDownloadData {
     seriesId: number;
@@ -74,8 +75,31 @@ export class ChapterDownloaderService {
                 { service: 'chapterDownloaderService' }
             );
 
-            // Increment downloaded count for progress tracking
-            await mangaProgressService.incrementDownloaded(data.seriesId);
+            // Fetch the complete chapter object from database
+            const [savedChapter] = await db
+                .select()
+                .from(chapters)
+                .where(and(eq(chapters.chapterNumber, chapterNumberStr), eq(chapters.seriesId, data.seriesId)))
+                .limit(1);
+
+            // Increment downloaded count for progress tracking with complete chapter info
+            if (savedChapter) {
+                await mangaProgressService.incrementDownloaded(data.seriesId, {
+                    id: savedChapter.id,
+                    chapterNumber: savedChapter.chapterNumber,
+                    title: savedChapter.title || data.chapterTitle,
+                    pageCount: savedChapter.pageCount || pageCount,
+                    createdAt: savedChapter.createdAt?.toISOString(),
+                    updatedAt: savedChapter.updatedAt?.toISOString(),
+                });
+            } else {
+                // Fallback if fetch fails
+                await mangaProgressService.incrementDownloaded(data.seriesId, {
+                    chapterNumber: chapterNumberStr,
+                    title: data.chapterTitle,
+                    pageCount,
+                });
+            }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error during download';
             logger.error(
@@ -83,11 +107,9 @@ export class ChapterDownloaderService {
                 { service: 'chapterDownloaderService' }
             );
 
-            // Mark the import as failed so frontend stops waiting and surfaces error
-            await mangaProgressService.markFailed(
-                data.seriesId,
-                `Chapter ${data.chapterNumber} failed: ${errorMessage}`
-            );
+            // NOTE: Do NOT mark as failed here. Let the queue service handle it after all retry attempts exhausted.
+            // Marking failed on every error prevents retries and causes state machine errors.
+            // The queueService.onFailed() handler will call markFailed() after max attempts reached.
             throw error;
         }
     }

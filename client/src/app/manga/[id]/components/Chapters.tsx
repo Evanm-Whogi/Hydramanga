@@ -1,7 +1,10 @@
 import { formatDate } from "@/lib/utils";
 import { useState, useMemo, useEffect } from "react";
-import { ClockIcon, CheckIcon } from "lucide-react";
+import { ClockIcon, CheckIcon, BookmarkIcon } from "lucide-react";
 import { getSeriesChapterProgress, markChapterAsRead, markChapterAsUnread } from "@/services/mangaService";
+import { getSeriesBookmarks, removeBookmark } from "@/services/bookmarkService";
+import BookmarkModal from "@/components/BookmarkModal";
+import { toast } from "react-toastify";
 
 const CHAPTERS_PER_PAGE = 24;
 
@@ -13,9 +16,19 @@ interface ChapterProgress {
     };
 }
 
+interface BookmarkData {
+    [chapterId: number]: {
+        id: number;
+        note?: string;
+        createdAt: string;
+    };
+}
+
 export default function Chapters({ manga }: { manga: any }) {
     const [showAll, setShowAll] = useState(false);
     const [chapterProgress, setChapterProgress] = useState<ChapterProgress>({});
+    const [bookmarks, setBookmarks] = useState<BookmarkData>({});
+    const [bookmarkModal, setBookmarkModal] = useState({ isOpen: false, chapterId: 0 });
     
     // Use chapters as-is (already sorted by parent component)
     const chapters = manga.chapters || [];
@@ -51,12 +64,40 @@ export default function Chapters({ manga }: { manga: any }) {
         fetchProgress();
     }, [manga.id]);
 
+    // Fetch bookmarks for this series
+    useEffect(() => {
+        const fetchBookmarks = async () => {
+            try {
+                const response = await getSeriesBookmarks(manga.id);
+                
+                if (response?.bookmarks && Array.isArray(response.bookmarks)) {
+                    const bookmarkMap: BookmarkData = {};
+                    response.bookmarks.forEach((b: any) => {
+                        bookmarkMap[b.chapterId] = {
+                            id: b.id,
+                            note: b.note,
+                            createdAt: b.createdAt,
+                        };
+                    });
+                    setBookmarks(bookmarkMap);
+                }
+            } catch (error) {
+                console.error('Failed to fetch bookmarks:', error);
+            }
+        };
+        
+        fetchBookmarks();
+    }, [manga.id]);
+
     const handleMarkAsRead = async (e: React.MouseEvent, chapterId: number) => {
         e.preventDefault();
         e.stopPropagation();
         
         try {
             await markChapterAsRead(manga.id, chapterId);
+
+            toast.success('Chapter marked as read');
+
             
             // Update local state to reflect the change
             setChapterProgress(prev => ({
@@ -89,6 +130,53 @@ export default function Chapters({ manga }: { manga: any }) {
             console.error('Failed to mark chapter as unread:', error);
         }
     };
+
+    const handleBookmarkClick = (e: React.MouseEvent, chapterId: number) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setBookmarkModal({ isOpen: true, chapterId });
+    };
+
+    const handleRemoveBookmark = async (e: React.MouseEvent, chapterId: number) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        try {
+            await removeBookmark(manga.id, chapterId);
+            setBookmarks(prev => {
+                const updated = { ...prev };
+                delete updated[chapterId];
+                return updated;
+            });
+        } catch (error) {
+            console.error('Failed to remove bookmark:', error);
+        }
+    };
+
+    const handleBookmarkSuccess = () => {
+        // Refetch bookmarks to update UI
+        const fetchBookmarks = async () => {
+            try {
+                const response = await getSeriesBookmarks(manga.id);
+                
+                if (response?.bookmarks && Array.isArray(response.bookmarks)) {
+                    const bookmarkMap: BookmarkData = {};
+                    response.bookmarks.forEach((b: any) => {
+                        bookmarkMap[b.chapterId] = {
+                            id: b.id,
+                            note: b.note,
+                            createdAt: b.createdAt,
+                        };
+                    });
+                    setBookmarks(bookmarkMap);
+                }
+            } catch (error) {
+                console.error('Failed to fetch bookmarks:', error);
+            }
+        };
+        
+        fetchBookmarks();
+    };
     
     return (
         <>
@@ -102,6 +190,7 @@ export default function Chapters({ manga }: { manga: any }) {
                     const hasProgress = !!progress && progressPercentage > 0 && progressPercentage < 100;
                     const isFullyRead = progressPercentage >= 100;
                     const resumePage = hasProgress && !isFullyRead ? Math.max(1, lastPageNumber) : 1;
+                    const isBookmarked = !!bookmarks[chapter.id];
                     const href = `/manga/${manga.id}/read/${chapter.id}${hasProgress && !isFullyRead ? `?page=${resumePage}` : ''}`;
                     
                     return (
@@ -112,9 +201,14 @@ export default function Chapters({ manga }: { manga: any }) {
                     >
                         <div className="flex justify-between items-center">
                             <div className="flex-1">
-                                <div className={`flex items-center`}>
+                                <div className={`flex items-center gap-2`}>
                                     <h1 className={`text-xl line-clamp-2 ${isFullyRead ? 'text-muted' : ''}`}>{chapter.title}</h1>
-                                    {isFullyRead && <CheckIcon className={`inline-block ml-2 size-5 mb-0.5 text-green-500`} />}
+                                    {isFullyRead && <CheckIcon className={`inline-block size-5 text-green-500 shrink-0`} />}
+                                    {isBookmarked && (
+                                        <span title={bookmarks[chapter.id]?.note || 'Bookmarked'}>
+                                            <BookmarkIcon className={`inline-block size-5 text-accent fill-accent shrink-0`} />
+                                        </span>
+                                    )}
                                 </div>
                                 <div className="flex gap-4 text-sm text-muted">
                                     <h2 className="items-center"><ClockIcon className="inline-block mr-1 size-3 mb-0.5" />{formatDate(chapter.updatedAt, true)}</h2>
@@ -137,13 +231,18 @@ export default function Chapters({ manga }: { manga: any }) {
                                     </div>
                                 )}
                             </div>
-                            <div className="ml-4 shrink-0">
-                                <button 
-                                    onClick={(e) => isFullyRead ? handleMarkAsUnread(e, chapter.id) : handleMarkAsRead(e, chapter.id)}
-                                    className="px-4 py-2 bg-background hover:bg-background/50 rounded-lg text-xs"
-                                >
+                            <div className="ml-4 shrink-0 flex flex-col gap-2">
+                                <button onClick={(e) => isFullyRead ? handleMarkAsUnread(e, chapter.id) : handleMarkAsRead(e, chapter.id)} className="hover:cursor-pointer px-4 py-2 bg-background hover:bg-background/50 rounded-lg text-xs whitespace-nowrap">
                                     {isFullyRead ? 'Mark Unread' : 'Mark as Read'}
                                 </button>
+
+                                <button 
+                                    onClick={(e) => isBookmarked ? handleRemoveBookmark(e, chapter.id) : handleBookmarkClick(e, chapter.id)} 
+                                    className="px-4 py-2 bg-background hover:bg-background/50 rounded-lg text-xs whitespace-nowrap hover:cursor-pointer"
+                                >
+                                    {isBookmarked ? 'Remove Bookmark' : 'Bookmark'}
+                                </button>
+
                             </div>
                         </div>
                     </a>
@@ -158,6 +257,16 @@ export default function Chapters({ manga }: { manga: any }) {
                 </div>
             )}
         </div>
+
+        <BookmarkModal
+            isOpen={bookmarkModal.isOpen}
+            onClose={() => setBookmarkModal({ isOpen: false, chapterId: 0 })}
+            seriesId={manga.id}
+            chapterId={bookmarkModal.chapterId}
+            chapterTitle={chapters.find((ch: any) => ch.id === bookmarkModal.chapterId)?.title}
+            existingNote={bookmarks[bookmarkModal.chapterId]?.note || ''}
+            onSuccess={handleBookmarkSuccess}
+        />
         </>
     )
 }

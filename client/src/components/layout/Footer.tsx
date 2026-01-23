@@ -1,4 +1,3 @@
-import ImportStatus from '@/components/ImportStatus';
 import Link from 'next/link';
 
 export default  function Footer() {
@@ -38,10 +37,9 @@ export default  function Footer() {
                 </div>
                 <div className="flex flex-col text-primary">
                     <hr className="border border-borders w-full" />
-                    <div className="flex py-5 items-center">
-                        <span className="flex flex-col md:flex-row gap-2">© 2026 {process.env.NEXT_PUBLIC_NAME}, LLC. All rights reserved. | <p className="font-bold">Made by <a href="https://chit.sh/" className="text-accent font-bold underline">Whogi</a></p>
-                        </span>
-                        <ImportStatus />
+                    <div className="flex py-5 items-center justify-between w-full text-sm">
+                        <span className="">© 2026 {process.env.NEXT_PUBLIC_NAME}, LLC. All rights reserved.<p className="font-bold">Made by <a href="https://chit.sh/" className="text-accent font-bold underline">Whogi</a></p></span>
+                        <span className="flex flex-col md:flex-row gap-2">Site Version: A.0.12</span>
                     </div>
                 </div>
             </div>

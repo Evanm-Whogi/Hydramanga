@@ -115,7 +115,9 @@ class QueueService {
         }, {
             connection: this.redisConnection,
             limiter: limiter,
-            concurrency: concurrency
+            concurrency: concurrency,
+            lockDuration: timeout + 5000, // Lock duration must be longer than job timeout
+            lockRenewTime: timeout / 2 // Renew lock halfway through timeout
         });
 
         // Track worker for cleanup

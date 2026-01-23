@@ -1,5 +1,6 @@
 import express, { RequestHandler } from 'express';
 import { searchManga, getOne, updateMangaList, removeFromList, getUserLists, getPages, getAllLists, triggerMangaScan, trackMangaViewEndpoint, trackChapterViewEndpoint, getRecommendedManga }  from '@/controllers/mangaController';
+import { addBookmark, removeBookmark, getSeriesBookmarks, getBookmark } from '@/controllers/bookmarkController';
 
 const router = express.Router();
 
@@ -17,6 +18,12 @@ router.post('/:id/scan', triggerMangaScan as RequestHandler);
 // Client-side view tracking
 router.post('/:id/track-view', trackMangaViewEndpoint as RequestHandler);
 router.post('/:id/chapter/:chapterId/track-view', trackChapterViewEndpoint as RequestHandler);
+
+// Bookmarks
+router.post('/:id/chapter/:chapterId/bookmark', addBookmark as RequestHandler);
+router.delete('/:id/chapter/:chapterId/bookmark', removeBookmark as RequestHandler);
+router.get('/:id/chapter/:chapterId/bookmark', getBookmark as RequestHandler);
+router.get('/:id/bookmarks', getSeriesBookmarks as RequestHandler);
 
 // Recommendations
 router.get('/:id/recommendations', getRecommendedManga as RequestHandler);

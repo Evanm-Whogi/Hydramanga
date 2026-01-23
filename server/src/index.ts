@@ -74,7 +74,7 @@ app.use((err: Error, req: any, res: any, next: any) => {
 
 // Server
 const server = app.listen(process.env.PORT, () => {
-  console.log(`Server is running on port: ${process.env.PORT}`);
+  logger.info(`Server is running on port: ${process.env.PORT}`, { service: 'server' });
 });
 
 // Graceful Shutdown
