@@ -2,9 +2,11 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { fetchMangaPages, updateProgress } from '@/services/mangaService';
+import { getBookmark, addBookmark, removeBookmark } from '@/services/bookmarkService';
 import { useUser } from '@/providers/UserProvider';
-import { MenuIcon, X } from 'lucide-react';
+import { MenuIcon, X, BookmarkIcon } from 'lucide-react';
 import { useChapterViewTracking } from '@/hooks/useViewTracking';
+import BookmarkModal from '@/components/BookmarkModal';
 
 const SIDEBAR_WIDTH_PX = 260; // matches md:w-65 / md:w-[calc(100%-260px)]
 
@@ -30,6 +32,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const [currentPage, setCurrentPage] = useState(0);
   const [lastTrackedPage, setLastTrackedPage] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [bookmarkNote, setBookmarkNote] = useState('');
+  const [bookmarkModalOpen, setBookmarkModalOpen] = useState(false);
 
   // Track chapter view on client-side mount
   useChapterViewTracking(id as string, chapterId as string);
@@ -38,6 +43,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const mobileHeaderRef = useRef<HTMLDivElement>(null);
   const lastScrollPos = useRef(0);
   const hasScrolledToPage = useRef(false);
+  const progressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const loadMangaPages = async () => {
@@ -54,6 +60,28 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     };
     loadMangaPages();
   }, [id, chapterId]);
+
+  // Fetch bookmark status for current chapter
+  useEffect(() => {
+    if (!user || !id || !chapterId) return;
+
+    const fetchBookmarkStatus = async () => {
+      try {
+        const response = await getBookmark(Number(id), Number(chapterId));
+        if (response?.bookmark) {
+          setIsBookmarked(true);
+          setBookmarkNote(response.bookmark.note || '');
+        } else {
+          setIsBookmarked(false);
+          setBookmarkNote('');
+        }
+      } catch (error) {
+        console.error('Failed to fetch bookmark status:', error);
+      }
+    };
+
+    fetchBookmarkStatus();
+  }, [user, id, chapterId]);
 
   useEffect(() => {
     const mainNav = document.querySelector('nav') || document.querySelector('header');
@@ -142,7 +170,13 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     if (!user || !data || !id || !chapterId) return;
     if (currentPage === 0 || currentPage === lastTrackedPage) return; // Skip if page 0 or already tracked
 
-    const trackProgress = async () => {
+    // Clear existing timeout
+    if (progressTimeoutRef.current) {
+      clearTimeout(progressTimeoutRef.current);
+    }
+
+    // Set new debounced timeout (500ms delay)
+    progressTimeoutRef.current = setTimeout(async () => {
       try {
         await updateProgress({
           seriesId: Number(id),
@@ -154,10 +188,13 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       } catch (error) {
         console.error('Failed to update progress:', error);
       }
-    };
+    }, 500);
 
-    // Track immediately when page changes
-    trackProgress();
+    return () => {
+      if (progressTimeoutRef.current) {
+        clearTimeout(progressTimeoutRef.current);
+      }
+    };
   }, [user, data, id, chapterId, currentPage, lastTrackedPage]);
 
   useEffect(() => {
@@ -219,6 +256,36 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       }
     }
   }, []);
+
+  const handleBookmarkClick = async () => {
+    if (!user) return;
+    setBookmarkModalOpen(true);
+  };
+
+  const handleRemoveBookmark = async () => {
+    if (!user || !id || !chapterId) return;
+    try {
+      await removeBookmark(Number(id), Number(chapterId));
+      setIsBookmarked(false);
+      setBookmarkNote('');
+    } catch (error) {
+      console.error('Failed to remove bookmark:', error);
+    }
+  };
+
+  const handleBookmarkSuccess = () => {
+    setIsBookmarked(true);
+    // Refetch bookmark to get latest note
+    if (user && id && chapterId) {
+      getBookmark(Number(id), Number(chapterId))
+        .then((response) => {
+          if (response?.bookmark) {
+            setBookmarkNote(response.bookmark.note || '');
+          }
+        })
+        .catch((error) => console.error('Failed to fetch bookmark:', error));
+    }
+  };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -286,6 +353,21 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
               Next
             </button>
           </div>
+
+          {/* Bookmark Button */}
+          {user && (
+            <button
+              onClick={() => isBookmarked ? handleRemoveBookmark() : handleBookmarkClick()}
+              className={`w-full mt-4 p-2.5 flex items-center justify-center gap-2 border-0 rounded cursor-pointer ${
+                isBookmarked
+                  ? 'bg-accent hover:bg-accent/80 text-white'
+                  : 'bg-background hover:bg-background/50 text-primary'
+              }`}
+            >
+              <BookmarkIcon size={18} className={isBookmarked ? 'fill-white' : ''} />
+              {isBookmarked ? 'Remove Bookmark' : 'Bookmark Chapter'}
+            </button>
+          )}
           {/* Key */}
           <div className="mt-4 text-sm text-primary/70">
             <p className="mb-1">Keybinds:</p>
@@ -383,7 +465,18 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         <span className="text-sm font-semibold">
           {currentPage}/{data?.images?.length || 0}
         </span>
-        <div className="w-8" />
+        {user && (
+          <button
+            onClick={() => isBookmarked ? handleRemoveBookmark() : handleBookmarkClick()}
+            className="text-primary hover:text-accent p-2"
+            title={isBookmarked ? 'Remove Bookmark' : 'Bookmark Chapter'}
+          >
+            <BookmarkIcon
+              className="size-6"
+              fill={isBookmarked ? 'currentColor' : 'none'}
+            />
+          </button>
+        )}
       </div>
 
       <main className="content w-full md:py-18.25 md:ml-65 md:w-[calc(100%-260px)] pt-24 md:pt-18.25 pb-20 md:pb-0 relative flex flex-col items-center">
@@ -424,6 +517,16 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           )}
         </div>
       </main>
+
+      <BookmarkModal
+        isOpen={bookmarkModalOpen}
+        onClose={() => setBookmarkModalOpen(false)}
+        seriesId={Number(id)}
+        chapterId={Number(chapterId)}
+        chapterTitle={data?.title || `Chapter ${data?.chapterNumber}`}
+        existingNote={bookmarkNote}
+        onSuccess={handleBookmarkSuccess}
+      />
     </div>
   );
 }

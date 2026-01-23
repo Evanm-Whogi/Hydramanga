@@ -10,6 +10,14 @@ export interface MangaImportProgress {
   updatedAt: string;
   completedAt?: string | null;
   errorMessage?: string | null;
+  lastDownloadedChapter?: {
+    id?: number;
+    chapterNumber: string;
+    title: string;
+    pageCount: number;
+    createdAt?: string;
+    updatedAt?: string;
+  } | null;
 }
 
 // Get current progress for a manga import (polling fallback)

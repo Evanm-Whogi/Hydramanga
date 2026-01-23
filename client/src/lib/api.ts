@@ -62,7 +62,6 @@ export const apiPost = async (url: string, data?: any) => {
         const res = await instance.post(url, data);
         return res.data;
     } catch (error: any) {
-        console.log('API POST error:', error);
         // Extract error response if available and throw as proper Error
         if (error.response?.data) {
             const errorData = error.response.data;
@@ -78,7 +77,6 @@ export const apiGet = async (url: string) => {
         const res = await instance.get(url);
         return res.data;
     } catch (error: any) {
-        console.log('API GET error:', error);
         // Extract error response if available and throw as proper Error
         if (error.response?.data) {
             const errorData = error.response.data;
@@ -94,7 +92,6 @@ export const apiDelete = async (url: string) => {
         const res = await instance.delete(url);
         return res.data;
     } catch (error: any) {
-        console.log('API DELETE error:', error);
         // Extract error response if available and throw as proper Error
         if (error.response?.data) {
             const errorData = error.response.data;

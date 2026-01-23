@@ -4,6 +4,7 @@ import { useSSEProgress } from './useSSEProgress';
 
 interface UseMangaImportProgressOptions {
   enabled?: boolean;
+  onProgress?: (progress: MangaImportProgress) => void;
   onComplete?: (progress: MangaImportProgress) => void;
   onError?: (error: string) => void;
 }
@@ -12,13 +13,15 @@ export function useMangaImportProgress(
   mangaId: number | null,
   options: UseMangaImportProgressOptions = {}
 ) {
-  const { enabled = true, onComplete, onError } = options;
+  const { enabled = true, onProgress, onComplete, onError } = options;
   const [progress, setProgress] = useState<MangaImportProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const onProgressRef = useRef<typeof onProgress>(onProgress);
   const onCompleteRef = useRef<typeof onComplete>(onComplete);
   const onErrorRef = useRef<typeof onError>(onError);
 
   // Keep stable refs for callbacks
+  useEffect(() => { onProgressRef.current = onProgress; }, [onProgress]);
   useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
 
@@ -31,6 +34,10 @@ export function useMangaImportProgress(
       case 'progress':
         setProgress(message.data);
         setError(null);
+        // Call onProgress for each update
+        if (onProgressRef.current) {
+          onProgressRef.current(message.data);
+        }
         break;
 
       case 'no-progress':

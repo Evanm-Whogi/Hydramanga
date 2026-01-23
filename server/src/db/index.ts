@@ -28,7 +28,7 @@ pool.connect((err, client, release) => {
         logger.error('Database connection failed:', err);
         return;
     }
-    console.log('Database connected successfully');
+    logger.info('Database connected successfully', { service: 'database' });
     release(); // Important to release the client back to the pool
 });
 

@@ -132,8 +132,8 @@ export default function Settings({user}: {user: any}) {
                                 <p className="text-xs text-muted">Paste an image URL (square works best).</p>
                             </div>
                             {/* <div className="flex place-content-between pt-2">
-                                <SingleCheckbox label="Private Profile" description="Hide your profile from discovery" onChange={(e) => console.log(e.target.checked)} />
-                                <SingleCheckbox label="Allow NSFW" description="Enable or Disable Pornography/Erotic Categories" onChange={(e) => console.log(e.target.checked)} />
+                                <SingleCheckbox label="Private Profile" description="Hide your profile from discovery" onChange={() => {}} />
+                                <SingleCheckbox label="Allow NSFW" description="Enable or Disable Pornography/Erotic Categories" onChange={() => {}} />
                             </div> */}
                         </div>
                         <button onClick={handleUpdateInfo} className="bg-background hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer mt-5">Save</button>

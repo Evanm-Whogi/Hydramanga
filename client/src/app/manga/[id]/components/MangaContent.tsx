@@ -9,7 +9,6 @@ import { Eye, TrendingUp, Bookmark } from 'lucide-react';
 import { useMangaViewTracking } from '@/hooks/useViewTracking';
 import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
 import { showImportProgressToast, updateImportProgressToast, dismissImportProgressToast } from '@/components/ImportProgressToast';
-import { useRouter } from 'next/navigation';
 
 // Memoized Header to prevent blur/filter recalculations on state changes
 const MangaHeader = memo(({ cover }: { cover: string }) => {
@@ -102,7 +101,7 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
   const [isPending, startTransition] = useTransition();
   const [wasActiveOnLoad, setWasActiveOnLoad] = useState(false);
   const [initialProgressReceived, setInitialProgressReceived] = useState(false);
-  const router = useRouter();
+  const [localChapters, setLocalChapters] = useState(manga.chapters || []);
   const mangaId = Number(manga.id);
 
   // Track manga views
@@ -113,9 +112,34 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
     mangaId,
     {
       enabled: true,
-      onComplete: (finalProgress) => {
-        // Refresh the page to show new chapters
-        router.refresh();
+      onProgress: (progressData) => {
+        // If progress includes newly downloaded chapter info, add it to local state
+        if (progressData.lastDownloadedChapter) {
+          setLocalChapters((prev: any[]) => {
+            // Check if chapter already exists
+            const exists = prev.some((ch: any) => ch.chapterNumber === progressData.lastDownloadedChapter?.chapterNumber);
+            if (!exists && progressData.lastDownloadedChapter) {
+              // Build a complete chapter object with all fields needed for display
+              const newChapter = {
+                id: progressData.lastDownloadedChapter?.id || Math.random(), // Use real DB ID if available
+                chapterNumber: progressData.lastDownloadedChapter?.chapterNumber,
+                title: progressData.lastDownloadedChapter?.title,
+                pageCount: progressData.lastDownloadedChapter?.pageCount || 0,
+                updatedAt: progressData.lastDownloadedChapter?.updatedAt || new Date().toISOString(),
+                createdAt: progressData.lastDownloadedChapter?.createdAt || new Date().toISOString(),
+                viewStats: { totalViews: 0, uniqueViews: 0 }, // Default stats for new chapters
+                description: null,
+                volumeNumber: null,
+                localPath: '',
+                seriesId: mangaId,
+              };
+              return [...prev, newChapter].sort((a: any, b: any) => 
+                parseFloat(b.chapterNumber || '0') - parseFloat(a.chapterNumber || '0')
+              );
+            }
+            return prev;
+          });
+        }
       },
       onError: (error) => {
         console.error('Import failed:', error);
@@ -196,7 +220,7 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
 
   return (
     <>
-      <MangaHeader cover={manga.cover.x350?.x3 || manga.cover.raw?.url} />
+      <MangaHeader cover={manga?.cover?.x350?.x3 || manga?.cover?.raw?.url || "/notFound.png"} />
       <div className="container mx-auto pt-5 px-4 md:px-0 mt-25 md:mt-0">
         <div className="flex flex-col lg:flex-row gap-6 lg:place-content-evenly mb-5">
           {/* Main Content */}
@@ -204,7 +228,9 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
             <h1 className="text-2xl md:text-3xl font-bold">
               {manga.title} <span className="text-sm md:text-base text-muted">{formatToStars(manga.weightedScore)} {formatToRating(manga.weightedScore)}</span>
             </h1>
+            { manga.romanizedTitle || manga.nativeTitle ? (
             <h2 className="text-base md:text-lg text-muted font-semibold">[{manga.romanizedTitle} | {manga.nativeTitle}]</h2>
+            ): null }
             <div className="flex gap-2 items-center flex-wrap">
               <span className="bg-green-400/20 w-fit px-2 py-1 rounded-lg capitalize text-sm">{manga.status}</span>
               {analytics?.manga && (
@@ -248,14 +274,14 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
               {showDetails ? 'Hide Details' : 'Show Details...'}
             </button>
 
-            <MangaActions manga={manga} comments={manga.comments} userStatus={userStatus} importProgress={progress} />
+            <MangaActions manga={manga} chapters={localChapters} comments={manga.comments} userStatus={userStatus} importProgress={progress} />
           </div>
 
           {/* Sidebar */}
           <div className="flex flex-col w-full lg:w-79.75 lg:relative lg:-top-35 lg:z-25 gap-4">
             {/* Cover Image */}
             <div className="w-full md:max-w-xs lg:max-w-none mx-auto lg:mx-0 overflow-hidden rounded-md border-4 border-background shadow-lg">
-              <img src={manga.cover.raw?.url} alt="manga" className="w-full h-auto object-cover" />
+              <img src={manga.cover?.raw?.url || "/notFound.png"} alt="manga" className="w-full h-auto object-cover" />
             </div>
 
             {/* Info Box */}

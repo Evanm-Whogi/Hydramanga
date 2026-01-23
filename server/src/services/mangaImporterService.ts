@@ -1,62 +1,207 @@
-// This is the greated trash you will ever see, provided as a way to import 2.5GB JSON dumps into Postgres efficiently
+// Manga Importer Service
+// Imports manga data from SQLite source database into Postgres destination database
+// Efficiently handles large datasets with streaming and delta updates
+// This entire file is written by AI so should be interesting to review for quality assurance
 
-// src/services/mangaImporterService.ts
 import fs from 'fs';
 import { Pool } from 'pg';
 import { from as copyFrom } from 'pg-copy-streams';
+import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
-import { parser } from 'stream-json';
-import { streamArray } from 'stream-json/streamers/StreamArray';
-import { Transform } from 'stream';
 import crypto from 'crypto';
 import { Job } from 'bullmq';
 import logger from '@/services/loggerService';
 import { discordService } from '@/services/discordService';
 import path from 'path';
+import Database from 'better-sqlite3';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-class MangaImporterService {
-  // Numeric columns that should NOT be quoted in CSV
-  private numericColumns = new Set([
-    'id', 'year', 'rating', 'weighted_score', 'is_licensed', 'has_anime'
-  ]);
+// Constants
+const SECONDARY_TITLE_LANGUAGES = ['en', 'ja', 'ja-ro', 'ko', 'ko-ro', 'zh', 'zh-ro', 'zh-hk', 'de', 'es', 'es-la', 'pt-br', 'pt', 'ru', 'vi', 'th', 'uk', 'fr'] as const;
+const RELATIONSHIP_TYPES = ['adaptation', 'alternative', 'side_story', 'prequel', 'sequel', 'spin_off', 'main_story', 'other'] as const;
+const SOURCE_PROVIDERS = ['anilist', 'anime_planet', 'shikimori', 'anime_news_network', 'manga_updates', 'my_anime_list', 'kitsu'] as const;
+const RESPONSIVE_SIZES = ['x150', 'x250', 'x350'] as const;
+const PROGRESS_LOG_INTERVAL = 5000;
+const PROGRESS_UPDATE_INTERVAL = 10000;
 
-  private formatCSV(val: any, columnName?: string): string {
-    if (val === null || val === undefined) return '';
+type SeriesRow = Record<string, any>;
+
+class MangaImporterService {
+  private parseJSON(value: unknown): any {
+    if (!value || typeof value !== 'string') return null;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+
+  private buildSecondaryTitles(row: SeriesRow): string | null {
+    const titles = SECONDARY_TITLE_LANGUAGES.reduce((acc, lang) => {
+      const parsed = this.parseJSON(row[`secondary_titles_${lang}`]);
+      if (parsed) acc[lang] = parsed;
+      return acc;
+    }, {} as Record<string, any>);
     
-    // For numeric columns, don't quote them
-    if (columnName && this.numericColumns.has(columnName)) {
-      // Convert to string but don't quote
-      if (typeof val === 'boolean') {
-        return val ? 'true' : 'false';
+    return Object.keys(titles).length ? JSON.stringify(titles) : null;
+  }
+  
+  private buildResponsiveImage(row: SeriesRow, size: string): Record<string, string | null> | null {
+    const x1 = row[`cover_${size}_x1`];
+    const x2 = row[`cover_${size}_x2`];
+    const x3 = row[`cover_${size}_x3`];
+    
+    if (!x1 && !x2 && !x3) return null;
+    return { x1: x1 || null, x2: x2 || null, x3: x3 || null };
+  }
+
+  private buildCover(row: SeriesRow): string | null {
+    if (!row.cover_raw_url) return null;
+    
+    const cover: Record<string, any> = {
+      raw: {
+        url: row.cover_raw_url,
+        size: row.cover_raw_size ?? null,
+        height: row.cover_raw_height ?? null,
+        width: row.cover_raw_width ?? null,
+        blurhash: row.cover_raw_blurhash ?? null,
+        thumbhash: row.cover_raw_thumbhash ?? null,
+        format: row.cover_raw_format ?? null
       }
-      return String(val);
+    };
+    
+    for (const size of RESPONSIVE_SIZES) {
+      const responsive = this.buildResponsiveImage(row, size);
+      if (responsive) cover[size] = responsive;
     }
     
-    const str = typeof val === 'object' ? JSON.stringify(val) : String(val);
-    // Escape double quotes by doubling them for CSV format
-    return `"${str.replace(/"/g, '""')}"`;
+    return JSON.stringify(cover);
+  }
+  
+  private buildAnime(row: SeriesRow): string | null {
+    if (row.anime) return row.anime;
+    if (!row.anime_start && !row.anime_end) return null;
+    
+    const anime: Record<string, string> = {};
+    if (row.anime_start) anime.start = row.anime_start;
+    if (row.anime_end) anime.end = row.anime_end;
+    
+    return JSON.stringify(anime);
+  }
+  
+  private buildRelationships(row: SeriesRow): string | null {
+    const rels = RELATIONSHIP_TYPES.reduce((acc, type) => {
+      const parsed = this.parseJSON(row[`relationships_${type}`]);
+      if (parsed) acc[type] = parsed;
+      return acc;
+    }, {} as Record<string, any>);
+    
+    return Object.keys(rels).length ? JSON.stringify(rels) : null;
+  }
+  
+  private buildSource(row: SeriesRow): string | null {
+    const source = SOURCE_PROVIDERS.reduce((acc, provider) => {
+      const fields = ['id', 'rating', 'rating_normalized', 'cover', 'last_updated_at', 'response'] as const;
+      const obj = fields.reduce((providerObj, field) => {
+        const value = row[`source_${provider}_${field}`];
+        if (value) providerObj[field] = value;
+        return providerObj;
+      }, {} as Record<string, any>);
+      
+      if (Object.keys(obj).length) acc[provider] = obj;
+      return acc;
+    }, {} as Record<string, any>);
+    
+    return Object.keys(source).length ? JSON.stringify(source) : null;
+  }
+  
+  private formatCSVValue(value: any, isNumeric: boolean = false, isJsonb: boolean = false): string {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string' && value.trim().toLowerCase() === 'null') return '';
+    
+    if (isNumeric) {
+      return typeof value === 'boolean' ? String(value) : String(value);
+    }
+    
+    if (isJsonb) {
+      if (!value) return '';
+      
+      const jsonStr = typeof value === 'string' ? value.trim() : JSON.stringify(value);
+      if (!jsonStr) return '';
+      
+      // Validate JSON and escape for CSV
+      try {
+        JSON.parse(jsonStr);
+        return `"${jsonStr.replace(/"/g, '""')}"`;
+      } catch {
+        return '';
+      }
+    }
+    
+    return `"${String(value).replace(/"/g, '""')}"`;
+  }
+  
+  private buildCSVRow(row: SeriesRow, hash: string): string {
+    const txt = (v: any) => this.formatCSVValue(v);
+    const num = (v: any) => this.formatCSVValue(v, true);
+    const json = (v: any) => this.formatCSVValue(v, false, true);
+    
+    return [
+      num(row.id), txt(row.state), num(row.merged_with), txt(row.title),
+      txt(row.native_title), txt(row.romanized_title),
+      json(this.buildSecondaryTitles(row)), json(this.buildCover(row)),
+      json(row.authors), json(row.artists), txt(row.description),
+      num(row.year), txt(row.status), num(row.is_licensed), num(row.has_anime),
+      json(this.buildAnime(row)), txt(row.content_rating), txt(row.type),
+      num(row.rating), num(null),
+      txt(row.final_volume), txt(row.final_chapter), txt(row.total_chapters),
+      json(row.links), json(row.publishers), json(this.buildRelationships(row)),
+      json(row.genres), json(row.genres_v2), json(row.tags), json(row.tags_v2),
+      txt(row.last_updated_at), json(this.buildSource(row)), txt(hash)
+    ].join('|') + '\n';
+  }
+  
+  private computeHash(row: SeriesRow): string {
+    const mutableFields = [
+      row.state, row.merged_with, row.title, row.description,
+      row.status, row.rating, row.final_chapter, row.total_chapters,
+      row.last_updated_at
+    ];
+    return crypto.createHash('md5').update(JSON.stringify(mutableFields)).digest('hex');
   }
 
   public async fullSyncManga(filePath: string, job?: Job) {
     const client = await pool.connect();
     const fileName = path.basename(filePath);
     const startTime = Date.now();
+    let sqliteDb: Database.Database | null = null;
     
     try {
-      await discordService.notifyImportStarted(fileName);
-      console.time('SyncProcess');
-      
-      // 1. START TRANSACTION
-      await client.query('BEGIN');
-      
-      // Set memory higher for this session to handle the 2.5GB join
-      await client.query("SET LOCAL work_mem = '256MB'");
+      // Verify SQLite file exists
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`SQLite database not found: ${filePath}`);
+      }
 
-      // 2. CREATE TEMP TABLE 
-      // Removed "ON COMMIT DROP" for the duration of this logic to ensure 
-      // visibility, we will drop it manually or let the session end.
+      sqliteDb = new Database(filePath, { readonly: true, fileMustExist: true });
+      
+      // Get total count
+      const countResult = sqliteDb.prepare('SELECT COUNT(*) as count FROM series').get() as { count: number };
+      const totalRecords = countResult.count;
+      
+      await discordService.notifyImportStarted(fileName);
+      logger.info(`Starting import: ${totalRecords.toLocaleString()} records from ${fileName}`);
+      
+      // 1. START TRANSACTION WITH OPTIMIZATIONS
+      await client.query('BEGIN');
+      await client.query("SET LOCAL work_mem = '512MB'");
+      await client.query("SET LOCAL maintenance_work_mem = '1GB'");
+      await client.query("SET LOCAL synchronous_commit = 'off'");
+      await client.query("SET LOCAL random_page_cost = 1.1");
+      
+      if (job) await job.updateProgress(5);
+
+      // 2. CREATE TEMP STAGING TABLE
       await client.query(`
         CREATE TEMP TABLE staging_series (
           id INT, state TEXT, merged_with INT, title TEXT, native_title TEXT, 
@@ -68,73 +213,131 @@ class MangaImporterService {
           tags JSONB, tags_v2 JSONB, last_updated_at TIMESTAMPTZ, source JSONB, content_hash TEXT
         ) ON COMMIT PRESERVE ROWS;
       `);
+      logger.info('Staging table created');
 
-      // 3. SETUP COPY STREAM
+      // 3. STREAM DATA VIA COPY
+      logger.info('Starting COPY stream...');
       const copyStream = client.query(copyFrom(`
         COPY staging_series FROM STDIN WITH (FORMAT csv, DELIMITER '|', QUOTE '"')
       `));
-
+      
+      if (job) await job.updateProgress(10);
+      
       let processed = 0;
-      const columnNames = [
-        'id', 'state', 'merged_with', 'title', 'native_title', 'romanized_title',
-        'secondary_titles', 'cover', 'authors', 'artists', 'description', 'year',
-        'status', 'is_licensed', 'has_anime', 'anime', 'content_rating', 'type',
-        'rating', 'weighted_score', 'final_volume', 'final_chapter', 'total_chapters', 'links',
-        'publishers', 'relationships', 'genres', 'genres_v2', 'tags', 'tags_v2',
-        'last_updated_at', 'source', 'content_hash'
-      ];
-
-      const transformStream = new Transform({
-        objectMode: true,
-        transform: (chunk, enc, cb) => {
-          const s = chunk.value;
-          const rawData = JSON.stringify(s);
-          const hash = crypto.createHash('md5').update(rawData).digest('hex');
+      let firstRowLogged = false;
+      
+      // Create async generator that transforms SQLite rows to CSV
+      const dataGenerator = async function* (this: MangaImporterService) {
+        const stmt = sqliteDb!.prepare('SELECT * FROM series');
+        
+        for (const rawRow of stmt.iterate()) {
+          const row = rawRow as SeriesRow;
           
-          const values = [
-            s.id, s.state, s.merged_with, s.title, s.native_title, s.romanized_title,
-            s.secondary_titles, s.cover, s.authors, s.artists, s.description, s.year,
-            s.status, s.is_licensed, s.has_anime, s.anime, s.content_rating, s.type,
-            s.rating, s.weighted_score, s.final_volume, s.final_chapter, s.total_chapters, s.links,
-            s.publishers, s.relationships, s.genres, s.genres_v2, s.tags, s.tags_v2,
-            s.last_updated_at, s.source, hash
-          ];
+          // Compute hash for change detection
+          const hash = this.computeHash(row);
           
-          const row = values.map((v, idx) => this.formatCSV(v, columnNames[idx])).join('|') + '\n';
-
+          // Build CSV row
+          const csvRow = this.buildCSVRow(row, hash);
+          
           processed++;
-          if (processed % 10000 === 0 && job) {
-            job.updateProgress(Math.min(Math.round((processed / 500000) * 100), 99));
+          
+          // First row diagnostics
+          if (!firstRowLogged) {
+            firstRowLogged = true;
+            logger.info('First row from SQLite:', {
+              id: row.id,
+              title: row.title?.substring(0, 50),
+              has_cover_url: !!row.cover_raw_url,
+              built_cover_len: this.buildCover(row)?.length || 0,
+              built_secondary_titles_len: this.buildSecondaryTitles(row)?.length || 0,
+              built_source_len: this.buildSource(row)?.length || 0,
+              built_relationships_len: this.buildRelationships(row)?.length || 0,
+              genres_v2_len: row.genres_v2?.length || 0
+            });
           }
-          cb(null, row);
+          
+          // Progress logging
+          if (processed % PROGRESS_LOG_INTERVAL === 0) {
+            const progress = Math.min(10 + Math.round((processed / totalRecords) * 80), 90);
+            const rate = Math.round(processed / (Date.now() - startTime) * 1000);
+            logger.info(`Import: ${processed.toLocaleString()}/${totalRecords.toLocaleString()} (${progress}%) - ${rate} rows/sec`);
+            
+            if (job && processed % PROGRESS_UPDATE_INTERVAL === 0) {
+              await job.updateProgress(progress);
+            }
+          }
+          
+          yield csvRow;
         }
-      });
+        
+        logger.info(`Finished streaming ${processed.toLocaleString()} rows`);
+      }.bind(this);
+      
+      // Execute pipeline
+      const sourceStream = Readable.from(dataGenerator());
+      
+      sourceStream.on('error', (err) => logger.error('Source error:', err));
+      copyStream.on('error', (err) => logger.error('COPY error:', err));
+      
+      await pipeline(sourceStream, copyStream);
+      logger.info('COPY completed');
 
-      logger.info('Streaming 2.5GB JSON to Postgres...');
-      await pipeline(
-        fs.createReadStream(filePath), 
-        parser(), 
-        streamArray(), 
-        transformStream, 
-        copyStream
-      );
-
-      // 4. INDEX THE TEMP TABLE (Crucial for 500k row join speed)
-      logger.info('Indexing staging table...');
+      // 4. INDEX STAGING TABLE
+      logger.info('Creating indexes...');
+      if (job) await job.updateProgress(91);
+      
       await client.query(`CREATE INDEX idx_staging_id ON staging_series(id)`);
+      if (job) await job.updateProgress(92);
+      
+      await client.query(`CREATE INDEX idx_staging_hash ON staging_series(content_hash)`);
+      if (job) await job.updateProgress(93);
+      
+      logger.info('Indexes created');
 
-      // 5. PERFORM DELTA UPDATE
-      logger.info('Performing Delta Update...');
+      // 5. DELTA UPDATE
+      logger.info('Performing delta update...');
       const updateResult = await client.query(`
         UPDATE series s SET 
-          state = st.state, title = st.title, native_title = st.native_title,
-          description = st.description, status = st.status, rating = st.rating,
-          last_updated_at = st.last_updated_at, content_hash = st.content_hash
+          state = st.state, 
+          merged_with = st.merged_with,
+          title = st.title, 
+          native_title = st.native_title,
+          romanized_title = st.romanized_title,
+          secondary_titles = st.secondary_titles,
+          cover = st.cover,
+          authors = st.authors,
+          artists = st.artists,
+          description = st.description,
+          year = st.year,
+          status = st.status,
+          is_licensed = st.is_licensed,
+          has_anime = st.has_anime,
+          anime = st.anime,
+          content_rating = st.content_rating,
+          type = st.type,
+          rating = st.rating,
+          final_volume = st.final_volume,
+          final_chapter = st.final_chapter,
+          total_chapters = st.total_chapters,
+          links = st.links,
+          publishers = st.publishers,
+          relationships = st.relationships,
+          genres = st.genres,
+          genres_v2 = st.genres_v2,
+          tags = st.tags,
+          tags_v2 = st.tags_v2,
+          last_updated_at = st.last_updated_at,
+          source = st.source,
+          content_hash = st.content_hash
         FROM staging_series st 
-        WHERE s.id = st.id AND (s.content_hash IS NULL OR s.content_hash != st.content_hash);
+        WHERE s.id = st.id 
+          AND (s.content_hash IS NULL OR s.content_hash != st.content_hash);
       `);
+      
+      logger.info(`Updated ${updateResult.rowCount || 0} rows`);
+      if (job) await job.updateProgress(95);
 
-      // 6. PERFORM INSERT
+      // 6. INSERT NEW RECORDS
       logger.info('Inserting new records...');
       const insertResult = await client.query(`
         INSERT INTO series (
@@ -156,30 +359,39 @@ class MangaImporterService {
         LEFT JOIN series s ON st.id = s.id 
         WHERE s.id IS NULL;
       `);
+      
+      logger.info(`Inserted ${insertResult.rowCount || 0} rows`);
 
-      // 7. COMMIT EVERYTHING
+      // 7. COMMIT
       await client.query('COMMIT');
       
       const duration = `${((Date.now() - startTime) / 1000).toFixed(1)}s`;
       const stats = {
         inserted: insertResult.rowCount || 0,
         updated: updateResult.rowCount || 0,
+        total: totalRecords,
         duration
       };
       
       await discordService.notifyImportCompleted(fileName, stats);
       
       if (job) await job.updateProgress(100);
-      logger.info(`Sync process completed: ${stats.inserted} inserted, ${stats.updated} updated in ${duration}`);
-      console.timeEnd('SyncProcess');
+      logger.info(`✅ Import complete: ${stats.inserted.toLocaleString()} inserted, ${stats.updated.toLocaleString()} updated in ${duration}`);
 
     } catch (err) {
       await client.query('ROLLBACK');
       const errorMsg = (err as Error).message;
-      logger.error('Sync Error Details:', err);
+      logger.error('Import failed:', err);
       await discordService.notifyImportFailed(fileName, errorMsg);
-      throw err; // Throw so BullMQ knows the job failed
+      throw err;
     } finally {
+      if (sqliteDb) {
+        try {
+          sqliteDb.close();
+        } catch (e) {
+          logger.warn('Failed to close SQLite:', e);
+        }
+      }
       client.release();
     }
   }

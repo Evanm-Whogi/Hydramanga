@@ -80,10 +80,6 @@ export async function getMyProgress(req: Request, res: Response, next: NextFunct
   try {
     const userId = req.user?.id;
 
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
     const { limit = '20' } = req.query;
     const maxLimit = Math.min(Number(limit), 100);
 
@@ -108,10 +104,6 @@ export async function getMangaProgress(req: Request, res: Response, next: NextFu
   try {
     const userId = req.user?.id;
     const seriesId = parseInt(req.params.id, 10);
-
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
 
     if (isNaN(seriesId)) {
       return res.status(400).json({ error: 'Invalid series ID' });
@@ -138,10 +130,6 @@ export async function getSeriesChapterProgress(req: Request, res: Response, next
     const userId = req.user?.id;
     const seriesId = parseInt(req.params.id, 10);
 
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
     if (isNaN(seriesId)) {
       return res.status(400).json({ error: 'Invalid series ID' });
     }
@@ -165,11 +153,6 @@ export async function getSeriesChapterProgress(req: Request, res: Response, next
 export async function updateProgress(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
   try {
     const userId = req.user?.id;
-
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
     const { seriesId, chapterId, pageNumber, totalPagesInChapter } = req.body;
 
     if (!seriesId || !chapterId || pageNumber === undefined || !totalPagesInChapter) {
@@ -204,10 +187,6 @@ export async function markChapterAsRead(req: Request, res: Response, next: NextF
     const userId = req.user?.id;
     const { seriesId, chapterId } = req.body;
 
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
     if (!seriesId || !chapterId) {
       return res.status(400).json({ 
         error: 'Missing required fields: seriesId, chapterId' 
@@ -238,10 +217,6 @@ export async function markChapterAsUnread(req: Request, res: Response, next: Nex
     const userId = req.user?.id;
     const { chapterId } = req.body;
 
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
     if (!chapterId) {
       return res.status(400).json({ 
         error: 'Missing required field: chapterId' 
@@ -271,10 +246,6 @@ export async function deleteProgress(req: Request, res: Response, next: NextFunc
     const userId = req.user?.id;
     const seriesId = parseInt(req.params.id, 10);
 
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
     if (isNaN(seriesId)) {
       return res.status(400).json({ error: 'Invalid series ID' });
     }
@@ -297,11 +268,6 @@ export async function deleteProgress(req: Request, res: Response, next: NextFunc
 export async function getMyStats(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
   try {
     const userId = req.user?.id;
-
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
     const stats = await userProgressService.getUserStats(userId);
 
     return res.json({

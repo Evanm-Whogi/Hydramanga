@@ -348,6 +348,21 @@ export const inviteCodes = pgTable('invite_codes', {
   usedByIdx: index('idx_invite_codes_used_by').on(t.usedBy),
 }));
 
+// Chapter Bookmarks
+export const bookmarks = pgTable('bookmarks', {
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  chapterId: integer('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  note: text('note'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.chapterId] }),
+  userIdIdx: index('idx_bookmarks_user_id').on(t.userId),
+  chapterIdIdx: index('idx_bookmarks_chapter_id').on(t.chapterId),
+  userChapterIdx: index('idx_bookmarks_user_chapter').on(t.userId, t.chapterId),
+  createdAtIdx: index('idx_bookmarks_created_at').on(t.createdAt.desc()),
+}));
+
 // Manga Import Progress (for real-time progress tracking)
 export const importStatusEnum = pgEnum('import_status', ['scanning', 'downloading', 'completed', 'failed']);
 export const mangaImportProgress = pgTable('manga_import_progress', {
@@ -365,6 +380,17 @@ export const mangaImportProgress = pgTable('manga_import_progress', {
 }));
 
 // Relations
+export const bookmarksRelations = relations(bookmarks, ({ one }) => ({
+  user: one(user, {
+    fields: [bookmarks.userId],
+    references: [user.id],
+  }),
+  chapter: one(chapters, {
+    fields: [bookmarks.chapterId],
+    references: [chapters.id],
+  }),
+}));
+
 export const inviteCodesRelations = relations(inviteCodes, ({ one }) => ({
   creator: one(user, {
     fields: [inviteCodes.createdBy],

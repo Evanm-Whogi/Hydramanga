@@ -8,7 +8,7 @@ interface TrendingMangaCardProps {
 }
 
 export default function TrendingMangaCard({ manga, rank }: TrendingMangaCardProps) {
-    const coverUrl = manga.cover?.raw?.url || manga.cover?.x350?.x3 || '/placeholder.jpg';
+    const coverUrl = manga.cover?.raw?.url || manga.cover?.x350?.x3 || '/notFound.png';
     const viewCount = manga.trendingStats?.viewCount || 0;
     const uniqueViews = manga.trendingStats?.uniqueViewCount || 0;
 

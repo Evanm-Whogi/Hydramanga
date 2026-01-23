@@ -120,8 +120,26 @@ export class ChapterScannerService {
                     coverUrl
                 );
             } else {
-                // No chapters found - mark as completed
-                await mangaProgressService.setTotalChapters(seriesId, 0);
+                // No NEW chapters found during this scan
+                if (isFirstScan) {
+                    // First scan with no chapters - mark as completed with 0 total
+                    await mangaProgressService.setTotalChapters(seriesId, 0);
+                } else {
+                    // Monitored rescan found no new chapters - mark as completed immediately
+                    // Get the actual chapter count for this series for proper reporting
+                    const existingChaptersCount = await db
+                        .select()
+                        .from(chapters)
+                        .where(eq(chapters.seriesId, seriesId));
+                    
+                    // Mark as completed with all existing chapters already downloaded
+                    await mangaProgressService.markCompleted(seriesId, existingChaptersCount.length);
+                    
+                    logger.info(
+                        `[SCANNER] Monitored rescan for ${mangaTitle}: no new chapters found. Series has ${existingChaptersCount.length} chapters.`,
+                        { service: 'chapterScannerService' }
+                    );
+                }
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error during scan';
