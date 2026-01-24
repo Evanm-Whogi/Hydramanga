@@ -11,6 +11,7 @@ import announcementRoutes from '@/routes/announcementRoutes';
 import inviteRoutes from '@/routes/inviteRoutes';
 import adminRoutes from '@/routes/adminRoutes';
 import pageRoutes from '@/routes/pageRoutes';
+import listRoutes from '@/routes/listRoutes';
 
 module.exports = (app: Express) => {
     // Apply tracking middleware globally to track views
@@ -19,6 +20,9 @@ module.exports = (app: Express) => {
     // Manga and Progress Routes
     app.use('/manga', authMiddleware, mangaRoutes);
     app.use('/manga/progress', authMiddleware, progressRoutes);
+
+    // List Management Routes
+    app.use('/lists', authMiddleware, listRoutes);
 
     // Analytics Routes
     app.use('/analytics', authMiddleware, analyticsRoutes);

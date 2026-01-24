@@ -114,18 +114,35 @@ export const series = pgTable('series', {
   statusRatingIdx: index('idx_series_status_rating').on(t.status, t.rating.desc()),
 }));
 
-// User Series List
-export const readingStatusEnum = pgEnum('reading_status', ['unread', 'reading', 'finished', 'dropped', 'favorites']);
+// User Custom Lists Table
+export const userLists = pgTable('user_lists', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  slug: text('slug').notNull(),
+  isDefault: boolean('is_default').notNull().default(false),
+  isVisible: boolean('is_visible').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  userIdIdx: index('idx_user_lists_user_id').on(t.userId),
+  userSlugUnique: uniqueIndex('idx_user_lists_user_slug').on(t.userId, t.slug),
+  sortOrderIdx: index('idx_user_lists_sort_order').on(t.userId, t.sortOrder),
+}));
+
+// User Series List (Manga in Lists)
 export const userSeriesList = pgTable('user_series_list', {
   userId: text('user_id').notNull(), 
   seriesId: integer('series_id').notNull().references(() => series.id),
-  status: readingStatusEnum('status').default('unread').notNull(),
+  listId: integer('list_id').notNull().references(() => userLists.id, { onDelete: 'cascade' }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 }, (t) => ({
   pk: primaryKey({ columns: [t.userId, t.seriesId] }), // A user can only have a specific series in one list
-  // Performance indexes for user manga queries
+  seriesIdIdx: index('idx_user_series_list_series_id').on(t.seriesId),
   userIdIdx: index('idx_user_series_list_user_id').on(t.userId),
-  userStatusUpdatedIdx: index('idx_user_series_list_user_status_updated').on(t.userId, t.status, t.updatedAt.desc()),
+  listIdIdx: index('idx_user_series_list_list_id').on(t.listId),
+  userListUpdatedIdx: index('idx_user_series_list_user_list_updated').on(t.userId, t.listId, t.updatedAt.desc()),
 }));
 
 // Announcements
@@ -234,10 +251,22 @@ export const commentLikesRelations = relations(commentLikes, ({ one }) => ({
   }),
 }));
 
+export const userListsRelations = relations(userLists, ({ one, many }) => ({
+  user: one(user, {
+    fields: [userLists.userId],
+    references: [user.id],
+  }),
+  items: many(userSeriesList),
+}));
+
 export const userSeriesListRelations = relations(userSeriesList, ({ one }) => ({
   series: one(series, {
     fields: [userSeriesList.seriesId],
     references: [series.id],
+  }),
+  list: one(userLists, {
+    fields: [userSeriesList.listId],
+    references: [userLists.id],
   }),
 }));
 

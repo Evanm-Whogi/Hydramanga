@@ -9,8 +9,6 @@ export default async function Lists({ mangaData }: any) {
     return (
     <section id="lists" className="pb-25">
         <div className="container mx-auto text-primary space-y-24">
-
-
             {mangaData.trending?.length > 0 && (
                 <>
                     <SectionHeader title="Trending This Week" filters="status=releasing&sort=rating&order=desc"/>

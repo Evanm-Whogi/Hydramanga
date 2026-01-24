@@ -87,9 +87,25 @@ export const apiGet = async (url: string) => {
     }
 };
 
-export const apiDelete = async (url: string) => {
+export const apiDelete = async (url: string, data?: any) => {
     try {
-        const res = await instance.delete(url);
+        // axios delete supports request body via the config object
+        const res = await instance.delete(url, data ? { data } : undefined);
+        return res.data;
+    } catch (error: any) {
+        // Extract error response if available and throw as proper Error
+        if (error.response?.data) {
+            const errorData = error.response.data;
+            const errorMessage = errorData.message || 'Request failed';
+            throw new Error(errorMessage);
+        }
+        handleBackendError(error);
+    }
+}
+
+export const apiPut = async (url: string, data?: any) => {
+    try {
+        const res = await instance.put(url, data);
         return res.data;
     } catch (error: any) {
         // Extract error response if available and throw as proper Error

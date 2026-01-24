@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import type { Metadata } from "next";
-import ListComponent from './components/ListComponent';
-import { fetchAllLists } from '@/services/mangaService';
+import ListsPageClient from '@/app/lists/components/ListsPageClient';
+import { fetchAllLists } from '@/services/listService';
 import PageHeader from '@/components/PageHeader';
 
 export const metadata: Metadata = {
@@ -14,13 +14,15 @@ export const metadata: Metadata = {
   },
 };
 
-  export default async function ListsPage() {
-    const lists = await fetchAllLists();
+export default async function ListsPage() {
 
-  return (
-    <>
-      <PageHeader title="My Lists" description="Manage your personal manga lists with ease." />
-      <ListComponent lists={lists} />
-    </>
-  );
+  const listsData = await fetchAllLists();
+
+    return (
+      <>
+        <PageHeader title="My Lists" description="Manage your personal manga lists with ease." />
+        <ListsPageClient initialData={listsData} />
+      </>
+    );
+
 }

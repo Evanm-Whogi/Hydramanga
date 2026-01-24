@@ -92,10 +92,10 @@ MangaDetails.displayName = 'MangaDetails';
 
 interface MangaContentProps {
   manga: any;
-  userStatus: any;
+  initialListName: string | null;
 }
 
-export default function MangaContent({ manga, userStatus }: MangaContentProps) {
+export default function MangaContent({ manga, initialListName }: MangaContentProps) {
   const [analytics, setAnalytics] = useState<any>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -274,7 +274,13 @@ export default function MangaContent({ manga, userStatus }: MangaContentProps) {
               {showDetails ? 'Hide Details' : 'Show Details...'}
             </button>
 
-            <MangaActions manga={manga} chapters={localChapters} comments={manga.comments} userStatus={userStatus} importProgress={progress} />
+            <MangaActions 
+              manga={manga} 
+              chapters={localChapters} 
+              comments={manga.comments} 
+              initialListName={initialListName} 
+              importProgress={progress} 
+            />
           </div>
 
           {/* Sidebar */}

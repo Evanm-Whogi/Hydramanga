@@ -37,6 +37,33 @@ async function enrichWithViewStats(mangaList: any[]) {
     });
 }
 
+// Helper function to enrich manga data with latest chapter
+async function enrichWithLatestChapter(mangaList: any[]) {
+    if (!Array.isArray(mangaList) || mangaList.length === 0) return mangaList || [];
+
+    const seriesIds = mangaList.map((m: any) => m.id).filter(Boolean);
+    if (seriesIds.length === 0) return mangaList;
+
+    const latestRows = await db.select()
+        .from(chapters)
+        .where(inArray(chapters.seriesId, seriesIds))
+        .orderBy(
+            asc(chapters.seriesId),
+            desc(sql`CAST(split_part(${chapters.chapterNumber}, '.', 1) AS INTEGER)`),
+            desc(sql`CASE WHEN ${chapters.chapterNumber} LIKE '%.%' THEN CAST(split_part(${chapters.chapterNumber}, '.', 2) AS INTEGER) ELSE 0 END`)
+        );
+
+    const latestMap = new Map<number, any>();
+    for (const ch of latestRows) {
+        if (!latestMap.has(ch.seriesId)) latestMap.set(ch.seriesId, ch);
+    }
+
+    return mangaList.map((manga: any) => ({
+        ...manga,
+        latestChapter: latestMap.get(manga.id) || null,
+    }));
+}
+
 // Search manga with filters, sorting, and pagination (Infinite Scroll)
 export async function searchManga(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
@@ -161,7 +188,7 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
             .from(schema.mangaViewStats)
             .where(inArray(schema.mangaViewStats.seriesId, seriesIds)) : [];
         
-        const enrichedItems = items.map(manga => {
+        let enrichedItems = items.map(manga => {
             const stats = viewStats.find(s => s.seriesId === manga.id);
             return {
                 ...manga,
@@ -173,6 +200,64 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
             };
         });
         
+        // Attach user's series list info (if available) to each manga
+        const userId = (req as any).user?.id;
+        if (userId && seriesIds.length > 0) {
+            const userSeriesEntries = await db.query.userSeriesList.findMany({
+                where: and(
+                    eq(schema.userSeriesList.userId, userId),
+                    inArray(schema.userSeriesList.seriesId, seriesIds)
+                ),
+                with: {
+                    list: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            slug: true,
+                        }
+                    }
+                }
+            });
+
+            const userSeriesMap = new Map<number, any>();
+            userSeriesEntries.forEach((e: any) => userSeriesMap.set(e.seriesId, {
+                id: e.id,
+                seriesId: e.seriesId,
+                listId: e.listId,
+                addedAt: e.updatedAt,
+                listName: e.list?.name || null,
+            }));
+
+            enrichedItems = enrichedItems.map(item => ({
+                ...item,
+                userSeriesList: userSeriesMap.get(item.id) || null,
+            }));
+        }
+
+        // Fetch latest chapter per series and attach it
+        if (seriesIds.length > 0) {
+            const latestRows = await db.select()
+                .from(chapters)
+                .where(inArray(chapters.seriesId, seriesIds))
+                .orderBy(
+                    asc(chapters.seriesId),
+                    // Order by integer part of chapterNumber (major) desc
+                    desc(sql`CAST(split_part(${chapters.chapterNumber}, '.', 1) AS INTEGER)`),
+                    // Order by fractional part (minor) desc, treat missing as 0
+                    desc(sql`CASE WHEN ${chapters.chapterNumber} LIKE '%.%' THEN CAST(split_part(${chapters.chapterNumber}, '.', 2) AS INTEGER) ELSE 0 END`)
+                );
+
+            const latestMap = new Map<number, any>();
+            for (const ch of latestRows) {
+                if (!latestMap.has(ch.seriesId)) latestMap.set(ch.seriesId, ch);
+            }
+
+            enrichedItems = enrichedItems.map(item => ({
+                ...item,
+                latestChapter: latestMap.get(item.id) || null,
+            }));
+        }
+
         let nextCursor = null;
         if (hasNextPage) {
             const lastItem = items[items.length - 1];
@@ -246,7 +331,15 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
     });
     if(!mangaData) return res.json({status: 404, message: "Not found"});
 
-    const userStatus = mangaData.usersTracking?.[0]?.status || null;
+    // Get user's list information if they're tracking this manga
+    const userListInfo = mangaData.usersTracking?.[0];
+    let userStatus = null;
+    if (userListInfo?.listId) {
+        const userList = await db.query.userLists.findFirst({
+            where: eq(schema.userLists.id, userListInfo.listId),
+        });
+        userStatus = userList ? { listId: userList.id, listName: userList.name, listSlug: userList.slug } : null;
+    }
     const { usersTracking, ...manga } = mangaData;
 
     // Fetch chapter view stats for all chapters
@@ -310,135 +403,61 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
     })
 }
 
-export async function updateMangaList(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
-    const { seriesId, status } = req.body as { 
-        seriesId: number; 
-        status: 'unread' | 'reading' | 'finished' | 'dropped'; 
-    };
-    const userId = req.user.id;
-
-    const result = await db.insert(schema.userSeriesList)
-        .values({
-            userId,
-            seriesId,
-            status: status,
-            updatedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-            target: [schema.userSeriesList.userId, schema.userSeriesList.seriesId],
-            set: { 
-                status: status, 
-                updatedAt: new Date() 
-            },
-        })
-        .returning();
-
-    return res.status(200).json({
-        success: true,
-        message: `Manga moved to ${status}`,
-        data: result[0]
-    });
-}
-
-export async function removeFromList(req: Request, res: Response) {
-    try {
-        const userId = req.user.id;
-
-        await db.delete(schema.userSeriesList).where(and(eq(schema.userSeriesList.userId, userId), eq(schema.userSeriesList.seriesId, req.body.seriesId)));
-        return res.status(200).json({ success: true });
-    } catch (e) { 
-        return res.status(500).json({ success: false }); 
-    }
-}
-
-export async function getUserLists(req: Request, res: Response) {
-    const { status }: any = req.query;
-    const userId = req.user.id;
-
-    if (!status) return res.status(400).json({ error: "Status is required" });
-
-    const results = await db.query.userSeriesList.findMany({
-        where: and(
-            eq(schema.userSeriesList.userId, userId),
-            eq(schema.userSeriesList.status, status.toLowerCase())
-        ),
-        with: {
-            series: true,
-        },
-    });
-
-    const formattedData = results.map(item => ({
-        ...item.series,
-        listStatus: item.status,
-        addedAt: item.updatedAt 
-    }));
-
-    return res.json(formattedData);
-}
-
+// Aggregate endpoint: Get all lists with their manga items for the lists page
 export async function getAllLists(req: Request, res: Response) {
     const userId = req.user.id;
 
+    // Ensure user has default lists
+    const { ensureDefaultLists } = await import('./listController');
+    await ensureDefaultLists(userId);
+
+    // Get all user lists (include hidden for management)
+    const userLists = await db.query.userLists.findMany({
+        where: eq(schema.userLists.userId, userId),
+        orderBy: (userLists, { asc }) => [asc(userLists.sortOrder)],
+    });
+
+    // Get all series list items
     const results = await db.query.userSeriesList.findMany({
         where: eq(schema.userSeriesList.userId, userId),
         with: {
             series: true,
+            list: true,
         },
         orderBy: (userSeriesList, { desc }) => [desc(userSeriesList.updatedAt)],
     });
 
-    var addedRaw = results
-        .sort((a, b) => b.updatedAt!.getTime() - a.updatedAt!.getTime())
+    // Recently added (last 20 items across all lists)
+    const addedRaw = results
         .slice(0, 20)
         .map(item => ({
             ...item.series,
-            listStatus: item.status,
+            listStatus: item.list?.slug || '',
+            listName: item.list?.name || '',
             addedAt: item.updatedAt 
         }));
 
-    const unreadRaw = results
-        .filter(item => item.status === 'unread')
-        .map(item => ({
-            ...item.series,
-            listStatus: item.status,
-            addedAt: item.updatedAt 
-        }));
+    // Build dynamic lists based on user's custom lists
+    const listsData: any = { added: await enrichWithViewStats(addedRaw).then(enrichWithLatestChapter) };
 
-    const readingRaw = results
-        .filter(item => item.status === 'reading')
-        .map(item => ({
-            ...item.series,
-            listStatus: item.status,
-            addedAt: item.updatedAt 
-        }));
+    // Group items by list
+    for (const list of userLists) {
+        const listItems = results
+            .filter(item => item.listId === list.id)
+            .map(item => ({
+                ...item.series,
+                listStatus: list.slug,
+                listName: list.name,
+                addedAt: item.updatedAt 
+            }));
 
-    const finishedRaw = results
-        .filter(item => item.status === 'finished')
-        .map(item => ({
-            ...item.series,
-            listStatus: item.status,
-            addedAt: item.updatedAt 
-        }));
+        listsData[list.slug] = await enrichWithViewStats(listItems).then(enrichWithLatestChapter);
+    }
 
-    const droppedRaw = results
-        .filter(item => item.status === 'dropped')
-        .map(item => ({
-            ...item.series,
-            listStatus: item.status,
-            addedAt: item.updatedAt 
-        }));
-
-
-    let [added, unread, reading, finished, dropped] = await Promise.all([
-        enrichWithViewStats(addedRaw),
-        enrichWithViewStats(unreadRaw),
-        enrichWithViewStats(readingRaw),
-        enrichWithViewStats(finishedRaw),
-        enrichWithViewStats(droppedRaw),
-    ]);
-
-
-    return res.json({ added, unread, reading, finished, dropped });
+    return res.json({ 
+        lists: userLists,
+        ...listsData 
+    });
 }
 
 export async function getPages(req: Request, res: Response, next: NextFunction): Promise<Response | void> {

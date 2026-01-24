@@ -1,29 +1,61 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  rectIntersection
+} from '@dnd-kit/core';
+import {SortableContext, useSortable, verticalListSortingStrategy} from '@dnd-kit/sortable';
+import { useDroppable } from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
+import { addToList } from '@/services/listService';
+import { GripVertical } from 'lucide-react';
 import SectionHeader from '@/app/home/components/SectionHeader';
 import MangaCard from '@/components/MangaCard';
 import FiltersPanel from '@/components/FiltersPanel';
 import { FILTER_OPTIONS } from '@/constants/filters';
-
-const LIST_OPTIONS = [
-  { label: 'All Lists', value: 'all' },
-  { label: 'Unread', value: 'unread' },
-  { label: 'Reading', value: 'reading' },
-  { label: 'Finished', value: 'finished' },
-  { label: 'Dropped', value: 'dropped' },
-] as const;
+import { UserList } from '@/services/listService';
+import { toast } from 'react-toastify';
 
 interface ListComponentProps {
   lists: {
-    unread: any[];
-    reading: any[];
-    finished: any[];
-    dropped: any[];
+    lists?: UserList[];
+    [key: string]: any;
   };
+  onUpdate?: () => void;
 }
 
-export default function ListComponent({ lists }: ListComponentProps) {
+export default function ListComponent({ lists: listsData, onUpdate }: ListComponentProps) {
+    const sensors = useSensors(
+      useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+    );
+    const [activeManga, setActiveManga] = useState<any | null>(null);
+    const [draggingMangaId, setDraggingMangaId] = useState<string | null>(null);
+  // Guard against undefined props so the page renders safely while data loads
+  const safeListsData = listsData || { lists: [] };
+  const userLists = safeListsData.lists || [];
+  
+  // Build list options from user's lists (all lists)
+  const LIST_OPTIONS = useMemo(() => {
+    const options = [{ label: 'All Lists', value: 'all' }];
+    
+    userLists
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .forEach(list => {
+        options.push({
+          label: list.name,
+          value: list.slug,
+        });
+      });
+    
+    return options;
+  }, [userLists]);
+
   const [selectedList, setSelectedList] = useState('all');
   const [search, setSearch] = useState('');
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
@@ -122,29 +154,113 @@ export default function ListComponent({ lists }: ListComponentProps) {
     return sorted;
   };
 
-  const filteredLists = useMemo(
-    () => ({
-      unread: applyFilters(lists.unread || []),
-      reading: applyFilters(lists.reading || []),
-      finished: applyFilters(lists.finished || []),
-      dropped: applyFilters(lists.dropped || []),
-    }),
-    [
-      lists,
-      search,
-      selectedGenres,
-      selectedTypes,
-      selectedStatuses,
-      selectedYears,
-      selectedSort,
-      nsfw,
-    ]
-  );
+  // Build filtered lists dynamically based on user lists
+  const filteredLists = useMemo(() => {
+    const result: Record<string, any[]> = {};
+    
+    userLists.forEach(list => {
+      const items = safeListsData[list.slug] || [];
+      result[list.slug] = applyFilters(items);
+    });
+    
+    return result;
+  }, [
+    safeListsData,
+    userLists,
+    search,
+    selectedGenres,
+    selectedTypes,
+    selectedStatuses,
+    selectedYears,
+    selectedSort,
+    nsfw,
+  ]);
+
+  // Get visible lists in sorted order
+  const visibleLists = useMemo(() => {
+    return userLists
+      .filter((l) => l.isVisible)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }, [userLists]);
+
+  // Drag-and-drop handlers
+  const handleDragStart = (event: any) => {
+    const { active } = event;
+    setDraggingMangaId(active.id);
+    // Find manga object by id
+    for (const list of visibleLists) {
+      const manga = (filteredLists[list.slug] || []).find((m: any) => String(m.id) === String(active.id));
+      if (manga) {
+        setActiveManga(manga);
+        break;
+      }
+    }
+  };
+
+    const handleDragEnd = async (event: any) => {
+    const { active, over } = event;
+    setDraggingMangaId(null);
+    setActiveManga(null);
+    if (!over || !active) return;
+    const fromList = visibleLists.find((list) => (filteredLists[list.slug] || []).some((m: any) => String(m.id) === String(active.id)));
+    const toList = visibleLists.find((list) => String(list.id) === String(over.id));
+    if (!fromList || !toList || fromList.id === toList.id) return;
+    try {
+      await addToList(toList.id, Number(active.id));
+      if (onUpdate) onUpdate();
+      toast.success(`Manga moved to "${toList.name}"`);
+    } catch (err) {
+      toast.error('Failed to move manga');
+    }
+  };
+
+  function DraggableMangaCard({ manga }: { manga: any }) {
+    const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id: manga.id });
+    return (
+      <div
+        ref={setNodeRef}
+        style={{
+          transform: CSS.Transform.toString(transform),
+          transition,
+          zIndex: isDragging ? 10 : undefined,
+          opacity: isDragging ? 0.5 : 1,
+          position: 'relative',
+        }}
+      >
+        <button
+          type="button"
+          aria-label="Drag to reorder"
+          className="absolute top-2 left-2 z-20 btn btn-ghost btn-xs cursor-grab px-4 py-2 text-white bg-background/70 rounded-md hover:bg-background/90"
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.preventDefault()}
+        >
+          <GripVertical className="w-3.5 h-3.5" />
+        </button>
+        <MangaCard manga={manga} />
+      </div>
+    );
+  }
+
+  function DroppableList({ list, children }: { list: any; children: React.ReactNode }) {
+    const { setNodeRef, isOver } = useDroppable({ id: String(list.id) });
+    return (
+      <div
+        ref={setNodeRef}
+        id={`droppable-list-${list.id}`}
+        style={{ minHeight: 80, background: isOver ? '#e0e7ff' : undefined }}
+        className="bg-base-200 rounded-lg p-4 mb-2 transition-colors"
+        data-list-id={list.id}
+      >
+        {children}
+      </div>
+    );
+  }
 
   return (
-    <section id="lists" className="py-12">
+    <section id="lists" className="py-6">
       <div className="container mx-auto text-primary space-y-6">
-        <div className="flex flex-col mb-24 gap-4">
+        <div className="flex flex-col mb-12 gap-4">
           <FiltersPanel
             showListSelector
             listOptions={LIST_OPTIONS as any}
@@ -159,52 +275,35 @@ export default function ListComponent({ lists }: ListComponentProps) {
             onNsfwChange={setNsfw}
           />
         </div>
-
-        {selectedList === 'all' ? (
-          <>
-            {/* All Lists View */}
-            {(['unread', 'reading', 'finished', 'dropped'] as const).map(
-              (listKey) => (
-                <div key={listKey}>
-                  <SectionHeader
-                    title={
-                      listKey.charAt(0).toUpperCase() + listKey.slice(1)
-                    }
-                    subtitle={`(${filteredLists[listKey].length})`}
-                    link=""
-                    filters=""
-                  />
+        <DndContext
+          sensors={sensors}
+          collisionDetection={rectIntersection}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="flex flex-col gap-8">
+            {visibleLists.map((list) => (
+              <DroppableList key={list.id} list={list}>
+                <SectionHeader
+                  title={list.name}
+                  subtitle={`(${filteredLists[list.slug]?.length || 0})`}
+                  link=""
+                  filters=""
+                />
+                <SortableContext items={(filteredLists[list.slug] || []).map((m: any) => m.id)} strategy={verticalListSortingStrategy}>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-4 md:gap-6">
-                    {filteredLists[listKey].map((manga: any) => (
-                      <MangaCard key={manga.id} manga={manga} />
+                    {(filteredLists[list.slug] || []).map((manga: any) => (
+                      <DraggableMangaCard key={manga.id} manga={manga} />
                     ))}
                   </div>
-                </div>
-              )
-            )}
-          </>
-        ) : (
-          <>
-            {/* Individual List View */}
-            <div>
-              <SectionHeader
-                title={
-                  selectedList.charAt(0).toUpperCase() + selectedList.slice(1)
-                }
-                subtitle={`(${filteredLists[selectedList as keyof typeof filteredLists].length})`}
-                link=""
-                filters=""
-              />
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-4 md:gap-6">
-                {filteredLists[selectedList as keyof typeof filteredLists].map(
-                  (manga: any) => (
-                    <MangaCard key={manga.id} manga={manga} />
-                  )
-                )}
-              </div>
-            </div>
-          </>
-        )}
+                </SortableContext>
+              </DroppableList>
+            ))}
+          </div>
+          <DragOverlay>
+            {activeManga ? <MangaCard manga={activeManga} /> : null}
+          </DragOverlay>
+        </DndContext>
       </div>
     </section>
   );
