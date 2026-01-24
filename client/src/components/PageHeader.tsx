@@ -10,7 +10,6 @@ export default function PageHeader({title, description}: {title: string, descrip
                 </div>
             </div>
         </section>
-
     );
 }
 

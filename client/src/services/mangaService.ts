@@ -35,25 +35,6 @@ export async function triggerMangaScan(mangaId: number): Promise<any> {
     }
 }
 
-export async function updateMangaList(seriesId: number, status: string): Promise<any> {
-    const data = await apiPost('/manga/list', { seriesId, status });
-    if (!data) throw new Error('Failed to update manga list');
-    return data;
-}
-
-export async function removeFromList(seriesId: number): Promise<any> {
-    const data = await apiPost('/manga/list/remove', { seriesId });
-    if (!data) throw new Error('Failed to remove manga from list');
-    return data;
-}
-
-export async function fetchUserLists(status: any): Promise<any> {
-    return await apiGet(`/manga/list?status=${status}`);
-}
-
-export async function fetchAllLists(): Promise<any> {
-    return await apiGet(`/manga/lists`);
-}
 
 export async function fetchMangaPages(id: any, chapterId: any): Promise<any> {
     return await apiGet(`/manga/${id}/${chapterId}`);

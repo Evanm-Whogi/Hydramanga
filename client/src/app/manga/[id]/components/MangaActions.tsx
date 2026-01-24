@@ -9,11 +9,11 @@ interface MangaActionsProps {
   manga: any;
   chapters: any[];
   comments: any;
-  userStatus: string;
+    initialListName: string | null;
   importProgress: any;
 }
 
-export default function ListContainer({ manga, chapters, comments, userStatus, importProgress }: MangaActionsProps) {
+export default function ListContainer({ manga, chapters, comments, initialListName, importProgress }: MangaActionsProps) {
     const [page, setPage] = useState("chapters");
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
@@ -31,7 +31,7 @@ export default function ListContainer({ manga, chapters, comments, userStatus, i
     return (
         <>
         <div className="flex w-full place-content-between pt-10 items-center">
-            <ListDropdown seriesId={manga.id} initialStatus={userStatus}/>
+            <ListDropdown seriesId={manga.id} initialListName={initialListName}/>
 
             <div className="flex gap-2">
                 <button onClick={() => setPage("chapters")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "chapters" ? "text-primary" : "text-muted"}`}><BookOpen className="size-6 mr-1 transition-colors" /> Chapters</button>

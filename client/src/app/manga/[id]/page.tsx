@@ -38,5 +38,8 @@ export default async function MangaPage({ params }: Props) {
   const { id } = await params;
   const data = await fetchOne(id);
 
-  return <MangaContent manga={data.manga} userStatus={data.userStatus} />;
+  // Map server-side list info to a simple display name for the client dropdown
+  const initialListName = data.userStatus?.listName ?? null;
+
+  return <MangaContent manga={data.manga} initialListName={initialListName} />;
 }
