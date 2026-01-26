@@ -1,5 +1,5 @@
 import { Router, RequestHandler } from 'express';
-import { getTrending, getMangaAnalytics, getMyProgress, getMangaProgress, updateProgress, deleteProgress, getMyStats, getSeriesChapterProgress, markChapterAsRead, markChapterAsUnread } from '@/controllers/analyticsController';
+import { getTrending, getMangaAnalytics, getMyProgress, getMangaProgress, updateProgress, deleteProgress, getMyStats, getSeriesChapterProgress, markChapterAsRead, markChapterAsUnread, recordReadingTime } from '@/controllers/analyticsController';
 
 const router = Router();
 
@@ -12,6 +12,8 @@ router.get('/progress', getMyProgress as RequestHandler);
 router.get('/progress/manga/:id', getMangaProgress as RequestHandler);
 router.get('/progress/manga/:id/chapters', getSeriesChapterProgress as RequestHandler);
 router.post('/progress', updateProgress as RequestHandler);
+// Record reading time for a manga/chapter
+router.post('/progress/time', recordReadingTime as RequestHandler);
 router.delete('/progress/manga/:id', deleteProgress as RequestHandler);
 
 // Chapter Reading Progress

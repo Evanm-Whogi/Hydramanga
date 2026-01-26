@@ -12,7 +12,7 @@ export async function useSession(): Promise<Session | null> {
     } catch (error: any) {
         // For connection errors, just return null and let pages handle it
         // Don't redirect here to avoid infinite loops
-        console.error('Session error:', error.message || error);
+        console.log('Session error:', error.message || error); // log instead of error 
         return null;
     }
 }

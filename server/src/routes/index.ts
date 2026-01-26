@@ -36,7 +36,7 @@ module.exports = (app: Express) => {
     app.use('/invites', inviteRoutes); // Some endpoints don't require auth (validate, use)
 
     // Page Aggregator Routes
-    app.use('/', authMiddleware, pageRoutes); 
+    app.use('/', pageRoutes); 
 
     // Admin Routes
     app.use('/admin', authMiddleware, adminRoutes);

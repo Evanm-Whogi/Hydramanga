@@ -7,6 +7,7 @@ import { useUser } from '@/providers/UserProvider';
 import { MenuIcon, X, BookmarkIcon } from 'lucide-react';
 import { useChapterViewTracking } from '@/hooks/useViewTracking';
 import BookmarkModal from '@/components/BookmarkModal';
+import { recordReadingTime } from '@/services/mangaService';
 
 const SIDEBAR_WIDTH_PX = 260; // matches md:w-65 / md:w-[calc(100%-260px)]
 
@@ -22,7 +23,9 @@ interface Chapter {
 }
 
 export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
-  const { id, chapterId } = useParams();
+  const params = useParams() as Record<string, string | undefined>;
+  const id = params?.id;
+  const chapterId = params?.chapterId;
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useUser();
@@ -35,15 +38,68 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [bookmarkNote, setBookmarkNote] = useState('');
   const [bookmarkModalOpen, setBookmarkModalOpen] = useState(false);
-
-  // Track chapter view on client-side mount
-  useChapterViewTracking(id as string, chapterId as string);
-
   const containerRef = useRef<HTMLDivElement>(null);
   const mobileHeaderRef = useRef<HTMLDivElement>(null);
   const lastScrollPos = useRef(0);
   const hasScrolledToPage = useRef(false);
   const progressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Track chapter view on client-side mount
+  useChapterViewTracking(id as string, chapterId as string);
+
+  // Reading time tracking
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSentRef = useRef(0);
+
+  // Start reading timer on mount/chapter change
+  useEffect(() => {
+    setElapsedSeconds(0);
+    lastSentRef.current = 0;
+    console.log("Starting reading timer for chapter:", chapterId);
+    if (!user || !id || !chapterId) return;
+
+    console.log("Passed user and chapter, starting timer.");
+
+    timerRef.current = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      // On unmount/chapter change, send any remaining time
+      if (elapsedSeconds > 0) {
+        sendReadingTime(elapsedSeconds);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, id, chapterId]);
+
+  // Periodically send reading time every 30s
+  useEffect(() => {
+    if (!user || !id || !chapterId) return;
+    if (elapsedSeconds > 0 && elapsedSeconds - lastSentRef.current >= 10) {
+      sendReadingTime(elapsedSeconds - lastSentRef.current);
+      lastSentRef.current = elapsedSeconds;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elapsedSeconds]);
+
+  // Send reading time to backend
+  const sendReadingTime = async (seconds: number) => {
+    if (!user || !id || !chapterId || seconds <= 0) return;
+    try {
+      console.log(`Recording ${seconds} seconds of reading time for chapter ${chapterId}`);
+      await recordReadingTime({
+        seriesId: Number(id),
+        chapterId: Number(chapterId),
+        seconds: seconds,
+      });
+    } catch (err) {
+      // Optionally handle/report error
+      // console.error('Failed to record reading time', err);
+    }
+  };
 
   useEffect(() => {
     const loadMangaPages = async () => {

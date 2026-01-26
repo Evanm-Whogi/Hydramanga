@@ -279,3 +279,30 @@ export async function getMyStats(req: Request, res: Response, next: NextFunction
     return next(error);
   }
 }
+
+export async function recordReadingTime(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const userId = req.user?.id;
+    const { seriesId, chapterId, seconds } = req.body;
+
+    if (!seriesId || !chapterId || typeof seconds !== 'number' || seconds <= 0) {
+      return res.status(400).json({ error: 'Missing or invalid fields: seriesId, chapterId, seconds' });
+    }
+
+    // Call service to record time (to be implemented)
+    await userProgressService.recordReadingTime({
+      userId,
+      seriesId: Number(seriesId),
+      chapterId: Number(chapterId),
+      seconds: Number(seconds),
+    });
+
+    return res.json({
+      status: 200,
+      message: 'Reading time recorded',
+    });
+  } catch (error) {
+    logger.error(`Failed to record reading time: ${error}`, { service: 'analyticsController' });
+    return next(error);
+  }
+}

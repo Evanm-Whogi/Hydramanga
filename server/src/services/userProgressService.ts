@@ -5,8 +5,8 @@ import { cacheService } from '@/services/cacheService';
 
 // Cache constants
 const CACHE_TTL = {
-  USER_PROGRESS: 300, // 5 minutes - frequently accessed
-  USER_STATS: 1800, // 30 minutes - slower changing
+  USER_PROGRESS: 180, // 3 minutes
+  USER_STATS: 30, // 30 seconds
 };
 
 const CACHE_KEYS = {
@@ -431,15 +431,8 @@ class UserProgressService {
    */
   async getUserStats(userId: string) {
     try {
-      const cacheKey = CACHE_KEYS.USER_STATS(userId);
 
-      // Try cache first
-      const cached = await cacheService.get(cacheKey);
-      if (cached) {
-        logger.debug(`User stats cache hit for userId=${userId}`, { service: 'userProgressService' });
-        return cached;
-      }
-
+      // Aggregate overall stats
       const stats = await db
         .select({
           totalSeriesReading: sql<number>`COUNT(*)`.as('total_series_reading'),
@@ -449,14 +442,28 @@ class UserProgressService {
         .from(schema.userReadingProgress)
         .where(eq(schema.userReadingProgress.userId, userId));
 
-      const result = stats[0] || {
-        totalSeriesReading: 0,
-        averageCompletion: 0,
-        totalPagesRead: 0,
-      };
 
-      // Cache the result
-      await cacheService.set(cacheKey, result, CACHE_TTL.USER_STATS, ['user_progress']);
+      // Aggregate reading time per manga (series) and join series table for metadata
+      const readingTimes = await db
+        .select({
+          seriesId: schema.userReadingTime.seriesId,
+          totalSeconds: sql<number>`SUM(${schema.userReadingTime.seconds})`.as('total_seconds'),
+          title: schema.series.title,
+          image: schema.series.cover,
+        })
+        .from(schema.userReadingTime)
+        .innerJoin(schema.series, eq(schema.userReadingTime.seriesId, schema.series.id))
+        .where(eq(schema.userReadingTime.userId, userId))
+        .groupBy(schema.userReadingTime.seriesId, schema.series.title, schema.series.cover);
+
+      const result = {
+        ...(stats[0] || {
+          totalSeriesReading: 0,
+          averageCompletion: 0,
+          totalPagesRead: 0,
+        }),
+        readingTimes, // Array of { seriesId, totalSeconds, title, image }
+      };
 
       return result;
     } catch (error) {
@@ -464,6 +471,35 @@ class UserProgressService {
       throw error;
     }
   }
+
+  async recordReadingTime({ userId, seriesId, chapterId, seconds }: { userId: string, seriesId: number, chapterId: number, seconds: number }): Promise<void> {
+    try {
+      if (!userId || !seriesId || !chapterId || typeof seconds !== 'number' || seconds <= 0) return;
+
+      // Upsert reading time for this user/series/chapter
+      await db
+        .insert(schema.userReadingTime)
+        .values({
+          userId,
+          seriesId,
+          chapterId,
+          seconds,
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [schema.userReadingTime.userId, schema.userReadingTime.seriesId, schema.userReadingTime.chapterId],
+          set: {
+            seconds: sql`${schema.userReadingTime.seconds} + ${seconds}`,
+            updatedAt: new Date(),
+          },
+        });
+
+      logger.info(`Recorded reading time: userId=${userId}, seriesId=${seriesId}, chapterId=${chapterId}, seconds=${seconds}`, { service: 'userProgressService' });
+    } catch (error) {
+      logger.error(`Failed to record reading time: ${error}`, { service: 'userProgressService' });
+    }
+  }
+
 }
 
 export const userProgressService = new UserProgressService();
