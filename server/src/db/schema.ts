@@ -432,3 +432,18 @@ export const inviteCodesRelations = relations(inviteCodes, ({ one }) => ({
     relationName: 'inviteCodesUsed',
   }),
 }));
+
+// User Reading Time Table (per user, per series, per chapter)
+export const userReadingTime = pgTable('user_reading_time', {
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }),
+  chapterId: integer('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  seconds: integer('seconds').notNull().default(0), // Total seconds spent reading this chapter
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.seriesId, t.chapterId] }),
+  userIdIdx: index('idx_user_reading_time_user_id').on(t.userId),
+  seriesIdIdx: index('idx_user_reading_time_series_id').on(t.seriesId),
+  chapterIdIdx: index('idx_user_reading_time_chapter_id').on(t.chapterId),
+  updatedAtIdx: index('idx_user_reading_time_updated_at').on(t.updatedAt.desc()),
+}));

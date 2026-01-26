@@ -95,3 +95,6 @@ export async function getUserStats(): Promise<any> {
 export async function getRecommendedManga(id: number, limit: number = 8): Promise<any> {
     return await apiGet(`/manga/${id}/recommendations?limit=${limit}`);
 }
+export async function recordReadingTime(data: {seriesId: number; chapterId: number; seconds: number}): Promise<any> {
+    return await apiPost('/analytics/progress/time', data);
+}

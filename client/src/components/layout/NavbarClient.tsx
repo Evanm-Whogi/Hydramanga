@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { HouseIcon, BookOpenIcon, ZapIcon, ClockPlus, SearchIcon, BellIcon, MoonIcon, SunIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon } from 'lucide-react';
+import { HouseIcon, BookOpenIcon, ZapIcon, ClockPlus, SearchIcon, BellIcon, MoonIcon, SunIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon } from 'lucide-react';
 import NavItem from './NavItem';
 import { authClient } from '@/lib/auth';
 import { useRouter, usePathname } from 'next/navigation';
@@ -86,6 +86,7 @@ export default function NavbarClient() {
                             <NavItem href='/home' icon={<HouseIcon className="size-4 inline" />} label='Home' />
                             <NavItem href='/discover' icon={<BookOpenIcon className="size-4 inline" />} label='Discover' />
                             <NavItem href='/lists' icon={<BookTextIcon className="size-4 inline" />} label='My Lists' />
+                            <NavItem href='/stats' icon={<ChartBarDecreasingIcon className="size-4 inline" />} label='Reading Insights' />
                             </>
                         ) : (<></>) }
                     </nav>

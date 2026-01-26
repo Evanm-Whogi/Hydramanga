@@ -5,25 +5,23 @@ import { useEffect, useState } from "react";
 export default function Error500Page() {
     const [isChecking, setIsChecking] = useState(true);
     const [attempts, setAttempts] = useState(0);
-    
+
     useEffect(() => {
         const checkHeartbeat = async () => {
             setAttempts(prev => prev + 1);
             
             try {
-                const response = await fetch('/api/heartbeat', {
+                const response = await fetch('/api/admin/heartbeat', {
                     method: 'GET',
                     cache: 'no-store',
                 });
 
                 if (response.ok) {
-                    // Server is back online! Redirect to home
                     console.log('Server is back online, redirecting...');
                     setIsChecking(false);
-                    window.location.href = '/';
+                    window.location.href = "/";
                 }
             } catch (error) {
-                // Server still down, continue checking
                 console.log('Server still down, attempt:', attempts);
             }
         };
