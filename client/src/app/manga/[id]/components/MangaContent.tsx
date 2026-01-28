@@ -51,6 +51,16 @@ const getLinkName = (url: string) => {
   }
 };
 
+const PLATFORM_URLS: Record<string, string> = {
+  kitsu: "https://kitsu.io/manga/",
+  anilist: "https://anilist.co/manga/",
+  shikimori: "https://shikimori.one/mangas/",
+  anime_planet: "https://www.anime-planet.com/manga/",
+  manga_updates: "https://www.mangaupdates.com/series.html?id=",
+  my_anime_list: "https://myanimelist.net/manga/",
+  anime_news_network: "https://www.animenewsnetwork.com/encyclopedia/manga.php?id="
+};
+
 MangaHeader.displayName = 'MangaHeader';
 
 const MangaDetails = memo(({ manga }: { manga: any }) => (
@@ -74,6 +84,25 @@ const MangaDetails = memo(({ manga }: { manga: any }) => (
           </div>
         ))}
       {manga.artists?.length > 10 && <span className="text-xs text-muted">+{manga.artists.length - 10} more</span>}
+    </div>
+    <div className="flex gap-2 items-center flex-wrap">
+      <strong className="text-muted">Publishers:</strong>
+      {manga.publishers &&
+        manga.publishers.map((publisher: { name: string, note: string, type: string }, index: number) => (
+          <span key={index} className="px-2 py-1 bg-foreground rounded-md text-sm hover:bg-foreground/70">
+            {publisher.name}
+          </span>
+        ))}
+    </div>
+    <div className="flex gap-2 items-center flex-wrap">
+      <strong className="text-muted">Track Manga:</strong>
+      {Object.entries(manga.source).map(([key, platform]: [key: any, platform: any], index) => {
+          return (
+            <a key={index} href={`${PLATFORM_URLS[key]}${platform.id}`} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-foreground rounded-md text-sm hover:bg-foreground/50 transition-colors flex gap-2 items-center">
+              <span className="capitalize">{key.replace(/_/g, ' ')}</span>
+            </a>
+          );
+        })}
     </div>
     <div className="flex gap-2 items-center flex-wrap mb-5">
       <strong className="text-muted">External Links:</strong>

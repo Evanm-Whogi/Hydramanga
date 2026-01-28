@@ -22,7 +22,7 @@ interface CatalogContentProps {
 }
 
 export default function CatalogContent({ initialFilters }: CatalogContentProps) {
-  const searchParams = useSearchParams();
+  const searchParams = (useSearchParams())!;
 
   const [filters, setFilters] = useState<Filters>(() => ({
     search: searchParams.get('search') || DEFAULT_FILTERS.search,

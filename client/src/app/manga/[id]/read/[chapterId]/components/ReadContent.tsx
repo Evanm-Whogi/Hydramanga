@@ -56,10 +56,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   useEffect(() => {
     setElapsedSeconds(0);
     lastSentRef.current = 0;
-    console.log("Starting reading timer for chapter:", chapterId);
     if (!user || !id || !chapterId) return;
-
-    console.log("Passed user and chapter, starting timer.");
 
     timerRef.current = setInterval(() => {
       setElapsedSeconds((prev) => prev + 1);
@@ -89,7 +86,6 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const sendReadingTime = async (seconds: number) => {
     if (!user || !id || !chapterId || seconds <= 0) return;
     try {
-      console.log(`Recording ${seconds} seconds of reading time for chapter ${chapterId}`);
       await recordReadingTime({
         seriesId: Number(id),
         chapterId: Number(chapterId),
