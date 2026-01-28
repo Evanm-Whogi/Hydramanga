@@ -2,8 +2,9 @@
 import { Star, Eye, BookmarkCheck } from "lucide-react";
 import Link from "next/link";
 import { formatToRating } from "@/lib/utils";
+import { memo } from "react";
 
-export default function MangaCard({ manga }: { manga?: any }) {
+function MangaCard({ manga }: { manga?: any }) {
     const viewCount = manga.totalViews || manga.viewStats?.totalViews || 0;
 
     // Determine if the latest chapter is new (within the last 2 days)
@@ -36,7 +37,7 @@ export default function MangaCard({ manga }: { manga?: any }) {
             <div className="relative aspect-2/3 w-full overflow-hidden rounded-2xl">
                 <img src={`${manga?.cover?.raw.url || '/notFound.png'}`} alt={manga.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                 { isNew && (
-                    <div className="absolute top-2 right-2 z-10">
+                    <div className="absolute top-2 right-2 z-5">
                         <span className="bg-accent/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-bold shadow-lg">
                             NEW
                         </span>
@@ -61,6 +62,8 @@ export default function MangaCard({ manga }: { manga?: any }) {
         </>
     );
 }
+
+export default memo(MangaCard);
 
 function formatViewCount(count: number): string {
     if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;

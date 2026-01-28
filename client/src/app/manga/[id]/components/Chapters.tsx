@@ -194,11 +194,7 @@ export default function Chapters({ manga }: { manga: any }) {
                     const href = `/manga/${manga.id}/read/${chapter.id}${hasProgress && !isFullyRead ? `?page=${resumePage}` : ''}`;
                     
                     return (
-                    <a 
-                        href={href}
-                        key={chapter.id} 
-                        className={`p-3 w-full bg-foreground hover:bg-foreground/50 cursor-pointer rounded-md transition-colors ${isFullyRead ? 'opacity-50' : ''}`}
-                    >
+                    <a href={href} key={chapter.id} className={`p-3 w-full bg-foreground hover:bg-foreground/50 cursor-pointer rounded-md transition-colors ${isFullyRead ? 'opacity-50' : ''}`}>
                         <div className="flex justify-between items-center">
                             <div className="flex-1">
                                 <div className={`flex items-center gap-2`}>
