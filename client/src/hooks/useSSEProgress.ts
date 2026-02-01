@@ -39,6 +39,8 @@ export function useSSEProgress(
     if (!url || !enabled) return;
     if (eventSourceRef.current) return; // already connected
 
+    console.log('[SSE] Connecting to', url);
+
     const eventSource = new EventSource(url, { withCredentials: true });
     eventSourceRef.current = eventSource;
 
@@ -49,6 +51,8 @@ export function useSSEProgress(
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+
+        console.log(data)
         
         // Check if this is a terminal state (done/completed/failed)
         if (data.type === 'done' || data.status === 'completed' || data.status === 'failed') {

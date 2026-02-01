@@ -12,11 +12,15 @@ export async function streamMangaProgress(req: Request, res: Response, next: Nex
     return;
   }
 
-  // Set headers for SSE
+  // Set headers for SSE and CORS
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+  // CORS headers for EventSource with credentials
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*' ); 
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   // Flush headers to establish the stream immediately
   if (typeof (res as any).flushHeaders === 'function') {
     (res as any).flushHeaders();

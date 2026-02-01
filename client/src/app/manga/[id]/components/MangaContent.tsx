@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, memo, useTransition } from 'react';
+import { useEffect, useState, memo, useTransition, Fragment } from 'react';
 import { getMangaAnalytics, triggerMangaScan } from '@/services/mangaService';
 import { formatDate, formatToStars, formatToRating } from '@/lib/utils';
 import Link from 'next/link';
@@ -247,6 +247,16 @@ export default function MangaContent({ manga, initialListName }: MangaContentPro
 
   const lastChapterDate = manga.chapters.length > 0 ? manga.chapters[manga.chapters.length - 1].updatedAt : null;
 
+  // Format description with line breaks and italics
+  const formattedDescription = manga.description
+    ? manga.description.split('<br>').map((line: any, index: any) => (
+        <Fragment key={index}>
+          <span dangerouslySetInnerHTML={{ __html: line.replace(/<i>(.*?)<\/i>/g, '<em>$1</em>') }} />
+          <br />
+        </Fragment>
+      ))
+    : null;
+
   return (
     <>
       <MangaHeader cover={manga?.cover?.x350?.x3 || manga?.cover?.raw?.url || "/notFound.png"} />
@@ -283,7 +293,7 @@ export default function MangaContent({ manga, initialListName }: MangaContentPro
               )}
             </div>
 
-            <p className="text-muted text-sm md:text-base line-clamp-4">{manga.description}</p>
+            <p className={`text-muted text-sm md:text-base${showDetails ? '' : ' line-clamp-4'}`}>{formattedDescription}</p>
             {showDetails && <MangaDetails manga={manga} />}
 
             <div className="flex gap-2 flex-wrap">

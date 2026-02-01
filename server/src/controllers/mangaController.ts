@@ -135,8 +135,9 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         // Hide NSFW content unless explicitly allowed
         if (nsfw === 'false') { conditions.push(and(ne(schema.series.contentRating, 'erotica'), ne(schema.series.contentRating, 'pornographic')));}
 
-        // Statically exlude Hentai while in Alpha 
-        conditions.push(sql`NOT (${schema.series.genres} @> '["Hentai"]'::jsonb)`);
+        // Statically exlude porn while in Alpha 
+        const excludedGenres = ["Hentai", "Lolicon", "Shotacon", "Erotica", "Smut"];
+        conditions.push(sql`NOT (${schema.series.genres} @> ${JSON.stringify(excludedGenres)}::jsonb)`);
 
         // Exclude merged series
         conditions.push(or(ne(schema.series.state, 'merged'), isNull(schema.series.state)));
@@ -511,6 +512,7 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
         const baseUrl = process.env.CHAPTER_PUBLIC_BASE || `${publicApp}/api/manga-files`;
         const baseSystemPath = process.env.CHAPTER_STORAGE_ROOT || path.join(process.cwd(), 'chapters');
 
+        console.log(publicApp, baseUrl, baseSystemPath);
         const images = files
             .filter(file => /\.(jpe?g|png|webp|gif)$/i.test(file))
             .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
