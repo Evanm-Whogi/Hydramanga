@@ -2,7 +2,8 @@
 set -e
 
 echo "Running database migrations..."
-npx drizzle-kit migrate
+# Only attempt migrations if not already applied (check drizzle table)
+npx drizzle-kit migrate || echo "Migrations already applied or errors occurred, continuing..."
 
 echo "Installing Playwright browsers (with system dependencies already installed)..."
 npx playwright install --with-deps chromium

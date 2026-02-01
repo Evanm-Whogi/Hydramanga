@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { db, schema } from '@/db/index';
 import { eq, and, desc, inArray, isNull, asc, sql } from 'drizzle-orm';
 import { metricsService } from '@/services/metricsService';
+import { shouldFilterManga } from '@/config/contentFilter';
 import { chapters } from '@/db/schema';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -63,25 +64,27 @@ async function enrichWithLatestChapter(mangaList: any[]) {
 export default async function getHomePage(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
         const FeaturedIds = [1692, 6029, 5201, 3188, 247, 3397, 2410, 4323];
+        const ITEMS_PER_ROW = 8;
+        const FETCH_LIMIT = 24; // Fetch 3x to account for filtering
 
         // Detect user id from auth/session if available
         const userId = (req as any).user?.id || (req as any).session?.userId || null;
 
         const [trending, addedRaw, popularRaw, recentComments, updatedRaw, featuredRaw, upcomingRaw] = await Promise.all([
             // Trending - Using actual metrics/tracking data (7 days = week)
-            metricsService.getTrendingManga(7, 8),
+            metricsService.getTrendingManga(7, FETCH_LIMIT),
 
             // Newest
             db.query.series.findMany({
                 where: eq(schema.series.year, 2026),
                 orderBy: [desc(schema.series.lastUpdatedAt)],
-                limit: 8,
+                limit: FETCH_LIMIT,
             }),
 
             // Most Popular
             db.query.series.findMany({
                 orderBy: [desc(schema.series.weightedScore)],
-                limit: 8,
+                limit: FETCH_LIMIT,
             }),
 
             // Recent Comments
@@ -108,20 +111,20 @@ export default async function getHomePage(req: Request, res: Response, next: Nex
             db.query.series.findMany({
                 where: isNull(schema.series.mergedWith),
                 orderBy: [desc(schema.series.lastUpdatedAt)],
-                limit: 8,
+                limit: FETCH_LIMIT,
             }),
 
             // Featured
             db.query.series.findMany({
                 where: inArray(schema.series.id, FeaturedIds),
-                limit: 8,
+                limit: FETCH_LIMIT,
             }),
 
             // Upcoming
             db.query.series.findMany({
                 where: eq(schema.series.status, 'upcoming'),
                 orderBy: [desc(schema.series.id)],
-                limit: 8,
+                limit: FETCH_LIMIT,
             }),
         ]);
 
@@ -137,16 +140,27 @@ export default async function getHomePage(req: Request, res: Response, next: Nex
             enrichWithViewStats(upcomingRaw).then(enrichWithLatestChapter),
         ]);
 
+        // Filter out blocked content from all categories and slice to desired count
+        const filterAndSlice = (list: any[]) => 
+            list.filter(item => !shouldFilterManga(item.genres)).slice(0, ITEMS_PER_ROW);
+        
+        added = filterAndSlice(added);
+        popular = filterAndSlice(popular);
+        updated = filterAndSlice(updated);
+        featured = filterAndSlice(featured);
+        upcoming = filterAndSlice(upcoming);
+        trendingWithList = filterAndSlice(trendingWithList);
+
         // If we have a user, fetch all userSeriesList rows for series returned above and attach them
         if (userId) {
             const collectIds = (arr: any[]) => (arr && Array.isArray(arr) ? arr.map((s: any) => s.id) : []);
             const idsSet = new Set<number>([
-                ...collectIds(Array.isArray(trending) ? trending : []),
-                ...collectIds(addedRaw),
-                ...collectIds(popularRaw),
-                ...collectIds(updatedRaw),
-                ...collectIds(featuredRaw),
-                ...collectIds(upcomingRaw),
+                ...collectIds(trendingWithList),
+                ...collectIds(added),
+                ...collectIds(popular),
+                ...collectIds(updated),
+                ...collectIds(featured),
+                ...collectIds(upcoming),
             ].filter(Boolean) as number[]);
 
             const allIds = Array.from(idsSet);
@@ -181,20 +195,14 @@ export default async function getHomePage(req: Request, res: Response, next: Nex
                             .map((u: any) => ({ ...u, listTitle: listTitleMap.get(u.listId) || null })),
                     }));
 
-                // replace enriched lists as well so client can use same field
-                trendingWithList = await enrichWithLatestChapter(attach(Array.isArray(trending) ? trending : []));
+                // Attach user tracking to filtered lists
+                trendingWithList = attach(trendingWithList);
                 added = attach(added);
                 popular = attach(popular);
                 updated = attach(updated);
                 featured = attach(featured);
                 upcoming = attach(upcoming);
-            } else {
-                // If no user, still enrich trending with latest chapter
-                trendingWithList = await enrichWithLatestChapter(Array.isArray(trending) ? trending : []);
             }
-        } else {
-            // If no user, still enrich trending with latest chapter
-            trendingWithList = await enrichWithLatestChapter(Array.isArray(trending) ? trending : []);
         }
 
         return res.json({

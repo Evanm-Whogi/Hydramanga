@@ -2,6 +2,7 @@ import { db } from '@/db';
 import { mangaImportProgress } from '@/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { queueService } from '@/services/queueService';
+import { getIOInstance } from '@/sockets/socketManager';
 import logger from '@/services/loggerService';
 
 const PROGRESS_CHANNEL_PREFIX = 'manga:progress:';
@@ -518,10 +519,28 @@ class MangaProgressService {
   // Publish progress update to Redis pub/sub
   private async publishProgress(seriesId: number, progress: MangaProgress): Promise<void> {
     try {
+      // Publish via Redis for backward compatibility and cross-instance communication
       await this.getRedis().publish(
         `${PROGRESS_CHANNEL_PREFIX}${seriesId}`,
         JSON.stringify(progress)
       );
+
+      // Also broadcast via WebSocket for direct client updates
+      const io = getIOInstance();
+      if (io) {
+        const room = `manga:progress:${seriesId}`;
+        const message = { type: 'progress', data: progress };
+        io.of('/progress').to(room).emit('progress', message);
+
+        // Send terminal state message
+        if (progress.status === 'completed' || progress.status === 'failed') {
+          const doneMessage = { type: 'done', data: progress };
+          io.of('/progress').to(room).emit('progress', doneMessage);
+          logger.info(`Import ${progress.status} for series ${seriesId}, sent close signal via WebSocket`, {
+            service: 'mangaProgressService',
+          });
+        }
+      }
     } catch (error) {
       logger.error(`Failed to publish progress for series ${seriesId}: ${error}`, { service: 'mangaProgressService' });
     }

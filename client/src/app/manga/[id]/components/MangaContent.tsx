@@ -133,6 +133,12 @@ export default function MangaContent({ manga, initialListName }: MangaContentPro
   const [localChapters, setLocalChapters] = useState(manga.chapters || []);
   const mangaId = Number(manga.id);
 
+  // Reset progress tracking state when manga changes
+  useEffect(() => {
+    setInitialProgressReceived(false);
+    setWasActiveOnLoad(false);
+  }, [mangaId]);
+
   // Track manga views
   useMangaViewTracking(mangaId);
 
@@ -145,18 +151,16 @@ export default function MangaContent({ manga, initialListName }: MangaContentPro
         // If progress includes newly downloaded chapter info, add it to local state
         if (progressData.lastDownloadedChapter) {
           setLocalChapters((prev: any[]) => {
-            // Check if chapter already exists
             const exists = prev.some((ch: any) => ch.chapterNumber === progressData.lastDownloadedChapter?.chapterNumber);
             if (!exists && progressData.lastDownloadedChapter) {
-              // Build a complete chapter object with all fields needed for display
               const newChapter = {
-                id: progressData.lastDownloadedChapter?.id || Math.random(), // Use real DB ID if available
+                id: progressData.lastDownloadedChapter?.id || Math.random(),
                 chapterNumber: progressData.lastDownloadedChapter?.chapterNumber,
                 title: progressData.lastDownloadedChapter?.title,
                 pageCount: progressData.lastDownloadedChapter?.pageCount || 0,
                 updatedAt: progressData.lastDownloadedChapter?.updatedAt || new Date().toISOString(),
                 createdAt: progressData.lastDownloadedChapter?.createdAt || new Date().toISOString(),
-                viewStats: { totalViews: 0, uniqueViews: 0 }, // Default stats for new chapters
+                viewStats: { totalViews: 0, uniqueViews: 0 },
                 description: null,
                 volumeNumber: null,
                 localPath: '',
@@ -169,9 +173,6 @@ export default function MangaContent({ manga, initialListName }: MangaContentPro
             return prev;
           });
         }
-      },
-      onError: (error) => {
-        console.error('Import failed:', error);
       },
     }
   );
@@ -213,17 +214,15 @@ export default function MangaContent({ manga, initialListName }: MangaContentPro
   }, [mangaId]);
 
   useEffect(() => {
-    let isMounted = true;
-    
-    // Trigger on-demand scan if manga has no chapters
     if ((manga.chapters?.length || 0) === 0) {
       setWasActiveOnLoad(true);
       showImportProgressToast(mangaId, manga.title);
-      
       triggerMangaScan(mangaId).catch((err) => {
         console.error('Failed to trigger manga scan:', err);
       });
     }
+    
+    let isMounted = true;
     
     const getAnalyticsData = async () => {
       try {
@@ -249,12 +248,22 @@ export default function MangaContent({ manga, initialListName }: MangaContentPro
 
   // Format description with line breaks and italics
   const formattedDescription = manga.description
-    ? manga.description.split('<br>').map((line: any, index: any) => (
-        <Fragment key={index}>
-          <span dangerouslySetInnerHTML={{ __html: line.replace(/<i>(.*?)<\/i>/g, '<em>$1</em>') }} />
-          <br />
-        </Fragment>
-      ))
+    ? manga.description.split('<br>').map((line: string, index: number) => {
+        // Split line by <i> tags and render as React elements
+        const parts = line.split(/(<i>.*?<\/i>)/);
+        return (
+          <Fragment key={index}>
+            {parts.map((part: string, partIndex: number) => {
+              if (part.match(/^<i>.*<\/i>$/)) {
+                const content = part.replace(/<i>(.*?)<\/i>/g, '$1');
+                return <em key={partIndex}>{content}</em>;
+              }
+              return part ? <span key={partIndex}>{part}</span> : null;
+            })}
+            <br />
+          </Fragment>
+        );
+      })
     : null;
 
   return (

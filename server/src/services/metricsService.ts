@@ -2,6 +2,7 @@ import { db, schema } from '@/db/index';
 import { eq, and, sql, gte, desc } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { cacheService } from '@/services/cacheService';
+import { shouldFilterManga } from '@/config/contentFilter';
 
 const CACHE_TTL = {
   TRENDING: 1800, // 30 minutes - trending is stable
@@ -233,7 +234,8 @@ class MetricsService {
             periodDays: days,
           },
         };
-      });
+      })
+      .filter(item => !shouldFilterManga(item.genres as any)); // Filter out blocked content
 
       // Cache the result
       await cacheService.set(cacheKey, results, CACHE_TTL.TRENDING, ['trending']);

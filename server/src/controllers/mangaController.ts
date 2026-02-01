@@ -7,6 +7,7 @@ import fs from 'fs-extra';
 import logger from '@/services/loggerService';
 import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import { metricsService } from '@/services/metricsService';
+import { shouldFilterManga, getBlockedGenres } from '@/config/contentFilter';
 
 // Part of testing 
 import { auth } from "@/utils/auth";
@@ -135,9 +136,11 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         // Hide NSFW content unless explicitly allowed
         if (nsfw === 'false') { conditions.push(and(ne(schema.series.contentRating, 'erotica'), ne(schema.series.contentRating, 'pornographic')));}
 
-        // Statically exlude porn while in Alpha 
-        const excludedGenres = ["Hentai", "Lolicon", "Shotacon", "Erotica", "Smut"];
-        conditions.push(sql`NOT (${schema.series.genres} @> ${JSON.stringify(excludedGenres)}::jsonb)`);
+        // Filter blocked adult/porn genres
+        const blockedGenres = getBlockedGenres();
+        for (const blockedGenre of blockedGenres) {
+            conditions.push(sql`NOT (${schema.series.genres} @> ${JSON.stringify([blockedGenre])}::jsonb)`);
+        }
 
         // Exclude merged series
         conditions.push(or(ne(schema.series.state, 'merged'), isNull(schema.series.state)));
@@ -687,32 +690,28 @@ export async function getRecommendedManga(req: Request, res: Response, next: Nex
             return res.status(400).json({ status: 400, message: "Invalid manga ID" });
         }
 
-        // Get the current manga's genres
-        const currentManga = await db.query.series.findFirst({
-            where: (series, { eq }) => eq(series.id, id),
-            columns: {
-                id: true,
-                genres: true,
-                type: true,
-                contentRating: true,
-            }
-        });
+        // Get current manga's genres
+        const currentManga = await db
+            .select({ genres: schema.series.genres })
+            .from(schema.series)
+            .where(eq(schema.series.id, id))
+            .limit(1);
 
-        if (!currentManga || !currentManga.genres) {
+        if (!currentManga.length || !currentManga[0].genres) {
             return res.json([]);
         }
 
-        const currentGenres = (currentManga.genres as string[]).map(g => g?.toLowerCase().trim()).filter(Boolean);
+        const genres = currentManga[0].genres as string[];
+        const currentGenres = genres.map(g => g?.toLowerCase().trim()).filter(Boolean);
         
-        // Build CASE statement for weighted genre matching (case-insensitive)
-        // Use raw SQL here because values originate from our DB and are sanitized to lowercase/trimmed
-        const genreCases = currentGenres.map(genre => {
-            const weight = GENRE_WEIGHTS[genre] || DEFAULT_GENRE_WEIGHT;
-            const escapedGenre = genre.replace(/'/g, "''");
-            return `WHEN lower(genre) = '${escapedGenre}' THEN ${weight}`;
-        }).join(' ');
-        
-        // Build a query to find manga with weighted matching genres
+        if (currentGenres.length === 0) {
+            return res.json([]);
+        }
+
+        const primaryGenre = currentGenres[0];
+        const genreSet = new Set(currentGenres);
+
+        // Simple, fast query: get high-quality manga with matching genres
         const recommendations = await db
             .select({
                 id: schema.series.id,
@@ -723,58 +722,43 @@ export async function getRecommendedManga(req: Request, res: Response, next: Nex
                 status: schema.series.status,
                 type: schema.series.type,
                 contentRating: schema.series.contentRating,
-                // Calculate weighted match score using SQL
-                matchScore: sql<number>`(
-                    SELECT COALESCE(SUM(
-                        CASE ${sql.raw(genreCases)}
-                        ELSE 0
-                        END
-                    ), 0)::float
-                    FROM jsonb_array_elements_text(${schema.series.genres}) AS genre
-                )`.as('match_score')
             })
             .from(schema.series)
             .where(
                 and(
-                    ne(schema.series.id, id), // Exclude current manga
-                    sql`${schema.series.genres} IS NOT NULL`,
-                    sql`jsonb_array_length(${schema.series.genres}) > 0`,
-                    // Optional: match same type (manga/manhwa/etc)
-                    currentManga.type ? eq(schema.series.type, currentManga.type) : undefined
+                    ne(schema.series.id, id),
+                    isNotNull(schema.series.genres),
+                    gt(schema.series.weightedScore, 0)
                 )
             )
-            .orderBy(
-                desc(sql`match_score`),
-                desc(schema.series.weightedScore)
-            )
-            .limit(limit * 2); // Get more to filter
+            .orderBy(desc(schema.series.weightedScore))
+            .limit(limit * 6);
 
-        // Filter and deduplicate
-        const seenIds = new Set<number>();
-        const seenTitles = new Set<string>();
-        const filtered = recommendations
-            .filter(manga => {
-                const matchScore = manga.matchScore as number;
-                // Must have at least one matching genre
-                if (matchScore <= 0) return false;
-                
-                // Deduplicate by ID
-                if (seenIds.has(manga.id)) return false;
-                seenIds.add(manga.id);
-                
-                // Deduplicate by title (in case there are duplicate entries with different IDs)
-                const normalizedTitle = manga.title?.toLowerCase().trim();
-                if (normalizedTitle && seenTitles.has(normalizedTitle)) return false;
-                if (normalizedTitle) seenTitles.add(normalizedTitle);
-                
-                return true;
+        if (!recommendations.length) {
+            return res.json([]);
+        }
+
+        // Score and filter in JS
+        const scored = recommendations
+            .map(manga => ({
+                ...manga,
+                matchCount: (manga.genres as string[])
+                    .filter(g => genreSet.has(g.toLowerCase().trim()))
+                    .length
+            }))
+            .filter(m => m.matchCount > 0)
+            .filter(m => !shouldFilterManga(m.genres as any)) // Filter out blocked content
+            .sort((a, b) => {
+                if (b.matchCount !== a.matchCount) {
+                    return b.matchCount - a.matchCount; // More matching genres first
+                }
+                return (b.weightedScore || 0) - (a.weightedScore || 0); // Then by score
             })
-            .slice(0, limit);
+            .slice(0, limit)
+            .map(({ matchCount, ...rest }) => rest);
 
-        // Enrich with view stats
-        const enriched = await enrichWithViewStats(filtered);
-
-        return res.json(enriched);
+        // If no genre matches, just return top results
+        return res.json(scored.length > 0 ? scored : recommendations.filter(m => !shouldFilterManga(m.genres as any)).slice(0, limit));
     } catch (error) {
         logger.error(`Failed to get recommendations: ${(error as Error).message}`, { service: 'mangaController' });
         return next(error);
