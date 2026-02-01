@@ -241,6 +241,10 @@ export async function markChapterAsUnread(req: Request, res: Response, next: Nex
 /**
  * Delete reading progress for a manga
  */
+/**
+ * Delete user's reading progress for a specific manga
+ * @route DELETE /analytics/progress/manga/:id
+ */
 export async function deleteProgress(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
   try {
     const userId = req.user?.id;
@@ -342,6 +346,113 @@ export async function recordReadingTime(
   } catch (error) {
     logger.error(
       `Failed to record reading time: ${error}`,
+      { service: 'analyticsController' }
+    );
+    return next(error);
+  }
+}
+/**
+ * Clear all reading progress history for the authenticated user
+ * @route DELETE /analytics/progress/all
+ */
+export async function clearAllProgress(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        error: 'Unauthorized: User ID not found',
+      });
+    }
+
+    await userProgressService.clearAllUserProgress(userId);
+
+    return res.json({
+      status: 200,
+      message: 'All reading progress cleared successfully',
+    });
+  } catch (error) {
+    logger.error(
+      `Failed to clear all progress: ${error}`,
+      { service: 'analyticsController' }
+    );
+    return next(error);
+  }
+}
+
+/**
+ * Get user's manga view history (most recent view per manga)
+ * @route GET /analytics/views
+ */
+export async function getMyViewHistory(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        error: 'Unauthorized: User ID not found',
+      });
+    }
+
+    const { limit = '50' } = req.query;
+    const maxLimit = Math.min(Number(limit), 100);
+
+    const viewHistory = await metricsService.getUserViewHistory(userId, maxLimit);
+
+    return res.json({
+      status: 200,
+      count: viewHistory.length,
+      views: viewHistory,
+    });
+  } catch (error) {
+    logger.error(
+      `Failed to get user view history: ${error}`,
+      { service: 'analyticsController' }
+    );
+    return next(error);
+  }
+}
+
+/**
+ * Delete a manga from user's view history
+ * @route DELETE /analytics/views/:id
+ */
+export async function deleteViewHistory(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> {
+  try {
+    const userId = req.user?.id;
+    const seriesId = parseInt(req.params.id, 10);
+
+    if (!userId) {
+      return res.status(401).json({
+        error: 'Unauthorized: User ID not found',
+      });
+    }
+
+    if (isNaN(seriesId)) {
+      return res.status(400).json({ error: 'Invalid series ID' });
+    }
+
+    await metricsService.deleteViewHistory(userId, seriesId);
+
+    return res.json({
+      status: 200,
+      message: 'View history deleted successfully',
+    });
+  } catch (error) {
+    logger.error(
+      `Failed to delete view history: ${error}`,
       { service: 'analyticsController' }
     );
     return next(error);

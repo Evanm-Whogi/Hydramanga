@@ -1,8 +1,7 @@
 export const FILTER_OPTIONS = {
-  // Redacted: "Hentai", "Lolicon", "Shotacon", "Erotica", "Smut"
   genres: [
-    "Action", "Adult", "Adventure", "Avant Garde", "Award Winning", "Boys Love",
-    "Comedy", "Doujinshi", "Drama", "Ecchi", "Fantasy", "Gender Bender",
+    "Action", "Adult", "Hentai", "Adventure", "Avant Garde", "Award Winning", "Boys Love",
+    "Comedy", "Doujinshi", "Drama", "Ecchi", "Lolicon", "Shotacon", "Erotica", "Smut", "Fantasy", "Gender Bender",
     "Girls Love", "Gourmet", "Harem", "Historical", "Horror", "Josei", "Mahou Shoujo",
     "Martial Arts", "Mature", "Mecha", "Music", "Mystery", "Psychological", "Romance",
     "School Life", "Sci-Fi", "Seinen", "Shoujo", "Shoujo Ai", "Shounen", "Shounen Ai",

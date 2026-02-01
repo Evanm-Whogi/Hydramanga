@@ -142,7 +142,15 @@ export default async function getHomePage(req: Request, res: Response, next: Nex
 
         // Filter out blocked content from all categories and slice to desired count
         const filterAndSlice = (list: any[]) => 
-            list.filter(item => !shouldFilterManga(item.genres)).slice(0, ITEMS_PER_ROW);
+            list.filter(item => !shouldFilterManga(item.genres))
+                .filter(item => {
+                    // Filter out lolicon and shotacon content
+                    if (!item.genres || !Array.isArray(item.genres)) return true;
+                    return !item.genres.some((g: string) => 
+                        g.toLowerCase().includes('lolicon') || g.toLowerCase().includes('shotacon')
+                    );
+                })
+                .slice(0, ITEMS_PER_ROW);
         
         added = filterAndSlice(added);
         popular = filterAndSlice(popular);

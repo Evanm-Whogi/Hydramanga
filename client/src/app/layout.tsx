@@ -1,5 +1,3 @@
-export const dynamic = 'force-dynamic';
-
 import { Bounce, ToastContainer, toast } from 'react-toastify';
 import type { Metadata } from "next";
 import "@/styles/globals.css";

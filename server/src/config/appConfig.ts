@@ -75,6 +75,28 @@ export interface ScraperConfig {
         userAgent: string;
         timeout: number; // milliseconds
         maxSearchVariants: number;
+        priority: number; // 1 = highest priority
+        enabled: boolean;
+    };
+    mangaForest: {
+        userAgent: string;
+        timeout: number; // milliseconds
+        priority: number; // 1 = highest priority
+        enabled: boolean;
+    };
+    nHentai: {
+        userAgent: string;
+        timeout: number; // milliseconds
+        priority: number; // 1 = highest priority
+        enabled: boolean;
+    };
+    mangaDex: {
+        apiUrl: string;
+        baseUrl: string;
+        userAgent: string;
+        timeout: number; // milliseconds
+        priority: number; // 1 = highest priority
+        enabled: boolean;
     };
 }
 
@@ -247,6 +269,28 @@ export class AppConfigService {
                     userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     timeout: parseEnvNumber('WEEB_CENTRAL_TIMEOUT', 30000), // 30 seconds
                     maxSearchVariants: parseEnvNumber('WEEB_CENTRAL_MAX_VARIANTS', 4),
+                    priority: parseEnvNumber('WEEB_CENTRAL_PRIORITY', 1), // 1 = highest priority
+                    enabled: parseEnvBoolean('WEEB_CENTRAL_ENABLED', true),
+                },
+                mangaForest: {
+                    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                    timeout: parseEnvNumber('MANGA_FOREST_TIMEOUT', 30000), // 30 seconds
+                    priority: parseEnvNumber('MANGA_FOREST_PRIORITY', 2), // 2 = second priority (fallback)
+                    enabled: parseEnvBoolean('MANGA_FOREST_ENABLED', true),
+                },
+                nHentai: {
+                    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    timeout: parseEnvNumber('NHENTAI_TIMEOUT', 30000), // 30 seconds
+                    priority: parseEnvNumber('NHENTAI_PRIORITY', 3), // 3 = third priority (last fallback)
+                    enabled: parseEnvBoolean('NHENTAI_ENABLED', true),
+                },
+                mangaDex: {
+                    apiUrl: 'https://api.mangadex.org',
+                    baseUrl: 'https://mangadex.org',
+                    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    timeout: parseEnvNumber('MANGADEX_TIMEOUT', 30000), // 30 seconds
+                    priority: parseEnvNumber('MANGADEX_PRIORITY', 4), // 4 = fourth priority (after WeebCentral and MangaForest)
+                    enabled: parseEnvBoolean('MANGADEX_ENABLED', true),
                 },
             },
 

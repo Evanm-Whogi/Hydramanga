@@ -356,6 +356,81 @@ class MetricsService {
       throw error;
     }
   }
+
+  /**
+   * Get user's manga view history
+   * Returns only the most recent view for each unique manga with reading time
+   * @param userId - The user ID
+   * @param limit - Maximum number of results to return
+   */
+  async getUserViewHistory(userId: string, limit: number = 50) {
+    try {
+      // First, get the reading time aggregates per series
+      const readingTimeAgg = await db
+        .select({
+          seriesId: schema.userReadingTime.seriesId,
+          totalSeconds: sql<number>`SUM(${schema.userReadingTime.seconds})`.as('total_seconds'),
+        })
+        .from(schema.userReadingTime)
+        .where(eq(schema.userReadingTime.userId, userId))
+        .groupBy(schema.userReadingTime.seriesId);
+
+      // Convert to a map for easy lookup
+      const readingTimeMap = new Map(
+        readingTimeAgg.map((rt: any) => [rt.seriesId, rt.totalSeconds || 0])
+      );
+
+      // Now get the view history
+      const viewHistory = await db
+        .select({
+          seriesId: schema.series.id,
+          viewedAt: sql<Date>`MAX(${schema.mangaViews.viewedAt})`.as('viewedAt'),
+          seriesTitle: schema.series.title,
+          seriesCover: schema.series.cover,
+          rating: schema.series.rating,
+        })
+        .from(schema.mangaViews)
+        .innerJoin(schema.series, eq(schema.mangaViews.seriesId, schema.series.id))
+        .where(eq(schema.mangaViews.userId, userId))
+        .groupBy(schema.series.id, schema.series.title, schema.series.cover, schema.series.rating)
+        .orderBy(desc(sql`MAX(${schema.mangaViews.viewedAt})`))
+        .limit(limit);
+
+      // Map reading time into results
+      return viewHistory.map((item: any) => ({
+        ...item,
+        readingTimeSeconds: readingTimeMap.get(item.seriesId) || 0,
+      }));
+    } catch (error) {
+      logger.error(`Failed to get user view history: ${error}`, { service: 'metricsService' });
+      throw error;
+    }
+  }
+
+  /**
+   * Delete all views of a specific manga for a user
+   * @param userId - The user ID
+   * @param seriesId - The series ID
+   */
+  async deleteViewHistory(userId: string, seriesId: number) {
+    try {
+      await db
+        .delete(schema.mangaViews)
+        .where(
+          and(
+            eq(schema.mangaViews.userId, userId),
+            eq(schema.mangaViews.seriesId, seriesId)
+          )
+        );
+
+      logger.info(`View history deleted: userId=${userId}, seriesId=${seriesId}`, {
+        service: 'metricsService',
+      });
+    } catch (error) {
+      logger.error(`Failed to delete view history: ${error}`, { service: 'metricsService' });
+      throw error;
+    }
+  }
 }
 
 export const metricsService = new MetricsService();

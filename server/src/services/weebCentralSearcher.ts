@@ -268,19 +268,24 @@ export class WeebCentralSearcher {
             }
         }
 
-        // Fallback: use first result if nothing scored
+        // Don't use zero-score results - let ScraperManager try other scrapers
         if (!bestMatch && lastResults.length > 0) {
             const firstResult = lastResults[0];
-            // Avoid "Random" or similar placeholder results
-            if (firstResult.title?.toLowerCase() !== 'random') {
+            // Only use first result if it has ANY score (even if low)
+            // Score 0 means no match at all - fall back to next scraper
+            if (firstResult.score > SCORE_TIERS.NO_MATCH && firstResult.title?.toLowerCase() !== 'random') {
                 console.log(
-                    `[WEEB_SEARCH] No scored results, using fallback: "${firstResult.title}"`
+                    `[WEEB_SEARCH] Using lowest-score match: "${firstResult.title}" (score: ${firstResult.score})`
                 );
                 bestMatch = firstResult;
+            } else if (firstResult.score === SCORE_TIERS.NO_MATCH) {
+                console.log(
+                    `[WEEB_SEARCH] All results scored 0 (no match), deferring to next scraper`
+                );
             }
         }
 
-        // No match found - notify Discord
+        // No match found - log only (Discord notification handled by ScraperManager)
         if (!bestMatch) {
             console.error(
                 `[WEEB_SEARCH] Could not find manga link for "${mangaName}". Tried variants:`,
@@ -290,18 +295,6 @@ export class WeebCentralSearcher {
                 `[WEEB_SEARCH] Could not find manga link for "${mangaName}". Variants: ${searchVariants.join(', ')}`,
                 { service: 'weebCentralSearcher' }
             );
-
-            if (options?.seriesId) {
-                const foundTitles = lastResults
-                    .slice(0, 3)
-                    .map((r) => ({ text: r.title || '', url: r.href }));
-                await discordService.notifyScraperFailed(
-                    mangaName,
-                    options.seriesId,
-                    foundTitles,
-                    options.coverUrl
-                );
-            }
         }
 
         return bestMatch;

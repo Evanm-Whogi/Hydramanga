@@ -1,4 +1,4 @@
-import { apiPost, apiGet } from '@/lib/api';
+import { apiPost, apiGet, apiDelete } from '@/lib/api';
 import { cache } from 'react';
 import { UserStatsResponse } from '@/types/stats';
 
@@ -10,26 +10,33 @@ export async function getIndex(): Promise<any> {
     return await apiGet(`/index`);
 }
 
+// Metadata endpoints - for generating social media previews (no auth required)
+export async function getMangaMetadata(id: any): Promise<any> {
+    return await apiGet(`/metadata/manga/${id}`);
+}
+
+export async function getHomeMetadata(): Promise<any> {
+    return await apiGet(`/metadata/home`);
+}
+
 // Cache this to prevent duplicate requests in generateMetadata + page component
 export const fetchOne = cache(async (id: any): Promise<any> => {
     return await apiGet(`/manga/${id}`);
 });
 
-// Trigger on-demand chapter scan for a manga (client-side only)
+// Cache metadata to prevent duplicate requests in generateMetadata
+export const fetchMangaMetadata = cache(async (id: any): Promise<any> => {
+    return await getMangaMetadata(id);
+});
+
+export const fetchHomeMetadata = cache(async (): Promise<any> => {
+    return await getHomeMetadata();
+});
+
+// Trigger on-demand chapter scan for a manga
 export async function triggerMangaScan(mangaId: number): Promise<any> {
     try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-        const response = await fetch(`${apiUrl}/manga/${mangaId}/scan`, {
-            method: 'POST',
-            credentials: 'include',
-        });
-        
-        if (!response.ok) {
-            console.error(`Failed to trigger manga scan: ${response.status}`);
-            return null;
-        }
-        
-        return await response.json();
+        return await apiPost(`/manga/${mangaId}/scan`);
     } catch (error) {
         console.error('Error triggering manga scan:', error);
         return null;
@@ -81,12 +88,16 @@ export async function markChapterAsUnread(chapterId: number): Promise<any> {
 }
 
 export async function deleteProgress(id: number): Promise<any> {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analytics/progress/manga/${id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-    });
-    if (!response.ok) throw new Error('Failed to delete progress');
-    return await response.json();
+    return await apiDelete(`/analytics/progress/manga/${id}`);
+}
+
+/**
+ * Delete a manga from user's view history
+ * @param seriesId - The series ID to delete from view history
+ * @throws Error if deletion fails
+ */
+export async function deleteViewHistory(seriesId: number): Promise<any> {
+    return await apiDelete(`/analytics/views/${seriesId}`);
 }
 
 /**
@@ -111,4 +122,18 @@ export async function recordReadingTime(data: {
     seconds: number;
 }): Promise<any> {
     return await apiPost('/analytics/progress/time', data);
+}
+/**
+ * Clear all reading progress history for the user
+ */
+export async function clearAllProgress(): Promise<any> {
+    return await apiDelete('/analytics/progress/all');
+}
+
+/**
+ * Get user's manga view history
+ * @param limit - Maximum number of results to return
+ */
+export async function getMyViewHistory(limit: number = 50): Promise<any> {
+    return await apiGet(`/analytics/views?limit=${limit}`);
 }

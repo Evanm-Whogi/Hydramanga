@@ -12,7 +12,7 @@
 import { db } from '@/db';
 import { chapters, series } from '@/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { scrapeWeebCentral } from '@/scrapers/weebCentral';
+import { scraperManager } from '@/scrapers';
 import { queueService } from '@/services/queueService';
 import { discordService } from '@/services/discordService';
 import { mangaProgressService } from '@/services/mangaProgressService';
@@ -55,8 +55,8 @@ export class ChapterScannerService {
             : undefined;
 
         try {
-            // Start scraping
-            const scraper = scrapeWeebCentral(
+            // Start scraping using scraper manager with priority fallback
+            const scraper = scraperManager.scrapeChapters(
                 mangaTitle,
                 async (num) => {
                     const existing = await db
@@ -83,24 +83,31 @@ export class ChapterScannerService {
 
             // Process scraped chapters
             for await (const chapter of scraper) {
-                foundCount++;
-                newChapters.push(chapter.number);
-                const isPreview = previewRemaining > 0;
-                if (isPreview) previewRemaining--;
-                
-                await queueService.addJob(
-                    'mangaChapterDownloadQueue',
-                    `Download ${chapter.title}`,
-                    {
-                        seriesId,
-                        mangaTitle,
-                        chapterTitle: chapter.title,
-                        chapterNumber: chapter.number,
-                        chapterUrl: chapter.url,
-                        isPreview,
-                    },
-                    { jobId: `chapter-${seriesId}-${chapter.number}` }
-                );
+                try {
+                    foundCount++;
+                    newChapters.push(chapter.number);
+                    const isPreview = previewRemaining > 0;
+                    if (isPreview) previewRemaining--;
+                    
+                    await queueService.addJob(
+                        'mangaChapterDownloadQueue',
+                        `Download ${chapter.title}`,
+                        {
+                            seriesId,
+                            mangaTitle,
+                            chapterTitle: chapter.title,
+                            chapterNumber: chapter.number,
+                            chapterUrl: chapter.url,
+                            isPreview,
+                        },
+                        { jobId: `chapter-${seriesId}-${chapter.number}` }
+                    );
+                } catch (jobError) {
+                    logger.error(
+                        `[SCANNER] Error adding job for chapter ${chapter.number}: ${jobError}`,
+                        { service: 'chapterScannerService' }
+                    );
+                }
             }
 
             logger.info(

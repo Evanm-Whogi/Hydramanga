@@ -23,7 +23,7 @@ export default function MangaList({ filters }: MangaListProps) {
 
     // Keep previous items visible while loading new data
     useEffect(() => {
-        if (!loading && items.length > 0) {
+        if (!loading) {
             setFade(false);
             // Trigger fade out, then fade in
             setTimeout(() => {
@@ -74,6 +74,11 @@ export default function MangaList({ filters }: MangaListProps) {
                         )
                     })}
                 </div>
+                {!loading && displayItems.length === 0 && (
+                    <div className="w-full text-center py-8">
+                        <p className="text-primary/60">No results found. Try adjusting your filters.</p>
+                    </div>
+                )}
                 {loading && (
                     <div className="w-full text-center py-4">
                         <span className="text-primary animate-pulse">Loading...</span>
