@@ -4,7 +4,6 @@ import { trackingMiddleware } from '@/middlewares/tracking';
 
 // Route modules
 import mangaRoutes from '@/routes/mangaRoutes';
-import metadataRoutes from '@/routes/metadataRoutes';
 import progressRoutes from '@/routes/progressRoutes';
 import analyticsRoutes from '@/routes/analyticsRoutes';
 import commentRoutes from '@/routes/commentRoutes';
@@ -18,11 +17,7 @@ module.exports = (app: Express) => {
     // Apply tracking middleware globally to track views
     app.use(trackingMiddleware);
 
-    // Metadata routes (public - for SEO and social media previews)
-    // No authentication required, but still protected by bot detection in proxy/auth middleware
-    app.use('/metadata', metadataRoutes);
 
-    // Manga and Progress Routes
     app.use('/manga', authMiddleware, mangaRoutes);
     app.use('/manga/progress', authMiddleware, progressRoutes);
 

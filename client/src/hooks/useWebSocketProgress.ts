@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { useUser } from '@/providers/UserProvider';
 
 interface ProgressMessage {
   type: string;
@@ -16,12 +17,14 @@ interface UseWebSocketProgressOptions {
 /**
  * Hook for establishing real-time WebSocket connection to manga progress updates
  * Automatically connects/disconnects based on seriesId changes
+ * Only connects if user is authenticated (prevents bot connections)
  */
 export function useWebSocketProgress(
   seriesId: number | null,
   options: UseWebSocketProgressOptions = {}
 ) {
   const { enabled = true, onMessage, onError } = options;
+  const { session } = useUser();
   const socketRef = useRef<Socket | null>(null);
   const currentSeriesIdRef = useRef<number | null>(null);
   const intentionalDisconnectRef = useRef<boolean>(false);
@@ -51,6 +54,8 @@ export function useWebSocketProgress(
 
   const connect = useCallback(() => {
     if (!seriesId || !enabled) return;
+    // Don't connect if user is not authenticated (prevents bot connections)
+    if (!session) return;
     if (socketRef.current?.connected) return;
     if (socketRef.current) return;
 
@@ -121,14 +126,14 @@ export function useWebSocketProgress(
   }, [seriesId, enabled]);
 
   useEffect(() => {
-    if (enabled && seriesId) {
+    if (enabled && seriesId && session) {
       connect();
     }
 
     return () => {
       cleanup();
     };
-  }, [seriesId, enabled, connect, cleanup]);
+  }, [seriesId, enabled, session, connect, cleanup]);
 
   return { cleanup };
 }

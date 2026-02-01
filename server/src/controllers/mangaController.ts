@@ -299,6 +299,31 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
         return res.status(400).json({ status: 400, message: "Invalid manga ID" });
     }
 
+    // For unauthenticated users/bots, return only public data for metadata
+    if (!userId) {
+        const publicData = await db.query.series.findFirst({
+            where: (series, { eq }) => eq(series.id, id),
+            columns: {
+                id: true,
+                title: true,
+                romanizedTitle: true,
+                description: true,
+                cover: true,
+            },
+        });
+
+        if (!publicData) {
+            return res.status(404).json({ status: 404, message: "Not found" });
+        }
+
+        return res.json({
+            status: 200,
+            manga: publicData,
+            userStatus: null
+        });
+    }
+
+    // For authenticated users, return full data with user-specific info
     const mangaData = await db.query.series.findFirst({
         where: (series, { eq }) => eq(series.id, id),
         with: {
@@ -332,9 +357,7 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
             },
             orderBy: (comments, { desc }) => [desc(comments.createdAt)],
         },
-        usersTracking: userId 
-            ? { where: (ut, { eq }) => eq(ut.userId, userId) } 
-            : undefined,
+        usersTracking: { where: (ut, { eq }) => eq(ut.userId, userId) },
         },
     });
     if(!mangaData) return res.json({status: 404, message: "Not found"});
@@ -772,36 +795,4 @@ export async function getRecommendedManga(req: Request, res: Response, next: Nex
 // The testing suite
 export async function fetchChaptersWeebCentral(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     mangaOrchestratorService.enqueueTrendingChapterScans(100)
-}
-
-// Metadata-only endpoint for social media previews and SEO
-// Returns only title, description, and cover - minimal data for bots/crawlers
-export async function getMangaMetadata(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
-    try {
-        const id = parseInt(req.params.id, 10);
-
-        if (isNaN(id) || id <= 0) {
-            return res.status(400).json({ status: 400, message: "Invalid manga ID" });
-        }
-
-        const manga = await db.query.series.findFirst({
-            where: (series, { eq }) => eq(series.id, id),
-            columns: {
-                id: true,
-                title: true,
-                romanizedTitle: true,
-                description: true,
-                cover: true,
-            },
-        });
-
-        if (!manga) {
-            return res.status(404).json({ status: 404, message: "Manga not found" });
-        }
-
-        return res.json(manga);
-    } catch (error) {
-        logger.error(`Failed to get manga metadata: ${(error as Error).message}`, { service: 'mangaController' });
-        return next(error);
-    }
 }
