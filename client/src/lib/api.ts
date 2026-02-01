@@ -16,18 +16,24 @@ instance.interceptors.request.use(async (config: InternalAxiosRequestConfig) => 
     const cookieStore = await cookies();
     config.headers['Cookie'] = cookieStore.toString();
     
-    // Forward the real client IP from Next.js to backend for tracking
-    // Next.js provides this via headers() in server components/actions
+    // Forward the real client IP and user-agent from Next.js to backend
+    // This is critical for bot detection and tracking
     try {
         const { headers } = await import('next/headers');
         const headersList = await headers();
         const forwarded = headersList.get('x-forwarded-for');
         const realIp = headersList.get('x-real-ip');
+        const userAgent = headersList.get('user-agent');
         
         if (forwarded) {
             config.headers['x-forwarded-for'] = forwarded;
         } else if (realIp) {
             config.headers['x-real-ip'] = realIp;
+        }
+        
+        // Forward user-agent so backend can detect bots for metadata generation
+        if (userAgent) {
+            config.headers['user-agent'] = userAgent;
         }
     } catch (e) {
         // Silently ignore - headers might not be available in all contexts

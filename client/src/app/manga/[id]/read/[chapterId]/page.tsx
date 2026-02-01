@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { fetchMangaMetadata } from '@/services/mangaService';
+import { fetchOne } from '@/services/mangaService';
 import ReadContent from './components/ReadContent';
 
 interface Props {
@@ -9,7 +9,8 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   try {
     const { id, chapterId } = await params;
-    const manga = await fetchMangaMetadata(id);
+    const data = await fetchOne(id);
+    const manga = data.manga;
 
     return {
       title: `Chapter ${chapterId} - ${manga.title} - ${process.env.NEXT_PUBLIC_NAME}`,
@@ -38,15 +39,23 @@ export default async function ReadPage({ params }: Props) {
   const { id } = await params;
   
   try {
-    const manga = await fetchMangaMetadata(id);
+    const data = await fetchOne(id);
+    const manga = data.manga;
+    
+    // If no chapters (bot received minimal data), show fallback
+    if (!manga.chapters) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <p className="text-muted">Content unavailable</p>
+        </div>
+      );
+    }
+    
     return <ReadContent mangaTitle={manga.title} />;
   } catch (error) {
-    // For bots/crawlers that can't access the content, return nothing
-    // The metadata has already been generated and embedded in the HTML
-    // Just return a minimal component - bots won't see this anyway
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-muted">Loading...</p>
+        <p className="text-muted">Content unavailable</p>
       </div>
     );
   }

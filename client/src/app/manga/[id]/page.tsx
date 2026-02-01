@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { fetchMangaMetadata, fetchOne } from '@/services/mangaService';
+import { fetchOne } from '@/services/mangaService';
 import MangaContent from './components/MangaContent';
 
 interface Props {
@@ -9,7 +9,8 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   try {
     const { id } = await params;
-    const manga = await fetchMangaMetadata(id);
+    const data = await fetchOne(id);
+    const manga = data.manga;
 
     return {
       title: `${manga.title} - ${process.env.NEXT_PUBLIC_NAME}`,
@@ -45,12 +46,20 @@ export default async function MangaPage({ params }: Props) {
   
   try {
     const data = await fetchOne(id);
+    
+    // If no chapters (bot received minimal data), show fallback
+    if (!data.manga.chapters) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <p className="text-muted">Content unavailable</p>
+        </div>
+      );
+    }
+    
     // Map server-side list info to a simple display name for the client dropdown
     const initialListName = data.userStatus?.listName ?? null;
     return <MangaContent manga={data.manga} initialListName={initialListName} />;
   } catch (error) {
-    // For bots/crawlers that can't access the content, return minimal UI
-    // The metadata has already been generated and embedded in the HTML
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-muted">Content unavailable</p>

@@ -10,27 +10,15 @@ export async function getIndex(): Promise<any> {
     return await apiGet(`/index`);
 }
 
-// Metadata endpoints - for generating social media previews (no auth required)
-export async function getMangaMetadata(id: any): Promise<any> {
-    return await apiGet(`/metadata/manga/${id}`);
-}
-
-export async function getHomeMetadata(): Promise<any> {
-    return await apiGet(`/metadata/home`);
-}
-
 // Cache this to prevent duplicate requests in generateMetadata + page component
+// This endpoint returns public data for bots/unauthenticated and full data for authenticated users
 export const fetchOne = cache(async (id: any): Promise<any> => {
     return await apiGet(`/manga/${id}`);
 });
 
-// Cache metadata to prevent duplicate requests in generateMetadata
-export const fetchMangaMetadata = cache(async (id: any): Promise<any> => {
-    return await getMangaMetadata(id);
-});
-
-export const fetchHomeMetadata = cache(async (): Promise<any> => {
-    return await getHomeMetadata();
+// Cache homepage data to prevent duplicate requests
+export const fetchHomepage = cache(async (): Promise<any> => {
+    return await getHomepage();
 });
 
 // Trigger on-demand chapter scan for a manga

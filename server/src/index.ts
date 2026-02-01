@@ -29,6 +29,12 @@ import { initializeScrapers } from '@/scrapers';
 
 // Constants
 const app: Express = express();
+
+// Trust proxy - required for rate limiting and IP detection behind Docker/nginx
+// Set to 1 to trust only the first proxy hop (Docker network gateway)
+// This prevents IP spoofing while allowing proper client IP detection
+app.set('trust proxy', 1);
+
 app.use(morgan(':method :url :status :response-time ms - :res[content-length] \n', {
     skip: (req, res) => req.originalUrl.startsWith('/admin/queues') || req.originalUrl.startsWith('/manga-files') // Skip logging for Bull Board routes
 }));
