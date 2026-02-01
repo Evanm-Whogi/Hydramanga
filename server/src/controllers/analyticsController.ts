@@ -264,10 +264,23 @@ export async function deleteProgress(req: Request, res: Response, next: NextFunc
 
 /**
  * Get user reading statistics
+ * Returns overall stats and per-manga reading time breakdown
+ * @route GET /analytics/stats
  */
-export async function getMyStats(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+export async function getMyStats(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> {
   try {
     const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        error: 'Unauthorized: User ID not found',
+      });
+    }
+
     const stats = await userProgressService.getUserStats(userId);
 
     return res.json({
@@ -275,21 +288,46 @@ export async function getMyStats(req: Request, res: Response, next: NextFunction
       stats,
     });
   } catch (error) {
-    logger.error(`Failed to get user stats: ${error}`, { service: 'analyticsController' });
+    logger.error(
+      `Failed to get user stats: ${error}`,
+      { service: 'analyticsController' }
+    );
     return next(error);
   }
 }
 
-export async function recordReadingTime(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+/**
+ * Record reading time for a chapter
+ * Accumulates total seconds spent reading each chapter
+ * @route POST /analytics/progress/time
+ * @body seriesId - Manga series ID
+ * @body chapterId - Chapter ID
+ * @body seconds - Seconds spent reading (must be > 0)
+ */
+export async function recordReadingTime(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> {
   try {
     const userId = req.user?.id;
     const { seriesId, chapterId, seconds } = req.body;
 
-    if (!seriesId || !chapterId || typeof seconds !== 'number' || seconds <= 0) {
-      return res.status(400).json({ error: 'Missing or invalid fields: seriesId, chapterId, seconds' });
+    if (!userId) {
+      return res.status(401).json({
+        error: 'Unauthorized: User ID not found',
+      });
     }
 
-    // Call service to record time (to be implemented)
+    // Validate required fields
+    if (!seriesId || !chapterId || typeof seconds !== 'number' || seconds <= 0) {
+      return res.status(400).json({
+        error:
+          'Invalid request body: seriesId (number), chapterId (number), and seconds (positive number) are required',
+      });
+    }
+
+    // Record reading time in database
     await userProgressService.recordReadingTime({
       userId,
       seriesId: Number(seriesId),
@@ -299,10 +337,13 @@ export async function recordReadingTime(req: Request, res: Response, next: NextF
 
     return res.json({
       status: 200,
-      message: 'Reading time recorded',
+      message: 'Reading time recorded successfully',
     });
   } catch (error) {
-    logger.error(`Failed to record reading time: ${error}`, { service: 'analyticsController' });
+    logger.error(
+      `Failed to record reading time: ${error}`,
+      { service: 'analyticsController' }
+    );
     return next(error);
   }
 }

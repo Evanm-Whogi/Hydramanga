@@ -4,8 +4,10 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { fetchMangaPages, updateProgress } from '@/services/mangaService';
 import { getBookmark, addBookmark, removeBookmark } from '@/services/bookmarkService';
 import { useUser } from '@/providers/UserProvider';
-import { MenuIcon, X, BookmarkIcon } from 'lucide-react';
+import { MenuIcon, X, BookmarkIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useChapterViewTracking } from '@/hooks/useViewTracking';
+import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
+import { updateImportProgressToast, dismissImportProgressToast } from '@/components/ImportProgressToast';
 import BookmarkModal from '@/components/BookmarkModal';
 import { recordReadingTime } from '@/services/mangaService';
 
@@ -35,6 +37,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const [currentPage, setCurrentPage] = useState(0);
   const [lastTrackedPage, setLastTrackedPage] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [bookmarkNote, setBookmarkNote] = useState('');
   const [bookmarkModalOpen, setBookmarkModalOpen] = useState(false);
@@ -51,6 +54,69 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSentRef = useRef(0);
+  const [initialProgressReceived, setInitialProgressReceived] = useState(false);
+  const [wasActiveOnLoad, setWasActiveOnLoad] = useState(false);
+
+  // Track manga import progress for live updates
+  const { progress } = useMangaImportProgress(id ? Number(id) : null, {
+    enabled: true,
+    onProgress: (progressData) => {
+      if (progressData.lastDownloadedChapter) {
+        // Add newly downloaded chapter to the sidebar list
+        setAllChapters((prev) => {
+          const exists = prev.some((ch) => ch.id === progressData.lastDownloadedChapter?.id);
+          if (!exists && progressData.lastDownloadedChapter) {
+            const newChapter = {
+              id: progressData.lastDownloadedChapter.id || Math.random(),
+              seriesId: Number(id),
+              chapterNumber: progressData.lastDownloadedChapter.chapterNumber,
+              volumeNumber: null,
+              title: progressData.lastDownloadedChapter.title,
+              localPath: '',
+              images: [],
+            } as Chapter;
+            return [newChapter, ...prev].sort((a, b) => 
+              parseFloat(b.chapterNumber || '0') - parseFloat(a.chapterNumber || '0')
+            );
+          }
+          return prev;
+        });
+      }
+    },
+  });
+
+  // Show/update progress toast for read page
+  useEffect(() => {
+    if (!progress || !mangaTitle) return;
+
+    const isActiveStatus = progress.status === 'scanning' || progress.status === 'downloading';
+    const isTerminalStatus = progress.status === 'completed' || progress.status === 'failed';
+
+    if (!initialProgressReceived) {
+      setInitialProgressReceived(true);
+      if (isActiveStatus) {
+        setWasActiveOnLoad(true);
+        updateImportProgressToast(id ? Number(id) : 0, mangaTitle, progress);
+      }
+      return;
+    }
+
+    if (isActiveStatus) {
+      setWasActiveOnLoad(true);
+      updateImportProgressToast(id ? Number(id) : 0, mangaTitle, progress);
+    } else if (wasActiveOnLoad && isTerminalStatus) {
+      updateImportProgressToast(id ? Number(id) : 0, mangaTitle, progress);
+    }
+  }, [progress, id, mangaTitle, initialProgressReceived, wasActiveOnLoad]);
+
+  // Cleanup toast when leaving the page
+  useEffect(() => {
+    return () => {
+      if (id) {
+        dismissImportProgressToast(Number(id));
+      }
+    };
+  }, [id]);
 
   // Start reading timer on mount/chapter change
   useEffect(() => {
@@ -142,8 +208,13 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     const applyNavOffset = () => {
       const isDesktop = window.matchMedia('(min-width: 768px)').matches;
       if (isDesktop) {
-        mainNav.style.left = `${SIDEBAR_WIDTH_PX}px`;
-        mainNav.style.width = `calc(100% - ${SIDEBAR_WIDTH_PX}px)`;
+        if (sidebarCollapsed) {
+          mainNav.style.left = '0';
+          mainNav.style.width = '100%';
+        } else {
+          mainNav.style.left = `${SIDEBAR_WIDTH_PX}px`;
+          mainNav.style.width = `calc(100% - ${SIDEBAR_WIDTH_PX}px)`;
+        }
       } else {
         mainNav.style.left = '';
         mainNav.style.width = '';
@@ -188,7 +259,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       mainNav.style.left = '';
       mainNav.style.width = '';
     };
-  }, []);
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     if (!loading && allChapters.length > 0) {
@@ -374,7 +445,10 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   return (
     <div className="reader-root flex bg-background min-h-screen text-primary flex-col md:flex-row">
       {/* Desktop Sidebar */}
-      <aside className="sidebar hidden md:flex md:w-65 md:h-screen md:fixed md:left-0 md:top-0 md:bg-foreground md:border-r md:border-r-borders md:flex-col md:z-100">
+      <aside className={`sidebar hidden md:flex md:h-screen md:fixed md:left-0 md:top-0 md:bg-foreground md:border-r md:border-r-borders md:flex-col md:z-100 md:transition-all md:duration-300 ${
+        sidebarCollapsed ? 'md:w-0 md:overflow-hidden' : 'md:w-65'
+      }`}>
+
         <div className="sidebar-header px-6 py-4 border-b-borders">
           <h2 className="text-[1.25rem] font-bold mb-4 text-white">Chapter {data?.chapterNumber}</h2>
             <button onClick={() => { router.push(`/manga/${id}`) }} className="mb-4 w-full flex-1 p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 rounded">Back to Overview</button>
@@ -505,6 +579,16 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         )}
       </div>
 
+      {/* Collapse/Expand Button - Always Visible */}
+      <button
+        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+        className="hidden md:flex md:fixed md:top-1/2 cursor-pointer md:-translate-y-1/2 md:bg-foreground md:hover:bg-background md:text-primary md:border md:border-borders md:rounded-full md:p-2 md:z-50 md:transition-all md:duration-300"
+        style={sidebarCollapsed ? { left: '8px' } : { left: `${SIDEBAR_WIDTH_PX + 8}px` }}
+        title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+      </button>
+
       {/* Mobile Header with Menu */}
       <div
         ref={mobileHeaderRef}
@@ -531,8 +615,12 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         )}
       </div>
 
-      <main className="content w-full md:py-18.25 md:ml-65 md:w-[calc(100%-260px)] pt-24 md:pt-18.25 pb-20 md:pb-0 relative flex flex-col items-center">
-        <div className="click-zones fixed top-0 right-0 bottom-0 left-0 md:left-65 flex z-10 pointer-events-none pt-24 md:pt-0">
+      <main className={`content w-full md:py-18.25 pt-24 md:pt-18.25 pb-20 md:pb-0 relative flex flex-col items-center transition-all duration-300 ${
+        sidebarCollapsed ? 'md:ml-0 md:w-full' : 'md:ml-65 md:w-[calc(100%-260px)]'
+      }`}>
+        <div className={`click-zones fixed top-0 right-0 bottom-0 left-0 flex z-10 pointer-events-none pt-24 md:pt-0 transition-all duration-300 ${
+          sidebarCollapsed ? 'md:left-0' : 'md:left-65'
+        }`}>
           <div
             onClick={() => handlePageClick('prev')}
             className="prev-zone flex-1 pointer-events-auto cursor-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2232%22%20height%3D%2232%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%2215%2018%209%2012%2015%206%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E'),pointer]"

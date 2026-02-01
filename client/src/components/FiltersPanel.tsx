@@ -77,7 +77,7 @@ function FiltersPanel({
         </div>
         <button
           onClick={handleNsfwToggle}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${nsfwButtonClass}`}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer ${nsfwButtonClass}`}
           aria-label={`Toggle NSFW content - currently ${isNsfwEnabled ? 'enabled' : 'disabled'}`}
         >
           NSFW: {isNsfwEnabled ? 'ON' : 'OFF'}

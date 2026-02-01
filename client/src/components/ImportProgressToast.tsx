@@ -12,7 +12,9 @@ function ImportProgressToastContent({ progress, mangaTitle }: { progress: MangaI
       case 'downloading':
         return `Downloading: ${downloadedChapters}/${totalChapters} chapters`;
       case 'completed':
-        return `✓ Completed: ${totalChapters} chapters downloaded`;
+        return totalChapters === 0 
+          ? '✓ Chapters not found'
+          : `✓ Completed: ${totalChapters} chapters downloaded`;
       case 'failed':
         return `✗ Failed: ${progress.errorMessage || 'Unknown error'}`;
       default:

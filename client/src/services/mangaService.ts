@@ -1,5 +1,6 @@
 import { apiPost, apiGet } from '@/lib/api';
 import { cache } from 'react';
+import { UserStatsResponse } from '@/types/stats';
 
 export async function getHomepage(): Promise<any> {
     return await apiGet(`/home`);
@@ -88,13 +89,26 @@ export async function deleteProgress(id: number): Promise<any> {
     return await response.json();
 }
 
-export async function getUserStats(): Promise<any> {
+/**
+ * Fetch user reading statistics
+ * @returns User statistics including total series, average completion, and reading times
+ */
+export async function getUserStats(): Promise<UserStatsResponse> {
     return await apiGet('/analytics/stats');
 }
 
 export async function getRecommendedManga(id: number, limit: number = 8): Promise<any> {
     return await apiGet(`/manga/${id}/recommendations?limit=${limit}`);
 }
-export async function recordReadingTime(data: {seriesId: number; chapterId: number; seconds: number}): Promise<any> {
+
+/**
+ * Record reading time for a chapter
+ * @param data - Reading time data containing seriesId, chapterId, and seconds
+ */
+export async function recordReadingTime(data: {
+    seriesId: number;
+    chapterId: number;
+    seconds: number;
+}): Promise<any> {
     return await apiPost('/analytics/progress/time', data);
 }

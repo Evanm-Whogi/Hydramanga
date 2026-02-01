@@ -176,12 +176,19 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
     nsfw,
   ]);
 
-  // Get visible lists in sorted order
+  // Get visible lists in sorted order, filtered by selectedList
   const visibleLists = useMemo(() => {
-    return userLists
+    let filtered = userLists
       .filter((l) => l.isVisible)
       .sort((a, b) => a.sortOrder - b.sortOrder);
-  }, [userLists]);
+    
+    // If a specific list is selected (not 'all'), filter to just that list
+    if (selectedList !== 'all') {
+      filtered = filtered.filter((l) => l.slug === selectedList);
+    }
+    
+    return filtered;
+  }, [userLists, selectedList]);
 
   // Drag-and-drop handlers
   const handleDragStart = (event: any) => {

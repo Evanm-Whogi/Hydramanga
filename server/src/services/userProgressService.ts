@@ -426,13 +426,18 @@ class UserProgressService {
   }
 
   /**
-   * Get reading statistics for a user (With caching)
+   * Get reading statistics for a user
+   * Includes overall stats and per-manga reading time breakdown
    * @param userId - The user ID
+   * @throws Will throw if userId is invalid or query fails
    */
   async getUserStats(userId: string) {
     try {
+      if (!userId || typeof userId !== 'string') {
+        throw new Error('Invalid user ID provided');
+      }
 
-      // Aggregate overall stats
+      // Aggregate overall stats from reading progress
       const stats = await db
         .select({
           totalSeriesReading: sql<number>`COUNT(*)`.as('total_series_reading'),
@@ -441,7 +446,6 @@ class UserProgressService {
         })
         .from(schema.userReadingProgress)
         .where(eq(schema.userReadingProgress.userId, userId));
-
 
       // Aggregate reading time per manga (series) and join series table for metadata
       const readingTimes = await db
@@ -454,29 +458,75 @@ class UserProgressService {
         .from(schema.userReadingTime)
         .innerJoin(schema.series, eq(schema.userReadingTime.seriesId, schema.series.id))
         .where(eq(schema.userReadingTime.userId, userId))
-        .groupBy(schema.userReadingTime.seriesId, schema.series.title, schema.series.cover);
+        .groupBy(
+          schema.userReadingTime.seriesId,
+          schema.series.title,
+          schema.series.cover
+        );
 
+      // Return aggregated stats with safe defaults
       const result = {
         ...(stats[0] || {
           totalSeriesReading: 0,
           averageCompletion: 0,
           totalPagesRead: 0,
         }),
-        readingTimes, // Array of { seriesId, totalSeconds, title, image }
+        readingTimes: readingTimes || [],
       };
+
+      logger.debug(
+        `Retrieved user stats for ${userId}: ${result.totalSeriesReading} series, ${result.totalPagesRead} pages`,
+        { service: 'userProgressService' }
+      );
 
       return result;
     } catch (error) {
-      logger.error(`Failed to get user stats: ${error}`, { service: 'userProgressService' });
+      logger.error(
+        `Failed to get user stats for userId ${userId}: ${error}`,
+        { service: 'userProgressService' }
+      );
       throw error;
     }
   }
 
-  async recordReadingTime({ userId, seriesId, chapterId, seconds }: { userId: string, seriesId: number, chapterId: number, seconds: number }): Promise<void> {
+  /**
+   * Record reading time for a chapter
+   * Tracks total seconds spent reading each chapter per user
+   * Uses upsert to accumulate time if already recorded
+   * @param userId - The user ID
+   * @param seriesId - The manga series ID
+   * @param chapterId - The chapter ID
+   * @param seconds - Seconds spent reading
+   * @throws Will throw if database operation fails
+   */
+  async recordReadingTime({
+    userId,
+    seriesId,
+    chapterId,
+    seconds,
+  }: {
+    userId: string;
+    seriesId: number;
+    chapterId: number;
+    seconds: number;
+  }): Promise<void> {
     try {
-      if (!userId || !seriesId || !chapterId || typeof seconds !== 'number' || seconds <= 0) return;
+      // Validate all required parameters
+      if (
+        !userId ||
+        !seriesId ||
+        !chapterId ||
+        typeof seconds !== 'number' ||
+        seconds <= 0
+      ) {
+        logger.warn(
+          `Invalid reading time parameters: userId=${userId}, seriesId=${seriesId}, chapterId=${chapterId}, seconds=${seconds}`,
+          { service: 'userProgressService' }
+        );
+        return;
+      }
 
-      // Upsert reading time for this user/series/chapter
+      // Upsert reading time for this user/series/chapter combination
       await db
         .insert(schema.userReadingTime)
         .values({
@@ -487,19 +537,29 @@ class UserProgressService {
           updatedAt: new Date(),
         })
         .onConflictDoUpdate({
-          target: [schema.userReadingTime.userId, schema.userReadingTime.seriesId, schema.userReadingTime.chapterId],
+          target: [
+            schema.userReadingTime.userId,
+            schema.userReadingTime.seriesId,
+            schema.userReadingTime.chapterId,
+          ],
           set: {
             seconds: sql`${schema.userReadingTime.seconds} + ${seconds}`,
             updatedAt: new Date(),
           },
         });
 
-      logger.info(`Recorded reading time: userId=${userId}, seriesId=${seriesId}, chapterId=${chapterId}, seconds=${seconds}`, { service: 'userProgressService' });
+      logger.debug(
+        `Recorded reading time: userId=${userId}, seriesId=${seriesId}, chapterId=${chapterId}, seconds=${seconds}`,
+        { service: 'userProgressService' }
+      );
     } catch (error) {
-      logger.error(`Failed to record reading time: ${error}`, { service: 'userProgressService' });
+      logger.error(
+        `Failed to record reading time for userId=${userId}, seriesId=${seriesId}: ${error}`,
+        { service: 'userProgressService' }
+      );
+      throw error;
     }
   }
-
 }
 
 export const userProgressService = new UserProgressService();

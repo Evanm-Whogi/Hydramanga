@@ -11,6 +11,9 @@ import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
 import { initCronJobs, stopCronJobs } from '@/jobs/cron';
 import path from 'path';
+import http from 'http';
+import { Server } from 'socket.io';
+import { setupProgressSocket } from '@/sockets/progressSocket';
 dotenv.config();
 
 // Middlewares
@@ -72,16 +75,43 @@ app.use((err: Error, req: any, res: any, next: any) => {
   res.status(500).send(err);
 });
 
-// Server
-const server = app.listen(process.env.PORT, () => {
+// Server - use http.createServer instead of app.listen for Socket.IO
+const server = http.createServer(app);
+const io = new Server(server, {
+  path: '/socket.io/',
+  cors: {
+    origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001', 'http://localhost:3001', 'https://manga.chit.sh'],
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+  transports: ['websocket', 'polling'],
+  allowUpgrades: true,
+});
+
+// Setup WebSocket namespaces
+setupProgressSocket(io);
+
+logger.info('Socket.IO server initialized with transports: websocket, polling', { service: 'server' });
+
+// Start server
+server.listen(process.env.PORT, () => {
   logger.info(`Server is running on port: ${process.env.PORT}`, { service: 'server' });
+  logger.info(`Socket.IO endpoint available at http://localhost:${process.env.PORT}/socket.io/`, { service: 'server' });
 });
 
 // Graceful Shutdown
 const gracefulShutdown = async () => {
   logger.info('Received shutdown signal, starting graceful shutdown...');
 
-  // Close HTTP server first
+  // Close Socket.IO first
+  try {
+    io.close();
+    logger.info('Socket.IO closed');
+  } catch (error) {
+    logger.warn(`Error closing Socket.IO: ${error}`);
+  }
+
+  // Close HTTP server
   server.close(() => {
     logger.info('HTTP server closed');
   });

@@ -200,7 +200,7 @@ export default function ListManager({ lists, onUpdate }: ListManagerProps) {
         <button
           onClick={() => setIsCreating(true)}
           disabled={isLoading || isCreating}
-          className="flex items-center px-2 py-1 bg-background text-white gap-2"
+          className="flex items-center px-2 py-1 bg-background text-white gap-2 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           New List

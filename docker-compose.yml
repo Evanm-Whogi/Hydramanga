@@ -48,16 +48,13 @@ services:
       DATABASE_URL: postgres://mang:mangpass@db:5432/mang
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      PUBLIC_APP_URL: http://localhost:3000
+      PUBLIC_APP_URL: https://manga.chit.sh
       # Add other required envs here, e.g. JWT secrets, email creds, storage paths
       CHAPTER_STORAGE_ROOT: /data/chapters
       # Public URL clients should use to load chapter images/files (via frontend rewrite)
-      CHAPTER_PUBLIC_BASE: http://localhost:3000/api/manga-files
-      # Path to series.json file
-      SERIES_JSON_PATH: /data/series.json
+      CHAPTER_PUBLIC_BASE: https://manga.chit.sh/api/manga-files
     volumes:
       - ./data/mangas:/data/chapters
-      - ./data/series.json:/data/series.json:ro
     ports:
       - "4000:4000"
     healthcheck:
@@ -82,6 +79,6 @@ services:
       # Used by Next.js rewrites and server-side calls
       BACKEND_INTERNAL_URL: http://server:4000
       # Public site origin for OAuth redirects and metadata
-      NEXT_PUBLIC_URL: http://localhost:3000
+      NEXT_PUBLIC_URL: https://manga.chit.sh
     ports:
       - "3000:3000"
