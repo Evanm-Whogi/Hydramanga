@@ -45,9 +45,7 @@ export default function ListContainer({ manga, chapters, comments, initialListNa
         </div>
 
         <div className="flex flex-col pt-2 gap-2">
-            { page === "chapters" && 
-                chapters.length > 0 ? <Chapters manga={{ ...manga, chapters: sortedChapters }} /> : <span className="text-primary text-center text-xl font-bold">No Chapters Found</span>
-            }
+            { page === "chapters" && <Chapters manga={{ ...manga, chapters: sortedChapters }} /> }
             { page === "comments" && <Comments manga={manga} comments={comments} />}
         </div>
         </>

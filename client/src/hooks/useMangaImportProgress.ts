@@ -28,11 +28,13 @@ export function useMangaImportProgress(
   const handleMessage = useCallback((message: any) => {
     switch (message.type) {
       case 'connected':
+        console.log('[Import Progress] SSE Connected');
         setError(null);
         break;
 
       case 'progress':
         setProgress(message.data);
+        console.log('[Import Progress] Update:', message.data);
         setError(null);
         // Call onProgress for each update
         if (onProgressRef.current) {
@@ -41,10 +43,12 @@ export function useMangaImportProgress(
         break;
 
       case 'no-progress':
+        console.log('[Import Progress] No active import');
         setProgress(null);
         break;
 
       case 'done':
+        console.log('[Import Progress] Done:', message.data);
         setProgress(message.data);
         if (message.data.status === 'completed' && onCompleteRef.current) {
           onCompleteRef.current(message.data);

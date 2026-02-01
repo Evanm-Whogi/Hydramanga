@@ -28,7 +28,7 @@ const app: Express = express();
 app.use(morgan(':method :url :status :response-time ms - :res[content-length] \n', {
     skip: (req, res) => req.originalUrl.startsWith('/admin/queues') || req.originalUrl.startsWith('/manga-files') // Skip logging for Bull Board routes
 }));
-app.use(cors({ origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001', 'http://localhost:3001'], credentials: true }));
+app.use(cors({ origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001', 'http://localhost:3001', 'https://manga.chit.sh'], credentials: true }));
 const chapterStaticRoot = process.env.CHAPTER_STORAGE_ROOT || path.join(process.cwd(), 'chapters');
 
 // Bull Board Setup

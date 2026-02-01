@@ -216,6 +216,8 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
 
   function DraggableMangaCard({ manga }: { manga: any }) {
     const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id: manga.id });
+    // Remove aria-describedby from attributes to prevent hydration mismatch
+    const { 'aria-describedby': _ariaDescribedBy, ...safeAttributes } = attributes;
     return (
       <div
         ref={setNodeRef}
@@ -231,7 +233,7 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
           type="button"
           aria-label="Drag to reorder"
           className="absolute top-2 left-2 z-20 btn btn-ghost btn-xs cursor-grab px-4 py-2 text-white bg-background/70 rounded-md hover:bg-background/90"
-          {...attributes}
+          {...safeAttributes}
           {...listeners}
           onClick={(e) => e.preventDefault()}
         >
