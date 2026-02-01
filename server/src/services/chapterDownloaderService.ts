@@ -11,7 +11,7 @@
 
 import { db } from '@/db';
 import { chapters } from '@/db/schema';
-import { downloadChapterImagesStandalone } from '@/scrapers/weebCentral';
+import { scraperManager } from '@/scrapers';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import logger from '@/services/loggerService';
 import { eq, and } from 'drizzle-orm';
@@ -36,8 +36,8 @@ export class ChapterDownloaderService {
                 { service: 'chapterDownloaderService' }
             );
 
-            // Download images and get local storage path
-            const downloadResult = await downloadChapterImagesStandalone(
+            // Download images and get local storage path using scraper manager with fallback
+            const downloadResult = await scraperManager.downloadChapter(
                 data.chapterUrl,
                 data.mangaTitle,
                 data.chapterTitle

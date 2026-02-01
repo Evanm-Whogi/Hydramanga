@@ -21,7 +21,10 @@ export function useInfiniteScroll(filters: any) {
           // Append each array item individually for Express/Drizzle to parse as an array
           value.forEach(v => { if (v) params.append(key, String(v)) });
         } else if (value !== undefined && value !== null && value !== '') {
-          params.append(key, String(value));
+          // Trim search queries to avoid empty results from spaces/symbols only
+          const stringValue = String(value).trim();
+          if (key === 'search' && !stringValue) return;
+          if (stringValue || key !== 'search') params.append(key, stringValue);
         }
       });
 

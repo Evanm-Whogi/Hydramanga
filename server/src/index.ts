@@ -25,6 +25,7 @@ import '@/services/loggerService';
 import '@/services/queueService';
 import { queueService } from '@/services/queueService';
 import logger from '@/services/loggerService';
+import { initializeScrapers } from '@/scrapers';
 
 // Constants
 const app: Express = express();
@@ -65,6 +66,9 @@ if (process.env.NODE_ENV === 'production') {
 
 // Routes
 require('@/routes')(app);
+
+// Initialize scrapers (must be done before cron jobs)
+initializeScrapers();
 
 // Cron jobs (trending rescans, etc.)
 initCronJobs();

@@ -191,11 +191,33 @@ class UserProgressService {
           seriesCover: schema.series.cover,
           chapterNumber: schema.chapters.chapterNumber,
           chapterTitle: schema.chapters.title,
+          readingTimeSeconds: sql<number>`COALESCE(SUM(${schema.userReadingTime.seconds}), 0)`.as('reading_time_seconds'),
         })
         .from(schema.userReadingProgress)
         .innerJoin(schema.series, eq(schema.userReadingProgress.seriesId, schema.series.id))
         .leftJoin(schema.chapters, eq(schema.userReadingProgress.lastChapterId, schema.chapters.id))
+        .leftJoin(
+          schema.userReadingTime,
+          and(
+            eq(schema.userReadingTime.userId, userId),
+            eq(schema.userReadingTime.seriesId, schema.userReadingProgress.seriesId)
+          )
+        )
         .where(eq(schema.userReadingProgress.userId, userId))
+        .groupBy(
+          schema.userReadingProgress.userId,
+          schema.userReadingProgress.seriesId,
+          schema.userReadingProgress.lastChapterId,
+          schema.userReadingProgress.lastPageNumber,
+          schema.userReadingProgress.percentageCompleted,
+          schema.userReadingProgress.updatedAt,
+          schema.series.id,
+          schema.series.title,
+          schema.series.cover,
+          schema.chapters.id,
+          schema.chapters.chapterNumber,
+          schema.chapters.title
+        )
         .orderBy(sql`${schema.userReadingProgress.updatedAt} DESC`)
         .limit(limit);
 
@@ -560,6 +582,41 @@ class UserProgressService {
       throw error;
     }
   }
-}
 
+  /**
+   * Clear all reading progress history for a user
+   * Deletes all user progress records and reading times
+   * @param userId - The user ID
+   * @throws Will throw if database operation fails
+   */
+  async clearAllUserProgress(userId: string): Promise<void> {
+    try {
+      // Delete all user reading progress (series level)
+      await db.delete(schema.userReadingProgress)
+        .where(eq(schema.userReadingProgress.userId, userId));
+
+      // Delete all user chapter progress
+      await db.delete(schema.userChapterProgress)
+        .where(eq(schema.userChapterProgress.userId, userId));
+
+      // Delete all user reading times
+      await db.delete(schema.userReadingTime)
+        .where(eq(schema.userReadingTime.userId, userId));
+
+      // Clear related caches
+      cacheService.invalidatePattern(`user:${userId}:*`);
+
+      logger.info(
+        `Cleared all reading progress for userId=${userId}`,
+        { service: 'userProgressService' }
+      );
+    } catch (error) {
+      logger.error(
+        `Failed to clear all progress for userId=${userId}: ${error}`,
+        { service: 'userProgressService' }
+      );
+      throw error;
+    }
+  }
+}
 export const userProgressService = new UserProgressService();

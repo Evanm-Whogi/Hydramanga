@@ -18,7 +18,7 @@ export default function ContinueReading() {
 
         const fetchProgress = async () => {
             try {
-                const data = await getMyProgress(8);
+                const data = await getMyProgress(12);
                 setProgress(data.progress || []);
             } catch (error) {
                 console.error('Failed to fetch progress:', error);
@@ -35,7 +35,7 @@ export default function ContinueReading() {
         <section className="container mx-auto text-primary mb-24">
             <SectionHeader title="Continue Reading" />
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {progress.slice(0, 8).map((item) => (
+                {progress.slice(0, 12).map((item) => (
                     <ContinueReadingCard key={item.seriesId} progress={item} />
                 ))}
             </div>

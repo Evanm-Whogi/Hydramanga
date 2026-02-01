@@ -80,8 +80,12 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
 
         // Filters logic
         if (search) {
-            const pattern = `%${search}%`;
-            conditions.push(or(ilike(schema.series.title, pattern), ilike(schema.series.romanizedTitle, pattern), ilike(schema.series.nativeTitle, pattern)));
+            const trimmedSearch = String(search).trim();
+            // Only add search condition if the trimmed search is not empty
+            if (trimmedSearch) {
+                const pattern = `%${trimmedSearch}%`;
+                conditions.push(or(ilike(schema.series.title, pattern), ilike(schema.series.romanizedTitle, pattern), ilike(schema.series.nativeTitle, pattern)));
+            }
         }
 
         const genreList = parseParam(genres);
@@ -288,7 +292,7 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
 
 export async function getOne(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const id = parseInt(req.params.id, 10);
-    const userId = req.user.id;
+    const userId = req.user?.id;
 
     // Validate ID before any operations
     if (isNaN(id) || id <= 0) {
@@ -768,4 +772,36 @@ export async function getRecommendedManga(req: Request, res: Response, next: Nex
 // The testing suite
 export async function fetchChaptersWeebCentral(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     mangaOrchestratorService.enqueueTrendingChapterScans(100)
+}
+
+// Metadata-only endpoint for social media previews and SEO
+// Returns only title, description, and cover - minimal data for bots/crawlers
+export async function getMangaMetadata(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+    try {
+        const id = parseInt(req.params.id, 10);
+
+        if (isNaN(id) || id <= 0) {
+            return res.status(400).json({ status: 400, message: "Invalid manga ID" });
+        }
+
+        const manga = await db.query.series.findFirst({
+            where: (series, { eq }) => eq(series.id, id),
+            columns: {
+                id: true,
+                title: true,
+                romanizedTitle: true,
+                description: true,
+                cover: true,
+            },
+        });
+
+        if (!manga) {
+            return res.status(404).json({ status: 404, message: "Manga not found" });
+        }
+
+        return res.json(manga);
+    } catch (error) {
+        logger.error(`Failed to get manga metadata: ${(error as Error).message}`, { service: 'mangaController' });
+        return next(error);
+    }
 }

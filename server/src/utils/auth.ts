@@ -13,8 +13,15 @@ export const auth = betterAuth({
     baseURL: PUBLIC_APP_URL,
     basePath: "/auth",
     advanced: {
-        // Use secure cookies only in production; allow HTTP in development
-        useSecureCookies: process.env.NODE_ENV === 'production'
+        useSecureCookies: true,
+    },
+    cookies: {
+        sessionToken: {
+            httpOnly: true,
+            secure: true,
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60, // 7 days
+        }
     },
     secret: process.env.BETTER_AUTH_SECRET,
     trustedOrigins: [PUBLIC_APP_URL],
@@ -52,7 +59,7 @@ export const auth = betterAuth({
         }
     },
     logger: {
-        level: "debug",
+        level: "warn",
         enabled: true,
     },
     user: {

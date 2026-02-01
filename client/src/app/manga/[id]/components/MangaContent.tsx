@@ -246,17 +246,21 @@ export default function MangaContent({ manga, initialListName }: MangaContentPro
 
   const lastChapterDate = manga.chapters.length > 0 ? manga.chapters[manga.chapters.length - 1].updatedAt : null;
 
-  // Format description with line breaks and italics
+  // Format description with line breaks, bold, and italics
   const formattedDescription = manga.description
     ? manga.description.split('<br>').map((line: string, index: number) => {
-        // Split line by <i> tags and render as React elements
-        const parts = line.split(/(<i>.*?<\/i>)/);
+        // Split line by <i> and <b> tags and render as React elements
+        const parts = line.split(/(<i>.*?<\/i>|<b>.*?<\/b>)/);
         return (
           <Fragment key={index}>
             {parts.map((part: string, partIndex: number) => {
               if (part.match(/^<i>.*<\/i>$/)) {
                 const content = part.replace(/<i>(.*?)<\/i>/g, '$1');
                 return <em key={partIndex}>{content}</em>;
+              }
+              if (part.match(/^<b>.*<\/b>$/)) {
+                const content = part.replace(/<b>(.*?)<\/b>/g, '$1');
+                return <strong key={partIndex}>{content}</strong>;
               }
               return part ? <span key={partIndex}>{part}</span> : null;
             })}

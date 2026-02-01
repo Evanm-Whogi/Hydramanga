@@ -86,7 +86,7 @@ export default function NavbarClient() {
                             <NavItem href='/home' icon={<HouseIcon className="size-4 inline" />} label='Home' />
                             <NavItem href='/discover' icon={<BookOpenIcon className="size-4 inline" />} label='Discover' />
                             <NavItem href='/lists' icon={<BookTextIcon className="size-4 inline" />} label='My Lists' />
-                            <NavItem href='/stats' icon={<ChartBarDecreasingIcon className="size-4 inline" />} label='Reading Insights' />
+                            <NavItem href='/history' icon={<ChartBarDecreasingIcon className="size-4 inline" />} label='History' />
                             </>
                         ) : (<></>) }
                     </nav>
@@ -170,6 +170,9 @@ export default function NavbarClient() {
                                     </Link>
                                     <Link href="/announcements" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/announcements' ? 'text-primary' : 'text-muted'}`}>
                                         <BellIcon className="size-4" /> Alerts
+                                    </Link>
+                                    <Link href="/history" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/announcements' ? 'text-primary' : 'text-muted'}`}>
+                                        <BellIcon className="size-4" /> History
                                     </Link>
                                     <Link href="/lists" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/lists' ? 'text-primary' : 'text-muted'}`}>
                                         <ListIcon className="size-4" /> My Lists
