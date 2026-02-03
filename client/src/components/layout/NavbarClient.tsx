@@ -8,6 +8,7 @@ import { authClient } from '@/lib/auth';
 import { useRouter, usePathname } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { useUser } from "@/providers/UserProvider";
+import { trackAuthEvent } from '@/lib/analytics';
 
 export default function NavbarClient() {
     const [isOpen, setIsOpen] = useState(false);
@@ -54,6 +55,7 @@ export default function NavbarClient() {
             await authClient.signOut({
                 fetchOptions: {
                     onSuccess: () => {
+                        trackAuthEvent('logout', user?.id, user?.email, user?.name);
                         setIsProfileOpen(false);
                         router.push('/');
                         router.refresh();

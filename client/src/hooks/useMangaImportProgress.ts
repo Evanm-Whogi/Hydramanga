@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { getMangaProgress, MangaImportProgress } from '@/services/progressService';
 import { useWebSocketProgress } from './useWebSocketProgress';
+import { trackImportProgress } from '@/lib/analytics';
 
 interface UseMangaImportProgressOptions {
   enabled?: boolean;
+  mangaTitle?: string;
   onProgress?: (progress: MangaImportProgress) => void;
   onComplete?: (progress: MangaImportProgress) => void;
   onError?: (error: string) => void;
@@ -17,12 +19,13 @@ export function useMangaImportProgress(
   mangaId: number | null,
   options: UseMangaImportProgressOptions = {}
 ) {
-  const { enabled = true, onProgress, onComplete, onError } = options;
+  const { enabled = true, mangaTitle, onProgress, onComplete, onError } = options;
   const [progress, setProgress] = useState<MangaImportProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const onProgressRef = useRef<typeof onProgress>(onProgress);
   const onCompleteRef = useRef<typeof onComplete>(onComplete);
   const onErrorRef = useRef<typeof onError>(onError);
+  const lastTrackedPercentageRef = useRef<number>(0);
 
   // Keep stable refs for callbacks
   useEffect(() => { onProgressRef.current = onProgress; }, [onProgress]);
@@ -34,6 +37,25 @@ export function useMangaImportProgress(
       case 'progress':
         setProgress(message.data);
         setError(null);
+        
+        // Track import progress - WebSocket sends downloadedChapters/totalChapters
+        if (message.data?.downloadedChapters !== undefined && message.data?.totalChapters !== undefined) {
+          const percentage = Math.round((message.data.downloadedChapters / message.data.totalChapters) * 100);
+          const milestones = [0, 25, 50, 75]; // 100% is tracked separately in 'done' case
+          
+          // Track at milestone percentages to avoid event spam
+          if (milestones.includes(percentage) && percentage !== lastTrackedPercentageRef.current) {
+            trackImportProgress(
+              message.data.downloadedChapters, 
+              message.data.totalChapters, 
+              'in_progress',
+              mangaId ?? undefined,
+              mangaTitle
+            );
+            lastTrackedPercentageRef.current = percentage;
+          }
+        }
+        
         if (onProgressRef.current) {
           onProgressRef.current(message.data);
         }
@@ -41,18 +63,39 @@ export function useMangaImportProgress(
 
       case 'no-progress':
         setProgress(null);
+        lastTrackedPercentageRef.current = 0;
         break;
 
       case 'done':
         setProgress(message.data);
         if (message.data?.status === 'completed' && onCompleteRef.current) {
+          if (message.data?.downloadedChapters !== undefined && message.data?.totalChapters !== undefined) {
+            trackImportProgress(
+              message.data.downloadedChapters, 
+              message.data.totalChapters, 
+              'completed',
+              mangaId ?? undefined,
+              mangaTitle
+            );
+            lastTrackedPercentageRef.current = 0;
+          }
           onCompleteRef.current(message.data);
         } else if (message.data?.status === 'failed' && onErrorRef.current) {
+          if (message.data?.downloadedChapters !== undefined && message.data?.totalChapters !== undefined) {
+            trackImportProgress(
+              message.data.downloadedChapters, 
+              message.data.totalChapters, 
+              'failed',
+              mangaId ?? undefined,
+              mangaTitle
+            );
+            lastTrackedPercentageRef.current = 0;
+          }
           onErrorRef.current(message.data?.errorMessage || 'Import failed');
         }
         break;
     }
-  }, []);
+  }, [mangaId, mangaTitle]);
 
   const handleWebSocketError = useCallback((err: Error) => {
     setError('Connection lost, attempting to reconnect...');

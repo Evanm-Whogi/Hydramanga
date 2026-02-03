@@ -7,6 +7,7 @@ import InputField from '@/components/InputField';
 import MasonryGrid from "@/components/MasonryGrid";
 import { toast } from "react-toastify";
 import { validateInviteCode, useInviteCode } from "@/services/inviteService";
+import { trackAuthEvent } from "@/lib/analytics";
 import { CheckCircle, AlertCircle } from "lucide-react";
 
 export default function RegisterContent() {
@@ -72,6 +73,7 @@ export default function RegisterContent() {
     if (error) {
       toast(`${error.message}`, { type: "error" });
     } else {
+      trackAuthEvent('register', data.user?.id, data.user?.email, data.user?.name);
       // Mark invite code as used
       try {
         await useInviteCode(inviteCode, data.user.id);

@@ -31,7 +31,7 @@ export default function ListContainer({ manga, chapters, comments, initialListNa
     return (
         <>
         <div className="flex w-full place-content-between pt-10 items-center">
-            <ListDropdown seriesId={manga.id} initialListName={initialListName}/>
+            <ListDropdown seriesId={manga.id} initialListName={initialListName} mangaTitle={manga.title}/>
 
             <div className="flex gap-2">
                 <button onClick={() => setPage("chapters")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "chapters" ? "text-primary" : "text-muted"}`}><BookOpen className="size-6 mr-1 transition-colors" /> Chapters</button>

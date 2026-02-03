@@ -5,6 +5,7 @@ import { getSeriesChapterProgress, markChapterAsRead, markChapterAsUnread } from
 import { getSeriesBookmarks, removeBookmark } from "@/services/bookmarkService";
 import BookmarkModal from "@/components/BookmarkModal";
 import { toast } from "react-toastify";
+import { trackBookmarkAction } from "@/lib/analytics";
 
 const CHAPTERS_PER_PAGE = 24;
 
@@ -141,6 +142,8 @@ export default function Chapters({ manga }: { manga: any }) {
         e.preventDefault();
         e.stopPropagation();
         
+        const chapter = chapters.find((ch: any) => ch.id === chapterId);
+        const note = bookmarks[chapterId]?.note;
         try {
             await removeBookmark(manga.id, chapterId);
             setBookmarks(prev => {
@@ -148,6 +151,7 @@ export default function Chapters({ manga }: { manga: any }) {
                 delete updated[chapterId];
                 return updated;
             });
+            trackBookmarkAction('removed', manga.id.toString(), manga.title, chapterId.toString(), chapter?.chapterNumber, note);
         } catch (error) {
             console.error('Failed to remove bookmark:', error);
         }
@@ -262,6 +266,8 @@ export default function Chapters({ manga }: { manga: any }) {
             chapterTitle={chapters.find((ch: any) => ch.id === bookmarkModal.chapterId)?.title}
             existingNote={bookmarks[bookmarkModal.chapterId]?.note || ''}
             onSuccess={handleBookmarkSuccess}
+            mangaTitle={manga.title}
+            chapterNumber={chapters.find((ch: any) => ch.id === bookmarkModal.chapterId)?.chapterNumber}
         />
         </>
     )

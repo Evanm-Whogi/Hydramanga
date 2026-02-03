@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useRef } from 'react';
 import { getClientApiBase } from '@/lib/env';
+import { trackMangaView, trackChapterRead } from '@/lib/analytics';
 
 /**
  * Hook to track manga view on client-side page mount
  * Only tracks once per component mount to avoid duplicate tracking
  */
-export function useMangaViewTracking(mangaId: string | number) {
+export function useMangaViewTracking(mangaId: string | number, mangaTitle?: string) {
   const tracked = useRef(false);
 
   useEffect(() => {
@@ -24,18 +25,24 @@ export function useMangaViewTracking(mangaId: string | number) {
         console.error('Failed to track manga view:', err);
       }
     })();
-  }, [mangaId]);
+    
+    if (mangaTitle) {
+      trackMangaView(mangaId.toString(), mangaTitle, {
+        source: 'manga_page',
+      });
+    }
+  }, [mangaId, mangaTitle]);
 }
 
 /**
  * Hook to track chapter view on client-side page mount
  * Only tracks once per component mount to avoid duplicate tracking
  */
-export function useChapterViewTracking(mangaId: string | number, chapterId: string | number) {
+export function useChapterViewTracking(mangaId: string | number, chapterId: string | number, mangaTitle?: string, chapterNumber?: string | number) {
   const tracked = useRef(false);
 
   useEffect(() => {
-    if (tracked.current) return;
+    if (tracked.current || !chapterNumber) return;
     tracked.current = true;
 
     // Track view via client-side API call - await to ensure cache is invalidated before stats are fetched
@@ -49,5 +56,9 @@ export function useChapterViewTracking(mangaId: string | number, chapterId: stri
         console.error('Failed to track chapter view:', err);
       }
     })();
-  }, [mangaId, chapterId]);
+    
+    if (mangaTitle && chapterNumber) {
+      trackChapterRead(mangaId.toString(), mangaTitle, chapterNumber, chapterId.toString());
+    }
+  }, [mangaId, chapterId, mangaTitle, chapterNumber]);
 }

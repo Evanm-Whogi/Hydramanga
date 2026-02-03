@@ -140,13 +140,14 @@ export default function MangaContent({ manga, initialListName }: MangaContentPro
   }, [mangaId]);
 
   // Track manga views
-  useMangaViewTracking(mangaId);
+  useMangaViewTracking(mangaId, manga.title);
 
   // Always track import progress for this manga (works for all users)
   const { progress } = useMangaImportProgress(
     mangaId,
     {
       enabled: true,
+      mangaTitle: manga.title,
       onProgress: (progressData) => {
         // If progress includes newly downloaded chapter info, add it to local state
         if (progressData.lastDownloadedChapter) {

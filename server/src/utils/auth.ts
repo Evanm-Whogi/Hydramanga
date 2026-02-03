@@ -26,7 +26,7 @@ export const auth = betterAuth({
     secret: process.env.BETTER_AUTH_SECRET,
     trustedOrigins: [PUBLIC_APP_URL],
     database: drizzleAdapter(db, {
-        provider: "mysql",
+        provider: "pg",
     }),
     socialProviders: {
         google: {

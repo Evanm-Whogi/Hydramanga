@@ -2,6 +2,9 @@ import { Bounce, ToastContainer, toast } from 'react-toastify';
 import type { Metadata } from "next";
 import "@/styles/globals.css";
 import { UserProvider } from '@/providers/UserProvider';
+import PostHogProvider from '@/providers/PostHogProvider';
+import { PageTrackingProvider } from '@/components/PageTrackingProvider';
+import ErrorTracker from '@/providers/ErrorTracker';
 import { useSession } from '@/lib/useUser';
 
 import Navbar from "@/components/layout/Navbar";
@@ -61,13 +64,19 @@ export default async function RootLayout({children}: Readonly<{children: React.R
         </script>
       </head>
       <body className="bg-background text-primary min-h-screen flex flex-col" suppressHydrationWarning={true}>
-        <UserProvider initialSession={session}>
-          <Navbar />
-          <main className="flex-1">
-              {children}
-          </main>
-          <Footer />
-        </UserProvider>
+        <PostHogProvider>
+          <ErrorTracker>
+            <PageTrackingProvider>
+              <UserProvider initialSession={session}>
+                <Navbar />
+                <main className="flex-1">
+                    {children}
+                </main>
+                <Footer />
+              </UserProvider>
+            </PageTrackingProvider>
+          </ErrorTracker>
+        </PostHogProvider>
         <ToastContainer
           position="top-right"
           autoClose={5000}

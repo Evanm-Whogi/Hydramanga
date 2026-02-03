@@ -14,7 +14,13 @@ import path from 'path';
 import http from 'http';
 import { Server } from 'socket.io';
 import { setupProgressSocket } from '@/sockets/progressSocket';
+import * as Sentry from "@sentry/node";
+import { initSentry } from "@/sentry";
+
 dotenv.config();
+
+// Initialize Sentry
+initSentry();
 
 // Middlewares
 import { rateLimiter } from '@/middlewares/rateLimit';
@@ -30,15 +36,11 @@ import { initializeScrapers } from '@/scrapers';
 // Constants
 const app: Express = express();
 
-// Trust proxy - required for rate limiting and IP detection behind Docker/nginx
-// Set to 1 to trust only the first proxy hop (Docker network gateway)
-// This prevents IP spoofing while allowing proper client IP detection
-app.set('trust proxy', 1);
-
 app.use(morgan(':method :url :status :response-time ms - :res[content-length] \n', {
     skip: (req, res) => req.originalUrl.startsWith('/admin/queues') || req.originalUrl.startsWith('/manga-files') // Skip logging for Bull Board routes
 }));
 app.use(cors({ origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001', 'http://localhost:3001', 'https://manga.chit.sh'], credentials: true }));
+app.set('trust proxy', 1);
 const chapterStaticRoot = process.env.CHAPTER_STORAGE_ROOT || path.join(process.cwd(), 'chapters');
 
 // Bull Board Setup
@@ -82,7 +84,8 @@ initCronJobs();
 // Error Handler
 app.use((err: Error, req: any, res: any, next: any) => {
   logger.error(err);
-  res.status(500).send(err);
+  Sentry.captureException(err);
+  res.status(500).send({ error: err.message || 'Internal Server Error' });
 });
 
 // Server - use http.createServer instead of app.listen for Socket.IO
