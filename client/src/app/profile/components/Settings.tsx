@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { updateUser, changeEmail, changePassword, sendVerificationEmail, signOut, useSession, listSessions, revokeSession } from "@/lib/auth";
 import { toast } from "react-toastify";
 import { useRouter } from "next/navigation";
+import { trackAuthEvent } from "@/lib/analytics";
 
 export default function Settings({user}: {user: any}) {
     const [name, setName] = useState(user.name);
@@ -103,6 +104,8 @@ export default function Settings({user}: {user: any}) {
             await signOut({
                 fetchOptions: {
                     onSuccess: () => {
+                        // Track logout (password change)
+                        trackAuthEvent('logout', user?.id, user?.email, user?.name);
                         router.push('/');
                         router.refresh();
                         toast('See you next time.', { type: 'info' });

@@ -5,6 +5,8 @@
 import { IJobHandler } from './IJobHandler';
 import { ChapterDownloaderService, ChapterDownloadData } from '@/services/chapterDownloaderService';
 import logger from '@/services/loggerService';
+import * as Sentry from "@sentry/node";
+import { withTransaction, setJobContext, captureError } from '@/utils/sentryHelper';
 
 export class MangaChapterDownloadJobHandler implements IJobHandler {
   canHandle(queueName: string): boolean {
@@ -13,17 +15,54 @@ export class MangaChapterDownloadJobHandler implements IJobHandler {
 
   async handle(data: any): Promise<void> {
     try {
-      logger.info(`Processing chapter download: ${data.chapterTitle} from ${data.mangaTitle}`, { service: 'mangaChapterDownloadJobHandler' });
-      const downloadData: ChapterDownloadData = {
-        seriesId: data.seriesId,
-        mangaTitle: data.mangaTitle,
-        chapterTitle: data.chapterTitle,
-        chapterNumber: data.chapterNumber,
-        chapterUrl: data.chapterUrl,
-      };
-      await ChapterDownloaderService.downloadChapter(downloadData);
+      await withTransaction(
+        `chapter_download_${data.seriesId}_${data.chapterNumber}`,
+        async () => {
+          setJobContext('chapter_download', {
+            series_id: data.seriesId,
+            manga_title: data.mangaTitle,
+            chapter_number: String(data.chapterNumber),
+            chapter_title: data.chapterTitle,
+            is_preview: data.isPreview || false,
+          });
+
+          logger.info(`Processing chapter download: ${data.chapterTitle} from ${data.mangaTitle}`, { service: 'mangaChapterDownloadJobHandler' });
+          
+          const downloadData: ChapterDownloadData = {
+            seriesId: data.seriesId,
+            mangaTitle: data.mangaTitle,
+            chapterTitle: data.chapterTitle,
+            chapterNumber: data.chapterNumber,
+            chapterUrl: data.chapterUrl,
+          };
+          
+          await ChapterDownloaderService.downloadChapter(downloadData);
+        },
+        {
+          op: "job.chapter_download",
+          tags: {
+            job_type: "chapter_download",
+            series_id: String(data.seriesId),
+            chapter_number: String(data.chapterNumber),
+          },
+        }
+      );
     } catch (error) {
       logger.error(`Manga chapter download job handler failed: ${error}`, { service: 'mangaChapterDownloadJobHandler' });
+      
+      captureError(error, {
+        tags: {
+          job_type: "chapter_download",
+          series_id: String(data.seriesId),
+          chapter_number: String(data.chapterNumber),
+        },
+        data: {
+          manga_title: data.mangaTitle,
+          chapter_title: data.chapterTitle,
+          url: data.chapterUrl,
+        },
+      });
+
       throw error;
     }
   }

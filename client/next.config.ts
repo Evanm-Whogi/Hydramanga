@@ -6,6 +6,14 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
+        source: '/api/_analytics/static/:path*',
+        destination: 'https://us-assets.i.posthog.com/static/:path*',
+      },
+      {
+        source: '/api/_analytics/:path*',
+        destination: 'https://us.i.posthog.com/:path*',
+      },
+      {
         source: '/api/:path*',
         destination: `${BACKEND_INTERNAL_URL}/:path*`,
       },

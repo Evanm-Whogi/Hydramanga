@@ -10,6 +10,7 @@ import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
 import { updateImportProgressToast, dismissImportProgressToast } from '@/components/ImportProgressToast';
 import BookmarkModal from '@/components/BookmarkModal';
 import { recordReadingTime } from '@/services/mangaService';
+import { trackPageSwitch, trackChapterCompleted, trackTimeSpent, trackBookmarkAction } from '@/lib/analytics';
 
 const SIDEBAR_WIDTH_PX = 260; // matches md:w-65 / md:w-[calc(100%-260px)]
 
@@ -47,8 +48,8 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const hasScrolledToPage = useRef(false);
   const progressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Track chapter view on client-side mount
-  useChapterViewTracking(id as string, chapterId as string);
+  // Track chapter view once data is loaded
+  useChapterViewTracking(id ? Number(id) : 0, chapterId ? Number(chapterId) : 0, mangaTitle, data?.chapterNumber);
 
   // Reading time tracking
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -60,6 +61,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   // Track manga import progress for live updates
   const { progress } = useMangaImportProgress(id ? Number(id) : null, {
     enabled: true,
+    mangaTitle: mangaTitle,
     onProgress: (progressData) => {
       if (progressData.lastDownloadedChapter) {
         // Add newly downloaded chapter to the sidebar list
@@ -334,7 +336,14 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         const imgMiddle = rect.top + window.scrollY + img.offsetHeight / 2;
 
         if (imgMiddle >= viewportMiddle - 200 && imgMiddle <= viewportMiddle + 200) {
-          setCurrentPage(i + 1);
+          const newPage = i + 1;
+          if (newPage !== currentPage) {
+            setCurrentPage(newPage);
+            // Track page switch every 5 pages to avoid excessive events
+            if (newPage % 5 === 0 || newPage === data.images.length) {
+              trackPageSwitch(id || '', data.chapterNumber, newPage, data.images.length);
+            }
+          }
           break;
         }
       }
@@ -344,7 +353,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     handleScroll();
 
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [data]);
+  }, [data, id, currentPage]);
 
   const currentIndex = allChapters.findIndex((ch) => ch.id === Number(chapterId));
   const prevChapter = allChapters[currentIndex - 1];
@@ -390,7 +399,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     try {
       await removeBookmark(Number(id), Number(chapterId));
       setIsBookmarked(false);
+      const removedNote = bookmarkNote;
       setBookmarkNote('');
+      trackBookmarkAction('removed', id as string, mangaTitle, chapterId as string, data?.chapterNumber, removedNote);
     } catch (error) {
       console.error('Failed to remove bookmark:', error);
     }
@@ -431,6 +442,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       } else if (event.key === 'ArrowRight') {
         if (!nextChapter) return;
         event.preventDefault();
+        if (data) {
+          trackChapterCompleted(id || '', mangaTitle, data.chapterNumber);
+        }
         router.push(`/manga/${id}/read/${nextChapter.id}`);
         window.scrollTo(0, 0);
       }
@@ -469,6 +483,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
             <button
               onClick={() => {
                 if (nextChapter) {
+                  if (data) {
+                    trackChapterCompleted(id || '', mangaTitle, data.chapterNumber);
+                  }
                   router.push(`/manga/${id}/read/${nextChapter.id}`);
                   window.scrollTo(0, 0);
                 }
@@ -647,6 +664,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           {nextChapter && (
             <button
               onClick={() => {
+                if (data) {
+                  trackChapterCompleted(id || '', mangaTitle, data.chapterNumber);
+                }
                 router.push(`/manga/${id}/read/${nextChapter.id}`);
                 window.scrollTo(0, 0);
               }}
@@ -666,6 +686,8 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         chapterTitle={data?.title || `Chapter ${data?.chapterNumber}`}
         existingNote={bookmarkNote}
         onSuccess={handleBookmarkSuccess}
+        mangaTitle={mangaTitle}
+        chapterNumber={data?.chapterNumber}
       />
     </div>
   );

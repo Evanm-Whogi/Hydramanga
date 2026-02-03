@@ -6,6 +6,7 @@ import { useState } from "react";
 import { signIn } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
+import { trackAuthEvent } from "@/lib/analytics";
 
 export default function LoginContent() {
   const [email, setEmail] = useState("");
@@ -23,7 +24,7 @@ export default function LoginContent() {
       setLoading(false);
       return;
     }
-
+    trackAuthEvent('login', result.data?.user?.id, result.data?.user?.email, result.data?.user?.name);
     router.push("/home");
     router.refresh();
     toast(`Welcome Back!`, { type: "success" });

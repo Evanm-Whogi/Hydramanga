@@ -9,12 +9,6 @@ import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import { metricsService } from '@/services/metricsService';
 import { shouldFilterManga, getBlockedGenres } from '@/config/contentFilter';
 
-// Part of testing 
-import { auth } from "@/utils/auth";
-import { mangaImporterService } from '@/services/mangaImporterService';
-import { queueService } from '@/services/queueService';
-
-
 // Helper function to enrich manga data with view stats
 async function enrichWithViewStats(mangaList: any[]) {
     if (mangaList.length === 0) return [];
@@ -328,7 +322,17 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
         where: (series, { eq }) => eq(series.id, id),
         with: {
         chapters: {
+            columns: {
+                id: true,
+                seriesId: true,
+                title: true,
+                chapterNumber: true,
+                createdAt: true,
+                updatedAt: true,
+                pageCount: true,
+            },
             orderBy: (chapters, { asc }) => [asc(chapters.chapterNumber)],
+
         },
         comments: {
             where: (comments, { isNull }) => isNull(comments.parentId),
@@ -542,7 +546,6 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
         const baseUrl = process.env.CHAPTER_PUBLIC_BASE || `${publicApp}/api/manga-files`;
         const baseSystemPath = process.env.CHAPTER_STORAGE_ROOT || path.join(process.cwd(), 'chapters');
 
-        console.log(publicApp, baseUrl, baseSystemPath);
         const images = files
             .filter(file => /\.(jpe?g|png|webp|gif)$/i.test(file))
             .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))

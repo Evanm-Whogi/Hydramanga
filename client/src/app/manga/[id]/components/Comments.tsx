@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { postComment, likeComment, deleteComment } from "@/services/commentService";
 import { toast } from "react-toastify";
 import { useUser } from "@/providers/UserProvider";
+import { trackCommentAction } from "@/lib/analytics";
 
 export default function Comments({ manga, comments }: { manga: any, comments: any[] }) {
     const [text, setText] = useState("");
@@ -32,7 +33,8 @@ export default function Comments({ manga, comments }: { manga: any, comments: an
         setIsSubmitting(true);
         try {
             // Note: replies usually don't need stars, so we pass 0 or null for them
-            await postComment({ seriesId: manga.id, content, stars: parentId ? 0 : rating, parentId, isSpoiler: false });
+            const result = await postComment({ seriesId: manga.id, content, stars: parentId ? 0 : rating, parentId, isSpoiler: false });
+            trackCommentAction('posted', result?.comment?.id?.toString(), manga.id.toString(), manga.title, content);
             setText("");
             setRating(0);
             setReplyText("");
@@ -55,9 +57,10 @@ export default function Comments({ manga, comments }: { manga: any, comments: an
         }
     };
 
-    const handleDelete = async (commentId: number) => {
+    const handleDelete = async (commentId: number, commentText: string) => {
         try {
             await deleteComment(commentId);
+            trackCommentAction('deleted', commentId.toString(), manga.id.toString(), manga.title, commentText);
             router.refresh();
         } catch (error) {
             toast.error("Failed to delete.");
@@ -113,7 +116,7 @@ export default function Comments({ manga, comments }: { manga: any, comments: an
                                         </button>
                                     )}
                                 </div>
-                                { comment.author.id === user?.id && <button onClick={() => handleDelete(comment.id)} className="text-primary absolute bottom-0 right-0 p-2 px-2 py-1 bg-background m-2 hover:cursor-pointer">Delete</button>}
+                                { comment.author.id === user?.id && <button onClick={() => handleDelete(comment.id, comment.content)} className="text-primary absolute bottom-0 right-0 p-2 px-2 py-1 bg-background m-2 hover:cursor-pointer">Delete</button>}
                                  
                             </div>
                         </div>

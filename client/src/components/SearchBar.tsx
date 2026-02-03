@@ -5,7 +5,7 @@ export default function SearchBar({ onChange, size }: { onChange: (val: string) 
     const [query, setQuery] = useState('');
 
     useEffect(() => {
-        const timer = setTimeout(() => onChange(query), 500);
+        const timer = setTimeout(() => { onChange(query)}, 500);
         return () => clearTimeout(timer);
     }, [query, onChange]);
 
