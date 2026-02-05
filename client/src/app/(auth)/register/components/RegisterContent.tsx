@@ -9,6 +9,7 @@ import { toast } from "react-toastify";
 import { validateInviteCode, useInviteCode } from "@/services/inviteService";
 import { trackAuthEvent } from "@/lib/analytics";
 import { CheckCircle, AlertCircle } from "lucide-react";
+import Link from "next/link";
 
 export default function RegisterContent() {
   const [email, setEmail] = useState("");
@@ -160,9 +161,9 @@ export default function RegisterContent() {
             </button>
             <span className="text-center pt-5">
               Already have an account?{" "}
-              <a href="/login" className="text-accent hover:text-accent/50">
+              <Link href="/login" className="text-accent hover:text-accent/50">
                 Log in
-              </a>
+              </Link>
             </span>
           </div>
         </div>

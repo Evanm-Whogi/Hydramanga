@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getIndex } from "@/services/mangaService";
 import { Star, TrendingUp, PlayIcon, BookMarkedIcon, UsersIcon, MessageCircleIcon } from "lucide-react";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: process.env.NEXT_PUBLIC_NAME || "Manga Scrolls",
@@ -41,13 +42,13 @@ export default async function Index() {
               thousands of readers on {process.env.NEXT_PUBLIC_NAME}
             </p>
             <div className="flex space-x-3 mt-4 place-content-center">
-              <a href="/home" className="inline-flex items-center bg-accent px-6 py-3 rounded-lg text-xl hover:bg-foreground transition">
+              <Link href="/home" className="inline-flex items-center bg-accent px-6 py-3 rounded-lg text-xl hover:bg-foreground transition">
                 <PlayIcon className="size-5 mr-2" />
                 Start Reading
-              </a>
-              <a href="/discover" className="inline-flex items-center bg-foreground px-6 py-3 rounded-lg text-xl hover:bg-foreground/50 border border-foreground hover:border-accent transition">
+              </Link>
+              <Link href="/discover" className="inline-flex items-center bg-foreground px-6 py-3 rounded-lg text-xl hover:bg-foreground/50 border border-foreground hover:border-accent transition">
                 Browse Catalog
-              </a>
+              </Link>
             </div>
           </div>
           <div className="flex flex-col space-y-4 mx-auto text-center w-full">

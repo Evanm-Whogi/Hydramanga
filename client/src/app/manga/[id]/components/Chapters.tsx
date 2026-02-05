@@ -6,6 +6,7 @@ import { getSeriesBookmarks, removeBookmark } from "@/services/bookmarkService";
 import BookmarkModal from "@/components/BookmarkModal";
 import { toast } from "react-toastify";
 import { trackBookmarkAction } from "@/lib/analytics";
+import Link from "next/link";
 
 const CHAPTERS_PER_PAGE = 24;
 
@@ -214,7 +215,7 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
                     const href = `/manga/${manga.id}/read/${chapter.id}${hasProgress && !isFullyRead ? `?page=${resumePage}` : ''}`;
                     
                     return (
-                    <a href={href} key={chapter.id} className={`p-3 w-full bg-foreground hover:bg-foreground/50 cursor-pointer rounded-md transition-colors ${isFullyRead ? 'opacity-50' : ''}`}>
+                    <Link href={href} key={chapter.id} className={`p-3 w-full bg-foreground hover:bg-foreground/50 cursor-pointer rounded-md transition-colors ${isFullyRead ? 'opacity-50' : ''}`}>
                         <div className="flex justify-between items-center">
                             <div className="flex-1">
                                 <div className={`flex items-center gap-2`}>
@@ -262,7 +263,7 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
 
                             </div>
                         </div>
-                    </a>
+                    </Link>
                     );
                 })
                 )}
