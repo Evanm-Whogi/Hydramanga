@@ -30,9 +30,8 @@ export default  function Footer() {
                     {/* Information Links */}
                     <div className="flex flex-col w-full md:w-1/6 space-y-4 text-muted">
                         <h1 className="text-2xl text-primary">Information</h1>
-                        <Link href="/" className="hover:text-primary">Support Us</Link>
-                        <Link href="/" className="hover:text-primary">DMCA Notice</Link>
-                        <Link href="/" className="hover:text-primary">About Us</Link>
+                        <Link href="/contact" className="hover:text-primary">Contact/DMCA Notice</Link>
+                        <Link href="/privacy" className="hover:text-primary">Privacy Policy</Link>
                     </div>
                 </div>
                 <div className="flex flex-col text-primary">

@@ -12,6 +12,7 @@ import inviteRoutes from '@/routes/inviteRoutes';
 import adminRoutes from '@/routes/adminRoutes';
 import pageRoutes from '@/routes/pageRoutes';
 import listRoutes from '@/routes/listRoutes';
+import contactRoutes from '@/routes/contactRoutes';
 
 module.exports = (app: Express) => {
     // Apply tracking middleware globally to track views
@@ -34,6 +35,9 @@ module.exports = (app: Express) => {
     app.use('/comments', authMiddleware, commentRoutes);
     app.use('/announcements', authMiddleware, announcementRoutes);
     app.use('/invites', inviteRoutes); // Some endpoints don't require auth (validate, use)
+
+    // Contact and DMCA Routes (public)
+    app.use('/', contactRoutes);
 
     // Page Aggregator Routes
     app.use('/', pageRoutes); 

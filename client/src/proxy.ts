@@ -7,7 +7,7 @@ export default async function proxy(request: NextRequest) {
         request.cookies.get("__Secure-better-auth.session_token")?.value ||
         request.cookies.get("__Host-better-auth.session_token")?.value;
     
-    const protectedPaths = ["/announcements", "/discover", "/home", "/manga", "/profile", "/lists", "/history", "/manga/:slug", "/manga/:id/read/:slug"];
+    const protectedPaths = ["/announcements", "/discover", "/home", "/manga", "/profile", "/lists", "/history", "/manga/:slug", "/manga/:id/read/:slug", "/contact"];
     // Use more precise path matching: exact match or match with / following the path
     const pathname = request.nextUrl.pathname;
     const isProtectedRoute = protectedPaths.some(path => 

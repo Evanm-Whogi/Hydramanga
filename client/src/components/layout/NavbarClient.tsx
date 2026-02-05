@@ -99,15 +99,16 @@ export default function NavbarClient() {
                     <div className="hidden md:flex items-center gap-3">
                         {user ? (
                             <>
+                            <a href="https://discord.com" className="size-11" ><img src="/oauthIcons/discord.webp" alt="discord" /></a>
                             <Link href="/discover" className="bg-background hover:bg-background/50 p-3 rounded-full"><SearchIcon className="size-5 hover:cursor-pointer" /></Link>
                             <Link href="/announcements" className="bg-background hover:bg-background/50 p-3 rounded-full"><BellIcon className="size-5 hover:cursor-pointer" /></Link>
                             
                             <div className="relative" ref={profileRef}>
                                 <button onClick={() => setIsProfileOpen(!isProfileOpen)} className="block focus:outline-none focus:ring-2 focus:ring-borders rounded-full">
-                                    <img src={user.image || "/default-avatar.jpg"} alt="ProfileImage" width={42} height={42} className="rounded-full border-2 border-transparent hover:border-borders transition-all"/></button>
+                                    <img src={user.image || "/default-avatar.jpg"} alt="ProfileImage" width={44} height={44} className="rounded-full border-2 border-transparent hover:border-borders transition-all"/></button>
                                 {isProfileOpen && (
                                     <div className="absolute right-0 mt-2 w-56 bg-background border border-borders rounded-xl shadow-xl py-2 z-80 animate-in fade-in zoom-in duration-200">
-                                        <div className="px-4 py-2 border-b border-borders mb-">
+                                        <div className="px-4 py-2 border-b border-borders">
                                             <p className="text-sm font-semibold truncate capitalize">{user.name}</p>
                                             <p className="text-xs text-muted-foreground truncate capitalize">{user.role}</p>
                                             <p className="text-xs text-muted-foreground truncate">{user.email}</p>
@@ -158,26 +159,17 @@ export default function NavbarClient() {
                                     <Link href="/discover" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/discover' ? 'text-primary' : 'text-muted'}`}>
                                         <BookOpenIcon className="size-4" /> Discover
                                     </Link>
-                                    <Link href="/discover?sort=weightedScore" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/discover' ? 'text-primary' : 'text-muted'}`}>
-                                        <ZapIcon className="size-4" /> Popular
-                                    </Link>
-                                    <Link href="/discover?sort=lastUpdatedAt" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/discover' ? 'text-primary' : 'text-muted'}`}>
-                                        <ClockPlus className="size-4" /> Latest
-                                    </Link>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-3">
-                                    <Link href="/discover" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/discover' ? 'text-primary' : 'text-muted'}`}>
-                                        <SearchIcon className="size-4" /> Search
-                                    </Link>
-                                    <Link href="/announcements" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/announcements' ? 'text-primary' : 'text-muted'}`}>
-                                        <BellIcon className="size-4" /> Alerts
+                                    <Link href="/lists" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/lists' ? 'text-primary' : 'text-muted'}`}>
+                                        <BookTextIcon className="size-4" /> My Lists
                                     </Link>
                                     <Link href="/history" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/announcements' ? 'text-primary' : 'text-muted'}`}>
-                                        <BellIcon className="size-4" /> History
+                                        <ChartBarDecreasingIcon className="size-4" /> History
                                     </Link>
-                                    <Link href="/lists" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/lists' ? 'text-primary' : 'text-muted'}`}>
-                                        <ListIcon className="size-4" /> My Lists
+                                    <Link href="/announcements" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/announcements' ? 'text-primary' : 'text-muted'}`}>
+                                        <BellIcon className="size-4" /> Announcements
                                     </Link>
                                     <Link href="/profile?tab=overview" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/profile' ? 'text-primary' : 'text-muted'}`}>
                                         <UserIcon className="size-4" /> Profile
