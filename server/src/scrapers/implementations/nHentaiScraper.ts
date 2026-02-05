@@ -72,6 +72,19 @@ export class NHentaiScraper implements IChapterScraper {
         mangaName: string,
         options?: SearchOptions
     ): Promise<MangaSearchResult | undefined> {
+        // Generate search variants
+        const searchVariants = [
+            mangaName,
+            options?.romanizedTitle,
+            options?.nativeTitle,
+            ...(options?.secondaryTitles || []),
+        ].filter((v): v is string => !!v && v.trim().length > 0);
+
+        logger.info(
+            `[nHentai] Trying ${searchVariants.length} search variants`,
+            { service: 'nHentaiScraper' }
+        );
+
         const browser = await chromium.launch({ headless: true });
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -79,65 +92,82 @@ export class NHentaiScraper implements IChapterScraper {
         const page = await context.newPage();
 
         try {
-            logger.info(
-                `[nHentai] Searching for "${mangaName}"`,
-                { service: 'nHentaiScraper' }
-            );
-
-            const searchUrl = `https://nhentai.net/search/?q=${encodeURIComponent(mangaName)}`;
-            await page.goto(searchUrl, {
-                waitUntil: 'domcontentloaded',
-                timeout: 30000,
-            });
-
-            await page.waitForTimeout(2000);
-
-            // Extract all gallery results and score them
-            const results = await page.evaluate(() => {
-                return Array.from(document.querySelectorAll('div.gallery a.cover'))
-                    .map(galleryDiv => {
-                        const href = (galleryDiv as HTMLAnchorElement).href;
-                        const match = href.match(/\/g\/(\d+)\//);
-                        if (!match) return null;
-
-                        const galleryId = match[1];
-                        const caption = galleryDiv.querySelector('div.caption')?.textContent?.trim();
-                        const title = caption || `Gallery ${galleryId}`;
-
-                        return {
-                            href: `https://nhentai.net/g/${galleryId}/`,
-                            title,
-                            galleryId,
-                        };
-                    })
-                    .filter((r): r is any => r !== null);
-            });
-
-            if (results.length === 0) {
-                logger.warn(
-                    `[nHentai] No galleries found for "${mangaName}"`,
+            // Try each search variant
+            for (const variant of searchVariants) {
+                logger.info(
+                    `[nHentai] Searching for "${variant}"`,
                     { service: 'nHentaiScraper' }
                 );
-                return undefined;
+
+                const searchUrl = `https://nhentai.net/search/?q=${encodeURIComponent(variant)}`;
+                await page.goto(searchUrl, {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 30000,
+                });
+
+                await page.waitForTimeout(2000);
+
+                // Extract all gallery results and score them
+                const results = await page.evaluate(() => {
+                    return Array.from(document.querySelectorAll('div.gallery a.cover'))
+                        .map(galleryDiv => {
+                            const href = (galleryDiv as HTMLAnchorElement).href;
+                            const match = href.match(/\/g\/(\d+)\//);
+                            if (!match) return null;
+
+                            const galleryId = match[1];
+                            const caption = galleryDiv.querySelector('div.caption')?.textContent?.trim();
+                            const title = caption || `Gallery ${galleryId}`;
+
+                            return {
+                                href: `https://nhentai.net/g/${galleryId}/`,
+                                title,
+                                galleryId,
+                            };
+                        })
+                        .filter((r): r is any => r !== null);
+                });
+
+                if (results.length === 0) {
+                    logger.debug(
+                        `[nHentai] No galleries for variant "${variant}", trying next`,
+                        { service: 'nHentaiScraper' }
+                    );
+                    continue;
+                }
+
+                // Score results based on title match
+                const scored = results.map(result => {
+                    const score = this.scoreMatch(result.title, variant);
+                    return { ...result, score };
+                }).sort((a, b) => b.score - a.score);
+
+                const bestMatch = scored[0];
+                if (bestMatch.score > 0) {
+                    logger.info(
+                        `[nHentai] Found ${results.length} galleries with variant "${variant}". Best match: "${bestMatch.title}" (score: ${bestMatch.score})`,
+                        { service: 'nHentaiScraper' }
+                    );
+
+                    return {
+                        href: bestMatch.href,
+                        title: bestMatch.title,
+                        score: bestMatch.score,
+                    };
+                }
+
+                logger.debug(
+                    `[nHentai] No good matches for variant "${variant}", trying next`,
+                    { service: 'nHentaiScraper' }
+                );
             }
 
-            // Score results based on title match
-            const scored = results.map(result => {
-                const score = this.scoreMatch(result.title, mangaName);
-                return { ...result, score };
-            }).sort((a, b) => b.score - a.score);
-
-            const bestMatch = scored[0];
-            logger.info(
-                `[nHentai] Found ${results.length} galleries. Best match: "${bestMatch.title}" (score: ${bestMatch.score})`,
+            // No matches found after trying all variants
+            logger.warn(
+                `[nHentai] Could not find manga link for "${mangaName}". Variants: ${searchVariants.join(', ')}`,
                 { service: 'nHentaiScraper' }
             );
-
-            return {
-                href: bestMatch.href,
-                title: bestMatch.title,
-                score: bestMatch.score,
-            };
+            return undefined;
         } catch (error) {
             logger.error(
                 `[nHentai] Search failed: ${error}`,
@@ -203,6 +233,8 @@ export class NHentaiScraper implements IChapterScraper {
         checkExists: (num: string) => Promise<boolean>,
         seriesId?: number,
         romanizedTitle?: string,
+        nativeTitle?: string,
+        secondaryTitles?: string[],
         coverUrl?: string
     ): AsyncGenerator<ScrapedChapter, void, undefined> {
         const browser = await chromium.launch({ headless: true });
@@ -216,6 +248,9 @@ export class NHentaiScraper implements IChapterScraper {
             const bestMatch = await this.findBestMatch(mangaName, {
                 seriesId,
                 coverUrl,
+                romanizedTitle,
+                nativeTitle,
+                secondaryTitles,
             });
 
             if (!bestMatch) {

@@ -34,6 +34,7 @@ export class MangaChapterDownloadJobHandler implements IJobHandler {
             chapterTitle: data.chapterTitle,
             chapterNumber: data.chapterNumber,
             chapterUrl: data.chapterUrl,
+            scraperId: data.scraperId || null,
           };
           
           await ChapterDownloaderService.downloadChapter(downloadData);

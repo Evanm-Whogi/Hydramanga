@@ -76,9 +76,12 @@ export class WeebCentralScraper implements IChapterScraper {
             const result = await WeebCentralSearcher.findBestMatch(
                 mangaName,
                 options?.romanizedTitle,
+                options?.nativeTitle,
+                options?.secondaryTitles,
                 {
                     seriesId: options?.seriesId,
                     coverUrl: options?.coverUrl,
+                    secondaryTitles: options?.secondaryTitles,
                 }
             );
 
@@ -105,7 +108,9 @@ export class WeebCentralScraper implements IChapterScraper {
         checkExists: (chapterNumber: string) => Promise<boolean>,
         seriesId?: number,
         romanizedTitle?: string,
-        coverUrl?: string
+        nativeTitle?: string,
+        secondaryTitles?: string[],
+        coverUrl?: string,
     ): AsyncGenerator<ScrapedChapter, void, undefined> {
         const browser = await chromium.launch({ headless: true });
         const context = await browser.newContext({
@@ -118,6 +123,8 @@ export class WeebCentralScraper implements IChapterScraper {
             const bestMatch = await this.findBestMatch(mangaName, {
                 seriesId,
                 romanizedTitle,
+                nativeTitle,
+                secondaryTitles,
                 coverUrl,
             });
 

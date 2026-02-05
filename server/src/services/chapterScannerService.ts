@@ -23,6 +23,59 @@ import * as Sentry from "@sentry/node";
 import { withSpan, addBreadcrumb, captureError } from '@/utils/sentryHelper';
 
 export class ChapterScannerService {
+    private static extractSecondaryTitleStrings(secondaryTitles: unknown): string[] {
+        if (!secondaryTitles) return [];
+
+        let parsed: unknown = secondaryTitles;
+        if (typeof secondaryTitles === 'string') {
+            try {
+                parsed = JSON.parse(secondaryTitles);
+            } catch {
+                parsed = secondaryTitles;
+            }
+        }
+
+        const titles: string[] = [];
+
+        const visit = (value: unknown) => {
+            if (!value) return;
+
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (trimmed) titles.push(trimmed);
+                return;
+            }
+
+            if (Array.isArray(value)) {
+                for (const item of value) visit(item);
+                return;
+            }
+
+            if (typeof value === 'object') {
+                const record = value as Record<string, unknown>;
+                if (typeof record.title === 'string') {
+                    const trimmed = record.title.trim();
+                    if (trimmed) titles.push(trimmed);
+                    return;
+                }
+
+                for (const nested of Object.values(record)) {
+                    visit(nested);
+                }
+            }
+        };
+
+        visit(parsed);
+
+        const seen = new Set<string>();
+        return titles.filter((title) => {
+            const key = title.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
+
     /**
      * Scan for missing chapters and queue them for download
      * @param mangaTitle - Title of the manga to scan
@@ -47,12 +100,18 @@ export class ChapterScannerService {
             { op: 'db.write', tags: { series_id: String(seriesId) } }
         );
 
-        // Fetch cover image for Discord notifications
+        // Fetch cover image, native title for Discord notifications and search filtering
         const [manga] = await withSpan(
-            'fetch_manga_cover',
+            'fetch_manga_metadata',
             async () => {
                 return db
-                    .select({ cover: series.cover })
+                    .select({ 
+                        cover: series.cover,
+                        nativeTitle: series.nativeTitle,
+                        secondaryTitles: series.secondaryTitles,
+                        genres: series.genres,
+                        genresV2: series.genresV2,
+                    })
                     .from(series)
                     .where(eq(series.id, seriesId));
             },
@@ -65,6 +124,8 @@ export class ChapterScannerService {
               (manga.cover as any)?.raw?.url ||
               undefined
             : undefined;
+
+                const secondaryTitles = this.extractSecondaryTitleStrings(manga?.secondaryTitles);
 
         Sentry.addBreadcrumb({
             message: 'Chapter scan started',
@@ -104,15 +165,35 @@ export class ChapterScannerService {
                         },
                         seriesId,
                         romanizedTitle,
-                        coverUrl
+                        manga?.nativeTitle || undefined,
+                        secondaryTitles,
+                        coverUrl,
                     );
                 },
                 { op: 'scraper.init', tags: { series_id: String(seriesId) } }
             );
 
             // Process scraped chapters
+            const seenChapters = new Set<string>(); // Track chapters already queued in this session to avoid duplicates
+            let firstScraperId: string | null = null; // Track which scraper found the first chapter
+            
             for await (const chapter of scraper) {
                 try {
+                    // Skip if we've already queued this chapter in this session
+                    if (seenChapters.has(chapter.number)) {
+                        logger.debug(
+                            `[SCANNER] Skipping duplicate chapter ${chapter.number} (already queued in this session)`,
+                            { service: 'chapterScannerService' }
+                        );
+                        continue;
+                    }
+                    seenChapters.add(chapter.number);
+
+                    // Capture scraper ID from the first chapter
+                    if (firstScraperId === null && chapter.scraperId) {
+                        firstScraperId = chapter.scraperId;
+                    }
+
                     foundCount++;
                     newChapters.push(chapter.number);
                     const isPreview = previewRemaining > 0;
@@ -131,6 +212,7 @@ export class ChapterScannerService {
                                     chapterNumber: chapter.number,
                                     chapterUrl: chapter.url,
                                     isPreview,
+                                    scraperId: chapter.scraperId || null,
                                 },
                                 { jobId: `chapter-${seriesId}-${chapter.number}` }
                             );
@@ -164,7 +246,7 @@ export class ChapterScannerService {
             if (foundCount > 0) {
                 await withSpan(
                     'update_progress_total_chapters',
-                    async () => mangaProgressService.setTotalChapters(seriesId, foundCount),
+                    async () => mangaProgressService.setTotalChapters(seriesId, foundCount, firstScraperId),
                     { op: 'db.write', tags: { series_id: String(seriesId) } }
                 );
 

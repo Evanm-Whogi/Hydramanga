@@ -25,7 +25,7 @@ interface BookmarkData {
     };
 }
 
-export default function Chapters({ manga }: { manga: any }) {
+export default function Chapters({ manga, progress }: { manga: any; progress?: any }) {
     const [showAll, setShowAll] = useState(false);
     const [chapterProgress, setChapterProgress] = useState<ChapterProgress>({});
     const [bookmarks, setBookmarks] = useState<BookmarkData>({});
@@ -186,7 +186,23 @@ export default function Chapters({ manga }: { manga: any }) {
         <>
         <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mt-4">
-                {visibleChapters.map((chapter: any) => {
+                {progress?.status === 'scanning' ? (
+                    <div className="p-8 text-center bg-foreground rounded-lg">
+                        <p className="text-lg text-muted mb-2">Scanning for chapters...</p>
+                        <p className="text-sm text-muted/70">Please wait</p>
+                    </div>
+                ) : progress?.status === 'downloading' && chapters.length === 0 ? (
+                    <div className="p-8 text-center bg-foreground rounded-lg">
+                        <p className="text-lg text-muted mb-2">Downloading chapters...</p>
+                        <p className="text-sm text-muted/70">Please wait</p>
+                    </div>
+                ) : chapters.length === 0 ? (
+                    <div className="p-8 text-center bg-foreground rounded-lg">
+                        <p className="text-lg text-muted mb-2">Chapters not found</p>
+                        <p className="text-sm text-muted/70">No Scrapers Available</p>
+                    </div>
+                ) : (
+                    visibleChapters.map((chapter: any) => {
                     const progress = chapterProgress[chapter.id];
                     const progressPercentage = progress?.percentageCompleted || 0;
                     const lastPageNumber = progress?.lastPageNumber || 0;
@@ -214,6 +230,7 @@ export default function Chapters({ manga }: { manga: any }) {
                                     <h2 className="items-center"><ClockIcon className="inline-block mr-1 size-3 mb-0.5" />{formatDate(chapter.updatedAt, true)}</h2>
                                     <h2>{chapter.pageCount} Pages</h2>
                                     <h2>{chapter.viewStats.totalViews} Views</h2>
+                                    <h2>ID: {chapter?.scraperId?.slice(0,3)}</h2>
                                 </div>
 
                                 {/* Read Progress bar - only show if user has started reading and not finished */}
@@ -247,7 +264,8 @@ export default function Chapters({ manga }: { manga: any }) {
                         </div>
                     </a>
                     );
-                })}
+                })
+                )}
             </div>
             
             {hasMore && (

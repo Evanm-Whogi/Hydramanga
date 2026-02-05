@@ -129,7 +129,7 @@ class MangaProgressService {
   }
 
   // Update total chapters found during scanning
-  async setTotalChapters(seriesId: number, totalChapters: number): Promise<void> {
+  async setTotalChapters(seriesId: number, totalChapters: number, scraperId?: string | null): Promise<void> {
     try {
       const progress = await this.getProgress(seriesId);
       if (!progress) {
@@ -151,6 +151,7 @@ class MangaProgressService {
             totalChapters: 0,
             downloadedChapters: 0,
             status: newStatus,
+            scraperId: scraperId || null,
             updatedAt: new Date(),
             completedAt: new Date(),
           })
@@ -196,6 +197,7 @@ class MangaProgressService {
         .set({
           totalChapters,
           status: newStatus,
+          scraperId: scraperId || null,
           updatedAt: new Date(),
         })
         .where(eq(mangaImportProgress.seriesId, seriesId));

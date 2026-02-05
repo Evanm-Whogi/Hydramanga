@@ -330,6 +330,7 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
                 createdAt: true,
                 updatedAt: true,
                 pageCount: true,
+                scraperId: true,
             },
             orderBy: (chapters, { asc }) => [asc(chapters.chapterNumber)],
 

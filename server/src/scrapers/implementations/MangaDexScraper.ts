@@ -88,6 +88,39 @@ export class MangaDexScraper implements IChapterScraper {
     }
 
     /**
+     * Calculate similarity between two strings (0-100)
+     * Uses a simple approach: check for common substrings and character overlap
+     */
+    private calculateTitleSimilarity(title1: string, title2: string): number {
+        // Exact match
+        if (title1 === title2) {
+            return 100;
+        }
+
+        // Remove common words and punctuation for comparison
+        const normalize = (s: string) => {
+            return s
+                .replace(/[^\w\s]/g, '') // Remove special characters
+                .toLowerCase()
+                .split(/\s+/)
+                .filter(word => word.length > 0);
+        };
+
+        const words1 = normalize(title1);
+        const words2 = normalize(title2);
+
+        if (words1.length === 0 || words2.length === 0) {
+            return 0;
+        }
+
+        // Count matching words
+        const matches = words1.filter(word => words2.includes(word)).length;
+        const totalWords = Math.max(words1.length, words2.length);
+        
+        return Math.round((matches / totalWords) * 100);
+    }
+
+    /**
      * Rate-limited HTTP request with retry logic for 429 errors
      */
     private static async rateLimitedRequest(
@@ -148,55 +181,107 @@ export class MangaDexScraper implements IChapterScraper {
         mangaName: string,
         options?: SearchOptions
     ): Promise<MangaSearchResult | undefined> {
+        // Generate search variants
+        const searchVariants = [
+            mangaName,
+            options?.romanizedTitle,
+            options?.nativeTitle,
+            ...(options?.secondaryTitles || []),
+        ].filter((v): v is string => !!v && v.trim().length > 0);
+
+        logger.info(
+            `[MangaDex] Trying ${searchVariants.length} search variants`,
+            { service: 'mangaDexScraper' }
+        );
+
         try {
-            logger.info(
-                `[MangaDex] Searching for "${mangaName}"`,
-                { service: 'mangaDexScraper' }
-            );
-
-            // Search using MangaDex API
-            const response = await MangaDexScraper.rateLimitedRequest(
-                `${MANGA_ENDPOINT}`,
-                {
-                    params: {
-                        title: mangaName,
-                        limit: 10,
-                        offset: 0,
-                        includes: ['author', 'artist', 'cover_art'],
-                    },
-                }
-            );
-
-            const mangas = response.data.data || [];
-
-            if (mangas.length === 0) {
+            // Try each search variant
+            for (const variant of searchVariants) {
                 logger.info(
-                    `[MangaDex] No results found for "${mangaName}"`,
+                    `[MangaDex] Searching for "${variant}"`,
                     { service: 'mangaDexScraper' }
                 );
-                return undefined;
+
+                // Search using MangaDex API
+                const response = await MangaDexScraper.rateLimitedRequest(
+                    `${MANGA_ENDPOINT}`,
+                    {
+                        params: {
+                            title: variant,
+                            limit: 10,
+                            offset: 0,
+                            includes: ['author', 'artist', 'cover_art'],
+                        },
+                    }
+                );
+
+                const mangas = response.data.data || [];
+
+                if (mangas.length === 0) {
+                    logger.debug(
+                        `[MangaDex] No results for variant "${variant}", trying next`,
+                        { service: 'mangaDexScraper' }
+                    );
+                    continue;
+                }
+
+                // Get the first (most relevant) result
+                const manga = mangas[0];
+                const mangaId = manga.id;
+                
+                // Extract title: prefer English, then Japanese, then any available language
+                let title = manga.attributes.title[ENGLISH_LANG_CODE] || 
+                           manga.attributes.title['ja'] || 
+                           manga.attributes.title['ko'] || 
+                           Object.values(manga.attributes.title)[0] || 
+                           '';
+
+                // Validate that we got a non-empty title
+                if (!title || title.trim().length === 0) {
+                    logger.debug(
+                        `[MangaDex] Skipping result with empty title for variant "${variant}"`,
+                        { service: 'mangaDexScraper' }
+                    );
+                    continue;
+                }
+
+                // Calculate similarity score to ensure it's actually a match
+                const titleLower = title.toLowerCase();
+                const variantLower = variant.toLowerCase();
+                const similarity = this.calculateTitleSimilarity(titleLower, variantLower);
+                
+                // Only accept if similarity is reasonable (at least 50% match)
+                if (similarity < 50) {
+                    logger.debug(
+                        `[MangaDex] Result "${title}" has low similarity (${similarity}%) to variant "${variant}", trying next`,
+                        { service: 'mangaDexScraper' }
+                    );
+                    continue;
+                }
+
+                const mangaUrl = `${SITE_BASE}/title/${mangaId}`;
+
+                logger.info(
+                    `[MangaDex] Found manga with variant "${variant}": "${title}" (ID: ${mangaId}, similarity: ${similarity}%)`,
+                    { service: 'mangaDexScraper' }
+                );
+
+                return {
+                    href: mangaUrl,
+                    title,
+                    score: Math.max(Math.round(similarity), 50),
+                };
             }
 
-            // Get the first (most relevant) result
-            const manga = mangas[0];
-            const mangaId = manga.id;
-            const title = manga.attributes.title[ENGLISH_LANG_CODE] || manga.attributes.title.ja || '';
-
-            const mangaUrl = `${SITE_BASE}/title/${mangaId}`;
-
-            logger.info(
-                `[MangaDex] Found manga: "${title}" (ID: ${mangaId})`,
+            // No matches found after trying all variants
+            logger.warn(
+                `[MangaDex] Could not find manga link for "${mangaName}". Variants: ${searchVariants.join(', ')}`,
                 { service: 'mangaDexScraper' }
             );
-
-            return {
-                href: mangaUrl,
-                title,
-                score: 100,
-            };
+            return undefined;
         } catch (error) {
             logger.error(
-                `[MangaDex] Search failed for "${mangaName}": ${error}`,
+                `[MangaDex] Search failed: ${error}`,
                 { service: 'mangaDexScraper' }
             );
             throw error;
@@ -208,13 +293,17 @@ export class MangaDexScraper implements IChapterScraper {
         checkExists: (chapterNumber: string) => Promise<boolean>,
         seriesId?: number,
         romanizedTitle?: string,
-        coverUrl?: string
+        nativeTitle?: string,
+        secondaryTitles?: string[],
+        coverUrl?: string,
     ): AsyncGenerator<ScrapedChapter, void, undefined> {
         try {
             // Find best manga series match
             const bestMatch = await this.findBestMatch(mangaName, {
                 seriesId,
                 romanizedTitle,
+                nativeTitle,
+                secondaryTitles,
                 coverUrl,
             });
 

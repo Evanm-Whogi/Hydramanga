@@ -24,6 +24,7 @@ export interface ChapterDownloadData {
     chapterTitle: string;
     chapterNumber: number | string;
     chapterUrl: string;
+    scraperId?: string | null; // ID of the scraper that found this chapter
 }
 
 export class ChapterDownloaderService {
@@ -90,6 +91,7 @@ export class ChapterDownloaderService {
                             localPath,
                             pageCount,
                             title: data.chapterTitle,
+                            scraperId: data.scraperId || null,
                             updatedAt: new Date(),
                         })
                         .onConflictDoUpdate({
@@ -98,6 +100,7 @@ export class ChapterDownloaderService {
                                 localPath,
                                 pageCount,
                                 title: data.chapterTitle,
+                                scraperId: data.scraperId || null,
                                 updatedAt: new Date(),
                             },
                         });

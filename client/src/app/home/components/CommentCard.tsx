@@ -11,7 +11,7 @@ export default function CommentCard({ comment }: { comment: any }) {
                     <p className="text-sm text-muted">{formatDate(comment.createdAt)}</p>
                 </div>
             </div>
-            <p className="text-base mb-5">{comment.content}</p>
+            <p className="text-base pb-12 md:pb-6">{comment.content}</p>
             <Link href={`/manga/${comment.manga.id}`} className="absolute bottom-0 left-0 p-2 mt-2 text-sm text-primary hover:text-accent"><span className='text-muted'>On:</span> {comment.manga.title}</Link>
            
         </div>

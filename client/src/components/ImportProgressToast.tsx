@@ -74,28 +74,32 @@ export function showImportProgressToast(
 ): Id {
   const toastId = `import-progress-${mangaId}`;
 
+  // Default progress object with 'scanning' state
+  const defaultProgress: MangaImportProgress = {
+    seriesId: mangaId,
+    totalChapters: 0,
+    downloadedChapters: 0,
+    status: 'scanning',
+    percentage: 0,
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const progressToShow = initialProgress || defaultProgress;
+
   // Check if toast already exists
   if (toast.isActive(toastId)) {
-    if (initialProgress) {
-      toast.update(toastId, {
-        render: <ImportProgressToastContent progress={initialProgress} mangaTitle={mangaTitle} />,
-      });
-    }
+    // Always update to ensure content is correct
+    toast.update(toastId, {
+      render: <ImportProgressToastContent progress={progressToShow} mangaTitle={mangaTitle} />,
+    });
     return toastId;
   }
 
   // Create new toast
   return toast(
     <ImportProgressToastContent 
-      progress={initialProgress || {
-        seriesId: mangaId,
-        totalChapters: 0,
-        downloadedChapters: 0,
-        status: 'scanning',
-        percentage: 0,
-        startedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }} 
+      progress={progressToShow}
       mangaTitle={mangaTitle}
     />,
     {

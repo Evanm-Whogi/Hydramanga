@@ -201,6 +201,7 @@ export const chapters = pgTable("chapters", {
   volumeNumber: text("volume_number"),
   localPath: text("local_path").notNull(),
   pageCount: integer("page_count").default(0),
+  scraperId: text("scraper_id"), // ID of the scraper that downloaded this chapter (e.g., 'mangadex', 'weebcentral', null if unknown)
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
@@ -210,6 +211,7 @@ export const chapters = pgTable("chapters", {
   unq: uniqueIndex("idx_chapters_series_unique").on(t.seriesId, t.chapterNumber),
   // Performance indexes for chapter sorting and filtering
   volumeNumberIdx: index("idx_chapters_volume_number").on(t.volumeNumber).where(sql`${t.volumeNumber} IS NOT NULL`),
+  scraperIdIdx: index("idx_chapters_scraper_id").on(t.scraperId).where(sql`${t.scraperId} IS NOT NULL`),
 }));
 
 // Relationships 
@@ -399,6 +401,7 @@ export const mangaImportProgress = pgTable('manga_import_progress', {
   totalChapters: integer('total_chapters').notNull().default(0),
   downloadedChapters: integer('downloaded_chapters').notNull().default(0),
   status: importStatusEnum('status').notNull().default('scanning'),
+  scraperId: text('scraper_id'), // ID of the scraper used for this import (e.g., 'mangadex', 'weebcentral', null if unknown)
   startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
@@ -406,6 +409,7 @@ export const mangaImportProgress = pgTable('manga_import_progress', {
 }, (t) => ({
   statusIdx: index('idx_manga_import_progress_status').on(t.status),
   updatedAtIdx: index('idx_manga_import_progress_updated_at').on(t.updatedAt.desc()),
+  scraperIdIdx: index('idx_manga_import_progress_scraper_id').on(t.scraperId).where(sql`${t.scraperId} IS NOT NULL`),
 }));
 
 // Relations
