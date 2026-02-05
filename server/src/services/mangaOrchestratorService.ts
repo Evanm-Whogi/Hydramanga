@@ -5,6 +5,7 @@ import logger from '@/services/loggerService';
 import { cacheService } from '@/services/cacheService';
 import { queueService } from '@/services/queueService';
 import { discordService } from '@/services/discordService';
+import { mangaProgressService } from '@/services/mangaProgressService';
 
 // Constants
 const TRENDING_CACHE_KEY = 'trending:top100';
@@ -85,6 +86,10 @@ class MangaOrchestratorService {
         return;
       }
     }
+    
+    // Initialize progress to 'scanning' state
+    // This ensures WebSocket clients see the scanning state before the job is processed
+    await mangaProgressService.initializeProgress(seriesId);
     
     // Fetch romanizedTitle and cover from database
     const [manga] = await db.select({ romanizedTitle: series.romanizedTitle, cover: series.cover }).from(series).where(eq(series.id, seriesId));

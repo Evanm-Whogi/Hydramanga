@@ -39,5 +39,5 @@ module.exports = (app: Express) => {
     app.use('/', pageRoutes); 
 
     // Admin Routes
-    app.use('/admin', authMiddleware, adminRoutes);
+    app.use('/admin', adminRoutes);
 };

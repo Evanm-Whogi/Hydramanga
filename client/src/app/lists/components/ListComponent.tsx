@@ -235,12 +235,12 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
           opacity: isDragging ? 0.5 : 1,
           position: 'relative',
         }}
+        {...safeAttributes}
       >
         <button
           type="button"
           aria-label="Drag to reorder"
-          className="absolute top-2 left-2 z-20 btn btn-ghost btn-xs cursor-grab px-4 py-2 text-white bg-background/70 rounded-md hover:bg-background/90"
-          {...safeAttributes}
+          className="absolute top-2 left-2 z-20 btn btn-ghost btn-xs cursor-grab active:cursor-grabbing px-4 py-2 text-white bg-background/70 rounded-md hover:bg-background/90"
           {...listeners}
           onClick={(e) => e.preventDefault()}
         >
@@ -251,17 +251,16 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
     );
   }
 
-  function DroppableList({ list, children }: { list: any; children: React.ReactNode }) {
+  function DroppableList({ list, children, isEmpty }: { list: any; children: (isOver: boolean) => React.ReactNode; isEmpty: boolean }) {
     const { setNodeRef, isOver } = useDroppable({ id: String(list.id) });
     return (
       <div
         ref={setNodeRef}
         id={`droppable-list-${list.id}`}
-        style={{ minHeight: 80, background: isOver ? '#e0e7ff' : undefined }}
         className="bg-base-200 rounded-lg p-4 mb-2 transition-colors"
         data-list-id={list.id}
       >
-        {children}
+        {children(isOver)}
       </div>
     );
   }
@@ -291,23 +290,44 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
           onDragEnd={handleDragEnd}
         >
           <div className="flex flex-col gap-8">
-            {visibleLists.map((list) => (
-              <DroppableList key={list.id} list={list}>
-                <SectionHeader
-                  title={list.name}
-                  subtitle={`(${filteredLists[list.slug]?.length || 0})`}
-                  link=""
-                  filters=""
-                />
-                <SortableContext items={(filteredLists[list.slug] || []).map((m: any) => m.id)} strategy={verticalListSortingStrategy}>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-4 md:gap-6">
-                    {(filteredLists[list.slug] || []).map((manga: any) => (
-                      <DraggableMangaCard key={manga.id} manga={manga} />
-                    ))}
-                  </div>
-                </SortableContext>
-              </DroppableList>
-            ))}
+            {visibleLists.map((list) => {
+              const listItems = filteredLists[list.slug] || [];
+              const isEmpty = listItems.length === 0;
+              return (
+                <DroppableList key={list.id} list={list} isEmpty={isEmpty}>
+                  {(isOver) => (
+                    <>
+                      <SectionHeader
+                        title={list.name}
+                        subtitle={`(${listItems.length})`}
+                        link=""
+                        filters=""
+                      />
+                      <SortableContext items={listItems.map((m: any) => m.id)} strategy={verticalListSortingStrategy}>
+                        {isEmpty && draggingMangaId ? (
+                          <div className={`border-2 -inset-4border-dashed border-muted/30 rounded-lg p-12 text-center min-h-50 flex items-center justify-center transition-colors ${isOver ? 'bg-foreground' : 'bg-foreground/30'}`}>
+                            <p className="text-muted/50 text-sm">
+                              Drop manga here
+                            </p>
+                          </div>
+                        ) : isEmpty ? null : (
+                          <div className="relative">
+                            {draggingMangaId && (
+                              <div className={`absolute -inset-4 border-2 border-dashed border-muted/30 rounded-lg pointer-events-none z-0 transition-colors ${isOver ? 'bg-foreground' : 'bg-foreground/20'}`} />
+                            )}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-4 md:gap-6 relative z-10">
+                              {listItems.map((manga: any) => (
+                                <DraggableMangaCard key={manga.id} manga={manga} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </SortableContext>
+                    </>
+                  )}
+                </DroppableList>
+              );
+            })}
           </div>
           <DragOverlay>
             {activeManga ? <MangaCard manga={activeManga} /> : null}

@@ -26,6 +26,8 @@ export interface ScrapedChapter {
     isSpecial: boolean;
     /** Type of special chapter (bonus, extra, omake, etc.) */
     specialType?: string;
+    /** ID of the scraper that found this chapter (e.g., 'mangadex', 'weebcentral') */
+    scraperId?: string;
 }
 
 /**
@@ -60,6 +62,10 @@ export interface SearchOptions {
     coverUrl?: string;
     /** Romanized version of the title (alternative search term) */
     romanizedTitle?: string;
+    /** Native title in original language (alternative search term) */
+    nativeTitle?: string;
+    /** Secondary/alternative titles from database (additional search terms) */
+    secondaryTitles?: string[];
 }
 
 /**
@@ -141,6 +147,8 @@ export interface IChapterScraper {
      * @param checkExists - Async function to check if a chapter already exists
      * @param seriesId - Series ID from database
      * @param romanizedTitle - Romanized title for better search results
+     * @param nativeTitle - Native title in original language
+    * @param secondaryTitles - Secondary/alternative titles for matching
      * @param coverUrl - Cover image URL (for error notifications)
      * @yields ScrapedChapter - Chapter metadata for each discovered chapter
      */
@@ -149,7 +157,9 @@ export interface IChapterScraper {
         checkExists: (chapterNumber: string) => Promise<boolean>,
         seriesId?: number,
         romanizedTitle?: string,
-        coverUrl?: string
+        nativeTitle?: string,
+        secondaryTitles?: string[],
+        coverUrl?: string,
     ): AsyncGenerator<ScrapedChapter, void, undefined>;
 
     /**

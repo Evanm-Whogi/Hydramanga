@@ -105,7 +105,7 @@ export class ScraperManager {
 
     /**
      * Find best match for a manga across all scrapers
-     * Tries scrapers in priority order until finding a match
+     * Tries ALL enabled scrapers and picks the one with the highest score
      * 
      * @param mangaName - Name of the manga to search for
      * @param options - Search options (romanized title, series ID, etc.)
@@ -127,7 +127,15 @@ export class ScraperManager {
             { service: 'scraperManager' }
         );
 
-        // Try each scraper in priority order
+        // Store all successful matches with their scores
+        const matches: Array<{
+            scraper: IChapterScraper;
+            result: MangaSearchResult;
+            scraperName: string;
+            priority: number;
+        }> = [];
+
+        // Try ALL scrapers and collect matches
         for (const scraper of enabledScrapers) {
             const metadata = scraper.getMetadata();
             
@@ -155,14 +163,20 @@ export class ScraperManager {
                         { service: 'scraperManager' }
                     );
 
-                    this.recordAttempt(mangaName, metadata.id, metadata.name, metadata.priority, true);
-                    return { scraper, result };
-                }
+                    matches.push({
+                        scraper,
+                        result,
+                        scraperName: metadata.name,
+                        priority: metadata.priority,
+                    });
 
-                logger.warn(
-                    `Scraper ${metadata.name} found no match for "${mangaName}"`,
-                    { service: 'scraperManager' }
-                );
+                    this.recordAttempt(mangaName, metadata.id, metadata.name, metadata.priority, true);
+                } else {
+                    logger.warn(
+                        `Scraper ${metadata.name} found no match for "${mangaName}"`,
+                        { service: 'scraperManager' }
+                    );
+                }
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                 logger.error(
@@ -179,23 +193,61 @@ export class ScraperManager {
                     errorMessage
                 );
 
-                // Continue to next scraper (fallback behavior)
+                // Continue to next scraper
                 continue;
             }
         }
 
         // No scrapers found a match
-        logger.error(
-            `Failed to find "${mangaName}" using any available scraper`,
+        if (matches.length === 0) {
+            logger.error(
+                `Failed to find "${mangaName}" using any available scraper`,
+                { service: 'scraperManager' }
+            );
+            return undefined;
+        }
+
+        // Sort by score (highest first), then by priority (lowest number = highest priority)
+        // Special case: if scores are within 20 points, prefer higher priority scraper
+        // This handles cases where a complete source (Comix: 95) should beat a partial source (nHentai: 115)
+        matches.sort((a, b) => {
+            const scoreDiff = Math.abs(a.result.score - b.result.score);
+            
+            // If scores are close (within 20 points), use priority as primary sort
+            if (scoreDiff <= 20) {
+                return a.priority - b.priority; // Lower priority number wins
+            }
+            
+            // Otherwise, higher score wins
+            if (b.result.score !== a.result.score) {
+                return b.result.score - a.result.score;
+            }
+            
+            // Exact tie: use priority
+            return a.priority - b.priority;
+        });
+
+        const bestMatch = matches[0];
+
+        logger.info(
+            `🎯 Best match: "${bestMatch.result.title}" from ${bestMatch.scraperName} (score: ${bestMatch.result.score})`,
             { service: 'scraperManager' }
         );
 
-        return undefined;
+        // Log all other candidates for comparison
+        if (matches.length > 1) {
+            logger.info(
+                `Other candidates: ${matches.slice(1).map(m => `${m.scraperName}="${m.result.title}" (${m.result.score})`).join(', ')}`,
+                { service: 'scraperManager' }
+            );
+        }
+
+        return { scraper: bestMatch.scraper, result: bestMatch.result };
     }
 
     /**
-     * Scrape chapters using priority fallback
-     * Tries scrapers in priority order until successful
+     * Scrape chapters using best match selection
+     * Finds the best manga match across ALL scrapers, then scrapes its chapters
      * 
      * @param mangaName - Name of the manga
      * @param checkExists - Function to check if chapter already exists
@@ -209,51 +261,56 @@ export class ScraperManager {
         checkExists: (chapterNumber: string) => Promise<boolean>,
         seriesId?: number,
         romanizedTitle?: string,
-        coverUrl?: string
+        nativeTitle?: string,
+        secondaryTitles?: string[],
+        coverUrl?: string,
     ): AsyncGenerator<ScrapedChapter, void, undefined> {
-        const enabledScrapers = this.getEnabledScrapers();
-
-        if (enabledScrapers.length === 0) {
-            throw new Error('No enabled scrapers available');
-        }
-
         logger.info(
-            `Scraping chapters for "${mangaName}" using ${enabledScrapers.length} available scrapers`,
+            `Scraping chapters for "${mangaName}"`,
             { service: 'scraperManager' }
         );
 
-        // Try each scraper in priority order
-        for (const scraper of enabledScrapers) {
+        try {
+            // First, find the best manga match across ALL scrapers using the new selection logic
+            const bestMatchResult = await this.findBestMatch(mangaName, {
+                seriesId,
+                romanizedTitle,
+                nativeTitle,
+                secondaryTitles,
+                coverUrl,
+            });
+
+            if (!bestMatchResult) {
+                throw new Error(`Failed to find "${mangaName}" using any available scraper`);
+            }
+
+            const { scraper, result } = bestMatchResult;
             const metadata = scraper.getMetadata();
 
+            logger.info(
+                `Using ${metadata.name} for "${mangaName}" (score: ${result.score})`,
+                { service: 'scraperManager' }
+            );
+
             try {
-                // Check if scraper can handle this manga
-                const canHandle = await scraper.canHandle(mangaName, seriesId);
-                if (!canHandle) {
-                    logger.debug(
-                        `Scraper ${metadata.name} cannot handle "${mangaName}", trying next`,
-                        { service: 'scraperManager' }
-                    );
-                    continue;
-                }
-
-                logger.info(
-                    `Attempting chapter scrape with ${metadata.name} (priority ${metadata.priority})`,
-                    { service: 'scraperManager' }
-                );
-
                 let chapterCount = 0;
 
-                // Delegate to scraper's chapter scraping implementation
+                // Scrape chapters from the selected scraper
                 for await (const chapter of scraper.scrapeChapters(
                     mangaName,
                     checkExists,
                     seriesId,
                     romanizedTitle,
-                    coverUrl
+                    nativeTitle,
+                    secondaryTitles,
+                    coverUrl,
                 )) {
                     chapterCount++;
-                    yield chapter;
+                    // Attach scraper ID to chapter before yielding
+                    yield {
+                        ...chapter,
+                        scraperId: metadata.id,
+                    };
                 }
 
                 logger.info(
@@ -262,9 +319,6 @@ export class ScraperManager {
                 );
 
                 this.recordAttempt(mangaName, metadata.id, metadata.name, metadata.priority, true);
-
-                // Success - stop trying other scrapers
-                return;
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                 logger.error(
@@ -281,27 +335,27 @@ export class ScraperManager {
                     errorMessage
                 );
 
-                // Continue to next scraper (fallback behavior)
-                continue;
+                throw error;
             }
-        }
-
-        // All scrapers failed - notify Discord before throwing error
-        if (seriesId) {
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             logger.error(
-                `All ${enabledScrapers.length} scrapers failed for "${mangaName}". Notifying Discord.`,
+                `Chapter scraping failed for "${mangaName}": ${errorMessage}`,
                 { service: 'scraperManager' }
             );
-            
-            await discordService.notifyScraperFailed(
-                mangaName,
-                seriesId,
-                [], // No search results to show since all scrapers failed
-                coverUrl
-            );
+
+            // Notify Discord of failure if we have a series ID
+            if (seriesId) {
+                await discordService.notifyScraperFailed(
+                    mangaName,
+                    seriesId,
+                    [],
+                    coverUrl
+                );
+            }
+
+            throw error;
         }
-        
-        throw new Error(`Failed to scrape chapters for "${mangaName}" using any available scraper`);
     }
 
     /**

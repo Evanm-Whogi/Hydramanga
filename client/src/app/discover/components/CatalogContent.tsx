@@ -57,11 +57,6 @@ export default function CatalogContent({ initialFilters }: CatalogContentProps) 
         title="Discover"
         description="Discover your next favorite: Manga"
       />
-      <div className="my-4 bg-foreground p-4 rounded-md text-center border-accent border w-full md:w-1/2 mx-auto">
-        <p className="text-sm">
-          Please Note: Hentai is currently disabled while in Alpha
-        </p>
-      </div>
       <CatalogFilters
         filters={filterParams}
         onFilterChange={updateFilters}

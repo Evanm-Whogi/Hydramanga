@@ -120,7 +120,7 @@ export default function RegisterContent() {
                     placeholder="Enter invite code"
                     value={inviteCode}
                     onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                      className={`flex-1 px-3 py-2 bg-background rounded-lg text-primary placeholder-muted border transition-colors ${
+                      className={`w-full bg-foreground border border-borders text-muted px-4 py-2.5 rounded-xl outline-none transition-all focus:border-borders focus:ring-1 focus:ring-borders  ${
                         inviteValid ? 'border-green-500' : inviteError ? 'border-red-500' : 'border-foreground'
                       }`}
                   />

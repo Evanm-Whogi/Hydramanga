@@ -25,6 +25,10 @@ export interface SearchOptions {
     seriesId?: number;
     coverUrl?: string;
     maxVariants?: number;
+    /** Native title in original language (alternative search term) */
+    nativeTitle?: string;
+    /** Secondary/alternative titles from database (additional search terms) */
+    secondaryTitles?: string[];
 }
 
 /**
@@ -79,9 +83,11 @@ export class WeebCentralSearcher {
         try {
             console.log(`[WEEB_SEARCH] Querying API for "${searchTerm}"`);
 
+            const params = new URLSearchParams({ text: searchTerm });
+
             const response = await axios.post(
                 API_ENDPOINTS.SEARCH,
-                new URLSearchParams({ text: searchTerm }),
+                params,
                 {
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
@@ -211,68 +217,143 @@ export class WeebCentralSearcher {
      * 
      * @param mangaName - Primary manga name
      * @param romanizedTitle - Romanized alternative name
+     * @param nativeTitle - Native title in original language
      * @returns Array of unique search variants
      * 
      * Examples:
-     * - Input: "Jujutsu-Kaisen", "Jujutsu Kaisen"
-     * - Output: ["Jujutsu-Kaisen", "jujutsu kaisen", "Jujutsu Kaisen"]
+     * - Input: "Jujutsu-Kaisen", "Jujutsu Kaisen", "呪術廻戦"
+     * - Output: ["Jujutsu-Kaisen", "jujutsu kaisen", "Jujutsu Kaisen", "呪術廻戦"]
+     * - Input: "Top Tier Providence, Secretly Cultivate" 
+     * - Output: ["Top Tier Providence, Secretly...", "Top Tier Providence", ...]
      */
-    static generateSearchVariants(mangaName: string, romanizedTitle?: string): string[] {
-        const variants = [
+    static generateSearchVariants(
+        mangaName: string,
+        romanizedTitle?: string,
+        nativeTitle?: string,
+        secondaryTitles?: string[]
+    ): string[] {
+        const secondaryVariants = (secondaryTitles || []).flatMap((title) => [
+            title,
+            normalizeQuery(title),
+        ]);
+
+        const baseVariants = [
             mangaName,
             normalizeQuery(mangaName),
             romanizedTitle,
             normalizeQuery(romanizedTitle),
+            nativeTitle,
+            normalizeQuery(nativeTitle),
+            ...secondaryVariants,
         ]
             .filter((v): v is string => !!v) // Remove undefined/null/empty
             .filter((v, idx, arr) => arr.indexOf(v) === idx); // Remove duplicates
 
-        return variants;
+        // Add shortened variants (before comma, colon, or pipe)
+        // e.g., "Top Tier Providence, Secretly Cultivate for a Thousand Years" -> "Top Tier Providence"
+        const shortenedVariants: string[] = [];
+        for (const variant of baseVariants) {
+            const shortened = variant
+                .split(/[,:|]/)[0] // Split by comma, colon, or pipe and take first part
+                .trim();
+            if (shortened && shortened !== variant && !baseVariants.includes(shortened)) {
+                shortenedVariants.push(shortened);
+            }
+        }
+
+        return [...baseVariants, ...shortenedVariants];
     }
 
     /**
      * Find the best manga series match from multiple search variants
-     * Tries each variant in order until finding a good match
+     * Tries full title variants first, then falls back to shortened variants
      * 
      * @param mangaName - Primary manga name to search for
      * @param romanizedTitle - Romanized alternative name
-     * @param options - Search options (seriesId, coverUrl)
+     * @param nativeTitle - Native title in original language
+     * @param options - Search options (seriesId, coverUrl, includeGenres)
      * @returns Best matching result or undefined if no match found
      * 
      * Algorithm:
-     * 1. Generate search variants (name + normalized versions)
-     * 2. Query API for each variant in order
-     * 3. Return first variant that scores > 0
-     * 4. If nothing scores, fall back to first result (if not "random")
-     * 5. If still no match, notify Discord of failure
+     * 1. Generate base variants (full titles only)
+     * 2. Try all base variants first
+     * 3. If no match found, generate and try shortened variants (before comma/colon)
+     * 4. This prevents false positives from shortened versions matching wrong manga
      */
     static async findBestMatch(
         mangaName: string,
         romanizedTitle?: string,
+        nativeTitle?: string,
+        secondaryTitles?: string[],
         options?: SearchOptions
     ): Promise<SearchResult | undefined> {
-        const searchVariants = this.generateSearchVariants(mangaName, romanizedTitle);
+        // Generate base variants (full titles only)
+        const secondaryVariants = (secondaryTitles || []).flatMap((title) => [
+            title,
+            normalizeQuery(title),
+        ]);
+
+        const baseVariants = [
+            mangaName,
+            normalizeQuery(mangaName),
+            romanizedTitle,
+            normalizeQuery(romanizedTitle),
+            nativeTitle,
+            normalizeQuery(nativeTitle),
+            ...secondaryVariants,
+        ]
+            .filter((v): v is string => !!v)
+            .filter((v, idx, arr) => arr.indexOf(v) === idx);
+
         let bestMatch: SearchResult | undefined;
         let lastResults: SearchResult[] = [];
+        const triedVariants: string[] = [];
 
-        // Try each search variant
-        for (const variant of searchVariants) {
+        // Phase 1: Try full title variants first
+        console.log(`[WEEB_SEARCH] Phase 1: Trying ${baseVariants.length} full title variants`);
+        for (const variant of baseVariants) {
+            triedVariants.push(variant);
             lastResults = await this.queryAPI(variant);
             bestMatch = lastResults.find((r) => r.score > SCORE_TIERS.NO_MATCH);
 
             if (bestMatch) {
                 console.log(
-                    `[WEEB_SEARCH] Found viable match on variant "${variant}": "${bestMatch.title}" (score: ${bestMatch.score})`
+                    `[WEEB_SEARCH] Found match with full title variant "${variant}": "${bestMatch.title}" (score: ${bestMatch.score})`
                 );
-                break; // Found a good match, stop searching
+                return bestMatch; // Found good match with full title
+            }
+        }
+
+        // Phase 2: Only if no full title match, try shortened variants
+        const shortenedVariants: string[] = [];
+        for (const variant of baseVariants) {
+            const shortened = variant
+                .split(/[,:|]/)[0]
+                .trim();
+            if (shortened && shortened !== variant && !baseVariants.includes(shortened) && !shortenedVariants.includes(shortened)) {
+                shortenedVariants.push(shortened);
+            }
+        }
+
+        if (shortenedVariants.length > 0) {
+            console.log(`[WEEB_SEARCH] Phase 2: No full title match found, trying ${shortenedVariants.length} shortened variants as fallback`);
+            for (const variant of shortenedVariants) {
+                triedVariants.push(variant);
+                lastResults = await this.queryAPI(variant);
+                bestMatch = lastResults.find((r) => r.score > SCORE_TIERS.NO_MATCH);
+
+                if (bestMatch) {
+                    console.log(
+                        `[WEEB_SEARCH] Found match with shortened variant "${variant}": "${bestMatch.title}" (score: ${bestMatch.score})`
+                    );
+                    return bestMatch;
+                }
             }
         }
 
         // Don't use zero-score results - let ScraperManager try other scrapers
         if (!bestMatch && lastResults.length > 0) {
             const firstResult = lastResults[0];
-            // Only use first result if it has ANY score (even if low)
-            // Score 0 means no match at all - fall back to next scraper
             if (firstResult.score > SCORE_TIERS.NO_MATCH && firstResult.title?.toLowerCase() !== 'random') {
                 console.log(
                     `[WEEB_SEARCH] Using lowest-score match: "${firstResult.title}" (score: ${firstResult.score})`
@@ -285,14 +366,13 @@ export class WeebCentralSearcher {
             }
         }
 
-        // No match found - log only (Discord notification handled by ScraperManager)
+        // No match found
         if (!bestMatch) {
-            console.error(
-                `[WEEB_SEARCH] Could not find manga link for "${mangaName}". Tried variants:`,
-                searchVariants
+            console.log(
+                `[WEEB_SEARCH] Could not find manga link for "${mangaName}". Tried variants: ${triedVariants.join(', ')}`
             );
-            logger.error(
-                `[WEEB_SEARCH] Could not find manga link for "${mangaName}". Variants: ${searchVariants.join(', ')}`,
+            logger.warn(
+                `[WEEB_SEARCH] Could not find manga link for "${mangaName}". Variants: ${triedVariants.join(', ')}`,
                 { service: 'weebCentralSearcher' }
             );
         }
