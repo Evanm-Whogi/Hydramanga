@@ -7,6 +7,7 @@ import { signIn } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import { trackAuthEvent } from "@/lib/analytics";
+import Link from "next/link";
 
 export default function LoginContent() {
   const [email, setEmail] = useState("");
@@ -116,9 +117,9 @@ export default function LoginContent() {
             </div> */}
             <span className="text-center pt-5">
               Don't have an account?{" "}
-              <a href="/register" className="text-accent hover:text-accent/50">
+              <Link href="/register" className="text-accent hover:text-accent/50">
                 Sign up for free
-              </a>
+              </Link>
             </span>
           </div>
         </div>

@@ -1,18 +1,24 @@
 "use client";
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { fetchMangaPages, updateProgress } from '@/services/mangaService';
-import { getBookmark, addBookmark, removeBookmark } from '@/services/bookmarkService';
+import { fetchMangaPages, updateProgress, recordReadingTime } from '@/services/mangaService';
+import { getBookmark, removeBookmark } from '@/services/bookmarkService';
 import { useUser } from '@/providers/UserProvider';
-import { MenuIcon, X, BookmarkIcon, ChevronLeft, ChevronRight } from 'lucide-react';
+import { MenuIcon, X, BookmarkIcon, ChevronLeft, ChevronRight, Settings } from 'lucide-react';
 import { useChapterViewTracking } from '@/hooks/useViewTracking';
 import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
 import { updateImportProgressToast, dismissImportProgressToast } from '@/components/ImportProgressToast';
 import BookmarkModal from '@/components/BookmarkModal';
-import { recordReadingTime } from '@/services/mangaService';
-import { trackPageSwitch, trackChapterCompleted, trackTimeSpent, trackBookmarkAction } from '@/lib/analytics';
+import ReaderSettingsModal from './ReaderSettingsModal';
+import { trackPageSwitch, trackChapterCompleted, trackBookmarkAction } from '@/lib/analytics';
+import { 
+  ReaderSettings, 
+  loadReaderSettings, 
+  getAutoScrollSpeed,
+} from '@/lib/readerSettings';
 
-const SIDEBAR_WIDTH_PX = 260; // matches md:w-65 / md:w-[calc(100%-260px)]
+const SIDEBAR_WIDTH_PX = 260;
 
 interface Chapter {
   id: number;
@@ -32,25 +38,39 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useUser();
+
+  // Chapter data
   const [data, setData] = useState<Chapter | null>(null);
   const [allChapters, setAllChapters] = useState<Chapter[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Page tracking
   const [currentPage, setCurrentPage] = useState(0);
   const [lastTrackedPage, setLastTrackedPage] = useState(0);
+  
+  // UI state
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(false);
+  
+  // Bookmark state
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [bookmarkNote, setBookmarkNote] = useState('');
   const [bookmarkModalOpen, setBookmarkModalOpen] = useState(false);
+  
+  // Reader settings
+  const [settings, setSettings] = useState<ReaderSettings>(() => loadReaderSettings());
+  
+  // Refs
   const containerRef = useRef<HTMLDivElement>(null);
   const mobileHeaderRef = useRef<HTMLDivElement>(null);
   const lastScrollPos = useRef(0);
   const hasScrolledToPage = useRef(false);
   const progressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Track chapter view once data is loaded
-  useChapterViewTracking(id ? Number(id) : 0, chapterId ? Number(chapterId) : 0, mangaTitle, data?.chapterNumber);
-
+  const autoScrollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   // Reading time tracking
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -58,13 +78,20 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const [initialProgressReceived, setInitialProgressReceived] = useState(false);
   const [wasActiveOnLoad, setWasActiveOnLoad] = useState(false);
 
-  // Track manga import progress for live updates
+  // Track chapter view
+  useChapterViewTracking(
+    id ? Number(id) : 0, 
+    chapterId ? Number(chapterId) : 0, 
+    mangaTitle, 
+    data?.chapterNumber
+  );
+
+  // Track manga import progress
   const { progress } = useMangaImportProgress(id ? Number(id) : null, {
     enabled: true,
     mangaTitle: mangaTitle,
-    onProgress: (progressData) => {
+    onProgress: (progressData: any) => {
       if (progressData.lastDownloadedChapter) {
-        // Add newly downloaded chapter to the sidebar list
         setAllChapters((prev) => {
           const exists = prev.some((ch) => ch.id === progressData.lastDownloadedChapter?.id);
           if (!exists && progressData.lastDownloadedChapter) {
@@ -78,7 +105,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
               images: [],
             } as Chapter;
             return [newChapter, ...prev].sort((a, b) => 
-              parseFloat(b.chapterNumber || '0') - parseFloat(a.chapterNumber || '0')
+              parseFloat(a.chapterNumber || '0') - parseFloat(b.chapterNumber || '0')
             );
           }
           return prev;
@@ -87,7 +114,215 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     },
   });
 
-  // Show/update progress toast for read page
+  // Calculate padding and scale values (negative = zoom in, positive = zoom out)
+  const paddingValue = useMemo(() => {
+    // Positive values add padding (zoom out)
+    if (settings.readerPadding >= 0) {
+      return `${settings.readerPadding * 20}%`;
+    }
+    // Negative values don't add padding
+    return '0%';
+  }, [settings.readerPadding]);
+
+  const imageScale = useMemo(() => {
+    // Negative values scale up (zoom in): -1 = 2x scale, 0 = 1x scale
+    if (settings.readerPadding < 0) {
+      return 1 + Math.abs(settings.readerPadding);
+    }
+    // Positive values don't scale
+    return 1;
+  }, [settings.readerPadding]);
+
+  // Get container styles
+  const containerStyles = useMemo((): React.CSSProperties => {
+    return {
+      paddingLeft: paddingValue,
+      paddingRight: paddingValue,
+      backgroundColor: 'transparent',
+    };
+  }, [paddingValue]);
+
+  // Get image styles
+  const getImageStyle = useMemo((): React.CSSProperties => {
+    if (imageScale !== 1) {
+      return {
+        transform: `scale(${imageScale})`,
+        transformOrigin: 'center center',
+      };
+    }
+    return {};
+  }, [imageScale]);
+
+  // Get image class name
+  const getImageClassName = 'manga-page w-full h-auto block';
+
+  // Get current and adjacent chapters
+  const currentIndex = useMemo(() => 
+    allChapters.findIndex((ch) => ch.id === Number(chapterId)), 
+    [allChapters, chapterId]
+  );
+  const prevChapter = useMemo(() => allChapters[currentIndex - 1], [allChapters, currentIndex]);
+  const nextChapter = useMemo(() => allChapters[currentIndex + 1], [allChapters, currentIndex]);
+
+  // Send reading time to backend
+  const sendReadingTime = useCallback(async (seconds: number) => {
+    if (!user || !id || !chapterId || seconds <= 0) return;
+    try {
+      await recordReadingTime({
+        seriesId: Number(id),
+        chapterId: Number(chapterId),
+        seconds: seconds,
+      });
+    } catch (err) {
+      console.error('Failed to record reading time', err);
+    }
+  }, [user, id, chapterId]);
+
+  // Handle bookmark actions
+  const handleBookmarkClick = useCallback(() => {
+    if (!user) return;
+    setBookmarkModalOpen(true);
+  }, [user]);
+
+  const handleRemoveBookmark = useCallback(async () => {
+    if (!user || !id || !chapterId) return;
+    try {
+      await removeBookmark(Number(id), Number(chapterId));
+      setIsBookmarked(false);
+      const removedNote = bookmarkNote;
+      setBookmarkNote('');
+      trackBookmarkAction('removed', id as string, mangaTitle, chapterId as string, data?.chapterNumber, removedNote);
+    } catch (error) {
+      console.error('Failed to remove bookmark:', error);
+    }
+  }, [user, id, chapterId, bookmarkNote, mangaTitle, data?.chapterNumber]);
+
+  const handleBookmarkSuccess = useCallback(() => {
+    setIsBookmarked(true);
+    if (user && id && chapterId) {
+      getBookmark(Number(id), Number(chapterId))
+        .then((response: any) => {
+          if (response?.bookmark) {
+            setBookmarkNote(response.bookmark.note || '');
+          }
+        })
+        .catch((error: any) => console.error('Failed to fetch bookmark:', error));
+    }
+  }, [user, id, chapterId]);
+
+  // Navigate to chapter
+  const navigateToChapter = useCallback((chapter: Chapter) => {
+    if (data && chapter.id !== Number(chapterId)) {
+      trackChapterCompleted(id || '', mangaTitle, data.chapterNumber);
+    }
+    router.push(`/manga/${id}/read/${chapter.id}`);
+    window.scrollTo(0, 0);
+  }, [router, id, data, chapterId, mangaTitle]);
+
+  // Page navigation
+  const handlePageClick = useCallback((direction: 'next' | 'prev') => {
+    // Default scroll navigation
+    if (!containerRef.current) return;
+    
+    const images = Array.from(containerRef.current.querySelectorAll('img'));
+    const viewportMiddle = window.scrollY + window.innerHeight / 2;
+
+    if (direction === 'next') {
+      const nextImg = images.find((img) => {
+        const imgAbsoluteMiddle = img.getBoundingClientRect().top + window.scrollY + img.offsetHeight / 2;
+        return imgAbsoluteMiddle > viewportMiddle + 20;
+      });
+      if (nextImg) {
+        const imgAbsoluteMiddle = nextImg.getBoundingClientRect().top + window.scrollY + nextImg.offsetHeight / 2;
+        window.scrollTo({ top: imgAbsoluteMiddle - window.innerHeight / 2, behavior: 'smooth' });
+      } else {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      }
+    } else {
+      const prevImg = [...images].reverse().find((img) => {
+        const imgAbsoluteMiddle = img.getBoundingClientRect().top + window.scrollY + img.offsetHeight / 2;
+        return imgAbsoluteMiddle < viewportMiddle - 20;
+      });
+      if (prevImg) {
+        const imgAbsoluteMiddle = prevImg.getBoundingClientRect().top + window.scrollY + prevImg.offsetHeight / 2;
+        window.scrollTo({ top: imgAbsoluteMiddle - window.innerHeight / 2, behavior: 'smooth' });
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }
+  }, [data?.images]);
+
+  // Toggle controls visibility (for tap zones center click)
+  const toggleControls = useCallback(() => {
+    setControlsVisible(prev => !prev);
+    
+    // Auto-hide controls after 3 seconds
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    controlsTimeoutRef.current = setTimeout(() => {
+      setControlsVisible(false);
+    }, 3000);
+  }, []);
+
+  // Handle tap zone clicks
+  const handleTapZoneClick = useCallback((zone: 'left' | 'right' | 'center') => {
+    if (!settings.tapZones) return;
+    
+    if (zone === 'center') {
+      toggleControls();
+    } else if (zone === 'left') {
+      handlePageClick('prev');
+    } else {
+      handlePageClick('next');
+    }
+  }, [settings.tapZones, toggleControls, handlePageClick]);
+
+  // Settings change handler
+  const handleSettingsChange = useCallback((newSettings: ReaderSettings) => {
+    setSettings(newSettings);
+  }, []);
+
+  // Load chapter data
+  useEffect(() => {
+    const loadMangaPages = async () => {
+      if (!id || !chapterId) return;
+      try {
+        const response = await fetchMangaPages(id, chapterId);
+        setData(response);
+        setAllChapters(response.allChapters || []);
+      } catch (error) {
+        console.error('Error fetching manga pages:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadMangaPages();
+  }, [id, chapterId]);
+
+  // Fetch bookmark status
+  useEffect(() => {
+    if (!user || !id || !chapterId) return;
+
+    const fetchBookmarkStatus = async () => {
+      try {
+        const response = await getBookmark(Number(id), Number(chapterId));
+        if (response?.bookmark) {
+          setIsBookmarked(true);
+          setBookmarkNote(response.bookmark.note || '');
+        } else {
+          setIsBookmarked(false);
+          setBookmarkNote('');
+        }
+      } catch (error) {
+        console.error('Failed to fetch bookmark status:', error);
+      }
+    };
+
+    fetchBookmarkStatus();
+  }, [user, id, chapterId]);
+
+  // Show/update progress toast
   useEffect(() => {
     if (!progress || !mangaTitle) return;
 
@@ -111,7 +346,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     }
   }, [progress, id, mangaTitle, initialProgressReceived, wasActiveOnLoad]);
 
-  // Cleanup toast when leaving the page
+  // Cleanup toast on unmount
   useEffect(() => {
     return () => {
       if (id) {
@@ -120,7 +355,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     };
   }, [id]);
 
-  // Start reading timer on mount/chapter change
+  // Reading timer
   useEffect(() => {
     setElapsedSeconds(0);
     lastSentRef.current = 0;
@@ -132,7 +367,6 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      // On unmount/chapter change, send any remaining time
       if (elapsedSeconds > 0) {
         sendReadingTime(elapsedSeconds);
       }
@@ -140,7 +374,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, id, chapterId]);
 
-  // Periodically send reading time every 30s
+  // Send reading time periodically
   useEffect(() => {
     if (!user || !id || !chapterId) return;
     if (elapsedSeconds > 0 && elapsedSeconds - lastSentRef.current >= 10) {
@@ -150,59 +384,53 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [elapsedSeconds]);
 
-  // Send reading time to backend
-  const sendReadingTime = async (seconds: number) => {
-    if (!user || !id || !chapterId || seconds <= 0) return;
-    try {
-      await recordReadingTime({
-        seriesId: Number(id),
-        chapterId: Number(chapterId),
-        seconds: seconds,
-      });
-    } catch (err) {
-      // Optionally handle/report error
-      // console.error('Failed to record reading time', err);
+  // Auto-scroll functionality
+  useEffect(() => {
+    if (settings.autoScroll === 'off') {
+      if (autoScrollIntervalRef.current) {
+        clearInterval(autoScrollIntervalRef.current);
+        autoScrollIntervalRef.current = null;
+      }
+      return;
     }
-  };
 
-  useEffect(() => {
-    const loadMangaPages = async () => {
-      if (!id || !chapterId) return;
-      try {
-        const response = await fetchMangaPages(id, chapterId);
-        setData(response);
-        setAllChapters(response.allChapters || []);
-      } catch (error) {
-        console.error('Error fetching manga pages:', error);
-      } finally {
-        setLoading(false);
+    const speed = getAutoScrollSpeed(settings.autoScroll);
+    const pixelsPerFrame = speed / 60; // 60fps
+
+    autoScrollIntervalRef.current = setInterval(() => {
+      window.scrollBy({ top: pixelsPerFrame, behavior: 'auto' });
+    }, 1000 / 60);
+
+    return () => {
+      if (autoScrollIntervalRef.current) {
+        clearInterval(autoScrollIntervalRef.current);
       }
     };
-    loadMangaPages();
-  }, [id, chapterId]);
+  }, [settings.autoScroll]);
 
-  // Fetch bookmark status for current chapter
+  // Pause auto-scroll on user interaction
   useEffect(() => {
-    if (!user || !id || !chapterId) return;
+    if (settings.autoScroll === 'off') return;
 
-    const fetchBookmarkStatus = async () => {
-      try {
-        const response = await getBookmark(Number(id), Number(chapterId));
-        if (response?.bookmark) {
-          setIsBookmarked(true);
-          setBookmarkNote(response.bookmark.note || '');
-        } else {
-          setIsBookmarked(false);
-          setBookmarkNote('');
-        }
-      } catch (error) {
-        console.error('Failed to fetch bookmark status:', error);
+    const pauseAutoScroll = () => {
+      if (autoScrollIntervalRef.current) {
+        clearInterval(autoScrollIntervalRef.current);
+        autoScrollIntervalRef.current = null;
       }
     };
 
-    fetchBookmarkStatus();
-  }, [user, id, chapterId]);
+    window.addEventListener('wheel', pauseAutoScroll, { passive: true });
+    window.addEventListener('touchmove', pauseAutoScroll, { passive: true });
+    window.addEventListener('keydown', pauseAutoScroll);
 
+    return () => {
+      window.removeEventListener('wheel', pauseAutoScroll);
+      window.removeEventListener('touchmove', pauseAutoScroll);
+      window.removeEventListener('keydown', pauseAutoScroll);
+    };
+  }, [settings.autoScroll]);
+
+  // Handle navigation offset for main nav
   useEffect(() => {
     const mainNav = document.querySelector('nav') || document.querySelector('header');
     if (!mainNav) return;
@@ -252,17 +480,21 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     applyNavOffset();
     window.addEventListener('scroll', handleScroll, { passive: true });
     window.addEventListener('resize', applyNavOffset);
+
     return () => {
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('resize', applyNavOffset);
-      if (mainNav) mainNav.style.transform = 'translateY(0)';
+      if (mainNav) {
+        mainNav.style.transform = 'translateY(0)';
+        mainNav.style.left = '';
+        mainNav.style.width = '';
+      }
       const mobileHeader = mobileHeaderRef.current;
       if (mobileHeader) mobileHeader.style.transform = 'translateY(0)';
-      mainNav.style.left = '';
-      mainNav.style.width = '';
     };
   }, [sidebarCollapsed]);
 
+  // Scroll to active chapter in sidebar
   useEffect(() => {
     if (!loading && allChapters.length > 0) {
       const activeBtn = document.getElementById(`chapter-${chapterId}`);
@@ -270,6 +502,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     }
   }, [loading, chapterId, allChapters]);
 
+  // Scroll to page from URL param
   useEffect(() => {
     if (!loading && data && containerRef.current && !hasScrolledToPage.current) {
       const pageParam = searchParams?.get('page');
@@ -291,16 +524,15 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     }
   }, [loading, data, searchParams]);
 
+  // Update progress tracking
   useEffect(() => {
     if (!user || !data || !id || !chapterId) return;
-    if (currentPage === 0 || currentPage === lastTrackedPage) return; // Skip if page 0 or already tracked
+    if (currentPage === 0 || currentPage === lastTrackedPage) return;
 
-    // Clear existing timeout
     if (progressTimeoutRef.current) {
       clearTimeout(progressTimeoutRef.current);
     }
 
-    // Set new debounced timeout (500ms delay)
     progressTimeoutRef.current = setTimeout(async () => {
       try {
         await updateProgress({
@@ -322,7 +554,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     };
   }, [user, data, id, chapterId, currentPage, lastTrackedPage]);
 
+  // Track current page based on scroll position
   useEffect(() => {
+    // Default scroll-based tracking
     if (!containerRef.current || !data?.images) return;
 
     const handleScroll = () => {
@@ -339,7 +573,6 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           const newPage = i + 1;
           if (newPage !== currentPage) {
             setCurrentPage(newPage);
-            // Track page switch every 5 pages to avoid excessive events
             if (newPage % 5 === 0 || newPage === data.images.length) {
               trackPageSwitch(id || '', data.chapterNumber, newPage, data.images.length);
             }
@@ -355,77 +588,11 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     return () => window.removeEventListener('scroll', handleScroll);
   }, [data, id, currentPage]);
 
-  const currentIndex = allChapters.findIndex((ch) => ch.id === Number(chapterId));
-  const prevChapter = allChapters[currentIndex - 1];
-  const nextChapter = allChapters[currentIndex + 1];
-
-  const handlePageClick = useCallback((direction: 'next' | 'prev') => {
-    if (!containerRef.current) return;
-    const images = Array.from(containerRef.current.querySelectorAll('img'));
-    const viewportMiddle = window.scrollY + window.innerHeight / 2;
-
-    if (direction === 'next') {
-      const nextImg = images.find((img) => {
-        const imgAbsoluteMiddle = img.getBoundingClientRect().top + window.scrollY + img.offsetHeight / 2;
-        return imgAbsoluteMiddle > viewportMiddle + 20;
-      });
-      if (nextImg) {
-        const imgAbsoluteMiddle = nextImg.getBoundingClientRect().top + window.scrollY + nextImg.offsetHeight / 2;
-        window.scrollTo({ top: imgAbsoluteMiddle - window.innerHeight / 2, behavior: 'smooth' });
-      } else {
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-      }
-    } else {
-      const prevImg = [...images].reverse().find((img) => {
-        const imgAbsoluteMiddle = img.getBoundingClientRect().top + window.scrollY + img.offsetHeight / 2;
-        return imgAbsoluteMiddle < viewportMiddle - 20;
-      });
-      if (prevImg) {
-        const imgAbsoluteMiddle = prevImg.getBoundingClientRect().top + window.scrollY + prevImg.offsetHeight / 2;
-        window.scrollTo({ top: imgAbsoluteMiddle - window.innerHeight / 2, behavior: 'smooth' });
-      } else {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-    }
-  }, []);
-
-  const handleBookmarkClick = async () => {
-    if (!user) return;
-    setBookmarkModalOpen(true);
-  };
-
-  const handleRemoveBookmark = async () => {
-    if (!user || !id || !chapterId) return;
-    try {
-      await removeBookmark(Number(id), Number(chapterId));
-      setIsBookmarked(false);
-      const removedNote = bookmarkNote;
-      setBookmarkNote('');
-      trackBookmarkAction('removed', id as string, mangaTitle, chapterId as string, data?.chapterNumber, removedNote);
-    } catch (error) {
-      console.error('Failed to remove bookmark:', error);
-    }
-  };
-
-  const handleBookmarkSuccess = () => {
-    setIsBookmarked(true);
-    // Refetch bookmark to get latest note
-    if (user && id && chapterId) {
-      getBookmark(Number(id), Number(chapterId))
-        .then((response) => {
-          if (response?.bookmark) {
-            setBookmarkNote(response.bookmark.note || '');
-          }
-        })
-        .catch((error) => console.error('Failed to fetch bookmark:', error));
-    }
-  };
-
+  // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
-
       if (loading) return;
 
       if (event.key === 'ArrowUp') {
@@ -437,24 +604,82 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       } else if (event.key === 'ArrowLeft') {
         if (!prevChapter) return;
         event.preventDefault();
-        router.push(`/manga/${id}/read/${prevChapter.id}`);
-        window.scrollTo(0, 0);
+        navigateToChapter(prevChapter);
       } else if (event.key === 'ArrowRight') {
         if (!nextChapter) return;
         event.preventDefault();
-        if (data) {
-          trackChapterCompleted(id || '', mangaTitle, data.chapterNumber);
-        }
-        router.push(`/manga/${id}/read/${nextChapter.id}`);
-        window.scrollTo(0, 0);
+        navigateToChapter(nextChapter);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handlePageClick, id, loading, nextChapter, prevChapter, router]);
+  }, [handlePageClick, loading, nextChapter, prevChapter, navigateToChapter]);
 
-  if (loading) return <div className="loading text-primary p-5 text-center">Loading Chapter...</div>;
+  if (loading) {
+    return <div className="loading text-primary p-5 text-center">Loading Chapter...</div>;
+  }
+
+  // Render progress indicator based on position
+  const renderProgressIndicator = () => {
+    if (settings.progressIndicator === 'off' || !data?.images) return null;
+
+    const percentage = ((currentPage / data.images.length) * 100).toFixed(1);
+    const label = `${currentPage}/${data.images.length}`;
+
+    if (settings.progressIndicator === 'right') {
+      return (
+        <div className="fixed right-0 top-0 h-screen w-2 bg-foreground/30 z-50 pointer-events-none">
+          <div
+            className="w-full bg-accent transition-all duration-200 ease-out"
+            style={{ height: `${percentage}%` }}
+          />
+          {currentPage > 0 && (
+            <div
+              className="absolute top-0 right-0 transform -translate-y-1/2 bg-accent text-white text-xs font-bold px-2 py-1 rounded-l shadow-lg pointer-events-auto"
+              style={{ top: `${percentage}%` }}
+            >
+              {label}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (settings.progressIndicator === 'top') {
+      return (
+        <div className="fixed top-0 left-0 right-0 h-1 bg-foreground/30 z-50 pointer-events-none">
+          <div
+            className="h-full bg-accent transition-all duration-200 ease-out"
+            style={{ width: `${percentage}%` }}
+          />
+          {currentPage > 0 && (
+            <div className="absolute top-2 right-4 bg-accent text-white text-xs font-bold px-2 py-1 rounded shadow-lg pointer-events-auto">
+              {label}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (settings.progressIndicator === 'bottom') {
+      return (
+        <div className="fixed bottom-0 left-0 right-0 h-1 bg-foreground/30 z-50 pointer-events-none">
+          <div
+            className="h-full bg-accent transition-all duration-200 ease-out"
+            style={{ width: `${percentage}%` }}
+          />
+          {currentPage > 0 && (
+            <div className="absolute bottom-2 right-4 bg-accent text-white text-xs font-bold px-2 py-1 rounded shadow-lg pointer-events-auto">
+              {label}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return null;
+  };
 
   return (
     <div className="reader-root flex bg-background min-h-screen text-primary flex-col md:flex-row">
@@ -462,34 +687,26 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       <aside className={`sidebar hidden md:flex md:h-screen md:fixed md:left-0 md:top-0 md:bg-foreground md:border-r md:border-r-borders md:flex-col md:z-100 md:transition-all md:duration-300 ${
         sidebarCollapsed ? 'md:w-0 md:overflow-hidden' : 'md:w-65'
       }`}>
-
-        <div className="sidebar-header px-6 py-4 border-b-borders">
+        <div className="sidebar-header px-6 py-4 border-b border-borders">
           <h2 className="text-[1.25rem] font-bold mb-4 text-white">Chapter {data?.chapterNumber}</h2>
-            <button onClick={() => { router.push(`/manga/${id}`) }} className="mb-4 w-full flex-1 p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 rounded">Back to Overview</button>
+          
+          <button 
+            onClick={() => router.push(`/manga/${id}`)} 
+            className="mb-4 w-full p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer rounded"
+          >
+            Back to Overview
+          </button>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 mb-4">
             <button
-              onClick={() => {
-                if (prevChapter) {
-                  router.push(`/manga/${id}/read/${prevChapter.id}`);
-                  window.scrollTo(0, 0);
-                }
-              }}
+              onClick={() => prevChapter && navigateToChapter(prevChapter)}
               disabled={!prevChapter}
               className="flex-1 p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 rounded"
             >
               Prev
             </button>
             <button
-              onClick={() => {
-                if (nextChapter) {
-                  if (data) {
-                    trackChapterCompleted(id || '', mangaTitle, data.chapterNumber);
-                  }
-                  router.push(`/manga/${id}/read/${nextChapter.id}`);
-                  window.scrollTo(0, 0);
-                }
-              }}
+              onClick={() => nextChapter && navigateToChapter(nextChapter)}
               disabled={!nextChapter}
               className="flex-1 p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 rounded"
             >
@@ -501,7 +718,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           {user && (
             <button
               onClick={() => isBookmarked ? handleRemoveBookmark() : handleBookmarkClick()}
-              className={`w-full mt-4 p-2.5 flex items-center justify-center gap-2 border-0 rounded cursor-pointer ${
+              className={`w-full p-2.5 flex items-center justify-center gap-2 border-0 rounded cursor-pointer ${
                 isBookmarked
                   ? 'bg-accent hover:bg-accent/80 text-white'
                   : 'bg-background hover:bg-background/50 text-primary'
@@ -511,28 +728,38 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
               {isBookmarked ? 'Remove Bookmark' : 'Bookmark Chapter'}
             </button>
           )}
-          {/* Key */}
+
+          {/* Settings Button */}
+          <button
+            onClick={() => setSettingsModalOpen(true)}
+            className="w-full mt-2 p-2.5 flex items-center justify-center gap-2 bg-background hover:bg-background/50 text-primary border-0 rounded cursor-pointer"
+          >
+            <Settings size={18} />
+            Reader Settings
+          </button>
+
+          {/* Keybinds */}
           <div className="mt-4 text-sm text-primary/70">
             <p className="mb-1">Keybinds:</p>
-            <ul className="list-disc list-inside">
+            <ul className="list-disc list-inside text-xs">
               <li>↑ / ↓ : Scroll Pages</li>
               <li>← / → : Prev/Next Chapter</li>
             </ul>
           </div>
         </div>
+
+        {/* Chapter List */}
         <div className="chapter-list-scroll flex-1 overflow-y-auto p-4">
           <div className="grid-list grid grid-cols-1 md:grid-cols-3 gap-1.5">
             {allChapters.map((ch) => (
               <button
                 key={ch.id}
                 id={`chapter-${ch.id}`}
-                onClick={() => {
-                  router.push(`/manga/${id}/read/${ch.id}`);
-                  window.scrollTo(0, 0);
-                  setSidebarOpen(false);
-                }}
+                onClick={() => navigateToChapter(ch)}
                 className={`p-[10px_2px] text-[0.75rem] border cursor-pointer rounded-sm text-primary ${
-                  ch.id === Number(chapterId) ? 'font-bold bg-accent border-accent' : 'font-normal bg-background hover:bg-background/50 border-background'
+                  ch.id === Number(chapterId) 
+                    ? 'font-bold bg-accent border-accent' 
+                    : 'font-normal bg-background hover:bg-background/50 border-background'
                 }`}
               >
                 {ch.chapterNumber}
@@ -558,14 +785,14 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
                 {allChapters.map((ch) => (
                   <button
                     key={ch.id}
-                    id={`chapter-${ch.id}`}
                     onClick={() => {
-                      router.push(`/manga/${id}/read/${ch.id}`);
-                      window.scrollTo(0, 0);
+                      navigateToChapter(ch);
                       setSidebarOpen(false);
                     }}
                     className={`p-2 text-sm border cursor-pointer rounded text-primary ${
-                      ch.id === Number(chapterId) ? 'font-bold bg-accent border-accent' : 'font-normal bg-background hover:bg-background/50 border-background'
+                      ch.id === Number(chapterId) 
+                        ? 'font-bold bg-accent border-accent' 
+                        : 'font-normal bg-background hover:bg-background/50 border-background'
                     }`}
                   >
                     Chapter {ch.chapterNumber}
@@ -577,26 +804,10 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         </>
       )}
 
-      {/* Page Progress Indicator - Right Side */}
-      <div className="fixed right-0 top-0 h-screen w-2 bg-foreground/30 z-50 pointer-events-none">
-        <div
-          className="w-full bg-accent transition-all duration-200 ease-out"
-          style={{
-            height: data?.images ? `${((currentPage / data.images.length) * 100).toFixed(1)}%` : '0%',
-          }}
-        />
-        {/* Page number indicator */}
-        {currentPage > 0 && data?.images && (
-          <div
-            className="absolute top-0 right-0 transform -translate-y-1/2 bg-accent text-white text-xs font-bold px-2 py-1 rounded-l shadow-lg pointer-events-auto"
-            style={{ top: `${(currentPage / data.images.length) * 100}%` }}
-          >
-            {currentPage}/{data.images.length}
-          </div>
-        )}
-      </div>
+      {/* Progress Indicator */}
+      {renderProgressIndicator()}
 
-      {/* Collapse/Expand Button - Always Visible */}
+      {/* Sidebar Collapse/Expand Button */}
       <button
         onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
         className="hidden md:flex md:fixed md:top-1/2 cursor-pointer md:-translate-y-1/2 md:bg-foreground md:hover:bg-background md:text-primary md:border md:border-borders md:rounded-full md:p-2 md:z-50 md:transition-all md:duration-300"
@@ -606,10 +817,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
       </button>
 
-      {/* Mobile Header with Menu */}
+      {/* Mobile Header */}
       <div
         ref={mobileHeaderRef}
-        id="mobile-reader-header"
         className="md:hidden fixed top-16 left-0 right-0 bg-foreground/90 border-b border-borders px-4 py-3 z-40 flex items-center justify-between transition-transform duration-300"
       >
         <button onClick={() => setSidebarOpen(true)} className="text-primary hover:text-accent p-2">
@@ -618,66 +828,85 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         <span className="text-sm font-semibold">
           {currentPage}/{data?.images?.length || 0}
         </span>
-        {user && (
+        <div className="flex gap-2">
+          {user && (
+            <button
+              onClick={() => isBookmarked ? handleRemoveBookmark() : handleBookmarkClick()}
+              className="text-primary hover:text-accent p-2"
+            >
+              <BookmarkIcon className="size-6" fill={isBookmarked ? 'currentColor' : 'none'} />
+            </button>
+          )}
           <button
-            onClick={() => isBookmarked ? handleRemoveBookmark() : handleBookmarkClick()}
+            onClick={() => setSettingsModalOpen(true)}
             className="text-primary hover:text-accent p-2"
-            title={isBookmarked ? 'Remove Bookmark' : 'Bookmark Chapter'}
           >
-            <BookmarkIcon
-              className="size-6"
-              fill={isBookmarked ? 'currentColor' : 'none'}
-            />
+            <Settings className="size-6" />
           </button>
-        )}
+        </div>
       </div>
 
+      {/* Main Content */}
       <main className={`content w-full md:py-18.25 pt-24 md:pt-18.25 pb-20 md:pb-0 relative flex flex-col items-center transition-all duration-300 ${
         sidebarCollapsed ? 'md:ml-0 md:w-full' : 'md:ml-65 md:w-[calc(100%-260px)]'
       }`}>
-        <div className={`click-zones fixed top-0 right-0 bottom-0 left-0 flex z-10 pointer-events-none pt-24 md:pt-0 transition-all duration-300 ${
-          sidebarCollapsed ? 'md:left-0' : 'md:left-65'
-        }`}>
-          <div
-            onClick={() => handlePageClick('prev')}
-            className="prev-zone flex-1 pointer-events-auto cursor-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2232%22%20height%3D%2232%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%2215%2018%209%2012%2015%206%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E'),pointer]"
-          />
-          <div
-            onClick={() => handlePageClick('next')}
-            className="next-zone flex-1 pointer-events-auto cursor-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2232%22%20height%3D%2232%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%229%2018%2015%2012%209%206%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E'),pointer]"
-          />
-        </div>
+        {/* Tap Zones */}
+        {settings.tapZones && (
+          <div className={`click-zones fixed top-0 right-0 bottom-0 left-0 flex z-10 pointer-events-none pt-24 md:pt-0 transition-all duration-300 ${
+            sidebarCollapsed ? 'md:left-0' : 'md:left-65'
+          }`}>
+            <div
+              onClick={() => handleTapZoneClick('left')}
+              className="prev-zone flex-1 pointer-events-auto cursor-w-resize"
+            />
+            <div
+              onClick={() => handleTapZoneClick('center')}
+              className="center-zone flex-1 pointer-events-auto cursor-pointer"
+            />
+            <div
+              onClick={() => handleTapZoneClick('right')}
+              className="next-zone flex-1 pointer-events-auto cursor-e-resize"
+            />
+          </div>
+        )}
 
-        <div ref={containerRef} className="image-stack w-full max-w-212.5 bg-black z-5">
+        {/* Image Container */}
+        <div 
+          ref={containerRef} 
+          className="image-stack w-full max-w-212.5 z-5"
+          style={containerStyles}
+        >
           {data?.images?.map((src, index) => (
             <img
               key={index}
               src={src}
               alt={`Page ${index + 1}`}
-              className="manga-page w-full h-auto block"
+              className={getImageClassName}
+              style={getImageStyle}
               loading={index < 3 ? 'eager' : 'lazy'}
             />
           ))}
         </div>
 
+        {/* Footer Navigation */}
         <div className="footer-nav py-20 text-center z-100 hidden md:block">
-          {nextChapter && (
+          {nextChapter ? (
             <button
-              onClick={() => {
-                if (data) {
-                  trackChapterCompleted(id || '', mangaTitle, data.chapterNumber);
-                }
-                router.push(`/manga/${id}/read/${nextChapter.id}`);
-                window.scrollTo(0, 0);
-              }}
-              className="px-12 py-4 bg-[#3b82f6] text-white border-none rounded-md text-[1.1rem] font-bold cursor-pointer"
+              onClick={() => navigateToChapter(nextChapter)}
+              className="px-12 py-4 bg-accent hover:bg-accent/80 text-white border-none rounded-md text-[1.1rem] font-bold cursor-pointer transition-colors"
             >
               Read Chapter {nextChapter.chapterNumber} →
             </button>
+          ) : (
+            <div className="flex flex-col py-2">
+                <span className="text-primary/70">You have reached the end of available chapters.</span>
+                <button className="mt-5 ml-2 text-accent hover:underline cursor-pointer" onClick={() => router.push(`/manga/${id}`)}>Return to Manga Overview</button>
+            </div>
           )}
         </div>
       </main>
 
+      {/* Modals */}
       <BookmarkModal
         isOpen={bookmarkModalOpen}
         onClose={() => setBookmarkModalOpen(false)}
@@ -688,6 +917,12 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         onSuccess={handleBookmarkSuccess}
         mangaTitle={mangaTitle}
         chapterNumber={data?.chapterNumber}
+      />
+
+      <ReaderSettingsModal
+        isOpen={settingsModalOpen}
+        onClose={() => setSettingsModalOpen(false)}
+        onSettingsChange={handleSettingsChange}
       />
     </div>
   );
