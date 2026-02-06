@@ -199,7 +199,7 @@ export const chapters = pgTable("chapters", {
   description: text("description"),
   chapterNumber: text("chapter_number").notNull(), 
   volumeNumber: text("volume_number"),
-  localPath: text("local_path").notNull(),
+  storagePrefix: text("storage_prefix").notNull(), // Logical object key prefix (e.g., "6029/1" for seriesId/chapterId)
   pageCount: integer("page_count").default(0),
   scraperId: text("scraper_id"), // ID of the scraper that downloaded this chapter (e.g., 'mangadex', 'weebcentral', null if unknown)
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

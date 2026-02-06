@@ -51,12 +51,14 @@ export class ChapterDownloaderService {
                 },
             });
 
-            // Download images and get local storage path using scraper manager with fallback
+            // Download images and get storage prefix using scraper manager with fallback
             const downloadResult = await withSpan(
                 'scraper_download_chapter',
                 async () => {
                     return scraperManager.downloadChapter(
                         data.chapterUrl,
+                        data.seriesId,
+                        chapterNumberStr,
                         data.mangaTitle,
                         data.chapterTitle
                     );
@@ -70,13 +72,13 @@ export class ChapterDownloaderService {
                 }
             );
 
-            const localPath = downloadResult.path;
+            const storagePrefix = downloadResult.storagePrefix;
             const pageCount = downloadResult.pageCount;
 
             Sentry.addBreadcrumb({
                 message: 'Chapter downloaded to storage',
                 level: 'info',
-                data: { path: localPath, page_count: pageCount },
+                data: { storagePrefix, page_count: pageCount },
             });
 
             // Upsert chapter in database
@@ -88,7 +90,7 @@ export class ChapterDownloaderService {
                         .values({
                             seriesId: data.seriesId,
                             chapterNumber: chapterNumberStr,
-                            localPath,
+                            storagePrefix,
                             pageCount,
                             title: data.chapterTitle,
                             scraperId: data.scraperId || null,
@@ -97,7 +99,7 @@ export class ChapterDownloaderService {
                         .onConflictDoUpdate({
                             target: [chapters.seriesId, chapters.chapterNumber],
                             set: {
-                                localPath,
+                                storagePrefix,
                                 pageCount,
                                 title: data.chapterTitle,
                                 scraperId: data.scraperId || null,
@@ -115,7 +117,7 @@ export class ChapterDownloaderService {
             );
 
             logger.info(
-                `[DOWNLOADER] Successfully saved chapter ${data.chapterNumber} for series ${data.seriesId} at ${localPath}`,
+                `[DOWNLOADER] Successfully saved chapter ${data.chapterNumber} for series ${data.seriesId} with prefix ${storagePrefix}`,
                 { service: 'chapterDownloaderService' }
             );
 

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import ListsPageClient from '@/app/lists/components/ListsPageClient';
 import { fetchAllLists } from '@/services/listService';
 import PageHeader from '@/components/PageHeader';
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: `My Lists - ${process.env.NEXT_PUBLIC_NAME}`,

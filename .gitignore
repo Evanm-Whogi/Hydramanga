@@ -1,3 +1,7 @@
 client/.vscode/settings.json
 data
 chapters-data
+backups
+scripts
+cloudflared-config.yml
+nginx/nginx-dev.conf
