@@ -15,6 +15,7 @@ export interface ReaderSettings {
   readerPadding: number; // -1.00 to 1.00
   autoScroll: AutoScrollSpeed;
   progressIndicator: ProgressIndicatorPosition;
+  continuousMode: boolean;
 }
 
 const DEFAULT_SETTINGS: ReaderSettings = {
@@ -23,6 +24,7 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   readerPadding: 0,
   autoScroll: 'off',
   progressIndicator: 'right',
+  continuousMode: true,
 };
 
 const STORAGE_KEY = 'manga-reader-settings';
