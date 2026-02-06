@@ -391,12 +391,14 @@ export class MangaDexScraper implements IChapterScraper {
 
     async downloadChapter(
         url: string,
+        seriesId: number,
+        chapterNumber: string,
         mangaName: string,
         folderName: string
     ): Promise<DownloadedChapter> {
         try {
             logger.info(
-                `[MangaDex] Downloading chapter: ${folderName}`,
+                `[MangaDex] Downloading chapter: ${folderName} for series ${seriesId}`,
                 { service: 'mangaDexScraper' }
             );
 
@@ -471,15 +473,15 @@ export class MangaDexScraper implements IChapterScraper {
             }
 
             // Download images
-            const localPath = await this.downloadImages(
+            const storagePrefix = await this.downloadImages(
                 images,
-                mangaName,
-                folderName,
+                seriesId,
+                chapterNumber,
                 url
             );
 
             return {
-                path: localPath,
+                storagePrefix,
                 pageCount: images.length,
             };
         } catch (error) {
@@ -584,11 +586,12 @@ export class MangaDexScraper implements IChapterScraper {
      */
     private async downloadImages(
         images: string[],
-        mangaName: string,
-        folderName: string,
+        seriesId: number,
+        chapterNumber: string,
         referer: string
     ): Promise<string> {
-        const dir = path.join(STORAGE_ROOT, safeName(mangaName), safeName(folderName));
+        const storagePrefix = `${seriesId}/${chapterNumber}`;
+        const dir = path.join(STORAGE_ROOT, storagePrefix);
 
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
@@ -602,7 +605,7 @@ export class MangaDexScraper implements IChapterScraper {
         for (let i = 0; i < images.length; i++) {
             const filePath = path.join(
                 dir,
-                `image${(i + 1).toString().padStart(3, '0')}.jpg`
+                `${(i + 1).toString().padStart(2, '0')}.jpg`
             );
 
             try {
@@ -647,10 +650,10 @@ export class MangaDexScraper implements IChapterScraper {
         }
 
         logger.info(
-            `[MangaDex] Successfully downloaded and saved ${images.length} images for ${folderName}`,
+            `[MangaDex] Successfully downloaded and saved ${images.length} images`,
             { service: 'mangaDexScraper' }
         );
 
-        return dir;
+        return storagePrefix;
     }
 }

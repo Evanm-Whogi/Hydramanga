@@ -528,45 +528,25 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
                 END ASC`
             );
 
-        // 3. Resolve the physical directory path
-        // Using path.isAbsolute to handle /home/whogi... correctly
-        const directoryPath = path.isAbsolute(chapter.localPath) 
-            ? chapter.localPath 
-            : path.join(process.cwd(), 'public', chapter.localPath);
-
-        // 4. Read images from the filesystem
-        if (!fs.existsSync(directoryPath)) {
-            console.error("Directory not found:", directoryPath);
-            return res.status(404).json({ error: "Image directory not found on disk" });
+        // 3. Construct image URLs from storagePrefix
+        // Images are served by Nginx at /media/manga/{storagePrefix}/{pageNumber}.jpg
+        const baseUrl = process.env.MEDIA_BASE_URL || `${process.env.PUBLIC_APP_URL || "http://localhost:3000"}/media/manga`;
+        
+        // Generate image URLs based on pageCount
+        const pageCount = chapter.pageCount || 0;
+        const images: string[] = [];
+        
+        for (let i = 1; i <= pageCount; i++) {
+            const pageNumber = i.toString().padStart(2, '0');
+            const imageUrl = `${baseUrl}/${chapter.storagePrefix}/${pageNumber}.jpg`;
+            images.push(imageUrl);
         }
 
-        const files = fs.readdirSync(directoryPath);
-        
-        // Define the base URL where your Express server serves static files
-        const publicApp = process.env.PUBLIC_APP_URL || "http://localhost:3000";
-        const baseUrl = process.env.CHAPTER_PUBLIC_BASE || `${publicApp}/api/manga-files`;
-        const baseSystemPath = process.env.CHAPTER_STORAGE_ROOT || path.join(process.cwd(), 'chapters');
-
-        const images = files
-            .filter(file => /\.(jpe?g|png|webp|gif)$/i.test(file))
-            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
-            .map(file => {
-                // Remove the base system path to get the relative folder structure
-                const legacyBase = process.cwd();
-                const relativePath = directoryPath.startsWith(baseSystemPath)
-                    ? directoryPath.replace(baseSystemPath, "")
-                    : directoryPath.replace(legacyBase, "");
-
-                // Clean up slashes and encode for URL safety
-                const cleanPath = path.join(relativePath, file).replace(/\\/g, "/");
-                return `${baseUrl}${cleanPath.startsWith('/') ? '' : '/'}${cleanPath}`;
-            });
-
-        // 5. Return complete payload
+        // 4. Return complete payload
         return res.json({
             ...chapter,
             images,
-            pageCount: chapter.pageCount || images.length, // Use DB pageCount or fallback to actual count
+            pageCount: chapter.pageCount || images.length,
             allChapters
         });
 

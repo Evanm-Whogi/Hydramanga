@@ -205,6 +205,8 @@ export class WeebCentralScraper implements IChapterScraper {
 
     async downloadChapter(
         url: string,
+        seriesId: number,
+        chapterNumber: string,
         mangaName: string,
         folderName: string
     ): Promise<DownloadedChapter> {
@@ -358,15 +360,15 @@ export class WeebCentralScraper implements IChapterScraper {
             }
 
             // Download images
-            const localPath = await this.downloadImages(
+            const storagePrefix = await this.downloadImages(
                 finalImages,
-                mangaName,
-                folderName,
+                seriesId,
+                chapterNumber,
                 url
             );
 
             return {
-                path: localPath,
+                storagePrefix,
                 pageCount: finalImages.length,
             };
         } finally {
@@ -381,11 +383,12 @@ export class WeebCentralScraper implements IChapterScraper {
      */
     private async downloadImages(
         images: string[],
-        mangaName: string,
-        folderName: string,
+        seriesId: number,
+        chapterNumber: string,
         referer: string
     ): Promise<string> {
-        const dir = path.join(STORAGE_ROOT, safeName(mangaName), safeName(folderName));
+        const storagePrefix = `${seriesId}/${chapterNumber}`;
+        const dir = path.join(STORAGE_ROOT, storagePrefix);
 
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
@@ -394,7 +397,7 @@ export class WeebCentralScraper implements IChapterScraper {
         for (let i = 0; i < images.length; i++) {
             const filePath = path.join(
                 dir,
-                `image${(i + 1).toString().padStart(3, '0')}.jpg`
+                `${(i + 1).toString().padStart(2, '0')}.jpg`
             );
 
             try {
@@ -418,13 +421,13 @@ export class WeebCentralScraper implements IChapterScraper {
                 fs.writeFileSync(filePath, Buffer.from(response.data));
             } catch (err: any) {
                 logger.error(
-                    `[WeebCentral] Failed to download image ${i + 1} in ${folderName}: ${err.message}`,
+                    `[WeebCentral] Failed to download image ${i + 1}: ${err.message}`,
                     { service: 'weebCentralScraper' }
                 );
                 throw err;
             }
         }
 
-        return dir;
+        return storagePrefix;
     }
 }

@@ -363,12 +363,16 @@ export class ScraperManager {
      * Tries scrapers in priority order until successful
      * 
      * @param url - Chapter URL
-     * @param mangaName - Manga name
-     * @param folderName - Local folder name
-     * @returns Downloaded chapter info
+     * @param seriesId - Series ID from database
+     * @param chapterNumber - Chapter number
+     * @param mangaName - Manga name (for logging/notifications)
+     * @param folderName - Folder name for this chapter (for logging, usually chapter title)
+     * @returns Downloaded chapter info with storage prefix
      */
     async downloadChapter(
         url: string,
+        seriesId: number,
+        chapterNumber: string,
         mangaName: string,
         folderName: string
     ): Promise<DownloadedChapter> {
@@ -379,7 +383,7 @@ export class ScraperManager {
         }
 
         logger.info(
-            `Downloading chapter from ${url}`,
+            `Downloading chapter ${chapterNumber} for series ${seriesId} from ${url}`,
             { service: 'scraperManager' }
         );
 
@@ -402,7 +406,7 @@ export class ScraperManager {
                     { service: 'scraperManager' }
                 );
 
-                const result = await scraper.downloadChapter(url, mangaName, folderName);
+                const result = await scraper.downloadChapter(url, seriesId, chapterNumber, mangaName, folderName);
 
                 logger.info(
                     `✓ Successfully downloaded ${result.pageCount} pages using ${metadata.name}`,

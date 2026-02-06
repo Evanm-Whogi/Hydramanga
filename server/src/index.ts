@@ -37,11 +37,10 @@ import { initializeScrapers } from '@/scrapers';
 const app: Express = express();
 
 app.use(morgan(':method :url :status :response-time ms - :res[content-length] \n', {
-    skip: (req, res) => req.originalUrl.startsWith('/admin/queues') || req.originalUrl.startsWith('/manga-files') // Skip logging for Bull Board routes
+    skip: (req, res) => req.originalUrl.startsWith('/admin/queues') // Skip logging for Bull Board routes
 }));
 app.use(cors({ origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001', 'http://localhost:3001', 'https://manga.chit.sh'], credentials: true }));
 app.set('trust proxy', 1);
-const chapterStaticRoot = process.env.CHAPTER_STORAGE_ROOT || path.join(process.cwd(), 'chapters');
 
 // Bull Board Setup
 const serverAdapter = new ExpressAdapter();
@@ -58,7 +57,6 @@ createBullBoard({
 });
   
 app.use('/admin/queues', serverAdapter.getRouter());
-app.use('/manga-files', express.static(chapterStaticRoot));
 
 // Auth Routes
 app.all("/auth/{*any}", toNodeHandler(auth));
@@ -67,10 +65,10 @@ app.all("/auth/{*any}", toNodeHandler(auth));
 app.use(bodyParser.json());
 app.use(isMaintenance);
 
-// Enable rate limiting only in production
-if (process.env.NODE_ENV === 'production') {
-    app.use(rateLimiter);
-}
+// Enable rate limiting only in production [Disabled]
+// if (process.env.NODE_ENV === 'production') {
+//     app.use(rateLimiter);
+// }
 
 // Routes
 require('@/routes')(app);

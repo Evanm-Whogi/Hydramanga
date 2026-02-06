@@ -15,9 +15,9 @@ import listRoutes from '@/routes/listRoutes';
 import contactRoutes from '@/routes/contactRoutes';
 
 module.exports = (app: Express) => {
+
     // Apply tracking middleware globally to track views
     app.use(trackingMiddleware);
-
 
     app.use('/manga', authMiddleware, mangaRoutes);
     app.use('/manga/progress', authMiddleware, progressRoutes);

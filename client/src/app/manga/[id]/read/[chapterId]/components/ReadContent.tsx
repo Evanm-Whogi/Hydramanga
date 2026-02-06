@@ -26,7 +26,7 @@ interface Chapter {
   title: string | null;
   chapterNumber: string;
   volumeNumber: string | null;
-  localPath: string;
+  storagePrefix: string;
   images: string[];
   allChapters?: Chapter[];
 }
@@ -101,7 +101,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
               chapterNumber: progressData.lastDownloadedChapter.chapterNumber,
               volumeNumber: null,
               title: progressData.lastDownloadedChapter.title,
-              localPath: '',
+              storagePrefix: '',
               images: [],
             } as Chapter;
             return [newChapter, ...prev].sort((a, b) => 

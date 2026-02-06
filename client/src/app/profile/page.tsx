@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import ProfileContent from "./components/ProfileContent";
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: `Profile - ${process.env.NEXT_PUBLIC_NAME}`,
@@ -12,5 +13,7 @@ export const metadata: Metadata = {
 };
 
 export default async function ProfilePage() {
-  return <ProfileContent  />;
+  return (
+      <ProfileContent />
+  );
 }

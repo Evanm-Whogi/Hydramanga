@@ -30,6 +30,22 @@ services:
       timeout: 5s
       retries: 5
 
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./data/manga:/data/manga:ro
+    ports:
+      - "8080:80"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - server
+
   server:
     build:
       context: ./server
@@ -42,23 +58,23 @@ services:
       redis:
         condition: service_healthy
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       PORT: 4000
       DOCKER: 'true'
       DATABASE_URL: postgres://mang:mangpass@db:5432/mang
       REDIS_HOST: redis
       REDIS_PORT: 6379
       PUBLIC_APP_URL: https://manga.chit.sh
-      # Add other required envs here, e.g. JWT secrets, email creds, storage paths
-      CHAPTER_STORAGE_ROOT: /data/chapters
-      # Public URL clients should use to load chapter images/files (via frontend rewrite)
-      CHAPTER_PUBLIC_BASE: https://manga.chit.sh/api/manga-files
+      # Base URL for media files served by Nginx (via cloudflared tunnel)
+      MEDIA_BASE_URL: https://manga.chit.sh/media/manga
+      # Storage root for downloaded manga (must match Nginx volume)
+      CHAPTER_STORAGE_ROOT: /data/manga
     volumes:
-      - ./data/mangas:/data/chapters
+      - ./data/manga:/data/manga
     ports:
       - "4000:4000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/heartbeat"]
+      test: ["CMD", "curl", "-f", "http://localhost:4000/admin/heartbeat"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -75,7 +91,7 @@ services:
       server:
         condition: service_healthy
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       # Used by Next.js rewrites and server-side calls
       BACKEND_INTERNAL_URL: http://server:4000
       # Public site origin for OAuth redirects and metadata

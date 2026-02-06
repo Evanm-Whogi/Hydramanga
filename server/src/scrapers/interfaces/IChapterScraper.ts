@@ -34,8 +34,8 @@ export interface ScrapedChapter {
  * Downloaded chapter result
  */
 export interface DownloadedChapter {
-    /** Local filesystem path where chapter images are stored */
-    path: string;
+    /** Storage prefix (logical object key, e.g., "6029/1" for seriesId/chapterId) */
+    storagePrefix: string;
     /** Number of pages (images) in the chapter */
     pageCount: number;
 }
@@ -170,15 +170,19 @@ export interface IChapterScraper {
      * - Extract all image URLs
      * - Download images with proper headers (referer, user-agent, etc.)
      * - Save images to local filesystem with consistent naming
-     * - Return local path and page count
+     * - Return storage prefix (e.g., "6029/1") and page count
      * 
      * @param url - URL to the chapter page
-     * @param mangaName - Name of the manga (for folder structure)
-     * @param folderName - Folder name for this chapter (usually chapter title)
-     * @returns Promise<DownloadedChapter> - Local path and page count
+     * @param seriesId - Series ID from database (for folder structure)
+     * @param chapterNumber - Chapter number (for folder structure)
+     * @param mangaName - Name of the manga (for logging/notifications)
+     * @param folderName - Folder name for this chapter (for logging, usually chapter title)
+     * @returns Promise<DownloadedChapter> - Storage prefix and page count
      */
     downloadChapter(
         url: string,
+        seriesId: number,
+        chapterNumber: string,
         mangaName: string,
         folderName: string
     ): Promise<DownloadedChapter>;

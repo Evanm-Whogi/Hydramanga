@@ -164,7 +164,7 @@ export default function MangaContent({ manga, initialListName }: MangaContentPro
                 viewStats: { totalViews: 0, uniqueViews: 0 },
                 description: null,
                 volumeNumber: null,
-                localPath: '',
+                storagePrefix: '',
                 seriesId: mangaId,
               };
               return [...prev, newChapter].sort((a: any, b: any) => 

@@ -359,10 +359,10 @@ export class NHentaiScraper implements IChapterScraper {
 
     async downloadChapter(
         url: string,
+        seriesId: number,
+        chapterNumber: string,
         mangaName: string,
-        chapterTitle: string,
-        seriesId?: number,
-        coverUrl?: string
+        chapterTitle: string
     ): Promise<DownloadedChapter> {
         const browser = await chromium.launch({ headless: true });
         const context = await browser.newContext({
@@ -408,15 +408,15 @@ export class NHentaiScraper implements IChapterScraper {
             );
 
             // Download the single image
-            const localPath = await this.downloadImages(
+            const storagePrefix = await this.downloadImages(
                 [imageUrl],
-                mangaName,
-                chapterTitle,
+                seriesId,
+                chapterNumber,
                 url
             );
 
             return {
-                path: localPath,
+                storagePrefix,
                 pageCount: 1,
             };
         } finally {
@@ -431,19 +431,20 @@ export class NHentaiScraper implements IChapterScraper {
      */
     private async downloadImages(
         images: string[],
-        mangaName: string,
-        folderName: string,
+        seriesId: number,
+        chapterNumber: string,
         referer: string
     ): Promise<string> {
-        const dir = path.join(STORAGE_ROOT, safeName(mangaName), safeName(folderName));
+        const storagePrefix = `${seriesId}/${chapterNumber}`;
+        const dir = path.join(STORAGE_ROOT, storagePrefix);
 
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
         }
 
-        console.log(`[DOWNLOAD] Starting download for ${folderName}: ${images.length} images`);
+        console.log(`[DOWNLOAD] Starting download for chapter ${chapterNumber}: ${images.length} images`);
         logger.info(
-            `[nHentai] Starting download for ${folderName}: ${images.length} images to ${dir}`,
+            `[nHentai] Starting download for chapter ${chapterNumber}: ${images.length} images to ${dir}`,
             { service: 'nHentaiScraper' }
         );
 
@@ -455,7 +456,7 @@ export class NHentaiScraper implements IChapterScraper {
         for (let i = 0; i < images.length; i++) {
             const filePath = path.join(
                 dir,
-                `image${(i + 1).toString().padStart(3, '0')}.jpg`
+                `${(i + 1).toString().padStart(2, '0')}.jpg`
             );
 
             console.log(`[DOWNLOAD] Image ${i + 1}/${images.length}: URL = ${images[i].substring(0, 80)}...`);
@@ -536,13 +537,13 @@ export class NHentaiScraper implements IChapterScraper {
             if (!success) {
                 console.log(`[DOWNLOAD] Image ${i + 1}: FAILED after ${MAX_RETRIES} attempts`);
                 logger.error(
-                    `[nHentai] Failed to download image ${i + 1} in ${folderName} after ${MAX_RETRIES} attempts: ${lastError?.message}`,
+                    `[nHentai] Failed to download image ${i + 1} after ${MAX_RETRIES} attempts: ${lastError?.message}`,
                     { service: 'nHentaiScraper' }
                 );
                 throw lastError || new Error(`Failed to download image ${i + 1}`);
             }
         }
 
-        return dir;
+        return storagePrefix;
     }
 }

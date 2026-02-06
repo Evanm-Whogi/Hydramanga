@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getIndex } from "@/services/mangaService";
 import { Star, TrendingUp, PlayIcon, BookMarkedIcon, UsersIcon, MessageCircleIcon } from "lucide-react";
 import Link from "next/link";
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: process.env.NEXT_PUBLIC_NAME || "Manga Scrolls",
