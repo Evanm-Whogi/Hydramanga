@@ -47,11 +47,8 @@ export default function ContinueReadingCard({ progress }: ContinueReadingCardPro
                 <div className="flex items-center text-xs text-muted">
                     <BookOpen className="size-3 mr-1" />
                     <span>Chapter {progress.chapterNumber}</span>
-                    {progress.chapterTitle && (<span className="ml-1 line-clamp-1">: {progress.chapterTitle}</span>)}
+                    {progress.chapterTitle && (<span className="ml-1 line-clamp-1">: Page {progress.lastPageNumber}</span>)}
                 </div>
-                <p className="text-xs text-muted mt-1">
-                    Page {progress.lastPageNumber}
-                </p>
             </div>
         </Link>
     );

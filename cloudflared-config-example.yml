@@ -1,0 +1,28 @@
+# Cloudflared Tunnel Configuration for Manga Scrolls
+
+tunnel: <your-tunnel-id>
+credentials-file: /home/whogi/.cloudflared/<your-tunnel-id>.json
+
+# Ingress rules (processed in order)
+ingress:
+  # Route media files to Nginx
+  - hostname: manga.chit.sh
+    path: /media/manga/*
+    service: http://localhost:8080
+  
+  # Route API requests to Next.js so rewrites can proxy to backend
+  - hostname: manga.chit.sh
+    path: /api/*
+    service: http://localhost:3000
+  
+  # Route auth requests to backend
+  - hostname: manga.chit.sh
+    path: /auth/*
+    service: http://localhost:4000
+  
+  # Route everything else to Next.js frontend
+  - hostname: manga.chit.sh
+    service: http://localhost:3000
+  
+  # Catch-all (required)
+  - service: http_status:404

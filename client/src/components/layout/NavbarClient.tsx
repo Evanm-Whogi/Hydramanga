@@ -99,7 +99,7 @@ export default function NavbarClient() {
                     <div className="hidden md:flex items-center gap-3">
                         {user ? (
                             <>
-                            <a href="https://discord.com" className="size-11" ><img src="/oauthIcons/discord.webp" alt="discord" /></a>
+                            <a href="https://discord.gg/Key667vf6j" className="size-11" ><img src="/oauthIcons/discord.webp" alt="discord" /></a>
                             <Link href="/discover" className="bg-background hover:bg-background/50 p-3 rounded-full"><SearchIcon className="size-5 hover:cursor-pointer" /></Link>
                             <Link href="/announcements" className="bg-background hover:bg-background/50 p-3 rounded-full"><BellIcon className="size-5 hover:cursor-pointer" /></Link>
                             
@@ -130,7 +130,7 @@ export default function NavbarClient() {
                             <div className="flex items-center gap-4">
                                 <Link href="/login" className="px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 bg-foreground hover:bg-foreground/50">Login</Link>
                                 <Link href="/register" className="px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 bg-foreground hover:bg-foreground/50">Sign Up</Link>
-                                </div>
+                            </div>
                         )}
                     </div>
                     <button onClick={() => setIsOpen(!isOpen)} aria-label="Menu" className="md:hidden p-2 text-muted"><ListIcon className="size-6" /></button>
