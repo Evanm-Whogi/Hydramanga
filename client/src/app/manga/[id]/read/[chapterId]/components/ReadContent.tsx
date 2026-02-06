@@ -2,19 +2,21 @@
 
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { fetchMangaPages, updateProgress, recordReadingTime } from '@/services/mangaService';
+import { fetchMangaPages, updateProgress, recordReadingTime, markChapterAsRead } from '@/services/mangaService';
 import { getBookmark, removeBookmark } from '@/services/bookmarkService';
 import { useUser } from '@/providers/UserProvider';
 import { MenuIcon, X, BookmarkIcon, ChevronLeft, ChevronRight, Settings } from 'lucide-react';
 import { useChapterViewTracking } from '@/hooks/useViewTracking';
 import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
 import { updateImportProgressToast, dismissImportProgressToast } from '@/components/ImportProgressToast';
+import { showContinuousModeToast, dismissContinuousModeToast } from '@/components/ContinuousModeToast';
 import BookmarkModal from '@/components/BookmarkModal';
 import ReaderSettingsModal from './ReaderSettingsModal';
-import { trackPageSwitch, trackChapterCompleted, trackBookmarkAction } from '@/lib/analytics';
+import { trackPageSwitch, trackChapterCompleted, trackBookmarkAction, trackChapterRead, trackContinuousModePrompt, trackContinuousModeToggled, trackContinuousModeActive } from '@/lib/analytics';
 import { 
   ReaderSettings, 
   loadReaderSettings, 
+  saveReaderSettings,
   getAutoScrollSpeed,
 } from '@/lib/readerSettings';
 
@@ -28,7 +30,22 @@ interface Chapter {
   volumeNumber: string | null;
   storagePrefix: string;
   images: string[];
+  pageCount?: number;
   allChapters?: Chapter[];
+  isSinglePageSeries?: boolean;
+  mergedPages?: {
+    chapterId: number;
+    chapterNumber: string;
+    src: string;
+  }[] | null;
+}
+
+interface ImageItem {
+  src: string;
+  chapterId: number;
+  chapterNumber: string;
+  pageNumber: number;
+  totalPagesInChapter: number;
 }
 
 export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
@@ -70,6 +87,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const progressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const autoScrollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastActiveChapterRef = useRef<number | null>(null);
+  const hasTrackedContinuousRef = useRef(false);
+  const wasMergedModeRef = useRef(false);
   
   // Reading time tracking
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -156,10 +176,65 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   // Get image class name
   const getImageClassName = 'manga-page w-full h-auto block';
 
+  const isMergedMode = Boolean(
+    data?.isSinglePageSeries
+    && data?.mergedPages?.length
+    && settings.continuousMode
+  );
+
+  const imageItems = useMemo<ImageItem[]>(() => {
+    if (isMergedMode && data?.mergedPages?.length) {
+      return data.mergedPages.map((page) => ({
+        src: page.src,
+        chapterId: page.chapterId,
+        chapterNumber: page.chapterNumber,
+        pageNumber: 1,
+        totalPagesInChapter: 1,
+      }));
+    }
+
+    if (data?.images?.length) {
+      return data.images.map((src, index) => ({
+        src,
+        chapterId: Number(chapterId),
+        chapterNumber: data.chapterNumber,
+        pageNumber: index + 1,
+        totalPagesInChapter: data.images.length,
+      }));
+    }
+
+    return [];
+  }, [isMergedMode, data, chapterId]);
+
+  const totalPages = imageItems.length;
+
+  const activeChapterId = useMemo(() => {
+    if (isMergedMode) {
+      const activeItem = imageItems[currentPage - 1];
+      return activeItem?.chapterId ?? Number(chapterId);
+    }
+    return Number(chapterId);
+  }, [isMergedMode, imageItems, currentPage, chapterId]);
+
+  const activeChapterNumber = useMemo(() => {
+    if (isMergedMode) {
+      const activeItem = imageItems[currentPage - 1];
+      return activeItem?.chapterNumber || data?.chapterNumber;
+    }
+    return data?.chapterNumber;
+  }, [isMergedMode, imageItems, currentPage, data?.chapterNumber]);
+
+  const enableContinuousMode = useCallback(() => {
+    const updated = { ...settings, continuousMode: true };
+    setSettings(updated);
+    saveReaderSettings(updated);
+    trackContinuousModeToggled(true, id || '', mangaTitle);
+  }, [settings, id, mangaTitle]);
+
   // Get current and adjacent chapters
   const currentIndex = useMemo(() => 
-    allChapters.findIndex((ch) => ch.id === Number(chapterId)), 
-    [allChapters, chapterId]
+    allChapters.findIndex((ch) => ch.id === activeChapterId), 
+    [allChapters, activeChapterId]
   );
   const prevChapter = useMemo(() => allChapters[currentIndex - 1], [allChapters, currentIndex]);
   const nextChapter = useMemo(() => allChapters[currentIndex + 1], [allChapters, currentIndex]);
@@ -210,14 +285,35 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     }
   }, [user, id, chapterId]);
 
+  const scrollToImageIndex = useCallback((index: number) => {
+    if (!containerRef.current) return;
+    const images = Array.from(containerRef.current.querySelectorAll('img'));
+    const targetImage = images[index];
+
+    if (targetImage) {
+      const imgAbsoluteMiddle = targetImage.getBoundingClientRect().top + window.scrollY + targetImage.offsetHeight / 2;
+      window.scrollTo({ top: imgAbsoluteMiddle - window.innerHeight / 2, behavior: 'smooth' });
+    }
+  }, []);
+
+  const scrollToMergedChapter = useCallback((targetChapterId: number) => {
+    if (!isMergedMode) return;
+    const index = imageItems.findIndex((item) => item.chapterId === targetChapterId);
+    if (index >= 0) scrollToImageIndex(index);
+  }, [isMergedMode, imageItems, scrollToImageIndex]);
+
   // Navigate to chapter
   const navigateToChapter = useCallback((chapter: Chapter) => {
+    if (isMergedMode) {
+      scrollToMergedChapter(chapter.id);
+      return;
+    }
     if (data && chapter.id !== Number(chapterId)) {
       trackChapterCompleted(id || '', mangaTitle, data.chapterNumber);
     }
     router.push(`/manga/${id}/read/${chapter.id}`);
     window.scrollTo(0, 0);
-  }, [router, id, data, chapterId, mangaTitle]);
+  }, [isMergedMode, scrollToMergedChapter, data, chapterId, id, mangaTitle, router]);
 
   // Page navigation
   const handlePageClick = useCallback((direction: 'next' | 'prev') => {
@@ -250,7 +346,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     }
-  }, [data?.images]);
+  }, [imageItems]);
 
   // Toggle controls visibility (for tap zones center click)
   const toggleControls = useCallback(() => {
@@ -280,14 +376,89 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
   // Settings change handler
   const handleSettingsChange = useCallback((newSettings: ReaderSettings) => {
+    if (newSettings.continuousMode !== settings.continuousMode) {
+      trackContinuousModeToggled(newSettings.continuousMode, id || '', mangaTitle);
+    }
     setSettings(newSettings);
-  }, []);
+  }, [settings.continuousMode, id, mangaTitle]);
+
+  useEffect(() => {
+    if (!id || !data?.isSinglePageSeries) return;
+
+    if (settings.continuousMode) {
+      dismissContinuousModeToast(Number(id));
+      return;
+    }
+
+    const storageKey = `continuous-mode-prompted-${id}`;
+    if (typeof window === 'undefined') return;
+    if (localStorage.getItem(storageKey)) return;
+
+    localStorage.setItem(storageKey, '1');
+    trackContinuousModePrompt(id, mangaTitle);
+    showContinuousModeToast({
+      mangaId: Number(id),
+      mangaTitle,
+      onEnable: enableContinuousMode,
+    });
+  }, [id, data?.isSinglePageSeries, settings.continuousMode, mangaTitle, enableContinuousMode]);
+
+  useEffect(() => {
+    if (isMergedMode && id && !hasTrackedContinuousRef.current) {
+      trackContinuousModeActive(id, mangaTitle);
+      hasTrackedContinuousRef.current = true;
+    }
+  }, [isMergedMode, id, mangaTitle]);
+
+  useEffect(() => {
+    if (!isMergedMode) return;
+    if (!activeChapterId || !activeChapterNumber) return;
+
+    if (lastActiveChapterRef.current && lastActiveChapterRef.current !== activeChapterId) {
+      const previous = allChapters.find((ch) => ch.id === lastActiveChapterRef.current);
+      if (previous) {
+        trackChapterCompleted(id || '', mangaTitle, previous.chapterNumber);
+        // Mark the previous chapter as read when scrolling past it in merged mode
+        if (user) {
+          markChapterAsRead(Number(id), previous.id).catch((err) => {
+            console.error('Failed to mark chapter as read:', err);
+          });
+        }
+      }
+    }
+
+    if (lastActiveChapterRef.current !== activeChapterId) {
+      trackChapterRead(id || '', mangaTitle, activeChapterNumber, String(activeChapterId));
+    }
+
+    lastActiveChapterRef.current = activeChapterId;
+  }, [isMergedMode, activeChapterId, activeChapterNumber, allChapters, id, mangaTitle, user]);
+
+  useEffect(() => {
+    if (isMergedMode) {
+      scrollToMergedChapter(Number(chapterId));
+    }
+  }, [isMergedMode, scrollToMergedChapter, chapterId]);
+
+  useEffect(() => {
+    if (!id) return;
+    if (wasMergedModeRef.current && !isMergedMode) {
+      const targetChapterId = lastActiveChapterRef.current;
+      if (targetChapterId && targetChapterId !== Number(chapterId)) {
+        router.push(`/manga/${id}/read/${targetChapterId}`);
+        window.scrollTo(0, 0);
+      }
+    }
+    wasMergedModeRef.current = isMergedMode;
+  }, [isMergedMode, id, chapterId, router]);
 
   // Load chapter data
   useEffect(() => {
     const loadMangaPages = async () => {
       if (!id || !chapterId) return;
       try {
+        // Reset scroll position flag for new chapter
+        hasScrolledToPage.current = false;
         const response = await fetchMangaPages(id, chapterId);
         setData(response);
         setAllChapters(response.allChapters || []);
@@ -351,6 +522,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     return () => {
       if (id) {
         dismissImportProgressToast(Number(id));
+        dismissContinuousModeToast(Number(id));
       }
     };
   }, [id]);
@@ -502,32 +674,40 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     }
   }, [loading, chapterId, allChapters]);
 
-  // Scroll to page from URL param
+  // Strip page parameter from URL when in continuous mode
   useEffect(() => {
-    if (!loading && data && containerRef.current && !hasScrolledToPage.current) {
-      const pageParam = searchParams?.get('page');
-      if (pageParam) {
-        const pageNumber = parseInt(pageParam, 10);
-        if (!isNaN(pageNumber) && pageNumber > 0) {
-          const images = Array.from(containerRef.current.querySelectorAll('img'));
-          const targetImage = images[pageNumber - 1];
+    if (!isMergedMode || !id || !chapterId) return;
+    
+    const pageParam = searchParams?.get('page');
+    if (pageParam) {
+      // Remove the page parameter from URL in continuous mode
+      router.replace(`/manga/${id}/read/${chapterId}`, { scroll: false });
+    }
+  }, [isMergedMode, id, chapterId, searchParams, router]);
 
-          if (targetImage) {
-            setTimeout(() => {
-              const imgAbsoluteMiddle = targetImage.getBoundingClientRect().top + window.scrollY + targetImage.offsetHeight / 2;
-              window.scrollTo({ top: imgAbsoluteMiddle - window.innerHeight / 2, behavior: 'smooth' });
-            }, 300);
-          }
-          hasScrolledToPage.current = true;
-        }
+  // Scroll to page from URL param (only in normal mode)
+  useEffect(() => {
+    if (loading || isMergedMode || !data || !containerRef.current || hasScrolledToPage.current) return;
+
+    const pageParam = searchParams?.get('page');
+    if (pageParam) {
+      const pageNumber = parseInt(pageParam, 10);
+      if (!isNaN(pageNumber) && pageNumber > 0) {
+        setTimeout(() => {
+          scrollToImageIndex(pageNumber - 1);
+        }, 300);
+        hasScrolledToPage.current = true;
       }
     }
-  }, [loading, data, searchParams]);
+  }, [loading, data, searchParams, scrollToImageIndex, isMergedMode]);
 
   // Update progress tracking
   useEffect(() => {
     if (!user || !data || !id || !chapterId) return;
     if (currentPage === 0 || currentPage === lastTrackedPage) return;
+
+    const currentItem = imageItems[currentPage - 1];
+    if (!currentItem) return;
 
     if (progressTimeoutRef.current) {
       clearTimeout(progressTimeoutRef.current);
@@ -537,9 +717,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       try {
         await updateProgress({
           seriesId: Number(id),
-          chapterId: Number(chapterId),
-          pageNumber: currentPage,
-          totalPagesInChapter: data.images?.length || 0,
+          chapterId: currentItem.chapterId,
+          pageNumber: currentItem.pageNumber,
+          totalPagesInChapter: currentItem.totalPagesInChapter,
         });
         setLastTrackedPage(currentPage);
       } catch (error) {
@@ -552,12 +732,11 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         clearTimeout(progressTimeoutRef.current);
       }
     };
-  }, [user, data, id, chapterId, currentPage, lastTrackedPage]);
+  }, [user, data, id, chapterId, currentPage, lastTrackedPage, imageItems]);
 
   // Track current page based on scroll position
   useEffect(() => {
-    // Default scroll-based tracking
-    if (!containerRef.current || !data?.images) return;
+    if (!containerRef.current || imageItems.length === 0) return;
 
     const handleScroll = () => {
       if (!containerRef.current) return;
@@ -573,8 +752,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           const newPage = i + 1;
           if (newPage !== currentPage) {
             setCurrentPage(newPage);
-            if (newPage % 5 === 0 || newPage === data.images.length) {
-              trackPageSwitch(id || '', data.chapterNumber, newPage, data.images.length);
+            const currentItem = imageItems[i];
+            if (currentItem && (newPage % 5 === 0 || newPage === imageItems.length)) {
+              trackPageSwitch(id || '', currentItem.chapterNumber, currentItem.pageNumber, currentItem.totalPagesInChapter);
             }
           }
           break;
@@ -586,7 +766,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     handleScroll();
 
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [data, id, currentPage]);
+  }, [imageItems, id, currentPage]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -622,10 +802,10 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
   // Render progress indicator based on position
   const renderProgressIndicator = () => {
-    if (settings.progressIndicator === 'off' || !data?.images) return null;
+    if (settings.progressIndicator === 'off' || totalPages === 0) return null;
 
-    const percentage = ((currentPage / data.images.length) * 100).toFixed(1);
-    const label = `${currentPage}/${data.images.length}`;
+    const percentage = ((currentPage / totalPages) * 100).toFixed(1);
+    const label = `${currentPage}/${totalPages}`;
 
     if (settings.progressIndicator === 'right') {
       return (
@@ -688,7 +868,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         sidebarCollapsed ? 'md:w-0 md:overflow-hidden' : 'md:w-65'
       }`}>
         <div className="sidebar-header px-6 py-4 border-b border-borders">
-          <h2 className="text-[1.25rem] font-bold mb-4 text-white">Chapter {data?.chapterNumber}</h2>
+          <h2 className="text-[1.25rem] font-bold mb-4 text-white">Chapter {activeChapterNumber}</h2>
           
           <button 
             onClick={() => router.push(`/manga/${id}`)} 
@@ -757,7 +937,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
                 id={`chapter-${ch.id}`}
                 onClick={() => navigateToChapter(ch)}
                 className={`p-[10px_2px] text-[0.75rem] border cursor-pointer rounded-sm text-primary ${
-                  ch.id === Number(chapterId) 
+                  ch.id === activeChapterId 
                     ? 'font-bold bg-accent border-accent' 
                     : 'font-normal bg-background hover:bg-background/50 border-background'
                 }`}
@@ -775,7 +955,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />
           <aside className="sidebar fixed top-0 left-0 h-screen w-72 bg-foreground border-r border-r-borders flex flex-col z-50 md:hidden">
             <div className="sidebar-header px-6 py-4 border-b border-borders flex justify-between items-center">
-              <h2 className="text-[1.25rem] font-bold text-white">Chapter {data?.chapterNumber}</h2>
+              <h2 className="text-[1.25rem] font-bold text-white">Chapter {activeChapterNumber}</h2>
               <button onClick={() => setSidebarOpen(false)} className="text-primary hover:text-accent">
                 <X className="size-6" />
               </button>
@@ -790,7 +970,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
                       setSidebarOpen(false);
                     }}
                     className={`p-2 text-sm border cursor-pointer rounded text-primary ${
-                      ch.id === Number(chapterId) 
+                      ch.id === activeChapterId 
                         ? 'font-bold bg-accent border-accent' 
                         : 'font-normal bg-background hover:bg-background/50 border-background'
                     }`}
@@ -826,7 +1006,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           <MenuIcon className="size-6" />
         </button>
         <span className="text-sm font-semibold">
-          {currentPage}/{data?.images?.length || 0}
+          {currentPage}/{totalPages}
         </span>
         <div className="flex gap-2">
           {user && (
@@ -876,10 +1056,10 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           className="image-stack w-full max-w-212.5 z-5"
           style={containerStyles}
         >
-          {data?.images?.map((src, index) => (
+          {imageItems.map((item, index) => (
             <img
               key={index}
-              src={src}
+              src={item.src}
               alt={`Page ${index + 1}`}
               className={getImageClassName}
               style={getImageStyle}
@@ -890,7 +1070,12 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
         {/* Footer Navigation */}
         <div className="footer-nav py-20 text-center z-100 hidden md:block">
-          {nextChapter ? (
+          {isMergedMode ? (
+            <div className="flex flex-col py-2">
+              <span className="text-primary/70">You have reached the end of available chapters.</span>
+              <button className="mt-5 ml-2 text-accent hover:underline cursor-pointer" onClick={() => router.push(`/manga/${id}`)}>Return to Manga Overview</button>
+            </div>
+          ) : nextChapter ? (
             <button
               onClick={() => navigateToChapter(nextChapter)}
               className="px-12 py-4 bg-accent hover:bg-accent/80 text-white border-none rounded-md text-[1.1rem] font-bold cursor-pointer transition-colors"

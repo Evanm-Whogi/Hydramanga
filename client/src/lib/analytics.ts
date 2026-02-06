@@ -14,6 +14,32 @@ export function trackEvent(
   }
 }
 
+export function trackContinuousModePrompt(mangaId: string, mangaTitle: string) {
+  trackEvent('continuous_mode_prompted', {
+    manga_id: mangaId,
+    manga_title: mangaTitle,
+  });
+}
+
+export function trackContinuousModeToggled(
+  enabled: boolean,
+  mangaId?: string,
+  mangaTitle?: string
+) {
+  trackEvent('continuous_mode_toggled', {
+    enabled,
+    manga_id: mangaId,
+    manga_title: mangaTitle,
+  });
+}
+
+export function trackContinuousModeActive(mangaId: string, mangaTitle: string) {
+  trackEvent('continuous_mode_active', {
+    manga_id: mangaId,
+    manga_title: mangaTitle,
+  });
+}
+
 /**
  * Track manga view (when user visits a manga detail page)
  */

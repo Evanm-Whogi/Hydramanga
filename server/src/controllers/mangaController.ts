@@ -542,12 +542,28 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
             images.push(imageUrl);
         }
 
+        const isSinglePageSeries = allChapters.length > 0
+            && allChapters.every((ch) => (ch.pageCount || 0) === 1);
+
+        const mergedPages = isSinglePageSeries
+            ? allChapters.map((ch) => {
+                const imageUrl = `${baseUrl}/${ch.storagePrefix}/01.jpg`;
+                return {
+                    chapterId: ch.id,
+                    chapterNumber: ch.chapterNumber,
+                    src: imageUrl,
+                };
+            })
+            : null;
+
         // 4. Return complete payload
         return res.json({
             ...chapter,
             images,
             pageCount: chapter.pageCount || images.length,
-            allChapters
+            allChapters,
+            isSinglePageSeries,
+            mergedPages,
         });
 
     } catch (err) {

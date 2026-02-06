@@ -66,6 +66,28 @@ export default function ReaderSettingsModal({
 
         {/* Content */}
         <div className="p-6 space-y-6">
+          {/* Continuous Mode */}
+          <div>
+            <label className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-primary">Continuous Mode</span>
+              <button
+                onClick={() => handleChange('continuousMode', !settings.continuousMode)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  settings.continuousMode ? 'bg-accent' : 'bg-muted/30'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    settings.continuousMode ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </label>
+            <p className="text-xs text-muted/70 mt-1">
+              Merge single-page chapters into one long scroll when available
+            </p>
+          </div>
+
           {/* Tap Zones */}
           <div>
             <label className="flex items-center justify-between">
