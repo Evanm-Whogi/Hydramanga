@@ -32,6 +32,7 @@ export default  function Footer() {
                         <h1 className="text-2xl text-primary">Information</h1>
                         <Link href="/contact" className="hover:text-primary">Contact/DMCA Notice</Link>
                         <Link href="/privacy" className="hover:text-primary">Privacy Policy</Link>
+                        <a href="https://discord.gg/Key667vf6j" className="hover:text-primary">Join our Discord</a>
                     </div>
                 </div>
                 <div className="flex flex-col text-primary">
