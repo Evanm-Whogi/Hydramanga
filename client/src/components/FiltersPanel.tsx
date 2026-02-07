@@ -61,7 +61,7 @@ function FiltersPanel({
     : 'bg-foreground text-muted hover:bg-foreground/70';
 
   return (
-    <div className="flex flex-col gap-4 w-full">
+    <div className="flex flex-col gap-2 md:gap-3 w-full">
       <div className="flex gap-6 items-end flex-wrap">        
         {showListSelector && listOptions.length > 0 && (
           <div className="w-40">
@@ -83,7 +83,7 @@ function FiltersPanel({
           NSFW: {isNsfwEnabled ? 'ON' : 'OFF'}
         </button>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-5 justify-between items-center gap-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-5 justify-between items-center gap-3 md:gap-6">
         <MultiDropdown
           label="All genres"
           options={FILTER_OPTIONS.genres as any}

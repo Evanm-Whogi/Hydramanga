@@ -10,6 +10,10 @@
   --color-borders: #424242;
   --color-muted: #D4D4D4;
   --breakpoint-2xl: 132rem; 
+  --breakpoint-xl: 100rem;
+  --breakpoint-lg: 80rem;
+  --breakpoint-md: 48rem;
+  --breakpoint-sm: 30rem;
   --toastify-text-color-dark: #F5F7F8;
   --color-transparent-card: #000000;
 }
@@ -30,9 +34,10 @@
   margin-inline: auto;
   width: 100%;
   
-  padding-inline: 1rem;
+  padding-inline: 1.5rem;
 
   @variant sm { padding-inline: 2rem; }
+  @variant md { padding-inline: 3rem; }
   @variant lg { padding-inline: 4rem; }
   @variant sm { max-width: var(--breakpoint-sm); }
   @variant md { max-width: var(--breakpoint-md); }
@@ -53,8 +58,8 @@ html {
 }
 
 .container {
-  padding-left: 1rem;
-  padding-right: 1rem;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
 }
 
 /* Overright the close button for toasts */

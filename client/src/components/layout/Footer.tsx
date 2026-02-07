@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 export default  function Footer() {
    return (
-        <footer className="border-t-2 border-borders z-50 bg-background">
+        <footer className="border-t-2 border-borders z-40 bg-background">
             <div className="container mx-auto">
                 <div className="flex flex-col md:flex-row place-content-between pt-24 pb-12 space-y-6 md:space-y-0">
                     {/* About */}
@@ -37,7 +37,7 @@ export default  function Footer() {
                 </div>
                 <div className="flex flex-col text-primary">
                     <hr className="border border-borders w-full" />
-                    <div className="flex py-5 items-center justify-between w-full text-sm">
+                    <div className="flex flex-col md:flex-row space-y-3 md:space-y-0 py-5 items-center justify-between w-full text-sm">
                         <span className="">© 2026 {process.env.NEXT_PUBLIC_NAME}, LLC. All rights reserved.<p className="font-bold">Made by <a href="https://chit.sh/" className="text-accent font-bold underline">Whogi</a></p></span>
                         <span className="flex flex-col md:flex-row gap-2">Site Version: A-1.20</span>
                     </div>

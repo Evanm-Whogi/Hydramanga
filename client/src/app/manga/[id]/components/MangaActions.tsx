@@ -30,7 +30,7 @@ export default function ListContainer({ manga, chapters, comments, initialListNa
 
     return (
         <>
-        <div className="flex w-full place-content-between pt-10 items-center">
+        <div className="flex flex-wrap gap-3 w-full place-content-between pt-10 items-center">
             <ListDropdown seriesId={manga.id} initialListName={initialListName} mangaTitle={manga.title}/>
 
             <div className="flex gap-2">

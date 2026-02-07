@@ -42,9 +42,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function MangaPage({ params }: Props) {
-  const { id } = await params;
-  
-  try {
+    const { id } = await params;
     const data = await fetchOne(id);
     
     // If no chapters (bot received minimal data), show fallback
@@ -59,11 +57,4 @@ export default async function MangaPage({ params }: Props) {
     // Map server-side list info to a simple display name for the client dropdown
     const initialListName = data.userStatus?.listName ?? null;
     return <MangaContent manga={data.manga} initialListName={initialListName} />;
-  } catch (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-muted">Content unavailable</p>
-      </div>
-    );
-  }
 }

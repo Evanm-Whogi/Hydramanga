@@ -1069,7 +1069,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         </div>
 
         {/* Footer Navigation */}
-        <div className="footer-nav py-20 text-center z-100 hidden md:block">
+        <div className="footer-nav py-10 text-center z-40 ">
           {isMergedMode ? (
             <div className="flex flex-col py-2">
               <span className="text-primary/70">You have reached the end of available chapters.</span>

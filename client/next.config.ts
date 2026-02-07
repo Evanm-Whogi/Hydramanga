@@ -13,11 +13,6 @@ const nextConfig: NextConfig = {
         source: '/api/_analytics/:path*',
         destination: 'https://us.i.posthog.com/:path*',
       },
-      // Legacy Development without cloudflared
-      // {
-      //   source: '/media/manga/:path*',
-      //   destination: `http://localhost:8080/media/manga/:path*`,
-      // },
       {
         source: '/api/:path*',
         destination: `${BACKEND_INTERNAL_URL}/:path*`,

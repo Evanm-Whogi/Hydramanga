@@ -227,11 +227,11 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
                                         </span>
                                     )}
                                 </div>
-                                <div className="flex gap-4 text-sm text-muted">
+                                <div className="flex flex-wrap gap-2 md:gap-4 text-sm text-muted">
                                     <h2 className="items-center"><ClockIcon className="inline-block mr-1 size-3 mb-0.5" />{formatDate(chapter.updatedAt, true)}</h2>
                                     <h2>{chapter.pageCount} Pages</h2>
                                     <h2>{chapter.viewStats.totalViews} Views</h2>
-                                    <h2>ID: {chapter?.scraperId?.slice(0,3)}</h2>
+                                    <h2 className="hidden md:flex">ID: {chapter?.scraperId?.slice(0,3)}</h2>
                                 </div>
 
                                 {/* Read Progress bar - only show if user has started reading and not finished */}
