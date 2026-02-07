@@ -35,7 +35,7 @@ export default function HistoryList({ items, type, onDelete }: HistoryListProps)
     return (
         <div className="space-y-4">
             {/* Sort Controls */}
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 md:gap-0">
                 <p className="text-muted text-sm">
                     {items.length} item{items.length !== 1 ? "s" : ""} in history
                 </p>

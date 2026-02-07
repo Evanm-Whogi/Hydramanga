@@ -71,6 +71,8 @@ services:
       CHAPTER_STORAGE_ROOT: /data/manga
     volumes:
       - ./data/manga:/data/manga
+      - ./cloudflared-config.yml:/app/cloudflared-config.yml:ro
+      - ${HOME}/.cloudflared:/root/.cloudflared:ro
     ports:
       - "4000:4000"
     healthcheck:
@@ -96,5 +98,7 @@ services:
       BACKEND_INTERNAL_URL: http://server:4000
       # Public site origin for OAuth redirects and metadata
       NEXT_PUBLIC_URL: https://manga.chit.sh
+      # Public backend URL for WebSocket connections from client
+      NEXT_PUBLIC_BACKEND_URL: https://manga.chit.sh
     ports:
       - "3000:3000"

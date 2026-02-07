@@ -52,6 +52,12 @@ const handleBackendError = (error: any) => {
         console.error('Backend unreachable:', error.message);
         redirect('/error-500');
     }
+
+    // Soft redirect for 401 Unauthorized - user might need to log in again
+    if(error.response && error.response.status === 401) {
+        console.warn('Unauthorized access - redirecting to login');
+        redirect('/login');
+    }
     
     // Check if it's a 500-level server error
     if (error.response && error.response.status >= 500) {

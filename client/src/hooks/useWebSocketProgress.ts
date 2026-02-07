@@ -2,6 +2,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useUser } from '@/providers/UserProvider';
+import { getWebSocketBase } from '@/lib/env';
 
 interface ProgressMessage {
   type: string;
@@ -62,7 +63,7 @@ export function useWebSocketProgress(
     // Track the series we're connecting to
     currentSeriesIdRef.current = seriesId;
 
-    const socket = io('http://localhost:4000/progress', {
+    const socket = io(`${getWebSocketBase()}/progress`, {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
