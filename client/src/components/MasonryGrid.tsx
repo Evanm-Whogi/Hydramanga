@@ -1,5 +1,5 @@
 "use client";
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 
 const baseImages = [
     { src: "https://images.mangabaka.dev/b/f/a/7/b/c/0/9/ce05/435e/a8a7/ff59de10239b", alt: "Anime 1" },
@@ -31,7 +31,6 @@ export default function MasonryGrid() {
         for (let r = 0; r < numRows; r++) {
             const row = [];
             for (let c = 0; c < imagesPerRow; c++) {
-                // Use a fixed pattern so it's always the same
                 const patternIndex = (r * 7 + c * 13) % baseImages.length;
                 row.push(baseImages[patternIndex]);
             }
@@ -41,15 +40,37 @@ export default function MasonryGrid() {
     }, []);
 
     return (
-        <div className="absolute top-0 left-0 h-full overflow-hidden z-50 bg-black" style={{ width: "60%", clipPath: "polygon(0 0, 85% 0, 45% 100%, 0 100%)" }}>
-            <div className="absolute inset-0" style={{ maskImage: "linear-gradient(to right, black 85%, transparent 100%)", WebkitMaskImage: "linear-gradient(to right, black 85%, transparent 100%)" }}>
-                <div className="absolute" style={{ top: "-110%", left: "-45%", width: "250%", height: "320%", transform: "rotate(22deg)", transformOrigin: "center" }}>
+        <div
+            className="absolute top-0 left-0 h-full overflow-hidden z-50 bg-black" style={{ width: "60%", clipPath: "polygon(0 0, 85% 0, 45% 100%, 0 100%)" }}>
+            <div
+                className="absolute inset-0"
+                style={{
+                    maskImage: "linear-gradient(to right, black 85%, transparent 100%)",
+                    WebkitMaskImage: "linear-gradient(to right, black 85%, transparent 100%)"
+                }}>
+                <div
+                    className="absolute"
+                    style={{
+                        top: "-110%",
+                        left: "-45%",
+                        width: "250%",
+                        height: "320%",
+                        transform: "rotate(22deg)",
+                        transformOrigin: "center"
+                    }}>
                     <div className="flex flex-col gap-4 h-full justify-center">
                         {staticRows.map((row, rowIdx) => (
                             <div key={`row-${rowIdx}`} className="flex gap-4 whitespace-nowrap">
                                 {row.map((img, colIdx) => (
-                                    <div key={`img-${rowIdx}-${colIdx}`} className="relative overflow-hidden rounded-md group shrink-0" style={{ width: "160px", height: "230px", transform: `translateY(${colIdx * colStaggerOffset}px)` }}>
-                                        <img src={img.src} alt={img.alt} className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 brightness-80 group-hover:brightness-100" />
+                                    <div
+                                        key={`img-${rowIdx}-${colIdx}`}
+                                        className="relative overflow-hidden rounded-md group shrink-0"
+                                        style={{
+                                            width: "160px",
+                                            height: "230px",
+                                            transform: `translateY(${colIdx * colStaggerOffset}px)`
+                                        }}>
+                                        <img src={img.src} alt={img.alt} className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 brightness-80 group-hover:brightness-100"/>
                                     </div>
                                 ))}
                             </div>

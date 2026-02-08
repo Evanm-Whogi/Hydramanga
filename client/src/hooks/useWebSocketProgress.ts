@@ -32,9 +32,10 @@ export function useWebSocketProgress(
   const onMessageRef = useRef<typeof onMessage>(onMessage);
   const onErrorRef = useRef<typeof onError>(onError);
 
-  // Keep stable refs for callbacks
-  useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
-  useEffect(() => { onErrorRef.current = onError; }, [onError]);
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+    onErrorRef.current = onError;
+  }, [onMessage, onError]);
 
   const cleanup = useCallback(() => {
     // Only cleanup if the series ID actually changed (prevents Strict Mode double-invoke)

@@ -17,22 +17,18 @@ interface CatalogFiltersProps {
   params?: any;
 }
 
-function CatalogFilters({
-  filters,
-  onFilterChange,
-  params,
-}: CatalogFiltersProps) {
+function CatalogFilters({ filters, onFilterChange, params }: CatalogFiltersProps) {
   return (
     <section id="catalog-filters" className="py-12">
       <div className="container mx-auto">
         <FiltersPanel
-          onSearchChange={(val) => onFilterChange({ search: val })}
-          onGenresChange={(val) => onFilterChange({ genres: val })}
-          onTypesChange={(val) => onFilterChange({ type: val })}
-          onStatusesChange={(val) => onFilterChange({ status: val })}
-          onYearsChange={(val) => onFilterChange({ years: val })}
-          onSortChange={(val) => onFilterChange({ sort: val })}
-          onNsfwChange={(val) => onFilterChange({ nsfw: val })}
+          onSearchChange={(val: string) => onFilterChange({ search: val })}
+          onGenresChange={(val: string[]) => onFilterChange({ genres: val })}
+          onTypesChange={(val: string[]) => onFilterChange({ type: val })}
+          onStatusesChange={(val: string[]) => onFilterChange({ status: val })}
+          onYearsChange={(val: string[]) => onFilterChange({ years: val })}
+          onSortChange={(val: string) => onFilterChange({ sort: val })}
+          onNsfwChange={(val: string) => onFilterChange({ nsfw: val })}
           initialSearch={params?.search}
           initialGenres={params?.genres}
           initialTypes={params?.type}

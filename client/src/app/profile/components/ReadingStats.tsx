@@ -46,7 +46,7 @@ export default function ReadingStats() {
     if (!stats) return null;
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 pb-5">
             {/* Reading Statistics */}
             <div className="bg-foreground rounded-lg p-6">
                 <h3 className="text-xl font-bold text-primary mb-4">Reading Statistics</h3>
@@ -57,9 +57,7 @@ export default function ReadingStats() {
                             <BookOpen className="size-6 text-accent" />
                         </div>
                         <div>
-                            <p className="text-2xl font-bold text-primary">
-                                {stats.totalSeriesReading || 0}
-                            </p>
+                            <p className="text-2xl font-bold text-primary">{stats.totalSeriesReading || 0}</p>
                             <p className="text-sm text-muted">Series Reading</p>
                         </div>
                     </div>
@@ -69,9 +67,7 @@ export default function ReadingStats() {
                             <TrendingUp className="size-6 text-blue-400" />
                         </div>
                         <div>
-                            <p className="text-2xl font-bold text-primary">
-                                {Math.round(stats.averageCompletion || 0)}%
-                            </p>
+                            <p className="text-2xl font-bold text-primary">{Math.round(stats.averageCompletion || 0)}%</p>
                             <p className="text-sm text-muted">Avg. Completion</p>
                         </div>
                     </div>
@@ -81,9 +77,7 @@ export default function ReadingStats() {
                             <Target className="size-6 text-green-400" />
                         </div>
                         <div>
-                            <p className="text-2xl font-bold text-primary">
-                                {formatNumber(stats.totalPagesRead || 0)}
-                            </p>
+                            <p className="text-2xl font-bold text-primary">{formatNumber(stats.totalPagesRead || 0)}</p>
                             <p className="text-sm text-muted">Pages Read</p>
                         </div>
                     </div>

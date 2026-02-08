@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, memo, useTransition, Fragment } from 'react';
+import { useEffect, useState, memo, useTransition, Fragment, useRef } from 'react';
 import { getMangaAnalytics, triggerMangaScan } from '@/services/mangaService';
 import { formatDate, formatToStars, formatToRating } from '@/lib/utils';
 import Link from 'next/link';
@@ -214,6 +214,8 @@ export default function MangaContent({ manga, initialListName }: MangaContentPro
     };
   }, [mangaId]);
 
+  const isFetchingAnalytics = useRef(false);
+
   useEffect(() => {
     if ((manga.chapters?.length || 0) === 0) {
       setWasActiveOnLoad(true);
@@ -226,6 +228,9 @@ export default function MangaContent({ manga, initialListName }: MangaContentPro
     let isMounted = true;
     
     const getAnalyticsData = async () => {
+      if (isFetchingAnalytics.current) return;
+      
+      isFetchingAnalytics.current = true;
       try {
         const analyticsData = await getMangaAnalytics(Number(manga.id)).catch(() => null);
         if (isMounted) {
@@ -233,6 +238,8 @@ export default function MangaContent({ manga, initialListName }: MangaContentPro
         }
       } catch (error) {
         console.error('Failed to fetch analytics:', error);
+      } finally {
+        isFetchingAnalytics.current = false;
       }
     };
 
@@ -243,7 +250,7 @@ export default function MangaContent({ manga, initialListName }: MangaContentPro
       isMounted = false;
       clearInterval(intervalId);
     };
-  }, [manga.id, manga.chapters?.length, manga.title]);
+  }, [mangaId, manga.chapters?.length, manga.title])
 
   const lastChapterDate = manga.chapters.length > 0 ? manga.chapters[manga.chapters.length - 1].updatedAt : null;
 

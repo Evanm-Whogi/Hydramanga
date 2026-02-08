@@ -4,12 +4,8 @@ import { sanitizeErrorMessage, sanitizeStackTrace, sanitizeErrorContext, shouldT
 /**
  * Track user view/interaction events
  */
-export function trackEvent(
-  eventName: string,
-  properties?: Record<string, any>
-) {
+export function trackEvent(eventName: string, properties?: Record<string, any>) {
   if (typeof window !== 'undefined') {
-    // console.log('PostHog: Tracking event', eventName, properties);
     posthog.capture(eventName, properties || {});
   }
 }
@@ -296,13 +292,9 @@ export function addBreadcrumb(
 /**
  * Capture error with context (no-op on frontend, backend only)
  */
-export function captureError(
-  error: Error | string,
-  context?: Record<string, any>
-) {
-  // Frontend doesn't use Sentry, just log to console
-  console.error('Error:', error, context);
-  // Backend Sentry will capture errors from API calls
+export function captureError(error: Error | string, context?: Record<string, any>) {
+  // Frontend doesn't use Sentry, just log errors on backend. Might consider sending critical errors to PostHog in the future. As of right now its tracked on 
+  // the backend using sentry, and we don't want to send duplicate errors to PostHog which is more for user behavior/events than error tracking.
 }
 
 /**
@@ -318,7 +310,6 @@ export function trackError(
   if (typeof window !== 'undefined') {
     // Check if error should be tracked
     if (!shouldTrackError(errorMessage, errorType || 'UnknownError')) {
-      console.debug('Error not tracked - filtered as noisy/irrelevant');
       return;
     }
 

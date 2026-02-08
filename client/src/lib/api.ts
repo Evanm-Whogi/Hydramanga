@@ -49,19 +49,16 @@ const handleBackendError = (error: any) => {
         error.code === 'ETIMEDOUT' || 
         error.message?.includes('Network Error') ||
         !error.response) {
-        console.error('Backend unreachable:', error.message);
         redirect('/error-500');
     }
 
-    // Soft redirect for 401 Unauthorized - user might need to log in again
-    if(error.response && error.response.status === 401) {
-        console.warn('Unauthorized access - redirecting to login');
+    // Soft redirect for 401 Unauthorized
+    if (error.response && error.response.status === 401) {
         redirect('/login');
     }
     
     // Check if it's a 500-level server error
     if (error.response && error.response.status >= 500) {
-        console.error('Server error:', error.response.status, error.response.data);
         redirect('/error-500');
     }
     

@@ -6,7 +6,11 @@ export default function DropdownContainer({ title, size, selectedLabel, children
     const containerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => { if (containerRef.current && !containerRef.current.contains(event.target as Node)) setIsOpen(false); };
+        const handleClickOutside = (event: MouseEvent) => {
+            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
@@ -18,7 +22,7 @@ export default function DropdownContainer({ title, size, selectedLabel, children
                 <span className="truncate">{selectedLabel}</span>
                 <ChevronDown className={`size-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : 'rotate-0'}`} />
             </button>
-            {isOpen && <div className="absolute z-10 mt-1 w-full rounded-md bg-foreground border border-borders shadow-lg max-h-60 overflow-y-auto p-1">{children(setIsOpen)}</div>}
+            {isOpen && <div className="absolute z-20 mt-1 w-full rounded-md bg-foreground border border-borders shadow-lg max-h-60 overflow-y-auto p-1">{children(setIsOpen)}</div>}
         </div>
     );
 }

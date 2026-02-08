@@ -1,6 +1,4 @@
-
-
-export default function PageHeader({title, description}: {title: string, description: string}) {
+export default function PageHeader({ title, description }: { title: string, description: string }) {
     return (
         <section id="header" className="bg-foreground pt-25 pb-8 rounded-lg shadow-lg">
             <div className="container mx-auto">
@@ -12,4 +10,3 @@ export default function PageHeader({title, description}: {title: string, descrip
         </section>
     );
 }
-

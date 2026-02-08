@@ -14,19 +14,28 @@ export default function RecommendedManga({ currentMangaId }: RecommendedMangaPro
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        async function fetchRecommendations() {
+        let isMounted = true;
+        
+        const fetchRecommendations = async () => {
             try {
                 const data = await getRecommendedManga(currentMangaId, 8);
-                setRecommendations(data || []);
+                if (isMounted) {
+                    setRecommendations(data || []);
+                }
             } catch (error) {
                 console.error('Failed to fetch recommendations:', error);
-                setRecommendations([]);
+                if (isMounted) {
+                    setRecommendations([]);
+                }
             } finally {
-                setLoading(false);
+                if (isMounted) {
+                    setLoading(false);
+                }
             }
-        }
+        };
 
         fetchRecommendations();
+        return () => { isMounted = false; };
     }, [currentMangaId]);
 
     if (loading) {

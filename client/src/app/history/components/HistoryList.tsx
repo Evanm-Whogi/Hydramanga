@@ -19,15 +19,9 @@ export default function HistoryList({ items, type, onDelete }: HistoryListProps)
                 <div className={`mb-4 text-6xl ${type === "reading" ? "text-blue-400" : "text-purple-400"}`}>
                     {type === "reading" ? <BookOpen /> : <Eye />}
                 </div>
-                <h3 className="text-xl font-semibold text-primary mb-2">
-                    No {type === "reading" ? "reading" : "viewing"} history yet
-                </h3>
-                <p className="text-muted mb-6">
-                    {type === "reading" ? "Start reading manga to build your reading history" : "Browse manga to build your view history"}
-                </p>
-                <Link
-                    href={type === "reading" ? "/discover" : "/discover"} className="inline-block bg-accent hover:bg-accent/90 text-white px-6 py-2 rounded-lg transition-colors">Explore Manga
-                </Link>
+                <h3 className="text-xl font-semibold text-primary mb-2">No {type === "reading" ? "reading" : "viewing"} history yet</h3>
+                <p className="text-muted mb-6">{type === "reading" ? "Start reading manga to build your reading history" : "Browse manga to build your view history"}</p>
+                <Link href={type === "reading" ? "/discover" : "/discover"} className="inline-block bg-accent hover:bg-accent/90 text-white px-6 py-2 rounded-lg transition-colors">Explore Manga</Link>
             </div>
         );
     }
@@ -36,9 +30,7 @@ export default function HistoryList({ items, type, onDelete }: HistoryListProps)
         <div className="space-y-4">
             {/* Sort Controls */}
             <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 md:gap-0">
-                <p className="text-muted text-sm">
-                    {items.length} item{items.length !== 1 ? "s" : ""} in history
-                </p>
+                <p className="text-muted text-sm">{items.length} item{items.length !== 1 ? "s" : ""} in history</p>
                 <div className="flex gap-2 flex-wrap">
                     {(["recent", "oldest", "title", "progress"] as const).map((option) => (
                         <button
@@ -68,28 +60,15 @@ export default function HistoryList({ items, type, onDelete }: HistoryListProps)
                             className="bg-foreground/50 rounded-lg overflow-hidden border border-borders/30 hover:border-borders/60 transition-colors"
                         >
                             <div className="flex items-center gap-4 p-4">
-                                <Link
-                                    href={type === "reading" && item.chapterId
-                                        ? `/manga/${item.seriesId}/read/${item.chapterId}?page=${item.pageNumber || 1}`
-                                        : `/manga/${item.seriesId}`}
-                                    className="shrink-0 w-20 h-28 rounded-lg overflow-hidden group">
+                                <Link href={type === "reading" && item.chapterId ? `/manga/${item.seriesId}/read/${item.chapterId}?page=${item.pageNumber || 1}` : `/manga/${item.seriesId}`} className="shrink-0 w-20 h-28 rounded-lg overflow-hidden group">
                                     <img src={coverUrl} alt={item.seriesTitle} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"/>
                                 </Link>
 
                                 <div className="grow min-w-0">
-                                    <Link
-                                        href={type === "reading" && item.chapterId
-                                            ? `/manga/${item.seriesId}/read/${item.chapterId}?page=${item.pageNumber || 1}`
-                                            : `/manga/${item.seriesId}`}
-                                        className="text-lg font-bold text-primary hover:text-accent transition-colors line-clamp-2">
-                                        {item.seriesTitle}
-                                    </Link>
+                                    <Link href={type === "reading" && item.chapterId ? `/manga/${item.seriesId}/read/${item.chapterId}?page=${item.pageNumber || 1}` : `/manga/${item.seriesId}`} className="text-lg font-bold text-primary hover:text-accent transition-colors line-clamp-2">{item.seriesTitle}</Link>
 
                                     {type === "reading" && item.chapterNumber && (
-                                        <p className="text-sm text-muted mt-1 line-clamp-1">
-                                            Chapter {item.chapterNumber} 
-                                            {item.chapterTitle && ` - ${item.chapterTitle}`}
-                                        </p>
+                                        <p className="text-sm text-muted mt-1 line-clamp-1">Chapter {item.chapterNumber}{item.chapterTitle && ` - ${item.chapterTitle}`}</p>
                                     )}
 
                                     <div className="flex items-center gap-2 mt-2 text-xs text-muted">
@@ -103,7 +82,6 @@ export default function HistoryList({ items, type, onDelete }: HistoryListProps)
                                         )}
                                     </div>
 
-                                    {/* Progress Bar */}
                                     {type === "reading" && item.completionPercentage !== undefined && (
                                         <div className="mt-2">
                                             <div className="flex items-center justify-between mb-1">
@@ -122,10 +100,7 @@ export default function HistoryList({ items, type, onDelete }: HistoryListProps)
                                 {/* Actions */}
                                 <div className="flex flex-col gap-2 shrink-0">
                                     {onDelete && (
-                                        <button
-                                            onClick={() => onDelete(item.seriesId)}
-                                            className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
-                                            title="Delete from history">
+                                        <button onClick={() => onDelete(item.seriesId)} className="p-2 hover:bg-red-500/20 rounded-lg transition-colors" title="Delete from history">
                                             <Trash2 className="size-5 text-red-500" />
                                         </button>
                                     )}

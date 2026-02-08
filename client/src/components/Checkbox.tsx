@@ -1,8 +1,7 @@
-'use client'
+'use client';
 import { useState } from 'react';
 import DropdownContainer from "@/components/DropdownContainer";
 
-// Define a type that accepts either a string OR the new object format
 type DropdownOption = string | { label: string; value: string };
 
 export default function MultiDropdown({ title, options, size, onChange, label, initialValue }: { title?: string; label?: string, options?: DropdownOption[]; size?: string; onChange: (vals: string[]) => void; initialValue?: string[] }) {
@@ -14,14 +13,27 @@ export default function MultiDropdown({ title, options, size, onChange, label, i
         onChange(next);
     };
 
-    label ? null : label = selectedValues.length > 0 ? `${selectedValues.length} selected` : 'Select options';
+    const getDisplayLabel = () => {
+        if (selectedValues.length === 0) return label || 'Select options';
+        
+        const firstSelected = options?.find(opt => {
+            const value = typeof opt === 'string' ? opt : opt.value;
+            return value === selectedValues[0];
+        });
+        
+        const firstLabel = typeof firstSelected === 'string' ? firstSelected : firstSelected?.label || selectedValues[0];
+        
+        if (selectedValues.length === 1) return firstLabel;
+        return `${firstLabel} +${selectedValues.length - 1}`;
+    };
+
+    const displayLabel = getDisplayLabel();
 
     return (
-        <DropdownContainer title={title} size={size} selectedLabel={label}>
+        <DropdownContainer title={title} size={size} selectedLabel={displayLabel}>
             {() => (
                 <>
                     {options?.map((option) => {
-                        // Determine the label and value based on the type of 'option'
                         const label = typeof option === 'string' ? option : option.label;
                         const value = typeof option === 'string' ? option : option.value;
 

@@ -9,58 +9,44 @@ export function useInfiniteScroll(filters: any) {
   const [meta, setMeta] = useState<any>(null);
   const lastTrackedSearch = useRef<string>('');
   const previousFilters = useRef<any>({});
+  const isFetchingRef = useRef(false);
 
   const fetchData = useCallback(async (isInitial = false) => {
-    if (loading) return;
+    if (isFetchingRef.current) return;
     
+    isFetchingRef.current = true;
     setLoading(true);
     try {
       const currentCursor = isInitial ? '' : cursor;
       const params = new URLSearchParams();
 
-      // Explicitly append filters to handle arrays correctly
       Object.entries(filters).forEach(([key, value]) => {
         if (Array.isArray(value)) {
-          // Append each array item individually for Express/Drizzle to parse as an array
           value.forEach(v => { if (v) params.append(key, String(v)) });
         } else if (value !== undefined && value !== null && value !== '') {
-          // Trim search queries to avoid empty results from spaces/symbols only
           const stringValue = String(value).trim();
           if (key === 'search' && !stringValue) return;
           if (stringValue || key !== 'search') params.append(key, stringValue);
         }
       });
 
-      // Add pagination params
       params.append('limit', '40');
 
       if (currentCursor) {
-          // If your cursor contains a pipe (e.g., "date|id"), handle the date part
-          if (typeof currentCursor === 'string' && currentCursor.includes('|')) {
-              const [datePart, idPart] = currentCursor.split('|');
-              const formattedDate = !isNaN(Date.parse(datePart)) 
-                  ? new Date(datePart).toISOString() 
-                  : datePart;
-              
-              params.append('cursor', `${formattedDate}|${idPart}`);
-          } else {
-              params.append('cursor', String(currentCursor));
-          }
+        params.append('cursor', String(currentCursor));
       }
-
 
       const response = await fetch(`/api/manga/search?${params.toString()}`);
       if (!response.ok) throw new Error('Network response was not ok');
       const data = await response.json();
 
-    if (data && data.items) {
+      if (data && data.items) {
         setItems(prev => isInitial ? data.items : [...prev, ...data.items]);
-        setHasMore(data.meta?.hasMore ?? false); // Defensive check
+        setHasMore(data.meta?.hasMore ?? false);
         setCursor(data.nextCursor);
         if (isInitial) {
           setMeta(data.meta);
           
-          // Track search when results are received (only on initial load)
           if (filters.search && filters.search.length >= 2 && filters.search !== lastTrackedSearch.current) {
             trackSearch(filters.search, data.meta?.total || data.items.length, {
               genres: filters.genres,
@@ -73,16 +59,13 @@ export function useInfiniteScroll(filters: any) {
             lastTrackedSearch.current = filters.search;
           }
           
-          // Track filter changes (excluding search)
           Object.keys(filters).forEach(key => {
-            if (key === 'search') return; // Skip search, it's tracked separately
+            if (key === 'search') return;
             
             const currentValue = filters[key];
             const previousValue = previousFilters.current[key];
             
-            // Track if value changed
             if (JSON.stringify(currentValue) !== JSON.stringify(previousValue)) {
-              // Skip empty/default values
               if (Array.isArray(currentValue) && currentValue.length === 0) return;
               if (!currentValue || currentValue === '' || currentValue === 'weightedScore') return;
               
@@ -92,22 +75,21 @@ export function useInfiniteScroll(filters: any) {
           
           previousFilters.current = { ...filters };
         }
-    }
+      }
     } catch (err) {
-      console.error("Fetch error:", err);
       setHasMore(false);
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
-  }, [cursor, filters, loading]);
+  }, [cursor, filters]);
 
-  useEffect(() => {
-    setItems([]);
-    setCursor(null);
-    setHasMore(true);
-    fetchData(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(filters)]); 
+    useEffect(() => {
+        setItems([]);
+        setCursor(null);
+        setHasMore(true);
+        fetchData(true);
+    }, [filters.search, filters.genres?.join(','), filters.type, filters.status, filters.years?.join(','), filters.sort, filters.nsfw]);
 
-  return { items, loading, hasMore, meta, fetchData };
+    return { items, loading, hasMore, meta, fetchData };
 }

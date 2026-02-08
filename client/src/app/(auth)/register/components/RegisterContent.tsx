@@ -1,17 +1,19 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { signUp } from "@/lib/auth";
-import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { toast } from "react-toastify";
+import { CheckCircle, AlertCircle } from "lucide-react";
+import { signUp } from "@/lib/auth";
+import { trackAuthEvent } from "@/lib/analytics";
+import { validateInviteCode, useInviteCode } from "@/services/inviteService";
 import InputField from '@/components/InputField';
 import MasonryGrid from "@/components/MasonryGrid";
-import { toast } from "react-toastify";
-import { validateInviteCode, useInviteCode } from "@/services/inviteService";
-import { trackAuthEvent } from "@/lib/analytics";
-import { CheckCircle, AlertCircle } from "lucide-react";
-import Link from "next/link";
 
 export default function RegisterContent() {
+  const router = useRouter();
+  const debounceTimer = useRef<NodeJS.Timeout | undefined>(undefined);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -19,23 +21,19 @@ export default function RegisterContent() {
   const [isValidating, setIsValidating] = useState(false);
   const [inviteValid, setInviteValid] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
-  const router = useRouter();
-  const debounceTimer = useRef<NodeJS.Timeout | undefined>(undefined);
+  const [isRegistering, setIsRegistering] = useState(false);
 
   useEffect(() => {
-    // Clear previous timer
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current);
     }
 
-    // If code is empty, reset validation
     if (!inviteCode.trim()) {
       setInviteValid(false);
       setInviteError(null);
       return;
     }
 
-    // Set new timer to validate after 500ms of no typing
     setIsValidating(true);
     debounceTimer.current = setTimeout(async () => {
       try {
@@ -58,34 +56,40 @@ export default function RegisterContent() {
   }, [inviteCode]);
 
   const handleRegister = async () => {
-    if (!inviteValid) {
-      toast("Please validate an invite code first", { type: "error" });
-      return;
-    }
+    if (!inviteValid) return toast("Please validate an invite code first", { type: "error" });
 
-    const { data, error } = await signUp.email({
-      email,
-      password,
-      name,
-      callbackURL: "/dashboard",
-      role: "user",
-      bio: "",
-    });
-    if (error) {
-      toast(`${error.message}`, { type: "error" });
-    } else {
+    if (isRegistering) return;
+    setIsRegistering(true);
+
+    try {
+      const { data, error } = await signUp.email({
+        email,
+        password,
+        name,
+        callbackURL: "/dashboard",
+        role: "user",
+        bio: "",
+      });
+      
+      if (error) return toast(`${error.message}`, { type: "error" });
       trackAuthEvent('register', data.user?.id, data.user?.email, data.user?.name);
-      // Mark invite code as used
+
       try {
         await useInviteCode(inviteCode, data.user.id);
       } catch (err: any) {
         console.error("Failed to mark invite as used:", err.message);
       }
 
-      toast(`Welcome ${data.user.name}! Your account has been created.`, {
-        type: "success",
-      });
+      toast(`Welcome ${data.user.name}! Your account has been created.`, { type: "success" });
       router.push("/home");
+    } finally {
+      setIsRegistering(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && inviteValid && !isRegistering) {
+      handleRegister();
     }
   };
 
@@ -97,73 +101,37 @@ export default function RegisterContent() {
             <MasonryGrid />
           </div>
           <div className="flex flex-col w-full md:w-1/4 p-5 space-y-2">
-            <Image
-              src="/logo.png"
-              width="192"
-              height="192"
-              alt="Register Logo"
-              className="mx-auto"
-            />
-            <h1 className="text-4xl font-bold text-center">
-              {process.env.NEXT_PUBLIC_NAME}
-            </h1>
-            <h2 className="text-muted text-center">
-              Your one stop spot for endless Manga.
-            </h2>
+            <Image src="/logo.png" width="192" height="192" alt="Register Logo" className="mx-auto"/>
+            <h1 className="text-4xl font-bold text-center">{process.env.NEXT_PUBLIC_NAME}</h1>
+            <h2 className="text-muted text-center">Your one stop spot for endless Manga.</h2>
             <div className="flex flex-col space-y-3 mt-5">
               <div>
-                <label className="text-sm font-semibold text-muted mb-1 block">
-                  Invite Code *
-                </label>
-                  <div className="flex gap-2 relative">
+                <label className="text-sm font-semibold text-muted mb-1 block">Invite Code *</label>
+                <div className="flex gap-2 relative">
                   <input
                     type="text"
                     placeholder="Enter invite code"
                     value={inviteCode}
                     onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                      className={`w-full bg-foreground border border-borders text-muted px-4 py-2.5 rounded-xl outline-none transition-all focus:border-borders focus:ring-1 focus:ring-borders  ${
-                        inviteValid ? 'border-green-500' : inviteError ? 'border-red-500' : 'border-foreground'
-                      }`}
+                    className={`w-full bg-foreground border border-borders text-muted px-4 py-2.5 rounded-xl outline-none transition-all focus:border-borders focus:ring-1 focus:ring-borders ${inviteValid ? 'border-green-500' : inviteError ? 'border-red-500' : 'border-foreground'}`}
                   />
-                    {isValidating && <div className="absolute right-3 top-2.5 animate-spin">⟳</div>}
-                    {inviteValid && <CheckCircle className="absolute right-3 top-2.5 size-5 text-green-500" />}
-                    {inviteError && !isValidating && <AlertCircle className="absolute right-3 top-2.5 size-5 text-red-500" />}
+                  {isValidating && <div className="absolute right-3 top-2.5 animate-spin">⟳</div>}
+                  {inviteValid && <CheckCircle className="absolute right-3 top-2.5 size-5 text-green-500" />}
+                  {inviteError && !isValidating && <AlertCircle className="absolute right-3 top-2.5 size-5 text-red-500" />}
                 </div>
-                  {inviteError && <p className="text-xs text-red-500 mt-1">{inviteError}</p>}
-                  {inviteValid && <p className="text-xs text-green-500 mt-1">✓ Invite code is valid</p>}
+                {inviteError && <p className="text-xs text-red-500 mt-1">{inviteError}</p>}
+                {inviteValid && <p className="text-xs text-green-500 mt-1">✓ Invite code is valid</p>}
               </div>
-              <InputField
-                label="Full Name"
-                placeholder="Your Name"
-                value={name}
-                onChange={(e: any) => setName(e.target.value)}
-              />
-              <InputField
-                label="Email"
-                placeholder="Email"
-                value={email}
-                onChange={(e: any) => setEmail(e.target.value)}
-              />
-              <InputField
-                label="Password"
-                placeholder="Password"
-                type="password"
-                value={password}
-                onChange={(e: any) => setPassword(e.target.value)}
-              />
+              <InputField label="Full Name" placeholder="Your Name" value={name} onChange={(e: any) => setName(e.target.value)} onKeyPress={handleKeyPress} disabled={isRegistering} />
+              <InputField label="Email" placeholder="Email" value={email} onChange={(e: any) => setEmail(e.target.value)} onKeyPress={handleKeyPress} disabled={isRegistering} />
+              <InputField label="Password" placeholder="Password" type="password" value={password} onChange={(e: any) => setPassword(e.target.value)} onKeyPress={handleKeyPress} disabled={isRegistering} />
             </div>
-            <button
-              onClick={handleRegister}
-              disabled={!inviteValid}
-              className="p-3 mt-5 bg-foreground text-primary hover:bg-foreground/50 hover:cursor-pointer rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Create Account
+            <button onClick={handleRegister} disabled={!inviteValid || isRegistering} className="p-3 mt-5 bg-foreground text-primary hover:bg-foreground/50 hover:cursor-pointer rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
+              {isRegistering ? "Creating account..." : "Create Account"}
             </button>
             <span className="text-center pt-5">
               Already have an account?{" "}
-              <Link href="/login" className="text-accent hover:text-accent/50">
-                Log in
-              </Link>
+              <Link href="/login" className="text-accent hover:text-accent/50">Log in</Link>
             </span>
           </div>
         </div>
