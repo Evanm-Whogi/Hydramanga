@@ -1,52 +1,57 @@
-"use server";
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
-import { getServerApiBase } from './env';
+import axios, { InternalAxiosRequestConfig } from 'axios';
+import { getServerApiBase, getClientApiBase } from './env';
 
-const instance = axios.create({
-    baseURL: getServerApiBase(),
-    withCredentials: true,
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    validateStatus: (status) => status >= 200 && status < 400, // Only accept 2xx and 3xx
-    timeout: 10000
-});
+let serverInstance: ReturnType<typeof axios.create> | null = null;
 
-instance.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
-    const cookieStore = await cookies();
-    config.headers['Cookie'] = cookieStore.toString();
-    
-    // Forward the real client IP and user-agent from Next.js to backend
-    // This is critical for bot detection and tracking
-    try {
-        const { headers } = await import('next/headers');
-        const headersList = await headers();
-        const forwarded = headersList.get('x-forwarded-for');
-        const realIp = headersList.get('x-real-ip');
-        const userAgent = headersList.get('user-agent');
-        
-        if (forwarded) {
-            config.headers['x-forwarded-for'] = forwarded;
-        } else if (realIp) {
-            config.headers['x-real-ip'] = realIp;
+const getServerInstance = async () => {
+    if (serverInstance) return serverInstance;
+
+    const instance = axios.create({
+        baseURL: getServerApiBase(),
+        withCredentials: true,
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        validateStatus: (status) => status >= 200 && status < 400, // Only accept 2xx and 3xx
+        timeout: 10000
+    });
+
+    instance.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+        const { cookies, headers } = await import('next/headers');
+        const cookieStore = await cookies();
+        config.headers['Cookie'] = cookieStore.toString();
+
+        // Forward the real client IP and user-agent from Next.js to backend
+        try {
+            const headersList = await headers();
+            const forwarded = headersList.get('x-forwarded-for');
+            const realIp = headersList.get('x-real-ip');
+            const userAgent = headersList.get('user-agent');
+
+            if (forwarded) {
+                config.headers['x-forwarded-for'] = forwarded;
+            } else if (realIp) {
+                config.headers['x-real-ip'] = realIp;
+            }
+
+            if (userAgent) {
+                config.headers['user-agent'] = userAgent;
+            }
+        } catch (e) {
+            // Silently ignore - headers might not be available in all contexts
         }
-        
-        // Forward user-agent so backend can detect bots for metadata generation
-        if (userAgent) {
-            config.headers['user-agent'] = userAgent;
-        }
-    } catch (e) {
-        // Silently ignore - headers might not be available in all contexts
-    }
-    
-    return config;
-});
 
-// Helper function to handle backend connection errors
-const handleBackendError = (error: any) => {
+        return config;
+    });
+
+    serverInstance = instance;
+    return instance;
+};
+
+const handleBackendError = async (error: any) => {
+    const { redirect } = await import('next/navigation');
+
     // Check if it's a network error (backend unreachable)
-    if (error.code === 'ECONNREFUSED' || 
-        error.code === 'ETIMEDOUT' || 
+    if (error.code === 'ECONNREFUSED' ||
+        error.code === 'ETIMEDOUT' ||
         error.message?.includes('Network Error') ||
         !error.response) {
         redirect('/error-500');
@@ -56,73 +61,102 @@ const handleBackendError = (error: any) => {
     if (error.response && error.response.status === 401) {
         redirect('/login');
     }
-    
+
     // Check if it's a 500-level server error
     if (error.response && error.response.status >= 500) {
         redirect('/error-500');
     }
-    
+
     throw error;
 };
 
-// Export a clean wrapper instead of the raw Axios instance
+const clientFetch = async (url: string, options: RequestInit) => {
+    const res = await fetch(`${getClientApiBase()}${url}` , {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        ...options,
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data?.message || 'Request failed');
+    }
+    return data;
+};
+
 export const apiPost = async (url: string, data?: any) => {
+    if (typeof window !== 'undefined') {
+        return clientFetch(url, { method: 'POST', body: JSON.stringify(data ?? {}) });
+    }
+
     try {
+        const instance = await getServerInstance();
         const res = await instance.post(url, data);
         return res.data;
     } catch (error: any) {
-        // Extract error response if available and throw as proper Error
         if (error.response?.data) {
             const errorData = error.response.data;
             const errorMessage = errorData.message || 'Request failed';
             throw new Error(errorMessage);
         }
-        handleBackendError(error);
+        await handleBackendError(error);
     }
 };
 
 export const apiGet = async (url: string) => {
+    if (typeof window !== 'undefined') {
+        return clientFetch(url, { method: 'GET' });
+    }
+
     try {
+        const instance = await getServerInstance();
         const res = await instance.get(url);
         return res.data;
     } catch (error: any) {
-        // Extract error response if available and throw as proper Error
         if (error.response?.data) {
             const errorData = error.response.data;
             const errorMessage = errorData.message || 'Request failed';
             throw new Error(errorMessage);
         }
-        handleBackendError(error);
+        await handleBackendError(error);
     }
 };
 
 export const apiDelete = async (url: string, data?: any) => {
+    if (typeof window !== 'undefined') {
+        return clientFetch(url, { method: 'DELETE', body: data ? JSON.stringify(data) : undefined });
+    }
+
     try {
+        const instance = await getServerInstance();
         // axios delete supports request body via the config object
         const res = await instance.delete(url, data ? { data } : undefined);
         return res.data;
     } catch (error: any) {
-        // Extract error response if available and throw as proper Error
         if (error.response?.data) {
             const errorData = error.response.data;
             const errorMessage = errorData.message || 'Request failed';
             throw new Error(errorMessage);
         }
-        handleBackendError(error);
+        await handleBackendError(error);
     }
-}
+};
 
 export const apiPut = async (url: string, data?: any) => {
+    if (typeof window !== 'undefined') {
+        return clientFetch(url, { method: 'PUT', body: JSON.stringify(data ?? {}) });
+    }
+
     try {
+        const instance = await getServerInstance();
         const res = await instance.put(url, data);
         return res.data;
     } catch (error: any) {
-        // Extract error response if available and throw as proper Error
         if (error.response?.data) {
             const errorData = error.response.data;
             const errorMessage = errorData.message || 'Request failed';
             throw new Error(errorMessage);
         }
-        handleBackendError(error);
+        await handleBackendError(error);
     }
-}
+};

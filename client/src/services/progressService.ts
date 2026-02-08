@@ -25,10 +25,6 @@ export async function getMangaProgress(mangaId: number): Promise<MangaImportProg
   try {
     return await apiGet(`/manga/progress/${mangaId}`);
   } catch (error: any) {
-    // Return null if no progress found (404)
-    if (error?.response?.status === 404) {
-      return null;
-    }
     return null;
   }
 }

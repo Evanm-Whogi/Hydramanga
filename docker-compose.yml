@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   db:
     image: postgres:16
@@ -18,6 +16,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  db-init:
+    image: postgres:16
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: mangpass
+    command: >
+      sh -c "psql -h db -U mang -d mang -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'"
+    restart: on-failure:3
 
   redis:
     image: redis:7
@@ -39,7 +48,7 @@ services:
     ports:
       - "8080:80"
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -55,11 +64,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      PORT: 4000
       DOCKER: 'true'
       DATABASE_URL: postgres://mang:mangpass@db:5432/mang
       REDIS_HOST: redis
@@ -73,8 +83,7 @@ services:
       - ./data/manga:/data/manga
       - ./cloudflared-config.yml:/app/cloudflared-config.yml:ro
       - ${HOME}/.cloudflared:/root/.cloudflared:ro
-    ports:
-      - "4000:4000"
+    # Port removed - backend only accessible via Next.js proxy and internal docker network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/admin/heartbeat"]
       interval: 10s
@@ -102,3 +111,15 @@ services:
       NEXT_PUBLIC_BACKEND_URL: https://manga.chit.sh
     ports:
       - "3000:3000"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    volumes:
+      - ./cloudflared-config.yml:/etc/cloudflared/config.yml:ro
+      - /root/.cloudflared/8ec597a9-f14c-440a-a59b-4f3935ba3e84.json:/etc/cloudflared/creds.json:ro
+    command: tunnel --config /etc/cloudflared/config.yml run
+    depends_on:
+      - nginx
+      - server
+      - web

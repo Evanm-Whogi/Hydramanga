@@ -19,9 +19,9 @@ ENV NODE_ENV=production
 RUN npx -y playwright@latest install-deps
 
 # Install cloudflared for tunnel
-RUN curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && \
-    dpkg -i cloudflared.deb && \
-    rm cloudflared.deb
+RUN curl -L --fail --output /usr/local/bin/cloudflared \
+    https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 && \
+    chmod +x /usr/local/bin/cloudflared
 
 # Only copy needed artifacts
 COPY --from=base /app/package.json ./package.json

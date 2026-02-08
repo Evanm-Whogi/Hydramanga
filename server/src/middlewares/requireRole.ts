@@ -6,13 +6,9 @@ type RequireRoleMiddleware = (req: Request, res: Response, next: NextFunction) =
 
 export function requireRole(role: string) : RequireRoleMiddleware {
     return function(req: Request, res: Response, next: NextFunction) {
-        const user = req.user as any[];
+        const user = req.user as any;
 
-        if (!req.isAuthenticated()) {
-            return res.status(401).json({ message: 'Unauthorized' });
-        }
-
-        if (user[0]?.role !== role) {
+        if (user.role !== role) {
             return res.status(403).json({ message: `Forbidden: ${role} Role Required` });
         }
 

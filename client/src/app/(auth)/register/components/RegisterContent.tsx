@@ -2,7 +2,6 @@
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import { CheckCircle, AlertCircle } from "lucide-react";
 import { signUp } from "@/lib/auth";
@@ -12,7 +11,6 @@ import InputField from '@/components/InputField';
 import MasonryGrid from "@/components/MasonryGrid";
 
 export default function RegisterContent() {
-  const router = useRouter();
   const debounceTimer = useRef<NodeJS.Timeout | undefined>(undefined);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -36,16 +34,19 @@ export default function RegisterContent() {
 
     setIsValidating(true);
     debounceTimer.current = setTimeout(async () => {
-      try {
-        await validateInviteCode(inviteCode);
+      const result = await validateInviteCode(inviteCode);
+      if (result.success && result.data.valid) {
         setInviteValid(true);
         setInviteError(null);
-      } catch (error: any) {
+      } else {
         setInviteValid(false);
-        setInviteError(error.message || "Invalid invite code");
-      } finally {
-        setIsValidating(false);
+        const message = result.success
+          ? result.data.message || "Invalid invite code"
+          : result.message || "Invalid invite code";
+        setInviteError(message);
+        toast.error(message);
       }
+      setIsValidating(false);
     }, 500);
 
     return () => {
@@ -56,7 +57,7 @@ export default function RegisterContent() {
   }, [inviteCode]);
 
   const handleRegister = async () => {
-    if (!inviteValid) return toast("Please validate an invite code first", { type: "error" });
+    if (!inviteValid) return toast.error("Please validate an invite code first");
 
     if (isRegistering) return;
     setIsRegistering(true);
@@ -71,18 +72,27 @@ export default function RegisterContent() {
         bio: "",
       });
       
-      if (error) return toast(`${error.message}`, { type: "error" });
+      if (error) {
+        toast.error(error.message || "Failed to create account");
+        setIsRegistering(false);
+        return;
+      }
+      
       trackAuthEvent('register', data.user?.id, data.user?.email, data.user?.name);
 
-      try {
-        await useInviteCode(inviteCode, data.user.id);
-      } catch (err: any) {
-        console.error("Failed to mark invite as used:", err.message);
+      const useResult = await useInviteCode(inviteCode, data.user.id);
+      if (!useResult.success) {
+        console.error("Failed to mark invite as used:", useResult.message);
+        toast.error(useResult.message || "Registration successful but failed to mark invite as used");
       }
 
-      toast(`Welcome ${data.user.name}! Your account has been created.`, { type: "success" });
-      router.push("/home");
-    } finally {
+      toast.success(`Welcome ${data.user.name}! Your account has been created.`);
+      
+      // Use full page redirect to ensure session cookie is properly loaded
+      window.location.href = "/home";
+      // Don't set loading to false - we're redirecting away
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to create account");
       setIsRegistering(false);
     }
   };
@@ -113,13 +123,11 @@ export default function RegisterContent() {
                     placeholder="Enter invite code"
                     value={inviteCode}
                     onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                    className={`w-full bg-foreground border border-borders text-muted px-4 py-2.5 rounded-xl outline-none transition-all focus:border-borders focus:ring-1 focus:ring-borders ${inviteValid ? 'border-green-500' : inviteError ? 'border-red-500' : 'border-foreground'}`}
+                    className={`w-full bg-foreground border border-borders text-muted px-4 py-2.5 rounded-xl outline-none transition-all focus:ring-1 focus:ring-borders ${inviteValid ? 'border-green-500' : inviteError ? 'border-red-500' : 'border-foreground'}`}
                   />
                   {isValidating && <div className="absolute right-3 top-2.5 animate-spin">⟳</div>}
                   {inviteValid && <CheckCircle className="absolute right-3 top-2.5 size-5 text-green-500" />}
-                  {inviteError && !isValidating && <AlertCircle className="absolute right-3 top-2.5 size-5 text-red-500" />}
                 </div>
-                {inviteError && <p className="text-xs text-red-500 mt-1">{inviteError}</p>}
                 {inviteValid && <p className="text-xs text-green-500 mt-1">✓ Invite code is valid</p>}
               </div>
               <InputField label="Full Name" placeholder="Your Name" value={name} onChange={(e: any) => setName(e.target.value)} onKeyPress={handleKeyPress} disabled={isRegistering} />

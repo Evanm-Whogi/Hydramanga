@@ -2,7 +2,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import { signIn } from "@/lib/auth";
 import { trackAuthEvent } from "@/lib/analytics";
@@ -10,7 +9,6 @@ import InputField from '@/components/InputField';
 import MasonryGrid from "@/components/MasonryGrid";
 
 export default function LoginContent() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,13 +19,20 @@ export default function LoginContent() {
 
     try {
       const result = await signIn.email({ email, password });
-      if (result.error) return toast(result.error.message || "Authentication failed", { type: "error" });
+      if (result.error) {
+        toast(result.error.message || "Authentication failed", { type: "error" });
+        setLoading(false);
+        return;
+      }
 
       trackAuthEvent('login', result.data?.user?.id, result.data?.user?.email, result.data?.user?.name);
       toast(`Welcome Back!`, { type: "success" });
-      router.push("/home");
-      router.refresh();
-    } finally {
+      
+      // Use full page redirect to ensure session cookie is properly loaded
+      window.location.href = "/home";
+      // Don't set loading to false - we're redirecting away
+    } catch (error: any) {
+      toast(error?.message || "Login failed", { type: "error" });
       setLoading(false);
     }
   };
