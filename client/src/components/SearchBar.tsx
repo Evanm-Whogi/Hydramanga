@@ -1,11 +1,11 @@
 import { SearchIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-export default function SearchBar({ onChange, size }: { onChange: (val: string) => void, size?: string }) {
-    const [query, setQuery] = useState('');
+export default function SearchBar({ onChange, size, initialValue }: { onChange: (val: string) => void, size?: string, initialValue?: string }) {
+    const [query, setQuery] = useState(initialValue || '');
 
     useEffect(() => {
-        const timer = setTimeout(() => { onChange(query)}, 500);
+        const timer = setTimeout(() => { onChange(query) }, 500);
         return () => clearTimeout(timer);
     }, [query, onChange]);
 

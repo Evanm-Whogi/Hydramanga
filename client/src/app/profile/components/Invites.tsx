@@ -78,14 +78,12 @@ export default function Invites() {
         <button
           onClick={generateNewCode}
           disabled={generating || unusedCount >= 5 || usedCount >= 5}
-          className="flex hover:cursor-pointer items-center gap-2 px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
+          className="flex hover:cursor-pointer items-center gap-2 px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
           {generating ? <Loader className="size-4 animate-spin" /> : <Share2 className="size-4" />}
           Generate New Code
         </button>
       </div>
 
-      {/* Info Box */}
       <div className="bg-foreground rounded-lg p-4 border border-borders">
         <p className="text-sm text-muted">
           You have invited <span className="text-accent font-semibold">{usedCount}/5</span> people.
@@ -94,7 +92,6 @@ export default function Invites() {
         </p>
       </div>
 
-      {/* Loading State */}
       {loading ? (
         <div className="flex justify-center py-8">
           <Loader className="size-6 animate-spin text-accent" />
@@ -104,65 +101,40 @@ export default function Invites() {
           <p>No invite codes yet. Click the button above to generate one!</p>
         </div>
       ) : (
-        /* Codes List */
         <div className="space-y-3">
           {codes.map(code => (
             <div
               key={code.id}
-              className={`bg-foreground rounded-lg p-4 border ${
-                code.used ? "border-borders opacity-60" : "border-borders"
-              } transition-all`}
-            >
+              className={`bg-foreground rounded-lg p-4 border ${code.used ? "border-borders opacity-60" : "border-borders"} transition-all`}>
               <div className="flex items-center justify-between gap-4">
-                {/* Left: Code Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3">
-                    <span className="font-mono text-lg font-bold text-primary break-all">
-                      {code.code}
-                    </span>
-                    {code.used && (
-                      <CheckCircle className="size-5 text-green-500 shrink-0" />
-                    )}
+                    <span className="font-mono text-lg font-bold text-primary break-all">{code.code}</span>
+                    {code.used && <CheckCircle className="size-5 text-green-500 shrink-0" />}
                   </div>
                   <div className="text-xs text-muted mt-1">
                     Created {new Date(code.createdAt).toLocaleDateString()}
                   </div>
                   {code.used && code.usedByUser && (
                     <div className="text-xs text-muted mt-2 flex items-center gap-2">
-                      <img
-                        src={code.usedByUser.image}
-                        alt={code.usedByUser.name}
-                        className="size-4 rounded-full"
-                      />
-                      Used by <span className="font-semibold text-primary">{code.usedByUser.name}</span>
-                      {" "} on {new Date(code.usedAt!).toLocaleDateString()}
+                      <img src={code.usedByUser.image} alt={code.usedByUser.name} className="size-4 rounded-full" />
+                      Used by <span className="font-semibold text-primary">{code.usedByUser.name}</span> on {new Date(code.usedAt!).toLocaleDateString()}
                     </div>
                   )}
                 </div>
 
-                {/* Right: Actions */}
                 {!code.used && (
                   <div className="flex gap-2 shrink-0">
                     <button
                       onClick={() => copyToClipboard(code.code)}
                       title="Copy to clipboard"
-                      className="flex hover:cursor-pointer items-center gap-1 px-3 py-1.5 bg-background hover:bg-background/80 rounded text-muted hover:text-primary transition-colors text-sm"
-                    >
-                      {copied === code.code ? (
-                        <>
-                          <CheckCircle className="size-4" /> Copied
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="size-4" /> Copy
-                        </>
-                      )}
+                      className="flex hover:cursor-pointer items-center gap-1 px-3 py-1.5 bg-background hover:bg-background/80 rounded text-muted hover:text-primary transition-colors text-sm">
+                      {copied === code.code ? (<> <CheckCircle className="size-4" /> Copied </>) : (<> <Copy className="size-4" /> Copy </>)}
                     </button>
                     <button
                       onClick={() => shareCode(code.code)}
                       title="Share code"
-                      className="flex hover:cursor-pointer items-center gap-1 px-3 py-1.5 bg-background hover:bg-background/80 rounded text-muted hover:text-primary transition-colors text-sm"
-                    >
+                      className="flex hover:cursor-pointer items-center gap-1 px-3 py-1.5 bg-background hover:bg-background/80 rounded text-muted hover:text-primary transition-colors text-sm">
                       <Share2 className="size-4" /> Share
                     </button>
                   </div>
@@ -173,7 +145,6 @@ export default function Invites() {
         </div>
       )}
 
-      {/* Used Codes Section */}
       {codes.some(c => c.used) && (
         <div className="mt-8 pt-6 border-t border-borders">
           <h3 className="text-lg font-semibold text-primary mb-3">Used Codes</h3>

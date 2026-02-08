@@ -9,7 +9,7 @@ export default function SectionHeader({ title, subtitle, filters, link }: { titl
             </div>
             {filters && (
                 <Link href={`/discover?${filters}`} className="text-muted text-base hover:underline">View All <ArrowRight className="size-4 inline ml-1" /></Link>
-            )} 
+            )}
             {link && (
                 <Link href={link} className="text-muted text-base hover:underline">View All <ArrowRight className="size-4 inline ml-1" /></Link>
             )}

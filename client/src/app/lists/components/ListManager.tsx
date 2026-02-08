@@ -35,15 +35,18 @@ export default function ListManager({ lists, onUpdate }: ListManagerProps) {
   const [error, setError] = useState<string | null>(null);
 
   const handleCreate = async () => {
+    if (isLoading) return;
     const trimmedName = newListName.trim();
     if (!trimmedName) return;
-    // Prevent duplicate names (case-insensitive)
+
     if (lists.some((l) => l.name.toLowerCase() === trimmedName.toLowerCase())) {
       setError('A list with that name already exists.');
       return;
     }
+
     setIsLoading(true);
     setError(null);
+
     try {
       await createList(trimmedName);
       setNewListName('');
@@ -61,7 +64,8 @@ export default function ListManager({ lists, onUpdate }: ListManagerProps) {
     if (!confirm(`Are you sure you want to delete "${listName}"? All manga in this list will be removed from it.`)) {
       return;
     }
-    
+
+    if (isLoading) return;
     setIsLoading(true);
     setError(null);
     
@@ -77,6 +81,7 @@ export default function ListManager({ lists, onUpdate }: ListManagerProps) {
   };
 
   const handleToggleVisibility = async (list: UserList) => {
+    if (isLoading) return;
     setIsLoading(true);
     setError(null);
     
@@ -97,15 +102,18 @@ export default function ListManager({ lists, onUpdate }: ListManagerProps) {
   };
 
   const handleSaveEdit = async (listId: number) => {
+    if (isLoading) return;
     const trimmedName = editingName.trim();
     if (!trimmedName) return;
-    // Prevent duplicate names (case-insensitive, except for the current list)
+
     if (lists.some((l) => l.id !== listId && l.name.toLowerCase() === trimmedName.toLowerCase())) {
       setError('A list with that name already exists.');
       return;
     }
+
     setIsLoading(true);
     setError(null);
+
     try {
       await updateList(listId, { name: trimmedName });
       setEditingId(null);
@@ -197,11 +205,7 @@ export default function ListManager({ lists, onUpdate }: ListManagerProps) {
     <div className="bg-foreground border border-background rounded-lg p-4 mb-4">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold">Manage Lists</h2>
-        <button
-          onClick={() => setIsCreating(true)}
-          disabled={isLoading || isCreating}
-          className="flex items-center px-2 py-1 bg-background text-white gap-2 cursor-pointer"
-        >
+        <button onClick={() => setIsCreating(true)} disabled={isLoading || isCreating} className="flex items-center px-2 py-1 bg-background text-white gap-2 cursor-pointer">
           <Plus className="w-4 h-4" />
           New List
         </button>
@@ -218,44 +222,11 @@ export default function ListManager({ lists, onUpdate }: ListManagerProps) {
 
       {isCreating && (
         <div className="flex gap-2 mb-4 p-3 bg-background/50 rounded-md">
-          <input
-            type="text"
-            placeholder="List name..."
-            value={newListName}
-            onChange={(e) => setNewListName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleCreate();
-              if (e.key === 'Escape') {
-                setIsCreating(false);
-                setNewListName('');
-              }
-            }}
-            className="input input-bordered input-sm flex-1 pl-2"
-            autoFocus
-            disabled={isLoading}
-            aria-label="New list name"
-          />
-          <button
-            onClick={handleCreate}
-            disabled={isLoading || !newListName.trim()}
-            className="px-2 py-1 bg-background text-white hover:bg-background/50 hover:cursor-pointer"
-            aria-label="Create list"
-          >
-            {isLoading ? (
-              <span className="loading loading-spinner loading-xs" aria-label="Loading" />
-            ) : (
-              <Check className="w-4 h-4" />
-            )}
+          <input type="text" placeholder="List name..." value={newListName} onChange={(e) => setNewListName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') { setIsCreating(false); setNewListName(''); } }} className="input input-bordered input-sm flex-1 pl-2" autoFocus disabled={isLoading} aria-label="New list name" />
+          <button onClick={handleCreate} disabled={isLoading || !newListName.trim()} className="px-2 py-1 bg-background text-white hover:bg-background/50 hover:cursor-pointer" aria-label="Create list">
+            {isLoading ? <span className="loading loading-spinner loading-xs" aria-label="Loading" /> : <Check className="w-4 h-4" />}
           </button>
-          <button
-            onClick={() => {
-              setIsCreating(false);
-              setNewListName('');
-            }}
-            disabled={isLoading}
-            className="px-2 py-1 bg-background text-white hover:bg-background/50 hover:cursor-pointer"
-            aria-label="Cancel create"
-          >
+          <button onClick={() => { setIsCreating(false); setNewListName(''); }} disabled={isLoading} className="px-2 py-1 bg-background text-white hover:bg-background/50 hover:cursor-pointer" aria-label="Cancel create">
             <X className="w-4 h-4" />
           </button>
         </div>

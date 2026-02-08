@@ -26,7 +26,7 @@ export default function Comments({ manga, comments }: { manga: any, comments: an
     };
 
     const handleSubmit = async (content: string, parentId: number | null = null) => {
-        if (!content.trim()) return;
+        if (!content.trim() || isSubmitting) return;
         // Require rating only for top-level comments (optional logic)
         if (!parentId && rating === 0) return toast.warning("Please select a rating!");
         
@@ -72,7 +72,6 @@ export default function Comments({ manga, comments }: { manga: any, comments: an
             <div className="flex flex-col w-full bg-foreground p-5 rounded-md mb-5">
                 <h1 className="text-2xl font-bold mb-2">Leave a Comment</h1>
                 
-                {/* Star Selection Row */}
                 <div className="flex items-center gap-1 mb-4">
                     <span className="text-sm text-muted mr-2">Your Rating:</span>
                     {[1, 2, 3, 4, 5].map((star) => (
@@ -85,7 +84,9 @@ export default function Comments({ manga, comments }: { manga: any, comments: an
 
                 <textarea value={text} onChange={(e) => setText(e.target.value)} className="w-full h-24 p-2 bg-background text-white rounded-md resize-none" placeholder="Write your comment here..."></textarea>
                 <div className="flex justify-end">
-                    <button onClick={() => handleSubmit(text)} disabled={isSubmitting} className="bg-primary text-black px-4 py-2 mt-4 rounded-md hover:bg-primary/80 hover:cursor-pointer disabled:opacity-50">Submit</button>
+                    <button onClick={() => handleSubmit(text)} disabled={isSubmitting} className="bg-primary text-black px-4 py-2 mt-4 rounded-md hover:bg-primary/80 hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                        Submit
+                    </button>
                 </div>
             </div>
 
@@ -107,17 +108,21 @@ export default function Comments({ manga, comments }: { manga: any, comments: an
                             <p className="text-gray-200">{comment.content}</p>
                             <div className="flex justify-between items-center">
                                 <div className="flex items-center gap-4 mt-2">
-                                    <button onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)} className="text-sm text-muted hover:underline inline-flex items-center gap-1 hover:cursor-pointer"><MessageSquare className="size-5" /> Reply</button>
-                                    <button onClick={() => handleLike(comment.id)} className={`text-sm inline-flex items-center gap-1 hover:cursor-pointer ${comment.likes?.some((l: any) => l.userId === user?.id) ? "text-yellow-400" : "text-muted hover:underline"}`}><ThumbsUpIcon className="size-4" /> {comment.likes?.length || 0}</button>
+                                    <button onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)} className="text-sm text-muted hover:underline inline-flex items-center gap-1 hover:cursor-pointer">
+                                        <MessageSquare className="size-5" /> Reply
+                                    </button>
+                                    <button onClick={() => handleLike(comment.id)} className={`text-sm inline-flex items-center gap-1 hover:cursor-pointer ${comment.likes?.some((l: any) => l.userId === user?.id) ? "text-yellow-400" : "text-muted hover:underline"}`}>
+                                        <ThumbsUpIcon className="size-4" /> {comment.likes?.length || 0}
+                                    </button>
                                     
                                     {comment.replies?.length > 0 && (
                                         <button onClick={() => toggleExpand(comment.id)} className="text-sm text-primary hover:underline inline-flex items-center gap-1 hover:cursor-pointer font-medium">
-                                            {expandedComments.includes(comment.id) ? <><ChevronUp className="size-4" /> Hide Replies</> : <><ChevronDown className="size-4" /> Show Replies ({comment.replies.length})</>}
+                                            {expandedComments.includes(comment.id) ? <><ChevronUp className="size-4" /> Hide Replies</> : <><ChevronDown className="size-4" /> Show Replies ({comment.replies.length})</> }
                                         </button>
                                     )}
                                 </div>
                                 { comment.author.id === user?.id && <button onClick={() => handleDelete(comment.id, comment.content)} className="text-primary absolute bottom-0 right-0 p-2 px-2 py-1 bg-background m-2 hover:cursor-pointer">Delete</button>}
-                                 
+
                             </div>
                         </div>
 

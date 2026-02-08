@@ -1,6 +1,6 @@
 import { formatDate } from '@/lib/utils';
-import Link
- from 'next/link';
+import Link from 'next/link';
+
 export default function CommentCard({ comment }: { comment: any }) {
     return (
         <div className="bg-foreground p-4 rounded-md shadow-md relative">
@@ -12,8 +12,7 @@ export default function CommentCard({ comment }: { comment: any }) {
                 </div>
             </div>
             <p className="text-base pb-12 md:pb-6">{comment.content}</p>
-            <Link href={`/manga/${comment.manga.id}`} className="absolute bottom-0 left-0 p-2 mt-2 text-sm text-primary hover:text-accent"><span className='text-muted'>On:</span> {comment.manga.title}</Link>
-           
+            <Link href={`/manga/${comment.manga.id}`} className="absolute bottom-0 left-0 p-2 mt-2 text-sm text-primary hover:text-accent"><span className="text-muted">On:</span> {comment.manga.title}</Link>
         </div>
     );
 }

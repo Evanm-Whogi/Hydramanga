@@ -12,7 +12,6 @@ export default function HistoryStats({
 }: HistoryStatsProps) {
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            {/* Reading History */}
             <div className="bg-foreground/50 rounded-lg p-6 border border-borders/30 hover:border-borders/60 transition-colors">
                 <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-semibold text-muted">Reading History</h3>

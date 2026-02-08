@@ -70,11 +70,13 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(false);
+  const [isNavigating, setIsNavigating] = useState(false);
   
   // Bookmark state
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [bookmarkNote, setBookmarkNote] = useState('');
   const [bookmarkModalOpen, setBookmarkModalOpen] = useState(false);
+  const [isBookmarkOperating, setIsBookmarkOperating] = useState(false);
   
   // Reader settings
   const [settings, setSettings] = useState<ReaderSettings>(() => loadReaderSettings());
@@ -93,6 +95,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   
   // Reading time tracking
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const elapsedSecondsRef = useRef(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSentRef = useRef(0);
   const [initialProgressReceived, setInitialProgressReceived] = useState(false);
@@ -260,7 +263,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   }, [user]);
 
   const handleRemoveBookmark = useCallback(async () => {
-    if (!user || !id || !chapterId) return;
+    if (!user || !id || !chapterId || isBookmarkOperating) return;
+    
+    setIsBookmarkOperating(true);
     try {
       await removeBookmark(Number(id), Number(chapterId));
       setIsBookmarked(false);
@@ -269,8 +274,10 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       trackBookmarkAction('removed', id as string, mangaTitle, chapterId as string, data?.chapterNumber, removedNote);
     } catch (error) {
       console.error('Failed to remove bookmark:', error);
+    } finally {
+      setIsBookmarkOperating(false);
     }
-  }, [user, id, chapterId, bookmarkNote, mangaTitle, data?.chapterNumber]);
+  }, [user, id, chapterId, isBookmarkOperating, bookmarkNote, mangaTitle, data?.chapterNumber]);
 
   const handleBookmarkSuccess = useCallback(() => {
     setIsBookmarked(true);
@@ -304,16 +311,21 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
   // Navigate to chapter
   const navigateToChapter = useCallback((chapter: Chapter) => {
+    if (isNavigating) return;
+    
     if (isMergedMode) {
       scrollToMergedChapter(chapter.id);
       return;
     }
+    
     if (data && chapter.id !== Number(chapterId)) {
       trackChapterCompleted(id || '', mangaTitle, data.chapterNumber);
     }
+    
+    setIsNavigating(true);
     router.push(`/manga/${id}/read/${chapter.id}`);
     window.scrollTo(0, 0);
-  }, [isMergedMode, scrollToMergedChapter, data, chapterId, id, mangaTitle, router]);
+  }, [isNavigating, isMergedMode, scrollToMergedChapter, data, chapterId, id, mangaTitle, router]);
 
   // Page navigation
   const handlePageClick = useCallback((direction: 'next' | 'prev') => {
@@ -346,7 +358,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     }
-  }, [imageItems]);
+  }, []);
 
   // Toggle controls visibility (for tap zones center click)
   const toggleControls = useCallback(() => {
@@ -457,6 +469,8 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     const loadMangaPages = async () => {
       if (!id || !chapterId) return;
       try {
+        setLoading(true);
+        setIsNavigating(false);
         // Reset scroll position flag for new chapter
         hasScrolledToPage.current = false;
         const response = await fetchMangaPages(id, chapterId);
@@ -524,27 +538,40 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         dismissImportProgressToast(Number(id));
         dismissContinuousModeToast(Number(id));
       }
+      // Cleanup pending timeouts
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+      if (progressTimeoutRef.current) {
+        clearTimeout(progressTimeoutRef.current);
+      }
     };
   }, [id]);
 
   // Reading timer
   useEffect(() => {
     setElapsedSeconds(0);
+    elapsedSecondsRef.current = 0;
     lastSentRef.current = 0;
     if (!user || !id || !chapterId) return;
 
     timerRef.current = setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
+      setElapsedSeconds((prev) => {
+        const newValue = prev + 1;
+        elapsedSecondsRef.current = newValue;
+        return newValue;
+      });
     }, 1000);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      if (elapsedSeconds > 0) {
-        sendReadingTime(elapsedSeconds);
+      // Send any remaining unsent time
+      const unsent = elapsedSecondsRef.current - lastSentRef.current;
+      if (unsent > 0) {
+        sendReadingTime(unsent);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, id, chapterId]);
+  }, [user, id, chapterId, sendReadingTime]);
 
   // Send reading time periodically
   useEffect(() => {
@@ -773,7 +800,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
-      if (loading) return;
+      if (loading || isNavigating) return;
 
       if (event.key === 'ArrowUp') {
         event.preventDefault();
@@ -794,7 +821,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handlePageClick, loading, nextChapter, prevChapter, navigateToChapter]);
+  }, [handlePageClick, loading, isNavigating, nextChapter, prevChapter, navigateToChapter]);
 
   if (loading) {
     return <div className="loading text-primary p-5 text-center">Loading Chapter...</div>;
@@ -870,26 +897,15 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         <div className="sidebar-header px-6 py-4 border-b border-borders">
           <h2 className="text-[1.25rem] font-bold mb-4 text-white">Chapter {activeChapterNumber}</h2>
           
-          <button 
-            onClick={() => router.push(`/manga/${id}`)} 
-            className="mb-4 w-full p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer rounded"
-          >
+          <button onClick={() => router.push(`/manga/${id}`)} className="mb-4 w-full p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer rounded">
             Back to Overview
           </button>
 
           <div className="flex gap-2 mb-4">
-            <button
-              onClick={() => prevChapter && navigateToChapter(prevChapter)}
-              disabled={!prevChapter}
-              className="flex-1 p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 rounded"
-            >
+            <button onClick={() => prevChapter && navigateToChapter(prevChapter)} disabled={!prevChapter || isNavigating} className="flex-1 p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 rounded">
               Prev
             </button>
-            <button
-              onClick={() => nextChapter && navigateToChapter(nextChapter)}
-              disabled={!nextChapter}
-              className="flex-1 p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 rounded"
-            >
+            <button onClick={() => nextChapter && navigateToChapter(nextChapter)} disabled={!nextChapter || isNavigating} className="flex-1 p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 rounded">
               Next
             </button>
           </div>
@@ -898,7 +914,8 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           {user && (
             <button
               onClick={() => isBookmarked ? handleRemoveBookmark() : handleBookmarkClick()}
-              className={`w-full p-2.5 flex items-center justify-center gap-2 border-0 rounded cursor-pointer ${
+              disabled={isBookmarkOperating}
+              className={`w-full p-2.5 flex items-center justify-center gap-2 border-0 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
                 isBookmarked
                   ? 'bg-accent hover:bg-accent/80 text-white'
                   : 'bg-background hover:bg-background/50 text-primary'
@@ -910,10 +927,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           )}
 
           {/* Settings Button */}
-          <button
-            onClick={() => setSettingsModalOpen(true)}
-            className="w-full mt-2 p-2.5 flex items-center justify-center gap-2 bg-background hover:bg-background/50 text-primary border-0 rounded cursor-pointer"
-          >
+          <button onClick={() => setSettingsModalOpen(true)} className="w-full mt-2 p-2.5 flex items-center justify-center gap-2 bg-background hover:bg-background/50 text-primary border-0 rounded cursor-pointer">
             <Settings size={18} />
             Reader Settings
           </button>
@@ -932,16 +946,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         <div className="chapter-list-scroll flex-1 overflow-y-auto p-4">
           <div className="grid-list grid grid-cols-1 md:grid-cols-3 gap-1.5">
             {allChapters.map((ch) => (
-              <button
-                key={ch.id}
-                id={`chapter-${ch.id}`}
-                onClick={() => navigateToChapter(ch)}
-                className={`p-[10px_2px] text-[0.75rem] border cursor-pointer rounded-sm text-primary ${
-                  ch.id === activeChapterId 
-                    ? 'font-bold bg-accent border-accent' 
-                    : 'font-normal bg-background hover:bg-background/50 border-background'
-                }`}
-              >
+              <button key={ch.id} id={`chapter-${ch.id}`} onClick={() => navigateToChapter(ch)} disabled={isNavigating} className={`p-[10px_2px] text-[0.75rem] border cursor-pointer rounded-sm text-primary disabled:cursor-not-allowed disabled:opacity-50 ${
+                ch.id === activeChapterId ? 'font-bold bg-accent border-accent' : 'font-normal bg-background hover:bg-background/50 border-background'
+              }`}>
                 {ch.chapterNumber}
               </button>
             ))}
@@ -963,18 +970,12 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
             <div className="chapter-list-scroll flex-1 overflow-y-auto p-4">
               <div className="grid-list grid grid-cols-1 gap-2">
                 {allChapters.map((ch) => (
-                  <button
-                    key={ch.id}
-                    onClick={() => {
-                      navigateToChapter(ch);
-                      setSidebarOpen(false);
-                    }}
-                    className={`p-2 text-sm border cursor-pointer rounded text-primary ${
-                      ch.id === activeChapterId 
-                        ? 'font-bold bg-accent border-accent' 
-                        : 'font-normal bg-background hover:bg-background/50 border-background'
-                    }`}
-                  >
+                  <button key={ch.id} onClick={() => {
+                    navigateToChapter(ch);
+                    setSidebarOpen(false);
+                  }} disabled={isNavigating} className={`p-2 text-sm border cursor-pointer rounded text-primary disabled:cursor-not-allowed disabled:opacity-50 ${
+                    ch.id === activeChapterId ? 'font-bold bg-accent border-accent' : 'font-normal bg-background hover:bg-background/50 border-background'
+                  }`}>
                     Chapter {ch.chapterNumber}
                   </button>
                 ))}
@@ -988,39 +989,23 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       {renderProgressIndicator()}
 
       {/* Sidebar Collapse/Expand Button */}
-      <button
-        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-        className="hidden md:flex md:fixed md:top-1/2 cursor-pointer md:-translate-y-1/2 md:bg-foreground md:hover:bg-background md:text-primary md:border md:border-borders md:rounded-full md:p-2 md:z-50 md:transition-all md:duration-300"
-        style={sidebarCollapsed ? { left: '8px' } : { left: `${SIDEBAR_WIDTH_PX + 8}px` }}
-        title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      >
+      <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="hidden md:flex md:fixed md:top-1/2 cursor-pointer md:-translate-y-1/2 md:bg-foreground md:hover:bg-background md:text-primary md:border md:border-borders md:rounded-full md:p-2 md:z-50 md:transition-all md:duration-300" style={sidebarCollapsed ? { left: '8px' } : { left: `${SIDEBAR_WIDTH_PX + 8}px` }} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
         {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
       </button>
 
       {/* Mobile Header */}
-      <div
-        ref={mobileHeaderRef}
-        className="md:hidden fixed top-16 left-0 right-0 bg-foreground/90 border-b border-borders px-4 py-3 z-40 flex items-center justify-between transition-transform duration-300"
-      >
+      <div ref={mobileHeaderRef} className="md:hidden fixed top-16 left-0 right-0 bg-foreground/90 border-b border-borders px-4 py-3 z-40 flex items-center justify-between transition-transform duration-300">
         <button onClick={() => setSidebarOpen(true)} className="text-primary hover:text-accent p-2">
           <MenuIcon className="size-6" />
         </button>
-        <span className="text-sm font-semibold">
-          {currentPage}/{totalPages}
-        </span>
+        <span className="text-sm font-semibold">{currentPage}/{totalPages}</span>
         <div className="flex gap-2">
           {user && (
-            <button
-              onClick={() => isBookmarked ? handleRemoveBookmark() : handleBookmarkClick()}
-              className="text-primary hover:text-accent p-2"
-            >
+            <button onClick={() => isBookmarked ? handleRemoveBookmark() : handleBookmarkClick()} disabled={isBookmarkOperating} className="text-primary hover:text-accent p-2 disabled:cursor-not-allowed disabled:opacity-50">
               <BookmarkIcon className="size-6" fill={isBookmarked ? 'currentColor' : 'none'} />
             </button>
           )}
-          <button
-            onClick={() => setSettingsModalOpen(true)}
-            className="text-primary hover:text-accent p-2"
-          >
+          <button onClick={() => setSettingsModalOpen(true)} className="text-primary hover:text-accent p-2">
             <Settings className="size-6" />
           </button>
         </div>
@@ -1035,36 +1020,16 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           <div className={`click-zones fixed top-0 right-0 bottom-0 left-0 flex z-10 pointer-events-none pt-24 md:pt-0 transition-all duration-300 ${
             sidebarCollapsed ? 'md:left-0' : 'md:left-65'
           }`}>
-            <div
-              onClick={() => handleTapZoneClick('left')}
-              className="prev-zone flex-1 pointer-events-auto cursor-w-resize"
-            />
-            <div
-              onClick={() => handleTapZoneClick('center')}
-              className="center-zone flex-1 pointer-events-auto cursor-pointer"
-            />
-            <div
-              onClick={() => handleTapZoneClick('right')}
-              className="next-zone flex-1 pointer-events-auto cursor-e-resize"
-            />
+            <div onClick={() => handleTapZoneClick('left')} className="prev-zone flex-1 pointer-events-auto cursor-w-resize" />
+            <div onClick={() => handleTapZoneClick('center')} className="center-zone flex-1 pointer-events-auto cursor-pointer" />
+            <div onClick={() => handleTapZoneClick('right')} className="next-zone flex-1 pointer-events-auto cursor-e-resize" />
           </div>
         )}
 
         {/* Image Container */}
-        <div 
-          ref={containerRef} 
-          className="image-stack w-full max-w-212.5 z-5"
-          style={containerStyles}
-        >
+        <div ref={containerRef} className="image-stack w-full max-w-212.5 z-5" style={containerStyles}>
           {imageItems.map((item, index) => (
-            <img
-              key={index}
-              src={item.src}
-              alt={`Page ${index + 1}`}
-              className={getImageClassName}
-              style={getImageStyle}
-              loading={index < 3 ? 'eager' : 'lazy'}
-            />
+            <img key={index} src={item.src} alt={`Page ${index + 1}`} className={getImageClassName} style={getImageStyle} loading={index < 3 ? 'eager' : 'lazy'} />
           ))}
         </div>
 
@@ -1076,39 +1041,22 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
               <button className="mt-5 ml-2 text-accent hover:underline cursor-pointer" onClick={() => router.push(`/manga/${id}`)}>Return to Manga Overview</button>
             </div>
           ) : nextChapter ? (
-            <button
-              onClick={() => navigateToChapter(nextChapter)}
-              className="px-12 py-4 bg-accent hover:bg-accent/80 text-white border-none rounded-md text-[1.1rem] font-bold cursor-pointer transition-colors"
-            >
+            <button onClick={() => navigateToChapter(nextChapter)} disabled={isNavigating} className="px-12 py-4 bg-accent hover:bg-accent/80 text-white border-none rounded-md text-[1.1rem] font-bold cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors">
               Read Chapter {nextChapter.chapterNumber} →
             </button>
           ) : (
             <div className="flex flex-col py-2">
-                <span className="text-primary/70">You have reached the end of available chapters.</span>
-                <button className="mt-5 ml-2 text-accent hover:underline cursor-pointer" onClick={() => router.push(`/manga/${id}`)}>Return to Manga Overview</button>
+              <span className="text-primary/70">You have reached the end of available chapters.</span>
+              <button className="mt-5 ml-2 text-accent hover:underline cursor-pointer" onClick={() => router.push(`/manga/${id}`)}>Return to Manga Overview</button>
             </div>
           )}
         </div>
       </main>
 
       {/* Modals */}
-      <BookmarkModal
-        isOpen={bookmarkModalOpen}
-        onClose={() => setBookmarkModalOpen(false)}
-        seriesId={Number(id)}
-        chapterId={Number(chapterId)}
-        chapterTitle={data?.title || `Chapter ${data?.chapterNumber}`}
-        existingNote={bookmarkNote}
-        onSuccess={handleBookmarkSuccess}
-        mangaTitle={mangaTitle}
-        chapterNumber={data?.chapterNumber}
-      />
+      <BookmarkModal isOpen={bookmarkModalOpen} onClose={() => setBookmarkModalOpen(false)} seriesId={Number(id)} chapterId={Number(chapterId)} chapterTitle={data?.title || `Chapter ${data?.chapterNumber}`} existingNote={bookmarkNote} onSuccess={handleBookmarkSuccess} mangaTitle={mangaTitle} chapterNumber={data?.chapterNumber} />
 
-      <ReaderSettingsModal
-        isOpen={settingsModalOpen}
-        onClose={() => setSettingsModalOpen(false)}
-        onSettingsChange={handleSettingsChange}
-      />
+      <ReaderSettingsModal isOpen={settingsModalOpen} onClose={() => setSettingsModalOpen(false)} onSettingsChange={handleSettingsChange} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import ListComponent from './ListComponent';
 import ListManagerModal from './ListManagerModal';
 import { fetchAllLists, ListsData } from '@/services/listService';
@@ -12,15 +12,21 @@ interface ListsPageClientProps {
 export default function ListsPageClient({ initialData }: ListsPageClientProps) {
   const [listsData, setListsData] = useState<ListsData>(initialData || { lists: [] });
   const [showManager, setShowManager] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const handleUpdate = async () => {
+  const handleUpdate = useCallback(async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+
     try {
       const updated = await fetchAllLists();
       setListsData(updated || { lists: [] });
     } catch (error) {
       console.error('Failed to refresh lists:', error);
+    } finally {
+      setIsRefreshing(false);
     }
-  };
+  }, [isRefreshing]);
 
   return (
     <div className="container mx-auto">

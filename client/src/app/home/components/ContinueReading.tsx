@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useUser } from "@/providers/UserProvider";
 import { getMyProgress } from "@/services/mangaService";
 import ContinueReadingCard from "@/components/ContinueReadingCard";
@@ -10,25 +10,22 @@ export default function ContinueReading() {
     const [progress, setProgress] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        if (!user) {
+    const fetchProgress = useCallback(async () => {
+        if (!user) return setLoading(false);
+
+        try {
+            const data = await getMyProgress(12);
+            setProgress(data.progress || []);
+        } catch (error) {
+            console.error('Failed to fetch progress:', error);
+        } finally {
             setLoading(false);
-            return;
         }
-
-        const fetchProgress = async () => {
-            try {
-                const data = await getMyProgress(12);
-                setProgress(data.progress || []);
-            } catch (error) {
-                console.error('Failed to fetch progress:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchProgress();
     }, [user]);
+
+    useEffect(() => {
+        fetchProgress();
+    }, [fetchProgress]);
 
     if (!user || loading || progress.length === 0) return null;
     return (

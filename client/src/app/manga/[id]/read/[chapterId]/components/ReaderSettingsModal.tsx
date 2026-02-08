@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { X } from 'lucide-react';
 import {
   ReaderSettings,
@@ -30,7 +30,19 @@ export default function ReaderSettingsModal({
     }
   }, [isOpen]);
 
-  const handleChange = <K extends keyof ReaderSettings>(
+  // Escape key handler
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
+  const handleChange = useCallback(<K extends keyof ReaderSettings>(
     key: K,
     value: ReaderSettings[K]
   ) => {
@@ -38,28 +50,21 @@ export default function ReaderSettingsModal({
     setSettings(updated);
     saveReaderSettings(updated);
     onSettingsChange(updated);
-  };
+  }, [settings, onSettingsChange]);
 
   if (!isOpen) return null;
 
   return (
     <>
       {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/50 z-200"
-        onClick={onClose}
-      />
+      <div className="fixed inset-0 bg-black/50 z-200" onMouseDown={onClose} />
 
       {/* Modal */}
       <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-foreground rounded-lg shadow-xl z-201 w-full max-w-md max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-borders">
           <h2 className="text-xl font-bold text-white">Reader Settings</h2>
-          <button
-            onClick={onClose}
-            className="text-muted hover:text-primary transition-colors cursor-pointer"
-            aria-label="Close settings"
-          >
+          <button onClick={onClose} className="text-muted hover:text-primary transition-colors cursor-pointer" aria-label="Close settings">
             <X className="size-6" />
           </button>
         </div>
@@ -185,14 +190,12 @@ export default function ReaderSettingsModal({
 
         {/* Footer */}
         <div className="p-6 border-t border-borders flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-6 py-2 bg-accent hover:bg-accent/80 text-white rounded-md font-medium transition-colors cursor-pointer"
-          >
-            Done
+          <button onClick={onClose} className="px-6 py-2 bg-accent hover:bg-accent/80 text-white rounded-md font-medium transition-colors cursor-pointer">
+            Close
           </button>
         </div>
       </div>
     </>
   );
+
 }

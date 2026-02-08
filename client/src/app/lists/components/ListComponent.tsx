@@ -1,16 +1,8 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragOverlay,
-  rectIntersection
-} from '@dnd-kit/core';
-import {SortableContext, useSortable, verticalListSortingStrategy} from '@dnd-kit/sortable';
+import { useState, useMemo, useCallback } from 'react';
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, rectIntersection } from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { addToList } from '@/services/listService';
@@ -31,28 +23,19 @@ interface ListComponentProps {
 }
 
 export default function ListComponent({ lists: listsData, onUpdate }: ListComponentProps) {
-    const sensors = useSensors(
-      useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
-    );
+    const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
     const [activeManga, setActiveManga] = useState<any | null>(null);
     const [draggingMangaId, setDraggingMangaId] = useState<string | null>(null);
-  // Guard against undefined props so the page renders safely while data loads
-  const safeListsData = listsData || { lists: [] };
-  const userLists = safeListsData.lists || [];
+    const [isMoving, setIsMoving] = useState(false);
+
+    const safeListsData = listsData || { lists: [] };
+    const userLists = safeListsData.lists || [];
   
-  // Build list options from user's lists (all lists)
   const LIST_OPTIONS = useMemo(() => {
     const options = [{ label: 'All Lists', value: 'all' }];
-    
-    userLists
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .forEach(list => {
-        options.push({
-          label: list.name,
-          value: list.slug,
-        });
-      });
-    
+    userLists.sort((a, b) => a.sortOrder - b.sortOrder).forEach(list => {
+      options.push({ label: list.name, value: list.slug });
+    });
     return options;
   }, [userLists]);
 
@@ -65,18 +48,12 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
   const [selectedSort, setSelectedSort] = useState('weightedScore');
   const [nsfw, setNsfw] = useState('true');
 
-  const yearMatches = (
-    year: number | undefined,
-    filters: string[]
-  ): boolean => {
-    if (!filters || filters.length === 0 || filters.includes('timeless'))
-      return true;
+  const yearMatches = useCallback((year: number | undefined, filters: string[]): boolean => {
+    if (!filters || filters.length === 0 || filters.includes('timeless')) return true;
     if (year === undefined || year === null) return false;
 
     return filters.some((f) => {
-      if (/^\d{4}$/.test(f)) {
-        return year === Number(f);
-      }
+      if (/^\d{4}$/.test(f)) return year === Number(f);
       const decadeRanges: Record<string, [number, number]> = {
         '2010s': [2010, 2019],
         '2000s': [2000, 2009],
@@ -90,48 +67,24 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
       const range = decadeRanges[f];
       return range ? year >= range[0] && year <= range[1] : true;
     });
-  };
+  }, []);
 
   const normalize = (s?: string): string => (s || '').toLowerCase();
 
-  const applyFilters = (items: any[]): any[] => {
+  const applyFilters = useCallback((items: any[]): any[] => {
     const filtered = items.filter((m) => {
       const titleMatch = normalize(m?.title).includes(normalize(search));
-      const genreMatch =
-        selectedGenres.length === 0 ||
-        (Array.isArray(m?.genres) &&
-          selectedGenres.every((g) => m.genres.includes(g)));
-      const typeMatch =
-        selectedTypes.length === 0 ||
-        (m?.type &&
-          selectedTypes
-            .map((t) => t.toLowerCase())
-            .includes(String(m.type).toLowerCase()));
-      const statusMatch =
-        selectedStatuses.length === 0 ||
-        (m?.status && selectedStatuses.includes(m.status));
+      const genreMatch = selectedGenres.length === 0 || (Array.isArray(m?.genres) && selectedGenres.every((g) => m.genres.includes(g)));
+      const typeMatch = selectedTypes.length === 0 || (m?.type && selectedTypes.map((t) => t.toLowerCase()).includes(String(m.type).toLowerCase()));
+      const statusMatch = selectedStatuses.length === 0 || (m?.status && selectedStatuses.includes(m.status));
       const yearMatch = yearMatches(m?.year, selectedYears);
-      const nsfwMatch =
-        nsfw === 'true' ||
-        m?.contentRating === 'safe' ||
-        m?.contentRating === 'suggestive';
+      const nsfwMatch = nsfw === 'true' || m?.contentRating === 'safe' || m?.contentRating === 'suggestive';
 
-      return (
-        titleMatch &&
-        genreMatch &&
-        typeMatch &&
-        statusMatch &&
-        yearMatch &&
-        nsfwMatch
-      );
+      return titleMatch && genreMatch && typeMatch && statusMatch && yearMatch && nsfwMatch;
     });
 
     type SortKey = 'weightedScore' | 'totalChapters' | 'lastUpdatedAt' | 'title' | 'year';
-
-    const getSortValue = (
-      item: any,
-      key: SortKey
-    ): number | string | Date | undefined => {
+    const getSortValue = (item: any, key: SortKey): number | string | Date | undefined => {
       if (key === 'totalChapters') return Number(item?.totalChapters);
       if (key === 'lastUpdatedAt') return new Date(item?.lastUpdatedAt);
       return item?.[key];
@@ -139,62 +92,37 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
 
     const sorted = [...filtered].sort((a, b) => {
       const sortKey = selectedSort as SortKey;
-
       const aVal = getSortValue(a, sortKey);
       const bVal = getSortValue(b, sortKey);
-
       if (aVal === undefined && bVal === undefined) return 0;
       if (aVal === undefined) return 1;
       if (bVal === undefined) return -1;
-
-      // Descending order
       return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
     });
 
     return sorted;
-  };
+  }, [search, selectedGenres, selectedTypes, selectedStatuses, selectedYears, selectedSort, nsfw, yearMatches]);
 
-  // Build filtered lists dynamically based on user lists
   const filteredLists = useMemo(() => {
     const result: Record<string, any[]> = {};
-    
     userLists.forEach(list => {
       const items = safeListsData[list.slug] || [];
       result[list.slug] = applyFilters(items);
     });
-    
     return result;
-  }, [
-    safeListsData,
-    userLists,
-    search,
-    selectedGenres,
-    selectedTypes,
-    selectedStatuses,
-    selectedYears,
-    selectedSort,
-    nsfw,
-  ]);
+  }, [safeListsData, userLists, applyFilters]);
 
-  // Get visible lists in sorted order, filtered by selectedList
   const visibleLists = useMemo(() => {
-    let filtered = userLists
-      .filter((l) => l.isVisible)
-      .sort((a, b) => a.sortOrder - b.sortOrder);
-    
-    // If a specific list is selected (not 'all'), filter to just that list
+    let filtered = userLists.filter((l) => l.isVisible).sort((a, b) => a.sortOrder - b.sortOrder);
     if (selectedList !== 'all') {
       filtered = filtered.filter((l) => l.slug === selectedList);
     }
-    
     return filtered;
   }, [userLists, selectedList]);
 
-  // Drag-and-drop handlers
-  const handleDragStart = (event: any) => {
+  const handleDragStart = useCallback((event: any) => {
     const { active } = event;
     setDraggingMangaId(active.id);
-    // Find manga object by id
     for (const list of visibleLists) {
       const manga = (filteredLists[list.slug] || []).find((m: any) => String(m.id) === String(active.id));
       if (manga) {
@@ -202,48 +130,39 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
         break;
       }
     }
-  };
+  }, [visibleLists, filteredLists]);
 
-    const handleDragEnd = async (event: any) => {
+  const handleDragEnd = useCallback(async (event: any) => {
     const { active, over } = event;
     setDraggingMangaId(null);
     setActiveManga(null);
-    if (!over || !active) return;
+
+    if (!over || !active || isMoving) return;
+
     const fromList = visibleLists.find((list) => (filteredLists[list.slug] || []).some((m: any) => String(m.id) === String(active.id)));
     const toList = visibleLists.find((list) => String(list.id) === String(over.id));
+
     if (!fromList || !toList || fromList.id === toList.id) return;
+
+    setIsMoving(true);
     try {
       await addToList(toList.id, Number(active.id));
       if (onUpdate) onUpdate();
       toast.success(`Manga moved to "${toList.name}"`);
     } catch (err) {
       toast.error('Failed to move manga');
+    } finally {
+      setIsMoving(false);
     }
-  };
+  }, [visibleLists, filteredLists, isMoving, onUpdate]);
 
   function DraggableMangaCard({ manga }: { manga: any }) {
     const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id: manga.id });
-    // Remove aria-describedby from attributes to prevent hydration mismatch
     const { 'aria-describedby': _ariaDescribedBy, ...safeAttributes } = attributes;
+
     return (
-      <div
-        ref={setNodeRef}
-        style={{
-          transform: CSS.Transform.toString(transform),
-          transition,
-          zIndex: isDragging ? 10 : undefined,
-          opacity: isDragging ? 0.5 : 1,
-          position: 'relative',
-        }}
-        {...safeAttributes}
-      >
-        <button
-          type="button"
-          aria-label="Drag to reorder"
-          className="absolute top-2 left-2 z-20 btn btn-ghost btn-xs cursor-grab active:cursor-grabbing px-4 py-2 text-white bg-background/70 rounded-md hover:bg-background/90"
-          {...listeners}
-          onClick={(e) => e.preventDefault()}
-        >
+      <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 10 : undefined, opacity: isDragging ? 0.5 : 1, position: 'relative' }} {...safeAttributes}>
+        <button type="button" aria-label="Drag to reorder" className="absolute top-2 left-2 z-20 btn btn-ghost btn-xs cursor-grab active:cursor-grabbing px-4 py-2 text-white bg-background/70 rounded-md hover:bg-background/90" {...listeners} onClick={(e) => e.preventDefault()}>
           <GripVertical className="w-3.5 h-3.5" />
         </button>
         <MangaCard manga={manga} />
@@ -254,12 +173,7 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
   function DroppableList({ list, children, isEmpty }: { list: any; children: (isOver: boolean) => React.ReactNode; isEmpty: boolean }) {
     const { setNodeRef, isOver } = useDroppable({ id: String(list.id) });
     return (
-      <div
-        ref={setNodeRef}
-        id={`droppable-list-${list.id}`}
-        className="bg-base-200 rounded-lg p-4 mb-2 transition-colors"
-        data-list-id={list.id}
-      >
+      <div ref={setNodeRef} id={`droppable-list-${list.id}`} className="bg-base-200 rounded-lg p-4 mb-2 transition-colors" data-list-id={list.id}>
         {children(isOver)}
       </div>
     );
@@ -283,12 +197,7 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
             onNsfwChange={setNsfw}
           />
         </div>
-        <DndContext
-          sensors={sensors}
-          collisionDetection={rectIntersection}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
+        <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="flex flex-col gap-8">
             {visibleLists.map((list) => {
               const listItems = filteredLists[list.slug] || [];
@@ -297,18 +206,11 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
                 <DroppableList key={list.id} list={list} isEmpty={isEmpty}>
                   {(isOver) => (
                     <>
-                      <SectionHeader
-                        title={list.name}
-                        subtitle={`(${listItems.length})`}
-                        link=""
-                        filters=""
-                      />
+                      <SectionHeader title={list.name} subtitle={`(${listItems.length})`} link="" filters="" />
                       <SortableContext items={listItems.map((m: any) => m.id)} strategy={verticalListSortingStrategy}>
                         {isEmpty && draggingMangaId ? (
                           <div className={`border-2 -inset-4border-dashed border-muted/30 rounded-lg p-12 text-center min-h-50 flex items-center justify-center transition-colors ${isOver ? 'bg-foreground' : 'bg-foreground/30'}`}>
-                            <p className="text-muted/50 text-sm">
-                              Drop manga here
-                            </p>
+                            <p className="text-muted/50 text-sm">Drop manga here</p>
                           </div>
                         ) : isEmpty ? null : (
                           <div className="relative">

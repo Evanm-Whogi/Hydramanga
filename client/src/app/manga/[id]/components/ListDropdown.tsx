@@ -64,7 +64,6 @@ export default function ListDropdown({ seriesId, initialListName, mangaTitle }: 
     const handleAction = async (action: 'update' | 'remove', list?: UserList) => {
         setLoading(true);
         setOpen(false);
-        const startTime = Date.now();
 
         try {
             if (action === 'update' && list) {
@@ -84,9 +83,6 @@ export default function ListDropdown({ seriesId, initialListName, mangaTitle }: 
                   trackMangaListAction('removed_from_list', '', '', seriesId.toString(), mangaTitle);
                 }
             }
-            // Ensure smooth transition if API is too fast
-            const elapsed = Date.now() - startTime;
-            if (elapsed < 600) await new Promise(r => setTimeout(r, 600 - elapsed));
         } catch (error) {
             console.error("Failed to update manga list:", error);
             toast.error('Failed to update list');
@@ -100,11 +96,7 @@ export default function ListDropdown({ seriesId, initialListName, mangaTitle }: 
     return (
         <div className="relative inline-flex items-center gap-3">
             <div className="relative">
-                <button 
-                    onClick={() => setOpen(!open)} 
-                    disabled={loading} 
-                    className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none text-primary transition-all ${loading ? 'animate-manga-pulse' : ''}`}
-                >
+                <button onClick={() => setOpen(!open)} disabled={loading} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none text-primary transition-all ${loading ? 'animate-manga-pulse' : ''}`}>
                     <HeartIcon className={`size-6 mr-2 transition-colors ${isAdded ? 'fill-red-500 text-red-500' : ''}`} />
                     <span className="capitalize">{status}</span>
                     <ChevronDownIcon className={`ml-2 size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -114,11 +106,7 @@ export default function ListDropdown({ seriesId, initialListName, mangaTitle }: 
                     <div className="absolute top-full left-0 mt-1 bg-foreground rounded-md shadow-xl z-50 flex flex-col min-w-37.5 overflow-hidden border border-white/10">
                         {userLists.length > 0 ? (
                             userLists.map((list) => (
-                                <button 
-                                    key={list.id} 
-                                    onClick={() => handleAction('update', list)} 
-                                    className="px-4 py-2 hover:bg-white/10 text-left border-none bg-transparent text-inherit cursor-pointer"
-                                >
+                                <button key={list.id} onClick={() => handleAction('update', list)} className="px-4 py-2 hover:bg-white/10 text-left border-none bg-transparent text-inherit cursor-pointer">
                                     {list.name}
                                 </button>
                             ))
@@ -129,20 +117,14 @@ export default function ListDropdown({ seriesId, initialListName, mangaTitle }: 
                         {isAdded && (
                             <>
                                 <div className="h-px bg-white/10 w-full" />
-                                <button 
-                                    onClick={() => handleAction('remove')} 
-                                    className="px-4 py-2 hover:bg-red-500/10 text-left border-none bg-transparent text-red-400 cursor-pointer flex items-center font-medium"
-                                >
+                                <button onClick={() => handleAction('remove')} className="px-4 py-2 hover:bg-red-500/10 text-left border-none bg-transparent text-red-400 cursor-pointer flex items-center font-medium">
                                     <Trash2Icon className="size-4 mr-2" /> Remove
                                 </button>
                             </>
                         )}
 
                         <div className="h-px bg-white/10 w-full" />
-                        <button 
-                            onClick={handleCreateList} 
-                            className="px-4 py-2 hover:bg-white/10 text-left border-none bg-transparent text-inherit cursor-pointer flex items-center"
-                        >
+                        <button onClick={handleCreateList} className="px-4 py-2 hover:bg-white/10 text-left border-none bg-transparent text-inherit cursor-pointer flex items-center">
                             Create new list
                         </button>
                     </div>

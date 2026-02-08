@@ -18,9 +18,10 @@ export function useSSEProgress(
   const onMessageRef = useRef<typeof onMessage>(onMessage);
   const onErrorRef = useRef<typeof onError>(onError);
 
-  // Keep stable refs for callbacks
-  useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
-  useEffect(() => { onErrorRef.current = onError; }, [onError]);
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+    onErrorRef.current = onError;
+  }, [onMessage, onError]);
 
   const cleanup = useCallback(() => {
     if (eventSourceRef.current) {
@@ -37,9 +38,7 @@ export function useSSEProgress(
 
   const connect = useCallback(() => {
     if (!url || !enabled) return;
-    if (eventSourceRef.current) return; // already connected
-
-    console.log('[SSE] Connecting to', url);
+    if (eventSourceRef.current) return;
 
     const eventSource = new EventSource(url, { withCredentials: true });
     eventSourceRef.current = eventSource;
@@ -51,8 +50,6 @@ export function useSSEProgress(
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-
-        console.log(data)
         
         // Check if this is a terminal state (done/completed/failed)
         if (data.type === 'done' || data.status === 'completed' || data.status === 'failed') {
@@ -72,8 +69,6 @@ export function useSSEProgress(
     };
 
     eventSource.onerror = () => {
-      console.error('[SSE] Connection error');
-      
       // If terminal state reached, don't reconnect
       if (terminalRef.current) {
         cleanup();

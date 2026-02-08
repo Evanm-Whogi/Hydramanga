@@ -31,6 +31,7 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
     const [chapterProgress, setChapterProgress] = useState<ChapterProgress>({});
     const [bookmarks, setBookmarks] = useState<BookmarkData>({});
     const [bookmarkModal, setBookmarkModal] = useState({ isOpen: false, chapterId: 0 });
+    const [isOperating, setIsOperating] = useState(false);
     
     // Use chapters as-is (already sorted by parent component)
     const chapters = manga.chapters || [];
@@ -92,14 +93,14 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
     }, [manga.id]);
 
     const handleMarkAsRead = async (e: React.MouseEvent, chapterId: number) => {
+        if (isOperating) return;
         e.preventDefault();
         e.stopPropagation();
         
+        setIsOperating(true);
         try {
             await markChapterAsRead(manga.id, chapterId);
-
             toast.success('Chapter marked as read');
-
             
             // Update local state to reflect the change
             setChapterProgress(prev => ({
@@ -112,13 +113,17 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
             }));
         } catch (error) {
             console.error('Failed to mark chapter as read:', error);
+        } finally {
+            setIsOperating(false);
         }
     };
 
     const handleMarkAsUnread = async (e: React.MouseEvent, chapterId: number) => {
+        if (isOperating) return;
         e.preventDefault();
         e.stopPropagation();
         
+        setIsOperating(true);
         try {
             await markChapterAsUnread(chapterId);
             
@@ -130,6 +135,8 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
             });
         } catch (error) {
             console.error('Failed to mark chapter as unread:', error);
+        } finally {
+            setIsOperating(false);
         }
     };
 
@@ -140,9 +147,11 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
     };
 
     const handleRemoveBookmark = async (e: React.MouseEvent, chapterId: number) => {
+        if (isOperating) return;
         e.preventDefault();
         e.stopPropagation();
         
+        setIsOperating(true);
         const chapter = chapters.find((ch: any) => ch.id === chapterId);
         const note = bookmarks[chapterId]?.note;
         try {
@@ -155,6 +164,8 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
             trackBookmarkAction('removed', manga.id.toString(), manga.title, chapterId.toString(), chapter?.chapterNumber, note);
         } catch (error) {
             console.error('Failed to remove bookmark:', error);
+        } finally {
+            setIsOperating(false);
         }
     };
 
@@ -250,14 +261,11 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
                                 )}
                             </div>
                             <div className="ml-4 shrink-0 flex flex-col gap-2">
-                                <button onClick={(e) => isFullyRead ? handleMarkAsUnread(e, chapter.id) : handleMarkAsRead(e, chapter.id)} className="hover:cursor-pointer px-4 py-2 bg-background hover:bg-background/50 rounded-lg text-xs whitespace-nowrap">
+                                <button onClick={(e) => isFullyRead ? handleMarkAsUnread(e, chapter.id) : handleMarkAsRead(e, chapter.id)} disabled={isOperating} className="hover:cursor-pointer px-4 py-2 bg-background hover:bg-background/50 rounded-lg text-xs whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50">
                                     {isFullyRead ? 'Mark Unread' : 'Mark as Read'}
                                 </button>
 
-                                <button 
-                                    onClick={(e) => isBookmarked ? handleRemoveBookmark(e, chapter.id) : handleBookmarkClick(e, chapter.id)} 
-                                    className="px-4 py-2 bg-background hover:bg-background/50 rounded-lg text-xs whitespace-nowrap hover:cursor-pointer"
-                                >
+                                <button onClick={(e) => isBookmarked ? handleRemoveBookmark(e, chapter.id) : handleBookmarkClick(e, chapter.id)} disabled={isOperating} className="px-4 py-2 bg-background hover:bg-background/50 rounded-lg text-xs whitespace-nowrap hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
                                     {isBookmarked ? 'Remove Bookmark' : 'Bookmark'}
                                 </button>
 

@@ -34,19 +34,27 @@ export default function ListContainer({ manga, chapters, comments, initialListNa
             <ListDropdown seriesId={manga.id} initialListName={initialListName} mangaTitle={manga.title}/>
 
             <div className="flex gap-2">
-                <button onClick={() => setPage("chapters")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "chapters" ? "text-primary" : "text-muted"}`}><BookOpen className="size-6 mr-1 transition-colors" /> Chapters</button>
-                <button onClick={() => setPage("comments")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "comments" ? "text-primary" : "text-muted"}`}><MessageCircleMore className="size-6 mr-1 transition-colors" /> Comments</button>
+                <button onClick={() => setPage("chapters")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "chapters" ? "text-primary" : "text-muted"}`}>
+                    <BookOpen className="size-6 mr-1 transition-colors" /> Chapters
+                </button>
+                <button onClick={() => setPage("comments")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "comments" ? "text-primary" : "text-muted"}`}>
+                    <MessageCircleMore className="size-6 mr-1 transition-colors" /> Comments
+                </button>
             </div>
 
             <div className="flex gap-2">
-                <button onClick={() => setSortOrder("asc")} className={`p-2 bg-foreground hover:bg-foreground/50 hover:cursor-pointer ${sortOrder === "asc" ? "text-primary border border-borders" : "text-muted"}`}><MoveUpIcon className="size-5"/></button>
-                <button onClick={() => setSortOrder("desc")} className={`p-2 bg-foreground hover:bg-foreground/50 hover:cursor-pointer ${sortOrder === "desc" ? "text-primary border border-borders" : "text-muted"}`}><MoveDownIcon className="size-5"/></button>
+                <button onClick={() => setSortOrder("asc")} className={`p-2 bg-foreground hover:bg-foreground/50 hover:cursor-pointer ${sortOrder === "asc" ? "text-primary border border-borders" : "text-muted"}`}>
+                    <MoveUpIcon className="size-5"/>
+                </button>
+                <button onClick={() => setSortOrder("desc")} className={`p-2 bg-foreground hover:bg-foreground/50 hover:cursor-pointer ${sortOrder === "desc" ? "text-primary border border-borders" : "text-muted"}`}>
+                    <MoveDownIcon className="size-5"/>
+                </button>
             </div>
         </div>
 
         <div className="flex flex-col pt-2 gap-2">
-            { page === "chapters" && <Chapters manga={{ ...manga, chapters: sortedChapters }} progress={importProgress} /> }
-            { page === "comments" && <Comments manga={manga} comments={comments} />}
+            {page === "chapters" && <Chapters manga={{ ...manga, chapters: sortedChapters }} progress={importProgress} />}
+            {page === "comments" && <Comments manga={manga} comments={comments} />}
         </div>
         </>
     )

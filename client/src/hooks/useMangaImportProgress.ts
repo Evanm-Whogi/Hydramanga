@@ -27,10 +27,11 @@ export function useMangaImportProgress(
   const onErrorRef = useRef<typeof onError>(onError);
   const lastTrackedPercentageRef = useRef<number>(0);
 
-  // Keep stable refs for callbacks
-  useEffect(() => { onProgressRef.current = onProgress; }, [onProgress]);
-  useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
-  useEffect(() => { onErrorRef.current = onError; }, [onError]);
+  useEffect(() => {
+    onProgressRef.current = onProgress;
+    onCompleteRef.current = onComplete;
+    onErrorRef.current = onError;
+  }, [onProgress, onComplete, onError]);
 
   const handleMessage = useCallback((message: any) => {
     switch (message.type) {

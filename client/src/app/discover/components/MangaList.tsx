@@ -1,8 +1,8 @@
-'use client'
-import MangaCard from "@/components/MangaCard";
-import React, { useRef, useCallback, useState, useEffect } from 'react';
+'use client';
+import { useRef, useCallback, useState, useEffect } from 'react';
+import { ArrowUp } from "lucide-react";
 import { useInfiniteScroll } from '@/lib/useIfiniteScroll';
-import { ArrowBigUp, ArrowUp } from "lucide-react";
+import MangaCard from "@/components/MangaCard";
 interface MangaListProps {
   filters: {
     search: string;
@@ -18,20 +18,6 @@ export default function MangaList({ filters }: MangaListProps) {
     const { items, loading, hasMore, meta, fetchData } = useInfiniteScroll(filters);
     const observer = useRef<IntersectionObserver | null>(null);
     const [showButton, setShowButton] = useState(false);
-    const [displayItems, setDisplayItems] = useState<any[]>([]);
-    const [fade, setFade] = useState(false);
-
-    // Keep previous items visible while loading new data
-    useEffect(() => {
-        if (!loading) {
-            setFade(false);
-            // Trigger fade out, then fade in
-            setTimeout(() => {
-                setDisplayItems(items);
-                setFade(true);
-            }, 10);
-        }
-    }, [items, loading]);
 
     const lastElementRef = useCallback((node: HTMLDivElement) => {
         if (loading) return;
@@ -62,11 +48,9 @@ export default function MangaList({ filters }: MangaListProps) {
         <section id="MangaList" className="pb-25 relative">
             <div className="container mx-auto text-primary space-y-2">
                 <div className="text-sm text-gray-400">Total: {meta?.total || 0} items</div>
-                <div
-                    className={`grid grid-cols-2 md:grid-cols-8 gap-6 transition-opacity duration-500 ${fade ? 'opacity-100' : 'opacity-0'}`}
-                >
-                    {displayItems.map((item, index) => {
-                        const isLastElement = displayItems.length === index + 1;
+                <div className="grid grid-cols-2 md:grid-cols-8 gap-6">
+                    {items.map((item, index) => {
+                        const isLastElement = items.length === index + 1;
                         return (
                             <div key={item.id} ref={isLastElement ? lastElementRef : null}>
                                 <MangaCard manga={item} />
@@ -74,7 +58,7 @@ export default function MangaList({ filters }: MangaListProps) {
                         )
                     })}
                 </div>
-                {!loading && displayItems.length === 0 && (
+                {!loading && items.length === 0 && (
                     <div className="w-full text-center py-8">
                         <p className="text-primary/60">No results found. Try adjusting your filters.</p>
                     </div>
@@ -85,10 +69,11 @@ export default function MangaList({ filters }: MangaListProps) {
                     </div>
                 )}
             </div>
-            {showButton && 
-            <button onClick={scrollToTop} className="fixed bottom-8 right-8 z-50 bg-foreground text-primary rounded-full p-2 shadow-lg hover:bg-foreground/50 transition-colors cursor-pointer" aria-label="Back to Top">
-                <ArrowUp className="size-8" />
-            </button>}
+            {showButton && (
+                <button onClick={scrollToTop} className="fixed bottom-8 right-8 z-50 bg-foreground text-primary rounded-full p-2 shadow-lg hover:bg-foreground/50 transition-colors cursor-pointer" aria-label="Back to Top">
+                    <ArrowUp className="size-8" />
+                </button>
+            )}
         </section>
     );
 }

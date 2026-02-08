@@ -23,12 +23,11 @@ export const fetchHomepage = cache(async (): Promise<any> => {
 
 // Trigger on-demand chapter scan for a manga
 export async function triggerMangaScan(mangaId: number): Promise<any> {
-    try {
-        return await apiPost(`/manga/${mangaId}/scan`);
-    } catch (error) {
-        console.error('Error triggering manga scan:', error);
-        return null;
-    }
+  try {
+    return await apiPost(`/manga/${mangaId}/scan`);
+  } catch (error) {
+    return null;
+  }
 }
 
 

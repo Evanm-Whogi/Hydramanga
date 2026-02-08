@@ -29,7 +29,6 @@ export async function getMangaProgress(mangaId: number): Promise<MangaImportProg
     if (error?.response?.status === 404) {
       return null;
     }
-    console.error('Failed to get manga progress:', error);
     return null;
   }
 }
