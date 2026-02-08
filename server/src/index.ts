@@ -39,7 +39,7 @@ const app: Express = express();
 app.use(morgan(':method :url :status :response-time ms - :res[content-length] \n', {
     skip: (req, res) => req.originalUrl.startsWith('/admin/queues') // Skip logging for Bull Board routes
 }));
-app.use(cors({ origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001', 'http://localhost:3001', 'https://manga.chit.sh'], credentials: true }));
+app.use(cors({ origin: ['https://mangadev.chit.sh'], credentials: true }));
 app.set('trust proxy', 1);
 
 // Bull Board Setup
@@ -91,7 +91,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   path: '/socket.io/',
   cors: {
-    origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001', 'http://localhost:3001', 'https://manga.chit.sh'],
+    origin: ['https://mangadev.chit.sh'],
     methods: ["GET", "POST"],
     credentials: true
   },

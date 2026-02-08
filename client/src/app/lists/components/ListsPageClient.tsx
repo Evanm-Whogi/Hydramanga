@@ -21,8 +21,6 @@ export default function ListsPageClient({ initialData }: ListsPageClientProps) {
     try {
       const updated = await fetchAllLists();
       setListsData(updated || { lists: [] });
-    } catch (error) {
-      console.error('Failed to refresh lists:', error);
     } finally {
       setIsRefreshing(false);
     }

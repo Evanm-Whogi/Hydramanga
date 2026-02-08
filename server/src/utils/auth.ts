@@ -1,8 +1,9 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { db } from "@/db/index";
+import { db, schema } from "@/db/index";
 import { emailService } from "@/services/emailService";
 import { discordService } from "@/services/discordService";
+import { eq, sql } from "drizzle-orm";
 
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'http://localhost:3000';
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || `${PUBLIC_APP_URL}/api/auth/callback/google`;
@@ -42,8 +43,8 @@ export const auth = betterAuth({
     },
     emailAndPassword: { 
         enabled: true, 
-        minPasswordLength: 4,
-        maxPasswordLength: 26,
+        minPasswordLength: 8,
+        maxPasswordLength: 32,
         requireEmailVerification: false,
         autoSignIn: true,
     },
@@ -96,6 +97,18 @@ export const auth = betterAuth({
             create: {
                 after: async (user: any) => {
                     await discordService.notifyUserSignup(user.name || 'Unknown', user.id);
+
+                    const result = await db
+                        .select({ count: sql<number>`count(*)` })
+                        .from(schema.user);
+                    const userCount = Number(result[0]?.count ?? 0);
+
+                    if (userCount === 1 && user.role !== 'admin') {
+                        await db
+                            .update(schema.user)
+                            .set({ role: 'admin' })
+                            .where(eq(schema.user.id, user.id));
+                    }
                 }
             }
         }

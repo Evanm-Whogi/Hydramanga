@@ -28,28 +28,26 @@ export default function Invites() {
   }, []);
 
   const fetchCodes = async () => {
-    try {
-      setLoading(true);
-      const result = await getUserInviteCodes();
-      setCodes(result);
-    } catch (error) {
-      toast("Failed to load invite codes", { type: "error" });
-    } finally {
-      setLoading(false);
+    setLoading(true);
+    const result = await getUserInviteCodes();
+    if (result.success) {
+      setCodes(result.data);
+    } else {
+      toast(result.message || "Failed to load invite codes", { type: "error" });
     }
+    setLoading(false);
   };
 
   const generateNewCode = async () => {
-    try {
-      setGenerating(true);
-      const newCode = await generateInviteCode();
-      setCodes([newCode, ...codes]);
+    setGenerating(true);
+    const result = await generateInviteCode();
+    if (result.success) {
+      setCodes([result.data, ...codes]);
       toast("New invite code generated!", { type: "success" });
-    } catch (error: any) {
-      toast(error.message || "Failed to generate code", { type: "error" });
-    } finally {
-      setGenerating(false);
+    } else {
+      toast(result.message || "Failed to generate code", { type: "error" });
     }
+    setGenerating(false);
   };
 
   const copyToClipboard = (code: string) => {

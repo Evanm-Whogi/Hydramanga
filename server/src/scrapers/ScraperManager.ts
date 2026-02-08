@@ -135,8 +135,8 @@ export class ScraperManager {
             priority: number;
         }> = [];
 
-        // Try ALL scrapers and collect matches
-        for (const scraper of enabledScrapers) {
+        // Try ALL scrapers concurrently and collect matches
+        const scraperPromises = enabledScrapers.map(async (scraper) => {
             const metadata = scraper.getMetadata();
             
             try {
@@ -147,7 +147,7 @@ export class ScraperManager {
                         `Scraper ${metadata.name} cannot handle "${mangaName}", skipping`,
                         { service: 'scraperManager' }
                     );
-                    continue;
+                    return null;
                 }
 
                 logger.info(
@@ -163,19 +163,20 @@ export class ScraperManager {
                         { service: 'scraperManager' }
                     );
 
-                    matches.push({
+                    this.recordAttempt(mangaName, metadata.id, metadata.name, metadata.priority, true);
+
+                    return {
                         scraper,
                         result,
                         scraperName: metadata.name,
                         priority: metadata.priority,
-                    });
-
-                    this.recordAttempt(mangaName, metadata.id, metadata.name, metadata.priority, true);
+                    };
                 } else {
                     logger.warn(
                         `Scraper ${metadata.name} found no match for "${mangaName}"`,
                         { service: 'scraperManager' }
                     );
+                    return null;
                 }
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -193,10 +194,15 @@ export class ScraperManager {
                     errorMessage
                 );
 
-                // Continue to next scraper
-                continue;
+                return null;
             }
-        }
+        });
+
+        // Wait for all scrapers to complete
+        const results = await Promise.all(scraperPromises);
+        
+        // Filter out null results and add to matches
+        matches.push(...results.filter((r): r is NonNullable<typeof r> => r !== null));
 
         // No scrapers found a match
         if (matches.length === 0) {

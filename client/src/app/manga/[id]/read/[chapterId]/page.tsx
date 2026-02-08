@@ -38,25 +38,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ReadPage({ params }: Props) {
   const { id } = await params;
   
-  try {
-    const data = await fetchOne(id);
-    const manga = data.manga;
-    
-    // If no chapters (bot received minimal data), show fallback
-    if (!manga.chapters) {
-      return (
-        <div className="min-h-screen flex items-center justify-center">
-          <p className="text-muted">Content unavailable</p>
-        </div>
-      );
-    }
-    
-    return <ReadContent mangaTitle={manga.title} />;
-  } catch (error) {
+  const data = await fetchOne(id);
+  const manga = data.manga;
+
+  // If no chapters (bot received minimal data), show fallback
+  if (!manga.chapters) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-muted">Content unavailable</p>
       </div>
     );
   }
+
+  return <ReadContent mangaTitle={manga.title} />;
 }

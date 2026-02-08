@@ -47,7 +47,6 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
         const fetchProgress = async () => {
             try {
                 const response = await getSeriesChapterProgress(manga.id);
-                
                 if (response?.chapters && Array.isArray(response.chapters)) {
                     const progressMap: ChapterProgress = {};
                     response.chapters.forEach((ch: any) => {
@@ -72,7 +71,6 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
         const fetchBookmarks = async () => {
             try {
                 const response = await getSeriesBookmarks(manga.id);
-                
                 if (response?.bookmarks && Array.isArray(response.bookmarks)) {
                     const bookmarkMap: BookmarkData = {};
                     response.bookmarks.forEach((b: any) => {
@@ -174,7 +172,6 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
         const fetchBookmarks = async () => {
             try {
                 const response = await getSeriesBookmarks(manga.id);
-                
                 if (response?.bookmarks && Array.isArray(response.bookmarks)) {
                     const bookmarkMap: BookmarkData = {};
                     response.bookmarks.forEach((b: any) => {

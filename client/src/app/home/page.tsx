@@ -18,7 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function Home() {
   const mangaData = await getHomepage();
-  const trendingManga = mangaData?.trending[0] || mangaData.popular[0]; // Fallback if no trending
+  const trendingManga = mangaData?.trending?.[0] || mangaData?.popular?.[0]; // Fallback if no trending
 
   return (
     <>

@@ -1,8 +1,19 @@
 import { Request, Response, NextFunction } from 'express';
 import { db, schema } from '@/db/index';
-import { eq, and, isNull, desc } from 'drizzle-orm';
+import { eq, and, isNull, desc, sql } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { nanoid } from 'nanoid';
+
+const BOOTSTRAP_INVITE_CODE = process.env.BOOTSTRAP_INVITE_CODE?.trim().toUpperCase();
+
+async function getUserCount(): Promise<number> {
+  const result = await db.select({ count: sql<number>`count(*)` }).from(schema.user);
+  return Number(result[0]?.count ?? 0);
+}
+
+function normalizeInviteCode(code: string): string {
+  return code.trim().toUpperCase();
+}
 
 /**
  * Generate a new invite code for the authenticated user
@@ -123,10 +134,31 @@ export async function validateInviteCode(req: Request, res: Response, next: Next
       });
     }
 
+    const normalizedCode = normalizeInviteCode(code);
+
+    if (BOOTSTRAP_INVITE_CODE && normalizedCode === BOOTSTRAP_INVITE_CODE) {
+      const userCount = await getUserCount();
+      if (userCount === 0) {
+        return res.json({
+          success: true,
+          data: {
+            id: 'bootstrap',
+            code: normalizedCode,
+            valid: true,
+          },
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: 'This invite code has already been used',
+      });
+    }
+
     const invite = await db
       .select()
       .from(schema.inviteCodes)
-      .where(eq(schema.inviteCodes.code, code.toUpperCase()))
+      .where(eq(schema.inviteCodes.code, normalizedCode))
       .limit(1);
 
     if (invite.length === 0) {
@@ -173,10 +205,30 @@ export async function useInviteCode(req: Request, res: Response, next: NextFunct
       });
     }
 
+    const normalizedCode = normalizeInviteCode(code);
+
+    if (BOOTSTRAP_INVITE_CODE && normalizedCode === BOOTSTRAP_INVITE_CODE) {
+      const userCount = await getUserCount();
+      if (userCount === 1) {
+        // Initialize 5 invite codes for the first user
+        await initializeUserInviteCodes(userId);
+        logger.info(`Bootstrap invite used by user ${userId}`, { service: 'inviteController' });
+        return res.json({
+          success: true,
+          message: 'Invite code used successfully',
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid invite code',
+      });
+    }
+
     const invite = await db
       .select()
       .from(schema.inviteCodes)
-      .where(eq(schema.inviteCodes.code, code.toUpperCase()))
+      .where(eq(schema.inviteCodes.code, normalizedCode))
       .limit(1);
 
     if (invite.length === 0) {
@@ -204,7 +256,7 @@ export async function useInviteCode(req: Request, res: Response, next: NextFunct
     // Initialize 5 invite codes for the new user
     await initializeUserInviteCodes(userId);
 
-    logger.info(`Invite code ${code} used by user ${userId}`, { service: 'inviteController' });
+    logger.info(`Invite code ${normalizedCode} used by user ${userId}`, { service: 'inviteController' });
 
     return res.json({
       success: true,
