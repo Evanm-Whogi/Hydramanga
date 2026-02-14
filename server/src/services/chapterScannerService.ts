@@ -194,8 +194,6 @@ export class ChapterScannerService {
                         firstScraperId = chapter.scraperId;
                     }
 
-                    foundCount++;
-                    newChapters.push(chapter.number);
                     const isPreview = previewRemaining > 0;
                     if (isPreview) previewRemaining--;
                     
@@ -219,6 +217,10 @@ export class ChapterScannerService {
                         },
                         { op: 'queue.add', tags: { chapter_number: chapter.number } }
                     );
+                    
+                    // Only increment after successfully queuing the job
+                    foundCount++;
+                    newChapters.push(chapter.number);
                 } catch (jobError) {
                     logger.error(
                         `[SCANNER] Error adding job for chapter ${chapter.number}: ${jobError}`,

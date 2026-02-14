@@ -21,7 +21,7 @@ const { eq } = require('drizzle-orm');
 const { WeebCentralScraper } = require('@/scrapers/implementations/WeebCentralScraper');
 const { NHentaiScraper } = require('@/scrapers/implementations/nHentaiScraper');
 const { MangaDexScraper } = require('@/scrapers/implementations/MangaDexScraper');
-const { ComixScraper } = require('@/scrapers/implementations/ComixScraper');
+const { MangaTaroScraper } = require('@/scrapers/implementations/MangaTaroScraper');
 const logger = require('@/services/loggerService').default;
 const dotenv = require('dotenv');
 dotenv.config();
@@ -119,7 +119,7 @@ async function testScraperMatching(mangaId) {
 
         const scraperPriorities = [
             { name: 'WeebCentral', priority: process.env.WEEB_CENTRAL_PRIORITY || 1 },
-            { name: 'Comix', priority: process.env.COMIX_PRIORITY || 2 },
+            { name: 'MangaTaro', priority: process.env.MANGATARO_PRIORITY || 2 },
             { name: 'nHentai', priority: process.env.NHENTAI_PRIORITY || 3 },
             { name: 'MangaDex', priority: process.env.MANGADEX_PRIORITY || 4 },
         ];
@@ -171,10 +171,10 @@ async function testScraperMatching(mangaId) {
             });
         }
 
-        // Test Comix
+        // Test MangaTaro
         try {
-            console.log(`\n🔍 Testing Comix...`);
-            const scraper = new ComixScraper();
+            console.log(`\n🔍 Testing MangaTaro...`);
+            const scraper = new MangaTaroScraper();
             const result = await scraper.findBestMatch(m.title, {
                 nativeTitle: m.nativeTitle,
                 romanizedTitle: m.romanizedTitle,
@@ -186,7 +186,7 @@ async function testScraperMatching(mangaId) {
                 console.log(`      URL: ${result.href}`);
                 console.log(`      Score: ${result.score}`);
                 results.push({
-                    scraper: 'Comix',
+                    scraper: 'MangaTaro',
                     found: true,
                     title: result.title,
                     url: result.href,
@@ -195,14 +195,14 @@ async function testScraperMatching(mangaId) {
             } else {
                 console.log(`   ❌ NOT FOUND`);
                 results.push({
-                    scraper: 'Comix',
+                    scraper: 'MangaTaro',
                     found: false
                 });
             }
         } catch (err) {
             console.log(`   ❌ ERROR: ${err.message}`);
             results.push({
-                scraper: 'Comix',
+                scraper: 'MangaTaro',
                 found: false,
                 error: err.message
             });
@@ -301,7 +301,7 @@ async function testScraperMatching(mangaId) {
             // Sort by score (highest first), then by priority (if tied)
             const priorities = {
                 'WeebCentral': 1,
-                'Comix': 2,
+                'MangaTaro': 2,
                 'nHentai': 3,
                 'MangaDex': 4
             };

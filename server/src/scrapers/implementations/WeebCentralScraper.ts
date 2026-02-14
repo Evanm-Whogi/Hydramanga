@@ -218,7 +218,7 @@ export class WeebCentralScraper implements IChapterScraper {
 
         try {
             // Block ads, trackers, and heavy resources
-            await page.route('**/*', route => {
+            await page.route('**/*', (route: any) => {
                 const request = route.request();
                 const resourceType = request.resourceType();
 
@@ -251,8 +251,11 @@ export class WeebCentralScraper implements IChapterScraper {
                         { service: 'weebCentralScraper' }
                     );
 
+                    // Use networkidle on first attempt, fallback to domcontentloaded on retries
+                    const waitStrategy = attempt === 1 ? 'networkidle' : 'domcontentloaded';
+                    
                     await page.goto(url, {
-                        waitUntil: 'domcontentloaded',
+                        waitUntil: waitStrategy,
                         timeout: 45000,
                     });
 
@@ -292,71 +295,126 @@ export class WeebCentralScraper implements IChapterScraper {
                 );
             }
 
-            // Wait for images to load
-            await page.waitForTimeout(1000);
+            // Extract images with retry logic and progressive loading
+            let finalImages: string[] = [];
+            let extractAttempt = 0;
+            const maxExtractAttempts = 4;
 
-            try {
-                await page.waitForSelector('img[alt*="Page"]', { timeout: 5000 });
-            } catch (err) {
-                logger.warn(
-                    `[WeebCentral] Image selector not found immediately for ${folderName}, continuing anyway`,
+            while (finalImages.length === 0 && extractAttempt < maxExtractAttempts) {
+                extractAttempt++;
+
+                logger.info(
+                    `[WeebCentral] Attempting to extract images (attempt ${extractAttempt}/${maxExtractAttempts})`,
                     { service: 'weebCentralScraper' }
                 );
-            }
 
-            await page.evaluate(() => window.scrollBy(0, 500));
+                // Wait for initial page load with increasing timeout
+                const initialWait = 2000 + (extractAttempt - 1) * 1500; // 2s, 3.5s, 5s, 6.5s
+                await page.waitForTimeout(initialWait);
 
-            // Extract image URLs - Try primary selector
-            let finalImages = await page
-                .evaluate(() => {
-                    return Array.from(document.querySelectorAll('img.maw-w-full'))
-                        .map(
-                            img =>
-                                img.getAttribute('data-src') || img.getAttribute('src')
-                        )
-                        .filter(
-                            (src): src is string =>
-                                !!src &&
-                                (src.includes('planeptune.us') ||
-                                    src.includes('googleusercontent'))
-                        );
-                })
-                .catch((err: any) => {
+                // Progressive scrolling to trigger lazy loading
+                try {
+                    const scrollSteps = 3;
+                    const scrollAmount = await page.evaluate(() => window.innerHeight * 0.8);
+                    
+                    for (let i = 0; i < scrollSteps; i++) {
+                        await page.evaluate((amount: any) => {
+                            window.scrollBy(0, amount);
+                        }, scrollAmount);
+                        await page.waitForTimeout(500);
+                    }
+                    
+                    // Scroll back to top
+                    await page.evaluate(() => window.scrollTo(0, 0));
+                    await page.waitForTimeout(300);
+                } catch (err) {
                     logger.warn(
-                        `[WeebCentral] Primary selector failed for ${folderName}: ${err.message}`,
+                        `[WeebCentral] Scroll action failed: ${err}`,
                         { service: 'weebCentralScraper' }
                     );
-                    return [];
-                });
+                }
 
-            // Fallback selector
-            if (finalImages.length === 0) {
+                // Wait for images to appear
+                try {
+                    await page.waitForSelector('img[alt*="Page"], img.maw-w-full', { 
+                        timeout: 8000,
+                        state: 'visible'
+                    });
+                    // Extra wait for all images to load
+                    await page.waitForTimeout(1500);
+                } catch (err) {
+                    logger.warn(
+                        `[WeebCentral] Image selector wait timed out on attempt ${extractAttempt}`,
+                        { service: 'weebCentralScraper' }
+                    );
+                    
+                    // If this isn't the last attempt, continue to retry
+                    if (extractAttempt < maxExtractAttempts) {
+                        continue;
+                    }
+                }
+
+                // Extract image URLs - Try primary selector
                 finalImages = await page
                     .evaluate(() => {
-                        return Array.from(
-                            document.querySelectorAll('img[alt*="Page"]')
-                        )
-                            .map(img => img.getAttribute('src'))
+                        return Array.from(document.querySelectorAll('img.maw-w-full'))
+                            .map(
+                                img =>
+                                    img.getAttribute('data-src') || img.getAttribute('src')
+                            )
                             .filter(
-                                (src): src is string => !!src && src.startsWith('http')
+                                (src): src is string =>
+                                    !!src &&
+                                    (src.includes('planeptune.us') ||
+                                        src.includes('googleusercontent'))
                             );
                     })
                     .catch((err: any) => {
                         logger.warn(
-                            `[WeebCentral] Fallback selector failed for ${folderName}: ${err.message}`,
+                            `[WeebCentral] Primary selector failed for ${folderName}: ${err.message}`,
                             { service: 'weebCentralScraper' }
                         );
                         return [];
                     });
+
+                // Fallback selector
+                if (finalImages.length === 0) {
+                    finalImages = await page
+                        .evaluate(() => {
+                            return Array.from(
+                                document.querySelectorAll('img[alt*="Page"]')
+                            )
+                                .map(img => img.getAttribute('src'))
+                                .filter(
+                                    (src): src is string => !!src && src.startsWith('http')
+                                );
+                        })
+                        .catch((err: any) => {
+                            logger.warn(
+                                `[WeebCentral] Fallback selector failed for ${folderName}: ${err.message}`,
+                                { service: 'weebCentralScraper' }
+                            );
+                            return [];
+                        });
+                }
+
+                if (finalImages.length === 0 && extractAttempt < maxExtractAttempts) {
+                    logger.warn(
+                        `[WeebCentral] No images found on attempt ${extractAttempt}, retrying...`,
+                        { service: 'weebCentralScraper' }
+                    );
+                    // Wait before retry with exponential backoff
+                    await page.waitForTimeout(2000 * extractAttempt);
+                }
             }
 
             logger.info(
-                `[WeebCentral] Found ${finalImages.length} images for ${folderName}`,
+                `[WeebCentral] Found ${finalImages.length} images for ${folderName} after ${extractAttempt} attempt(s)`,
                 { service: 'weebCentralScraper' }
             );
 
             if (finalImages.length === 0) {
-                throw new Error(`No images found at ${url}`);
+                throw new Error(`No images found at ${url} after ${maxExtractAttempts} attempts`);
             }
 
             // Download images
@@ -419,6 +477,12 @@ export class WeebCentralScraper implements IChapterScraper {
                 });
 
                 fs.writeFileSync(filePath, Buffer.from(response.data));
+                
+                // Small delay between image downloads to avoid rate limiting
+                // Skip delay on last image
+                if (i < images.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 150));
+                }
             } catch (err: any) {
                 logger.error(
                     `[WeebCentral] Failed to download image ${i + 1}: ${err.message}`,
