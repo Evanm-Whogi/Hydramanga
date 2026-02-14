@@ -27,6 +27,8 @@ import {
 } from './interfaces/IChapterScraper';
 import logger from '@/services/loggerService';
 import { discordService } from '@/services/discordService';
+import { titleSearchSemaphore } from '@/services/titleSearchSemaphore';
+import { cacheService } from '@/services/cacheService';
 
 /**
  * Scraper attempt result (for logging and debugging)
@@ -115,140 +117,137 @@ export class ScraperManager {
         mangaName: string,
         options?: SearchOptions
     ): Promise<{ scraper: IChapterScraper; result: MangaSearchResult } | undefined> {
-        const enabledScrapers = this.getEnabledScrapers();
-
-        if (enabledScrapers.length === 0) {
-            logger.error('No enabled scrapers available', { service: 'scraperManager' });
-            return undefined;
+        // Check cache first
+        const cacheKey = `titleSearch:${mangaName.toLowerCase()}`;
+        const cached = await cacheService.get<{ scraperId: string; result: MangaSearchResult }>(cacheKey);
+        if (cached) {
+            const scraper = this.getScraperById(cached.scraperId);
+            if (scraper) {
+                logger.debug(`Cache hit for title search: "${mangaName}"`, { service: 'scraperManager' });
+                return { scraper, result: cached.result };
+            }
         }
 
-        logger.info(
-            `Searching for "${mangaName}" across ${enabledScrapers.length} scrapers`,
-            { service: 'scraperManager' }
-        );
+        // Lock to prevent concurrent title searches (rate limiting protection)
+        return await titleSearchSemaphore.lock(async () => {
+            const enabledScrapers = this.getEnabledScrapers();
 
-        // Store all successful matches with their scores
-        const matches: Array<{
-            scraper: IChapterScraper;
-            result: MangaSearchResult;
-            scraperName: string;
-            priority: number;
-        }> = [];
-
-        // Try ALL scrapers concurrently and collect matches
-        const scraperPromises = enabledScrapers.map(async (scraper) => {
-            const metadata = scraper.getMetadata();
-            
-            try {
-                // Check if scraper can handle this manga
-                const canHandle = await scraper.canHandle(mangaName, options?.seriesId);
-                if (!canHandle) {
-                    logger.debug(
-                        `Scraper ${metadata.name} cannot handle "${mangaName}", skipping`,
-                        { service: 'scraperManager' }
-                    );
-                    return null;
-                }
-
-                logger.info(
-                    `Attempting search with ${metadata.name} (priority ${metadata.priority})`,
-                    { service: 'scraperManager' }
-                );
-
-                const result = await scraper.findBestMatch(mangaName, options);
-
-                if (result) {
-                    logger.info(
-                        `✓ Found match using ${metadata.name}: "${result.title}" (score: ${result.score})`,
-                        { service: 'scraperManager' }
-                    );
-
-                    this.recordAttempt(mangaName, metadata.id, metadata.name, metadata.priority, true);
-
-                    return {
-                        scraper,
-                        result,
-                        scraperName: metadata.name,
-                        priority: metadata.priority,
-                    };
-                } else {
-                    logger.warn(
-                        `Scraper ${metadata.name} found no match for "${mangaName}"`,
-                        { service: 'scraperManager' }
-                    );
-                    return null;
-                }
-            } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                logger.error(
-                    `Scraper ${metadata.name} failed: ${errorMessage}`,
-                    { service: 'scraperManager' }
-                );
-
-                this.recordAttempt(
-                    mangaName,
-                    metadata.id,
-                    metadata.name,
-                    metadata.priority,
-                    false,
-                    errorMessage
-                );
-
-                return null;
+            if (enabledScrapers.length === 0) {
+                logger.error('No enabled scrapers available', { service: 'scraperManager' });
+                return undefined;
             }
-        });
 
-        // Wait for all scrapers to complete
-        const results = await Promise.all(scraperPromises);
-        
-        // Filter out null results and add to matches
-        matches.push(...results.filter((r): r is NonNullable<typeof r> => r !== null));
-
-        // No scrapers found a match
-        if (matches.length === 0) {
-            logger.error(
-                `Failed to find "${mangaName}" using any available scraper`,
-                { service: 'scraperManager' }
-            );
-            return undefined;
-        }
-
-        // Sort by score (highest first), then by priority (lowest number = highest priority)
-        // Special case: if scores are within 20 points, prefer higher priority scraper
-        // This handles cases where a complete source (Comix: 95) should beat a partial source (nHentai: 115)
-        matches.sort((a, b) => {
-            const scoreDiff = Math.abs(a.result.score - b.result.score);
-            
-            // If scores are close (within 20 points), use priority as primary sort
-            if (scoreDiff <= 20) {
-                return a.priority - b.priority; // Lower priority number wins
-            }
-            
-            // Otherwise, higher score wins
-            if (b.result.score !== a.result.score) {
-                return b.result.score - a.result.score;
-            }
-            
-            // Exact tie: use priority
-            return a.priority - b.priority;
-        });
-
-        const bestMatch = matches[0];
-
-        logger.info(
-            `🎯 Best match: "${bestMatch.result.title}" from ${bestMatch.scraperName} (score: ${bestMatch.result.score})`,
-            { service: 'scraperManager' }
-        );
-
-        // Log all other candidates for comparison
-        if (matches.length > 1) {
             logger.info(
-                `Other candidates: ${matches.slice(1).map(m => `${m.scraperName}="${m.result.title}" (${m.result.score})`).join(', ')}`,
+                `Searching for "${mangaName}" across ${enabledScrapers.length} scrapers`,
                 { service: 'scraperManager' }
             );
-        }
 
-        return { scraper: bestMatch.scraper, result: bestMatch.result };
+            // Store all successful matches with their scores
+            const matches: Array<{
+                scraper: IChapterScraper;
+                result: MangaSearchResult;
+                scraperName: string;
+                priority: number;
+            }> = [];
+
+            // Try ALL scrapers concurrently and collect matches
+            const scraperPromises = enabledScrapers.map(async (scraper) => {
+                const metadata = scraper.getMetadata();
+                
+                try {
+                    // Check if scraper can handle this manga
+                    const canHandle = await scraper.canHandle(mangaName, options?.seriesId);
+                    if (!canHandle) {
+                        logger.debug(
+                            `Scraper ${metadata.name} cannot handle "${mangaName}", skipping`,
+                            { service: 'scraperManager' }
+                        );
+                        return null;
+                    }
+
+                    logger.info(
+                        `Attempting search with ${metadata.name} (priority ${metadata.priority})`,
+                        { service: 'scraperManager' }
+                    );
+
+                    const result = await scraper.findBestMatch(mangaName, options);
+
+                    if (result) {
+                        logger.info(
+                            `✓ Found match using ${metadata.name}: "${result.title}" (score: ${result.score})`,
+                            { service: 'scraperManager' }
+                        );
+
+                        this.recordAttempt(mangaName, metadata.id, metadata.name, metadata.priority, true);
+
+                        return {
+                            scraper,
+                            result,
+                            scraperName: metadata.name,
+                            priority: metadata.priority,
+                        };
+                    } else {
+                        logger.warn(
+                            `Scraper ${metadata.name} found no match for "${mangaName}"`,
+                            { service: 'scraperManager' }
+                        );
+                        return null;
+                    }
+                } catch (error) {
+                    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                    logger.error(
+                        `Scraper ${metadata.name} failed: ${errorMessage}`,
+                        { service: 'scraperManager' }
+                    );
+
+                    this.recordAttempt(
+                        mangaName,
+                        metadata.id,
+                        metadata.name,
+                        metadata.priority,
+                        false,
+                        errorMessage
+                    );
+
+                    return null;
+                }
+            });
+
+            // Wait for all scrapers to complete
+            const results = await Promise.all(scraperPromises);
+            
+            matches.push(...results.filter((r): r is NonNullable<typeof r> => r !== null));
+
+            if (matches.length === 0) {
+                logger.error(
+                    `Failed to find "${mangaName}" using any available scraper`,
+                    { service: 'scraperManager' }
+                );
+                return undefined;
+            }
+
+            // Sort by score (highest first), then by priority (lowest number = highest priority)
+            matches.sort((a, b) => {
+                const scoreDiff = Math.abs(a.result.score - b.result.score);
+                if (scoreDiff <= 20) {
+                    return a.priority - b.priority;
+                }
+                if (b.result.score !== a.result.score) {
+                    return b.result.score - a.result.score;
+                }
+                return a.priority - b.priority;
+            });
+
+            const bestMatch = matches[0];
+
+            // Cache the result (5 minute TTL)
+            await cacheService.set(cacheKey, {
+                scraperId: bestMatch.scraper.getMetadata().id,
+                result: bestMatch.result,
+            }, 300);
+
+            return { scraper: bestMatch.scraper, result: bestMatch.result };
+        });
     }
 
     /**

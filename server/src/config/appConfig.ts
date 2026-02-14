@@ -92,7 +92,7 @@ export interface ScraperConfig {
         priority: number; // 1 = highest priority
         enabled: boolean;
     };
-    comix: {
+    mangaTaro: {
         apiUrl: string;
         baseUrl: string;
         userAgent: string;
@@ -288,13 +288,13 @@ export class AppConfigService {
                     priority: parseEnvNumber('MANGADEX_PRIORITY', 4), // 4 = fourth priority (after WeebCentral and before nHentai)
                     enabled: parseEnvBoolean('MANGADEX_ENABLED', true),
                 },
-                comix: {
-                    apiUrl: 'https://comix.to/api/v2',
-                    baseUrl: 'https://comix.to',
+                mangaTaro: {
+                    apiUrl: 'https://mangataro.org',
+                    baseUrl: 'https://mangataro.org',
                     userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    timeout: parseEnvNumber('COMIX_TIMEOUT', 30000), // 30 seconds
-                    priority: parseEnvNumber('COMIX_PRIORITY', 3), // 3 = third priority
-                    enabled: parseEnvBoolean('COMIX_ENABLED', true),
+                    timeout: parseEnvNumber('MANGATARO_TIMEOUT', 30000), // 30 seconds
+                    priority: parseEnvNumber('MANGATARO_PRIORITY', 2), // 2 = second priority
+                    enabled: parseEnvBoolean('MANGATARO_ENABLED', true),
                 },
             },
 
