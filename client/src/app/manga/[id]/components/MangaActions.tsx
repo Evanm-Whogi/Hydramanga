@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
-import { MoveUpIcon, MoveDownIcon, BookOpen, MessageCircleMore } from 'lucide-react';
+import { MoveUpIcon, MoveDownIcon, BookOpen, MessageCircleMore, ImagesIcon } from 'lucide-react';
 import Chapters from "./Chapters";
 import Comments from "./Comments";
 import Gallery from "./Gallery";
@@ -42,8 +42,8 @@ export default function ListContainer({ manga, chapters, comments, gallery, init
                 <button onClick={() => setPage("comments")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "comments" ? "text-primary" : "text-muted"}`}>
                     <MessageCircleMore className="size-6 mr-1 transition-colors" /> Comments
                 </button>
-                <button onClick={() => setPage("gallery")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "comments" ? "text-primary" : "text-muted"}`}>
-                    <MessageCircleMore className="size-6 mr-1 transition-colors" /> Gallery
+                <button onClick={() => setPage("gallery")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "gallery" ? "text-primary" : "text-muted"}`}>
+                    <ImagesIcon className="size-6 mr-1 transition-colors" /> Gallery
                 </button>
             </div>
 
