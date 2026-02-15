@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { fetchOne } from '@/services/mangaService';
+import { fetchOne, fetchGallery } from '@/services/mangaService';
 import MangaContent from './components/MangaContent';
 
 interface Props {
@@ -44,6 +44,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function MangaPage({ params }: Props) {
     const { id } = await params;
     const data = await fetchOne(id);
+    const gallery = await fetchGallery(id);
     
     // If no chapters (bot received minimal data), show fallback
     if (!data.manga.chapters) {
@@ -56,5 +57,5 @@ export default async function MangaPage({ params }: Props) {
     
     // Map server-side list info to a simple display name for the client dropdown
     const initialListName = data.userStatus?.listName ?? null;
-    return <MangaContent manga={data.manga} initialListName={initialListName} />;
+    return <MangaContent manga={data.manga} gallery={gallery} initialListName={initialListName} />;
 }

@@ -3,17 +3,19 @@ import { useState, useMemo } from "react";
 import { MoveUpIcon, MoveDownIcon, BookOpen, MessageCircleMore } from 'lucide-react';
 import Chapters from "./Chapters";
 import Comments from "./Comments";
+import Gallery from "./Gallery";
 import ListDropdown from "./ListDropdown"
 
 interface MangaActionsProps {
-  manga: any;
-  chapters: any[];
-  comments: any;
+    manga: any;
+    chapters: any[];
+    comments: any;
+    gallery: any[];
     initialListName: string | null;
-  importProgress: any;
+    importProgress: any;
 }
 
-export default function ListContainer({ manga, chapters, comments, initialListName, importProgress }: MangaActionsProps) {
+export default function ListContainer({ manga, chapters, comments, gallery, initialListName, importProgress }: MangaActionsProps) {
     const [page, setPage] = useState("chapters");
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
@@ -40,6 +42,9 @@ export default function ListContainer({ manga, chapters, comments, initialListNa
                 <button onClick={() => setPage("comments")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "comments" ? "text-primary" : "text-muted"}`}>
                     <MessageCircleMore className="size-6 mr-1 transition-colors" /> Comments
                 </button>
+                <button onClick={() => setPage("gallery")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "comments" ? "text-primary" : "text-muted"}`}>
+                    <MessageCircleMore className="size-6 mr-1 transition-colors" /> Gallery
+                </button>
             </div>
 
             <div className="flex gap-2">
@@ -55,6 +60,7 @@ export default function ListContainer({ manga, chapters, comments, initialListNa
         <div className="flex flex-col pt-2 gap-2">
             {page === "chapters" && <Chapters manga={{ ...manga, chapters: sortedChapters }} progress={importProgress} />}
             {page === "comments" && <Comments manga={manga} comments={comments} />}
+            {page === "gallery" && <Gallery gallery={gallery} />}
         </div>
         </>
     )

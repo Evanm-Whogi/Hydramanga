@@ -30,6 +30,10 @@ export async function triggerMangaScan(mangaId: number): Promise<any> {
     }
 }
 
+export async function fetchGallery(id: any): Promise<any> {
+    return await apiGet(`/manga/${id}/gallery`);
+}
+
 
 export async function fetchMangaPages(id: any, chapterId: any): Promise<any> {
     return await apiGet(`/manga/${id}/${chapterId}`);
