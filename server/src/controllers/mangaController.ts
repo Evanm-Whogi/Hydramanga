@@ -8,7 +8,7 @@ import logger from '@/services/loggerService';
 import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import { metricsService } from '@/services/metricsService';
 import { shouldFilterManga, getBlockedGenres } from '@/config/contentFilter';
-
+import { mangaProgressService } from '@/services/mangaProgressService';
 // Helper function to enrich manga data with view stats
 async function enrichWithViewStats(mangaList: any[]) {
     if (mangaList.length === 0) return [];
@@ -535,9 +535,13 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
         // Generate image URLs based on pageCount
         const pageCount = chapter.pageCount || 0;
         const images: string[] = [];
+        const formatPageNumber = (page: number, scraperId?: string | null) => {
+            const padLength = scraperId === 'mangataro' ? 3 : 2;
+            return page.toString().padStart(padLength, '0');
+        };
         
         for (let i = 1; i <= pageCount; i++) {
-            const pageNumber = i.toString().padStart(2, '0');
+            const pageNumber = formatPageNumber(i, chapter.scraperId);
             const imageUrl = `${baseUrl}/${chapter.storagePrefix}/${pageNumber}.jpg`;
             images.push(imageUrl);
         }
@@ -547,7 +551,8 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
 
         const mergedPages = isSinglePageSeries
             ? allChapters.map((ch) => {
-                const imageUrl = `${baseUrl}/${ch.storagePrefix}/01.jpg`;
+                const pageNumber = formatPageNumber(1, ch.scraperId);
+                const imageUrl = `${baseUrl}/${ch.storagePrefix}/${pageNumber}.jpg`;
                 return {
                     chapterId: ch.id,
                     chapterNumber: ch.chapterNumber,
@@ -591,6 +596,18 @@ export async function triggerMangaScan(req: Request, res: Response, next: NextFu
         const [manga] = await db.select({ title: series.title }).from(series).where(eq(series.id, mangaId));
         if (!manga) {
             return res.status(404).json({ error: 'Manga not found' });
+        }
+        
+        // Check if manga is already being scanned or downloaded via manga_import_progress
+        const progress = await mangaProgressService.getProgress(mangaId);
+        
+        if (progress && (progress.status === 'scanning' || progress.status === 'downloading')) {
+            logger.info(`Manga ${manga.title} (${mangaId}) is already ${progress.status}, skipping duplicate scan`, { service: 'mangaController' });
+            return res.status(200).json({ 
+                message: 'Scan already in progress', 
+                seriesId: mangaId,
+                status: progress.status 
+            });
         }
         
         // Trigger the on-demand scan

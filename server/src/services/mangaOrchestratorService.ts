@@ -74,6 +74,13 @@ class MangaOrchestratorService {
     const existingChapters = await db.select().from(chapters).where(eq(chapters.seriesId, seriesId)).limit(1);
     if (existingChapters.length > 0) return logger.info(`Manga ${mangaTitle} already has chapters, skipping first scan notification`, { service: 'mangaOrchestratorService' });
 
+    // Check if manga is already being scanned or downloaded
+    const progress = await mangaProgressService.getProgress(seriesId);
+    if (progress && (progress.status === 'scanning' || progress.status === 'downloading')) {
+      logger.info(`Manga ${mangaTitle} (${seriesId}) is already ${progress.status}, skipping duplicate scan`, { service: 'mangaOrchestratorService' });
+      return;
+    }
+
     const jobId = `ondemand-${seriesId}`;
     const queue = queueService.getQueue('mangaChapterImportQueue');
     

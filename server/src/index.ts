@@ -16,7 +16,7 @@ import { Server } from 'socket.io';
 import { setupProgressSocket } from '@/sockets/progressSocket';
 import * as Sentry from "@sentry/node";
 import { initSentry } from "@/sentry";
-
+import { mangaRecoveryService } from '@/services/mangaRecoveryService';
 dotenv.config();
 
 // Initialize Sentry
@@ -39,7 +39,7 @@ const app: Express = express();
 app.use(morgan(':method :url :status :response-time ms - :res[content-length] \n', {
     skip: (req, res) => req.originalUrl.startsWith('/admin/queues') // Skip logging for Bull Board routes
 }));
-app.use(cors({ origin: ['https://mangadev.chit.sh'], credentials: true }));
+app.use(cors({ origin: ['https://manga.chit.sh'], credentials: true }));
 app.set('trust proxy', 1);
 
 // Bull Board Setup
@@ -76,6 +76,16 @@ require('@/routes')(app);
 // Initialize scrapers (must be done before cron jobs)
 initializeScrapers();
 
+// Recover incomplete manga downloads from previous session
+// This must run after queue service is initialized but before cron jobs
+(async () => {
+  try {
+    await mangaRecoveryService.recoverIncompleteDownloads();
+  } catch (error) {
+    logger.error(`Failed to run recovery service: ${error}`, { service: 'server' });
+  }
+})();
+
 // Cron jobs (trending rescans, etc.)
 initCronJobs();
 
@@ -91,7 +101,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   path: '/socket.io/',
   cors: {
-    origin: ['https://mangadev.chit.sh'],
+    origin: ['https://manga.chit.sh'],
     methods: ["GET", "POST"],
     credentials: true
   },
