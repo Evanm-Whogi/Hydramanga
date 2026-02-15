@@ -1,18 +1,19 @@
 services:
   db:
     image: postgres:16
+    shm_size: '2gb'
     restart: unless-stopped
     environment:
-      POSTGRES_USER: mang
-      POSTGRES_PASSWORD: mangpass
-      POSTGRES_DB: mang
+      POSTGRES_USER: mangaScrolls
+      POSTGRES_PASSWORD: rhL51qGFDyJZyild6bGlj7h5KDbMd8G7
+      POSTGRES_DB: mangaScrolls
     volumes:
       - ./data/db/data:/var/lib/postgresql/data
       - ./data/db/init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5433:5432"  # Expose on 5433 to avoid conflict with local PostgreSQL
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mang"]
+      test: ["CMD-SHELL", "pg_isready -U mangaScrolls"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -23,9 +24,9 @@ services:
       db:
         condition: service_healthy
     environment:
-      PGPASSWORD: mangpass
+      PGPASSWORD: rhL51qGFDyJZyild6bGlj7h5KDbMd8G7
     command: >
-      sh -c "psql -h db -U mang -d mang -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'"
+      sh -c "psql -h db -U mangaScrolls -d mangaScrolls -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'"
     restart: on-failure:3
 
   redis:
@@ -71,7 +72,7 @@ services:
     environment:
       NODE_ENV: production
       DOCKER: 'true'
-      DATABASE_URL: postgres://mang:mangpass@db:5432/mang
+      DATABASE_URL: postgres://mangaScrolls:rhL51qGFDyJZyild6bGlj7h5KDbMd8G7@db:5432/mangaScrolls
       REDIS_HOST: redis
       REDIS_PORT: 6379
       PUBLIC_APP_URL: https://manga.chit.sh
@@ -117,7 +118,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./cloudflared-config.yml:/etc/cloudflared/config.yml:ro
-      - /root/.cloudflared/8ec597a9-f14c-440a-a59b-4f3935ba3e84.json:/etc/cloudflared/creds.json:ro
+      - /root/.cloudflared/61734b26-6873-4369-845d-0153a1278456.json:/etc/cloudflared/creds.json:ro
     command: tunnel --config /etc/cloudflared/config.yml run
     depends_on:
       - nginx
