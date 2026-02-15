@@ -306,22 +306,56 @@ async function testScraperMatching(mangaId) {
                 'MangaDex': 4
             };
             
-            // Match ScraperManager's sorting logic:
-            // If scores are within 20 points, prefer higher priority scraper
+            const mainSources = ['WeebCentral', 'MangaTaro', 'MangaDex'];
+            
+            // Match ScraperManager's NEW sorting logic with exact match bonus and nHentai deprioritization
             foundResults.sort((a, b) => {
-                const scoreDiff = Math.abs(a.score - b.score);
+                // FIRST: Check if one is nHentai and other is a main source
+                const aIsNHentai = a.scraper === 'nHentai';
+                const bIsNHentai = b.scraper === 'nHentai';
                 
-                // If scores are close (within 20 points), use priority as primary sort
-                if (scoreDiff <= 20) {
-                    return priorities[a.scraper] - priorities[b.scraper]; // Lower priority number wins
+                if (aIsNHentai !== bIsNHentai) {
+                    const mainSource = aIsNHentai ? b : a;
+                    const nHentaiMatch = aIsNHentai ? a : b;
+                    
+                    // If main source has score >= 70, always prefer it
+                    if (mainSource.score >= 70) {
+                        return aIsNHentai ? 1 : -1; // Prefer main source
+                    }
+                    
+                    // If main source has score 50-69, only pick nHentai if it's 40+ points better
+                    if (mainSource.score >= 50) {
+                        const scoreDiff = nHentaiMatch.score - mainSource.score;
+                        if (scoreDiff < 40) {
+                            return aIsNHentai ? 1 : -1; // Prefer main source
+                        }
+                    }
                 }
                 
-                // Otherwise, higher score wins
+                // SECOND: Exact match bonus - if one is near-perfect (95+)
+                const aIsNearPerfect = a.score >= 95;
+                const bIsNearPerfect = b.score >= 95;
+                
+                if (aIsNearPerfect !== bIsNearPerfect) {
+                    return aIsNearPerfect ? -1 : 1;
+                }
+                
+                if (aIsNearPerfect && bIsNearPerfect) {
+                    const scoreDiff = Math.abs(a.score - b.score);
+                    if (scoreDiff > 0) {
+                        return b.score - a.score;
+                    }
+                    return priorities[a.scraper] - priorities[b.scraper];
+                }
+                
+                // THIRD: Standard scoring logic
+                const scoreDiff = Math.abs(a.score - b.score);
+                if (scoreDiff <= 20) {
+                    return priorities[a.scraper] - priorities[b.scraper];
+                }
                 if (b.score !== a.score) {
                     return b.score - a.score;
                 }
-                
-                // Exact tie: use priority
                 return priorities[a.scraper] - priorities[b.scraper];
             });
 
@@ -336,7 +370,7 @@ async function testScraperMatching(mangaId) {
             console.log(`   Score: ${winner.score}`);
             
             if (foundResults.length > 1) {
-                console.log(`\n📊 All Candidates (sorted by score with priority tiebreak [<=20]):`);
+                console.log(`\n📊 All Candidates (sorted with nHentai deprioritization):`);
                 foundResults.forEach((r, i) => {
                     const icon = i === 0 ? '👑' : '  ';
                     console.log(`   ${icon} ${r.scraper.padEnd(15)} Score: ${r.score.toString().padEnd(3)} - "${r.title}"`);

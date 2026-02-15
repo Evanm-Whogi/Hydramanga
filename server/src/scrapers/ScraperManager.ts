@@ -227,11 +227,65 @@ export class ScraperManager {
             }
 
             // Sort by score (highest first), then by priority (lowest number = highest priority)
+            // Special handling for nHentai: heavily deprioritize when main sources have reasonable matches
+            // This prevents nHentai doujinshi/collections from overriding actual manga series
             matches.sort((a, b) => {
-                const scoreDiff = Math.abs(a.result.score - b.result.score);
-                if (scoreDiff <= 20) {
+                // FIRST: Check if this is nHentai vs a main source (deprioritization override)
+                const aIsNHentai = a.scraper.getMetadata().id === 'nhentai';
+                const bIsNHentai = b.scraper.getMetadata().id === 'nhentai';
+                
+                // If one is nHentai and the other is a main source (WeebCentral, MangaDex, MangaTaro)
+                if (aIsNHentai !== bIsNHentai) {
+                    const mainSource = aIsNHentai ? b : a;
+                    const nHentaiMatch = aIsNHentai ? a : b;
+                    
+                    // Main sources: WebCentral (1), MangaTaro (2), MangaDex (4)
+                    // If main source has a reasonable score, strongly prefer it over nHentai
+                    // unless nHentai is doing SIGNIFICANTLY better
+                    if (mainSource.result.score >= 70) {
+                        logger.debug(
+                            `Preferring ${mainSource.scraperName} (${mainSource.result.score}) over nHentai (${nHentaiMatch.result.score}) ` +
+                            `because main source has reasonable match score`,
+                            { service: 'scraperManager' }
+                        );
+                        return aIsNHentai ? 1 : -1; // Prefer main source
+                    }
+                    
+                    // If main source has a moderate score (50-69), prefer it unless nHentai is significantly better (40+ points)
+                    if (mainSource.result.score >= 50) {
+                        const scoreDiff = nHentaiMatch.result.score - mainSource.result.score;
+                        if (scoreDiff < 40) {
+                            logger.debug(
+                                `Preferring ${mainSource.scraperName} (${mainSource.result.score}) over nHentai (${nHentaiMatch.result.score}) ` +
+                                `because main source has decent match`,
+                                { service: 'scraperManager' }
+                            );
+                            return aIsNHentai ? 1 : -1; // Prefer main source
+                        }
+                    }
+                }
+                
+                // SECOND: Exact match bonus - if one result has a perfect/near-perfect score (95+),
+                // heavily prioritize it over lower scores
+                const aIsNearPerfect = a.result.score >= 95;
+                const bIsNearPerfect = b.result.score >= 95;
+                
+                if (aIsNearPerfect !== bIsNearPerfect) {
+                    // One is near-perfect, the other isn't - prefer the near-perfect one
+                    return aIsNearPerfect ? -1 : 1;
+                }
+                
+                // If both are near-perfect, score difference matters more
+                if (aIsNearPerfect && bIsNearPerfect) {
+                    const scoreDiff = Math.abs(a.result.score - b.result.score);
+                    if (scoreDiff > 0) {
+                        return b.result.score - a.result.score; // Higher score wins
+                    }
+                    // If same score, use priority
                     return a.priority - b.priority;
                 }
+                
+                // THIRD: Standard scoring logic
                 if (b.result.score !== a.result.score) {
                     return b.result.score - a.result.score;
                 }

@@ -22,6 +22,8 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
+import http from 'http';
+import https from 'https';
 import {
     IChapterScraper,
     ScrapedChapter,
@@ -112,9 +114,32 @@ export class MangaTaroScraper implements IChapterScraper {
         enabled: appConfig.scraper.mangaTaro.enabled,
     };
 
+    // Browser pool for reusing browser instances
+    private static browserPool: any[] = [];
+    private static readonly MAX_BROWSERS = 3; // Max 3 browsers in pool
+    private static browserPoolLock = false;
+
+    private static readonly httpAgent = new http.Agent({
+        keepAlive: true,
+        keepAliveMsecs: 30000,
+        maxSockets: 50, // Increased from 10 to 50 for parallel downloads
+        maxFreeSockets: 10, // Increased from 5 to 10
+        timeout: 30000,
+    });
+
+    private static readonly httpsAgent = new https.Agent({
+        keepAlive: true,
+        keepAliveMsecs: 30000,
+        maxSockets: 50, // Increased from 10 to 50 for parallel downloads
+        maxFreeSockets: 10, // Increased from 5 to 10
+        timeout: 30000,
+    });
+
     private static readonly axiosInstance = axios.create({
         timeout: appConfig.scraper.mangaTaro.timeout,
         withCredentials: true, // Include cookies
+        httpAgent: MangaTaroScraper.httpAgent,
+        httpsAgent: MangaTaroScraper.httpsAgent,
         headers: {
             'Accept': '*/*',
             'Accept-Language': 'en-US,en;q=0.9',
@@ -133,6 +158,52 @@ export class MangaTaroScraper implements IChapterScraper {
         return { ...this.metadata };
     }
 
+    /**
+     * Get a browser from the pool or create a new one
+     */
+    private static async getBrowser() {
+        // Try to get an existing browser from pool
+        if (MangaTaroScraper.browserPool.length > 0) {
+            return MangaTaroScraper.browserPool.pop();
+        }
+
+        // Create new browser if pool is not at max
+        logger.debug('[MangaTaro] Launching new browser for pool', { service: 'mangaTaroScraper' });
+        const browser = await chromium.launch({ 
+            headless: true,
+            args: ['--disable-dev-shm-usage', '--no-sandbox'] // Better for Docker/containerized environments
+        });
+        return browser;
+    }
+
+    /**
+     * Return a browser to the pool or close it if pool is full
+     */
+    private static async releaseBrowser(browser: any) {
+        if (!browser) return;
+
+        try {
+            // Check if browser is still connected
+            if (!browser.isConnected()) {
+                await browser.close().catch(() => {});
+                return;
+            }
+
+            // Return to pool if not full
+            if (MangaTaroScraper.browserPool.length < MangaTaroScraper.MAX_BROWSERS) {
+                MangaTaroScraper.browserPool.push(browser);
+                logger.debug(`[MangaTaro] Browser returned to pool (${MangaTaroScraper.browserPool.length}/${MangaTaroScraper.MAX_BROWSERS})`, { service: 'mangaTaroScraper' });
+            } else {
+                // Pool is full, close the browser
+                await browser.close().catch(() => {});
+                logger.debug('[MangaTaro] Browser closed (pool full)', { service: 'mangaTaroScraper' });
+            }
+        } catch (error) {
+            logger.warn(`[MangaTaro] Error releasing browser: ${error}`, { service: 'mangaTaroScraper' });
+            await browser.close().catch(() => {});
+        }
+    }
+
     async canHandle(mangaName: string, seriesId?: number): Promise<boolean> {
         // MangaTaro can handle all manga by default
         return true;
@@ -143,11 +214,6 @@ export class MangaTaroScraper implements IChapterScraper {
         options?: SearchOptions
     ): Promise<MangaSearchResult | undefined> {
         try {
-            logger.info(
-                `[MangaTaro] Searching for "${mangaName}"`,
-                { service: 'mangaTaroScraper' }
-            );
-
             // Prepare search variants
             const variants = [
                 mangaName,
@@ -156,9 +222,14 @@ export class MangaTaroScraper implements IChapterScraper {
                 ...(options?.secondaryTitles || []),
             ].filter((v): v is string => !!v && v.length > 0);
 
+            logger.info(
+                `[MangaTaro] Trying ${variants.length} search variants`,
+                { service: 'mangaTaroScraper' }
+            );
+
             for (const variant of variants) {
-                logger.debug(
-                    `[MangaTaro] Trying variant: "${variant}"`,
+                logger.info(
+                    `[MangaTaro] Searching for "${variant}"`,
                     { service: 'mangaTaroScraper' }
                 );
 
@@ -181,7 +252,7 @@ export class MangaTaroScraper implements IChapterScraper {
                         continue;
                     }
 
-                    logger.debug(
+                    logger.info(
                         `[MangaTaro] Found ${data.results.length} results for variant "${variant}"`,
                         { service: 'mangaTaroScraper' }
                     );
@@ -236,7 +307,7 @@ export class MangaTaroScraper implements IChapterScraper {
         secondaryTitles?: string[],
         coverUrl?: string,
     ): AsyncGenerator<ScrapedChapter, void, undefined> {
-        const browser = await chromium.launch({ headless: true });
+        const browser = await MangaTaroScraper.getBrowser(); // Use pool instead of launching new
         const context = await browser.newContext({
             userAgent: appConfig.scraper.mangaTaro.userAgent,
         });
@@ -309,7 +380,7 @@ export class MangaTaroScraper implements IChapterScraper {
             // Wait for chapter list to load
             try {
                 await page.waitForSelector('div.chapter-list', { timeout: 10000 });
-                await page.waitForTimeout(2000); // Additional wait for chapters to fully load
+                await page.waitForTimeout(500); // Reduced from 2000ms to 500ms
             } catch (e) {
                 logger.warn(
                     `[MangaTaro] Chapter list selector not found, proceeding anyway`,
@@ -362,7 +433,7 @@ export class MangaTaroScraper implements IChapterScraper {
         } finally {
             await page.close().catch(() => {});
             await context.close().catch(() => {});
-            await browser.close().catch(() => {});
+            await MangaTaroScraper.releaseBrowser(browser); // Return to pool instead of closing
         }
     }
 
@@ -373,7 +444,7 @@ export class MangaTaroScraper implements IChapterScraper {
         mangaName: string,
         folderName: string
     ): Promise<DownloadedChapter> {
-        const browser = await chromium.launch({ headless: true });
+        const browser = await MangaTaroScraper.getBrowser(); // Use pool instead of launching new
         const context = await browser.newContext({
             userAgent: appConfig.scraper.mangaTaro.userAgent,
         });
@@ -402,7 +473,7 @@ export class MangaTaroScraper implements IChapterScraper {
             await page.evaluate(() => {
                 window.scrollTo(0, 0);
             });
-            await page.waitForTimeout(100);
+            await page.waitForTimeout(50); // Reduced from 100ms to 50ms
 
             const pageHeight = await page.evaluate(() => document.body.scrollHeight);
             const viewportHeight = await page.evaluate(() => window.innerHeight);
@@ -412,14 +483,14 @@ export class MangaTaroScraper implements IChapterScraper {
             let currentScroll = 0;
             
             while (currentScroll < pageHeight) {
-                await page.evaluate((step) => window.scrollBy(0, step), scrollStep);
+                await page.evaluate((step: number) => window.scrollBy(0, step), scrollStep);
                 currentScroll += scrollStep;
-                await page.waitForTimeout(50); // Minimal 50ms between scrolls
+                await page.waitForTimeout(25); // Reduced from 50ms to 25ms
             }
 
             // Final scroll to absolute bottom
             await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-            await page.waitForTimeout(200);
+            await page.waitForTimeout(100); // Reduced from 200ms to 100ms
 
             // Extract image URLs with comprehensive attribute checking
             const imageUrls: any = await page.evaluate(() => {
@@ -491,12 +562,12 @@ export class MangaTaroScraper implements IChapterScraper {
         } finally {
             await page.close().catch(() => {});
             await context.close().catch(() => {});
-            await browser.close().catch(() => {});
+            await MangaTaroScraper.releaseBrowser(browser); // Return to pool instead of closing
         }
     }
 
     /**
-     * Download images to local filesystem
+     * Download images to local filesystem with retry logic (parallel)
      */
     private async downloadImages(
         images: string[],
@@ -511,43 +582,104 @@ export class MangaTaroScraper implements IChapterScraper {
             fs.mkdirSync(dir, { recursive: true });
         }
 
-        for (let i = 0; i < images.length; i++) {
+        const maxRetries = 3;
+        const retryDelayMs = 1000; // Base delay for exponential backoff
+        const batchSize = 8; // Download 8 images at a time to avoid overwhelming connection pool
+
+        // Download a single image with retry logic
+        const downloadImage = async (imageUrl: string, i: number) => {
             const filePath = path.join(
                 dir,
                 `${(i + 1).toString().padStart(3, '0')}.jpg`
             );
 
-            try {
-                const response = await MangaTaroScraper.axiosInstance.get(images[i], {
-                    responseType: 'arraybuffer',
-                    timeout: 15000,
-                    headers: {
-                        Referer: referer,
-                        'User-Agent': appConfig.scraper.mangaTaro.userAgent,
-                        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-                        'Accept-Language': 'en-US,en;q=0.9',
-                        'Cache-Control': 'no-cache',
-                        Connection: 'keep-alive',
-                        Pragma: 'no-cache',
-                        'Sec-Fetch-Dest': 'image',
-                        'Sec-Fetch-Mode': 'no-cors',
-                        'Sec-Fetch-Site': 'cross-site',
-                    },
-                });
+            let lastError: any;
 
-                fs.writeFileSync(filePath, Buffer.from(response.data));
+            // Retry loop for this image
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    const response = await MangaTaroScraper.axiosInstance.get(imageUrl, {
+                        responseType: 'arraybuffer',
+                        timeout: 15000, // Reduced from 30s to 15s
+                        maxRedirects: 5,
+                        headers: {
+                            Referer: referer,
+                            'User-Agent': appConfig.scraper.mangaTaro.userAgent,
+                            Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                            'Accept-Language': 'en-US,en;q=0.9',
+                            'Cache-Control': 'no-cache',
+                            Connection: 'keep-alive',
+                            Pragma: 'no-cache',
+                            'Sec-Fetch-Dest': 'image',
+                            'Sec-Fetch-Mode': 'no-cors',
+                            'Sec-Fetch-Site': 'cross-site',
+                        },
+                    });
 
-                logger.debug(
-                    `[MangaTaro] Downloaded image ${i + 1}/${images.length}`,
-                    { service: 'mangaTaroScraper' }
-                );
-            } catch (err: any) {
-                logger.error(
-                    `[MangaTaro] Failed to download image ${i + 1}: ${err.message}`,
-                    { service: 'mangaTaroScraper' }
-                );
-                throw err;
+                    // Validate response
+                    if (!response.data || response.data.length === 0) {
+                        throw new Error('Empty response from server');
+                    }
+
+                    fs.writeFileSync(filePath, Buffer.from(response.data));
+
+                    logger.debug(
+                        `[MangaTaro] Downloaded image ${i + 1}/${images.length}`,
+                        { service: 'mangaTaroScraper' }
+                    );
+
+                    // Success - break out of retry loop
+                    return;
+                } catch (err: any) {
+                    lastError = err;
+                    const errorMsg = err.message || String(err);
+
+                    // Check if this is a retryable error
+                    const isRetryable = 
+                        errorMsg.includes('stream has been aborted') ||
+                        errorMsg.includes('ERR_HTTP2_STREAM_CANCEL') ||
+                        errorMsg.includes('ECONNRESET') ||
+                        errorMsg.includes('ECONNABORTED') ||
+                        errorMsg.includes('ETIMEDOUT') ||
+                        err.code === 'ERR_HTTP2_STREAM_CANCEL' ||
+                        err.code === 'ECONNRESET' ||
+                        err.code === 'ECONNABORTED' ||
+                        err.code === 'ETIMEDOUT';
+
+                    if (isRetryable && attempt < maxRetries) {
+                        // Calculate exponential backoff
+                        const delayMs = retryDelayMs * Math.pow(2, attempt - 1);
+                        
+                        logger.warn(
+                            `[MangaTaro] Image ${i + 1} download failed (attempt ${attempt}/${maxRetries}): ${errorMsg}. Retrying in ${delayMs}ms...`,
+                            { service: 'mangaTaroScraper' }
+                        );
+
+                        // Wait before retrying
+                        await new Promise(resolve => setTimeout(resolve, delayMs));
+                        continue;
+                    } else {
+                        // Non-retryable error or max retries exceeded
+                        logger.error(
+                            `[MangaTaro] Failed to download image ${i + 1} after ${attempt} attempt(s): ${errorMsg}`,
+                            { service: 'mangaTaroScraper' }
+                        );
+                        throw lastError;
+                    }
+                }
             }
+        };
+
+        // Download images in batches to avoid connection pool exhaustion
+        for (let batchStart = 0; batchStart < images.length; batchStart += batchSize) {
+            const batchEnd = Math.min(batchStart + batchSize, images.length);
+            const batch = images.slice(batchStart, batchEnd);
+            
+            const batchPromises = batch.map((imageUrl, localIndex) => 
+                downloadImage(imageUrl, batchStart + localIndex)
+            );
+            
+            await Promise.all(batchPromises);
         }
 
         return storagePrefix;
