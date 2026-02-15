@@ -1,5 +1,5 @@
 import express, { RequestHandler } from 'express';
-import { searchManga, getOne, getPages, getAllLists, triggerMangaScan, trackMangaViewEndpoint, trackChapterViewEndpoint, getRecommendedManga }  from '@/controllers/mangaController';
+import { searchManga, getOne, getPages, getAllLists, triggerMangaScan, trackMangaViewEndpoint, trackChapterViewEndpoint, getRecommendedManga, getGallery }  from '@/controllers/mangaController';
 import { addBookmark, removeBookmark, getSeriesBookmarks, getBookmark } from '@/controllers/bookmarkController';
 
 const router = express.Router();
@@ -8,6 +8,9 @@ router.get('/search', searchManga as RequestHandler);
 
 // Aggregate lists endpoint - returns all lists with manga
 router.get('/lists', getAllLists as RequestHandler);
+
+// Gallery (keep before dynamic routes)
+router.get('/:id/gallery', getGallery as RequestHandler);
 
 // Trigger on-demand scan
 router.post('/:id/scan', triggerMangaScan as RequestHandler);
@@ -25,10 +28,10 @@ router.get('/:id/bookmarks', getSeriesBookmarks as RequestHandler);
 // Recommendations
 router.get('/:id/recommendations', getRecommendedManga as RequestHandler);
 
+// Chapter Pages (keep before single-id route)
+router.get('/:id/:chapterId', getPages as RequestHandler);
+
 // Dynamic routes - Keep these last
 router.get('/:id', getOne as RequestHandler);
-
-// Chapter Pages
-router.get(`/:id/:chapterId`, getPages as RequestHandler);
 
 export default router;

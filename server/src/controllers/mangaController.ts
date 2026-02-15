@@ -9,6 +9,8 @@ import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import { metricsService } from '@/services/metricsService';
 import { shouldFilterManga, getBlockedGenres } from '@/config/contentFilter';
 import { mangaProgressService } from '@/services/mangaProgressService';
+import { cacheService } from '@/services/cacheService';
+import axios from 'axios';
 // Helper function to enrich manga data with view stats
 async function enrichWithViewStats(mangaList: any[]) {
     if (mangaList.length === 0) return [];
@@ -812,4 +814,47 @@ export async function getRecommendedManga(req: Request, res: Response, next: Nex
 // The testing suite
 export async function fetchChaptersWeebCentral(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     mangaOrchestratorService.enqueueTrendingChapterScans(100)
+}
+
+// Lightweight gallery fetch with Redis caching.
+export async function getGallery(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+    const { id } = req.params;
+    const mangaId = Number(id);
+
+    if (!Number.isFinite(mangaId) || mangaId <= 0) {
+        return res.status(400).json({ status: 400, message: "Invalid manga ID" });
+    }
+
+    const cacheKey = `gallery:mangabaka:${mangaId}`;
+    const cacheTtlSeconds = 5 * 24 * 60 * 60; // 5 days
+    const requestUrl = `https://api.mangabaka.dev/v1/series/${mangaId}/images?language=en&page=1`;
+
+    try {
+        const gallery = await cacheService.getOrSet(
+            {
+                key: cacheKey,
+                ttl: cacheTtlSeconds,
+                staleIfError: cacheTtlSeconds,
+            },
+            async () => {
+                const response = await axios.get(requestUrl, { timeout: 15000 });
+
+                if (!response || response.status !== 200) {
+                    throw new Error('Error fetching gallery');
+                }
+
+                const data = response.data?.data;
+                if (!Array.isArray(data) || data.length === 0) {
+                    return [];
+                }
+
+                return data.filter((item: any) => item?.type === 'volume');
+            }
+        );
+
+        return res.json(gallery);
+    } catch (error) {
+        logger.error(`Error fetching gallery: ${(error as Error).message}`, { service: 'mangaController' });
+        return res.status(500).json({ error: "Error fetching gallery" });
+    }
 }

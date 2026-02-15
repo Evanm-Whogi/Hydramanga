@@ -122,9 +122,10 @@ MangaDetails.displayName = 'MangaDetails';
 interface MangaContentProps {
   manga: any;
   initialListName: string | null;
+  gallery: any[];
 }
 
-export default function MangaContent({ manga, initialListName }: MangaContentProps) {
+export default function MangaContent({ manga, initialListName, gallery }: MangaContentProps) {
   const [analytics, setAnalytics] = useState<any>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -347,6 +348,7 @@ export default function MangaContent({ manga, initialListName }: MangaContentPro
               manga={manga} 
               chapters={localChapters} 
               comments={manga.comments} 
+              gallery={gallery}
               initialListName={initialListName} 
               importProgress={progress} 
             />
