@@ -827,7 +827,7 @@ export async function getGallery(req: Request, res: Response, next: NextFunction
 
     const cacheKey = `gallery:mangabaka:${mangaId}`;
     const cacheTtlSeconds = 5 * 24 * 60 * 60; // 5 days
-    const requestUrl = `https://api.mangabaka.dev/v1/series/${mangaId}/images?language=en&page=1`;
+    const requestUrl = `https://api.mangabaka.dev/v1/series/${mangaId}/images?language=en&language=ja`;
 
     try {
         const gallery = await cacheService.getOrSet(
