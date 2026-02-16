@@ -1029,7 +1029,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         {/* Image Container */}
         <div ref={containerRef} className="image-stack w-full max-w-212.5 z-5" style={containerStyles}>
           {imageItems.map((item, index) => (
-            <img key={index} src={item.src} alt={`Page ${index + 1}`} className={getImageClassName} style={getImageStyle} loading={index < 3 ? 'eager' : 'lazy'} />
+            <img key={index} src={item.src} alt={`Page ${index + 1}`} className={getImageClassName} style={getImageStyle} loading={index < 3 ? 'eager' : 'lazy'} referrerPolicy="strict-origin-when-cross-origin" />
           ))}
         </div>
 
