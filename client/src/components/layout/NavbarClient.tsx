@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { HouseIcon, BookOpenIcon, ZapIcon, ClockPlus, SearchIcon, BellIcon, MoonIcon, SunIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, UserPlusIcon } from 'lucide-react';
+import { HouseIcon, BookOpenIcon, ZapIcon, LibraryBig, SearchIcon, BellIcon, MoonIcon, SunIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, UserPlusIcon } from 'lucide-react';
 import NavItem from './NavItem';
 import { authClient } from '@/lib/auth';
 import { useRouter, usePathname } from 'next/navigation';
@@ -87,6 +87,7 @@ export default function NavbarClient() {
                             <>
                             <NavItem href='/home' icon={<HouseIcon className="size-4 inline" />} label='Home' />
                             <NavItem href='/discover' icon={<BookOpenIcon className="size-4 inline" />} label='Discover' />
+                            <NavItem href='/collections' icon={<LibraryBig className="size-4 inline" />} label='Collections' />
                             <NavItem href='/lists' icon={<BookTextIcon className="size-4 inline" />} label='My Lists' />
                             <NavItem href='/history' icon={<ChartBarDecreasingIcon className="size-4 inline" />} label='History' />
                             </>
@@ -165,7 +166,10 @@ export default function NavbarClient() {
                                     <Link href="/lists" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/lists' ? 'text-primary' : 'text-muted'}`}>
                                         <BookTextIcon className="size-4" /> My Lists
                                     </Link>
-                                    <Link href="/history" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/announcements' ? 'text-primary' : 'text-muted'}`}>
+                                  <Link href="/collections" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/collections' ? 'text-primary' : 'text-muted'}`}>
+                                        <LibraryBig className="size-4" /> Collections
+                                    </Link>
+                                    <Link href="/history" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/history' ? 'text-primary' : 'text-muted'}`}>
                                         <ChartBarDecreasingIcon className="size-4" /> History
                                     </Link>
                                     <Link href="/announcements" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/announcements' ? 'text-primary' : 'text-muted'}`}>

@@ -1,10 +1,12 @@
 import express, { RequestHandler } from 'express';
-import { searchManga, getOne, getPages, getAllLists, triggerMangaScan, trackMangaViewEndpoint, trackChapterViewEndpoint, getRecommendedManga, getGallery }  from '@/controllers/mangaController';
+import { searchManga, getOne, getPages, getAllLists, triggerMangaScan, trackMangaViewEndpoint, trackChapterViewEndpoint, getRecommendedManga, getGallery, getCollections }  from '@/controllers/mangaController';
 import { addBookmark, removeBookmark, getSeriesBookmarks, getBookmark } from '@/controllers/bookmarkController';
 
 const router = express.Router();
 
 router.get('/search', searchManga as RequestHandler);
+
+router.get('/collections', getCollections as RequestHandler);
 
 // Aggregate lists endpoint - returns all lists with manga
 router.get('/lists', getAllLists as RequestHandler);
