@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { getRandomManga } from '@/services/mangaService';
 import { X, RefreshCcw } from 'lucide-react';
+import Link from 'next/link';
 
 interface Manga {
     id: string;
@@ -38,8 +39,16 @@ export const RandomModal: React.FC<RandomModalProps> = ({isOpen, onClose, title 
         }
     }, [isOpen]);
 
-    if (!isOpen) return null;
+    // Lock scroll when modal is open
+    useEffect(() => {
+        const root = document.documentElement; 
+        isOpen ? root.classList.add('lock-scroll') : root.classList.remove('lock-scroll');
 
+    return () => root.classList.remove('lock-scroll');
+    }, [isOpen]);
+
+
+    if (!isOpen) return null;
     return (
         <div className="fixed inset-0 z-100 flex items-center justify-center">
             <div className="fixed inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
@@ -54,23 +63,23 @@ export const RandomModal: React.FC<RandomModalProps> = ({isOpen, onClose, title 
                 <div className="p-4 md:p-6 overflow-y-auto custom-scrollbar">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {randomMangas.map((manga) => (
-                        <div key={manga.id} className="group flex flex-col border border-borders rounded-lg overflow-hidden bg-background  cursor-pointer">
+                        <Link href={`/manga/${manga.id}`} key={manga.id} onClick={onClose} className="group flex flex-col border border-borders rounded-lg overflow-hidden bg-background  cursor-pointer">
                             <div className="relative h-40 md:h-72 w-full overflow-hidden">
                                 <img src={manga.cover.raw.url} alt={manga.title} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
                             </div>
-                            <h3 className="p-4 font-semibold text-base md:text-lg text-primary line-clamp-1">{manga.title}</h3>
-                        </div>
+                            <h3 className="m-2 font-semibold text-base md:text-lg text-primary line-clamp-1">{manga.title}</h3>
+                        </Link>
                         ))}
                     </div>
                 </div>
 
                 {/* Footer */}
                 <div className="p-4 border-t border-background flex shrink-0 place-content-between">
-                    <button onClick={fetchManga} className="px-6 py-2 bg-accent text-primary rounded-md transition-colors text-sm font-medium flex items-center gap-2">
+                    <button onClick={fetchManga} className="px-6 py-2 bg-accent text-primary rounded-md transition-colors text-sm font-medium flex items-center gap-2 cursor-pointer">
                         <RefreshCcw size={16} />
                         Roll Again
                     </button>
-                    <button onClick={onClose} className="px-6 py-2 bg-background hover:bg-background/50 text-primary rounded-md transition-colors text-sm font-medium">Close</button>
+                    <button onClick={onClose} className="px-6 py-2 bg-background hover:bg-background/50 text-primary rounded-md transition-colors text-sm font-medium cursor-pointer">Close</button>
                 </div>
             </div>
         </div>
