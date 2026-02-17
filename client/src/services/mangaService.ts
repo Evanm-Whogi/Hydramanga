@@ -127,6 +127,13 @@ export async function clearAllProgress(): Promise<any> {
 }
 
 /**
+ * Clear all view history for the user
+ */
+export async function clearAllViewHistory(): Promise<any> {
+    return await apiDelete('/analytics/views/all');
+}
+
+/**
  * Get user's manga view history
  * @param limit - Maximum number of results to return
  */

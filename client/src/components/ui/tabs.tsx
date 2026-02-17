@@ -2,37 +2,60 @@
 
 import * as React from 'react'
 
-const Tabs = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement> & {defaultValue?: string}> (({ className = '', defaultValue, children, ...props }, ref) => {
-  const [activeTab, setActiveTab] = React.useState(defaultValue)
+interface TabsProps extends React.HTMLAttributes<HTMLDivElement> {
+  value?: string;
+  defaultValue?: string;
+  onValueChange?: (value: string) => void;
+}
 
-  // Recursively clone children and inject activeTab/setActiveTab
-  const cloneWithProps = (child: React.ReactNode): React.ReactNode => {
-    if (!React.isValidElement(child)) return child
+const Tabs = React.forwardRef<HTMLDivElement, TabsProps>(
+  ({ className = '', value, defaultValue, onValueChange, children, ...props }, ref) => {
+    // Internal state for uncontrolled mode
+    const [uncontrolledValue, setUncontrolledValue] = React.useState(defaultValue);
+    
+    // Determine if we are controlled or uncontrolled
+    const isControlled = value !== undefined;
+    const activeTab = isControlled ? value : uncontrolledValue;
 
-    // Check if this is a TabsList or TabsContent component
-    if (typeof child.type !== 'string') {
-      const displayName = (child.type as any).displayName
-      if (displayName === 'TabsList' || displayName === 'TabsContent') {
-        return React.cloneElement(child, { activeTab, setActiveTab} as any)
+    const setActiveTab = (newValue: string) => {
+      if (!isControlled) {
+        setUncontrolledValue(newValue);
       }
-    }
+      onValueChange?.(newValue);
+    };
 
-    // For other elements (like divs), recursively process their children
-    if ((child.props as any)?.children) {
-      return React.cloneElement(child, {...(child.props as any),
-        children: React.Children.map((child.props as any).children, cloneWithProps),
-      } as any)
-    }
-    return child
+    const cloneWithProps = (child: React.ReactNode): React.ReactNode => {
+      if (!React.isValidElement(child)) return child;
+
+      // Cast to any or a specific shape to satisfy TS for the property checks
+      const childProps = child.props as { children?: React.ReactNode; [key: string]: any };
+      const childType = child.type as any;
+      const displayName = childType.displayName;
+
+      // Inject props into the specific Tab components
+      if (displayName === 'TabsList' || displayName === 'TabsContent') {
+        return React.cloneElement(child, { activeTab, setActiveTab } as any);
+      }
+
+      // Recursively process children if they exist
+      if (childProps.children) {
+        return React.cloneElement(child, {
+          ...childProps,
+          children: React.Children.map(childProps.children, cloneWithProps),
+        } as any);
+      }
+
+      return child;
+    };
+
+    return (
+      <div ref={ref} className={className} {...props}>
+        {React.Children.map(children, cloneWithProps)}
+      </div>
+    );
   }
-
-  return (
-    <div ref={ref} className={className} {...props}>
-      {React.Children.map(children, cloneWithProps)}
-    </div>
-  )
-})
-Tabs.displayName = 'Tabs'
+);
+Tabs.displayName = 'Tabs';
 
 const TabsList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement> & {activeTab?: string; setActiveTab?: (value: string) => void}>(({ className = '', activeTab, setActiveTab, children, ...props }, ref) => (
   <div ref={ref} role="tablist" className={`${className}`} {...props}>
