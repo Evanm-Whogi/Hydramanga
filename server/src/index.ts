@@ -19,8 +19,10 @@ import { initSentry } from "@/sentry";
 import { mangaRecoveryService } from '@/services/mangaRecoveryService';
 dotenv.config();
 
-// Initialize Sentry
-initSentry();
+// Initialize Sentry if enabled
+if (process.env.ENABLE_SENTRY === 'true') {
+    initSentry();
+}
 
 // Middlewares
 import { rateLimiter } from '@/middlewares/rateLimit';

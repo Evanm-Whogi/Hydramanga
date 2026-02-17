@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { db, schema } from '@/db/index';
-import { eq, or, and, sql, asc, desc, count, inArray, isNull, ilike, ne, getTableColumns, isNotNull, gt } from 'drizzle-orm';
+import { eq, or, and, sql, asc, desc, count, inArray, isNull, ilike, ne, getTableColumns, isNotNull, gt, notLike } from 'drizzle-orm';
 import { chapters, series } from '@/db/schema';
 import path from 'path';
 import fs from 'fs-extra';
@@ -984,5 +984,40 @@ export async function getCollections(req: Request, res: Response, next: NextFunc
             console.error("Collection Query Error:", error);
         }
         return res.status(500).json({ error: "Failed to fetch collections" });
+    }
+}
+
+export async function randomManga(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+        
+    const excludedGenres = ['Hentai', 'Ecchi', 'Adult', 'Mature', 'Lolicon', 'Shotacon'];
+
+        try {
+            const randomManga = await db.select({
+                id: schema.series.id,
+                title: schema.series.title,
+                cover: schema.series.cover,
+            })
+            .from(schema.series)
+            .where(
+                and(
+                    isNotNull(schema.series.cover),
+                    isNotNull(schema.series.genres),
+                    isNotNull(schema.series.weightedScore),
+                    gt(schema.series.weightedScore, 50),
+                    ...excludedGenres.map(genre => 
+                        sql`not (${schema.series.genres} @> ${JSON.stringify([genre])}::jsonb)`
+                    )
+                )
+            )
+            .orderBy(sql`random()`)
+            .limit(4);
+
+
+        if (!randomManga || randomManga.length === 0) return res.status(404).json({ error: "No manga found" });
+        
+        return res.json(randomManga);
+    } catch (error) {
+        logger.error(`Random Manga Error: ${(error as Error).message}`, { service: 'mangaController' });
+        return res.status(500).json({ error: "Failed to fetch random manga" });
     }
 }

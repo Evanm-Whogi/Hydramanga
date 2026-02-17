@@ -29,6 +29,8 @@ const createEmbed = (overrides: Partial<DiscordEmbed>): DiscordEmbed => ({
 const discordService = {
     async sendEmbed(embed: DiscordEmbed, username = 'MangaScrolls Bot', avatarUrl?: string) {
         if (!DISCORD_WEBHOOK_URL) return logger.warn('Discord webhook URL is not configured.');
+        if(process.env.ENABLE_DISCORD_NOTIFICATIONS !== 'true') return logger.info('Discord notifications are disabled. Skipping sendEmbed.');
+
         try {
             await axios.post(DISCORD_WEBHOOK_URL, {
                 embeds: [embed],

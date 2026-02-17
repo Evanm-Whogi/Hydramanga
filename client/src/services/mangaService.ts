@@ -140,3 +140,11 @@ export async function clearAllViewHistory(): Promise<any> {
 export async function getMyViewHistory(limit: number = 50): Promise<any> {
     return await apiGet(`/analytics/views?limit=${limit}`);
 }
+
+/**
+ * Fetch a random selection of manga for discovery
+ * @param limit - Number of random manga to fetch (default is 4)
+ */
+export async function getRandomManga(limit: number = 4): Promise<any> {
+    return await apiGet(`/manga/random?limit=${limit}`);
+}
