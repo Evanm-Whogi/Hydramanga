@@ -2,18 +2,20 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { HouseIcon, BookOpenIcon, ZapIcon, LibraryBig, SearchIcon, BellIcon, MoonIcon, SunIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, UserPlusIcon } from 'lucide-react';
+import { HouseIcon, BookOpenIcon, DicesIcon, LibraryBig, SearchIcon, BellIcon, MoonIcon, SunIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, UserPlusIcon } from 'lucide-react';
 import NavItem from './NavItem';
 import { authClient } from '@/lib/auth';
 import { useRouter, usePathname } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { useUser } from "@/providers/UserProvider";
 import { trackAuthEvent } from '@/lib/analytics';
+import { RandomModal } from '@/components/RandomModal';
 
 export default function NavbarClient() {
     const [isOpen, setIsOpen] = useState(false);
     const [isScrolled, setIsScrolled] = useState(false);
     const [theme, setTheme] = useState('theme-dark');
+    const [isRandomModalOpen, setIsRandomModalOpen] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const profileRef = useRef<HTMLDivElement>(null);
     const mobileMenuRef = useRef<HTMLDivElement>(null);
@@ -65,8 +67,13 @@ export default function NavbarClient() {
             });
         };
 
-        
+    const toggleRandomManga = () => {
+        setIsRandomModalOpen(true);
+    };
+
+
     return (
+        <>
         <nav id="header" className={`fixed top-0 left-0 w-full z-50 transition-all duration-300 border-b ${ isScrolled ? 'bg-foreground border-borders shadow-lg' : 'bg-foreground/5 backdrop-blur-md border-white/10'}`}>
             <div className="flex container items-center h-18 pt-2 mx-auto px-5 md:px-0 justify-between">
                 {/* Left Section */}
@@ -100,6 +107,7 @@ export default function NavbarClient() {
                     <div className="hidden md:flex items-center gap-3">
                         {user ? (
                             <>
+                            <div onClick={toggleRandomManga} className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><DicesIcon className="size-4" />Random</div>
                             <a href="https://discord.gg/Key667vf6j" className="size-11" ><img src="/oauthIcons/discord.webp" alt="discord" /></a>
                             <Link href="/discover" className="bg-background hover:bg-background/50 p-3 rounded-full"><SearchIcon className="size-5 hover:cursor-pointer" /></Link>
                             <Link href="/announcements" className="bg-background hover:bg-background/50 p-3 rounded-full"><BellIcon className="size-5 hover:cursor-pointer" /></Link>
@@ -200,7 +208,9 @@ export default function NavbarClient() {
                     </div>
                 </div>
             )}
-
         </nav>
+
+        <RandomModal isOpen={isRandomModalOpen} onClose={() => setIsRandomModalOpen(false)} />
+        </>
     );
 }
