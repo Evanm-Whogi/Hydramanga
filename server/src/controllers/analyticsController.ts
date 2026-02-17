@@ -458,3 +458,17 @@ export async function deleteViewHistory(
     return next(error);
   }
 }
+
+export async function clearAllViewHistory(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({error: 'Unauthorized: User ID not found',});
+    
+    await metricsService.clearAllViewHistory(userId);
+
+    return res.json({status: 200, message: 'All view history cleared successfully'});
+  } catch (error) {
+    logger.error(`Failed to clear all view history: ${error}`,{ service: 'analyticsController' });
+    return next(error);
+  }
+}

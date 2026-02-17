@@ -431,6 +431,21 @@ class MetricsService {
       throw error;
     }
   }
+
+  /**
+   * Clear all view history for a user
+   * @param userId - The user ID
+   */
+  async clearAllViewHistory(userId: string) {
+    try {
+      await db.delete(schema.mangaViews).where(eq(schema.mangaViews.userId, userId));
+
+      logger.info(`All view history cleared for userId=${userId}`, {service: 'metricsService',});
+    } catch (error) {
+      logger.error(`Failed to clear all view history: ${error}`, { service: 'metricsService' });
+      throw error;
+    }
+  }
 }
 
 export const metricsService = new MetricsService();

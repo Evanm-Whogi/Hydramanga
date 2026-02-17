@@ -1,5 +1,5 @@
 import { Router, RequestHandler } from 'express';
-import { getTrending, getMangaAnalytics, getMyProgress, getMangaProgress, updateProgress, deleteProgress, getMyStats, getSeriesChapterProgress, markChapterAsRead, markChapterAsUnread, recordReadingTime, clearAllProgress, getMyViewHistory, deleteViewHistory } from '@/controllers/analyticsController';
+import { getTrending, getMangaAnalytics, getMyProgress, getMangaProgress, updateProgress, deleteProgress, getMyStats, getSeriesChapterProgress, markChapterAsRead, markChapterAsUnread, recordReadingTime, clearAllProgress, getMyViewHistory, deleteViewHistory, clearAllViewHistory } from '@/controllers/analyticsController';
 
 const router = Router();
 
@@ -26,6 +26,7 @@ router.get('/stats', getMyStats as RequestHandler);
 
 // View History
 router.get('/views', getMyViewHistory as RequestHandler);
+router.delete('/views/all', clearAllViewHistory as RequestHandler);
 router.delete('/views/:id', deleteViewHistory as RequestHandler);
 
 export default router;

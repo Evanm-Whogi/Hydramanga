@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import HistoryStats from './HistoryStats';
 import HistoryList from './HistoryList';
-import { deleteProgress, clearAllProgress, deleteViewHistory } from '@/services/mangaService';
+import { deleteProgress, clearAllProgress, deleteViewHistory, clearAllViewHistory } from '@/services/mangaService';
 import { BookOpen, Eye, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import type { HistoryItem, HistoryPageClientProps } from '@/types/history';
@@ -12,6 +12,7 @@ import type { HistoryItem, HistoryPageClientProps } from '@/types/history';
 export default function HistoryPageClient({initialReadingHistory, initialViewHistory, stats}: HistoryPageClientProps) {
     const [readingHistory, setReadingHistory] = useState<HistoryItem[]>(initialReadingHistory);
     const [viewHistory, setViewHistory] = useState<HistoryItem[]>(initialViewHistory);
+    const [activeTab, setActiveTab] = useState<'reading' | 'viewed'>('reading');
     const [showClearConfirm, setShowClearConfirm] = useState(false);
     const [isClearing, setIsClearing] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -56,10 +57,16 @@ export default function HistoryPageClient({initialReadingHistory, initialViewHis
         setIsClearing(true);
 
         try {
-            await clearAllProgress();
-            setReadingHistory([]);
+            if (activeTab === 'reading') {
+                await clearAllProgress();
+                setReadingHistory([]);
+            } else {
+                await clearAllViewHistory();
+                setViewHistory([]);
+            }
             setShowClearConfirm(false);
-            toast.success('All reading history cleared');
+            const historyType = activeTab === 'reading' ? 'reading' : 'view';
+            toast.success(`All ${historyType} history cleared`);
         } catch (error) {
             console.error('Failed to clear history:', error);
             toast.error('Failed to clear history');
@@ -95,7 +102,7 @@ export default function HistoryPageClient({initialReadingHistory, initialViewHis
         <>
             <HistoryStats readingHistoryCount={readingHistory.length} viewHistoryCount={viewHistory.length} totalReadingTime={totalReadingTime} mostRecentReading={mostRecentReading || undefined}/>
             
-            <Tabs defaultValue="reading" className="w-full">
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'reading' | 'viewed')} className="w-full">
                 <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
                     <TabsList className="grid w-full grid-cols-2 bg-foreground/50 rounded-lg border border-borders/30 max-w-md ">
                         <TabsTrigger value="reading" className="flex items-center gap-2 data-[state=active]:bg-accent data-[state=active]:text-white transition-colors">
@@ -108,7 +115,7 @@ export default function HistoryPageClient({initialReadingHistory, initialViewHis
                         </TabsTrigger>
                     </TabsList>
 
-                    {readingHistory.length > 0 && (
+                    {((activeTab === 'reading' && readingHistory.length > 0) || (activeTab === 'viewed' && viewHistory.length > 0)) && (
                         <div className="relative">
                             <button onClick={() => setShowClearConfirm(true)} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors border border-red-500/30 hover:border-red-500/60">
                                 <Trash2 className="size-4" />
@@ -117,7 +124,7 @@ export default function HistoryPageClient({initialReadingHistory, initialViewHis
 
                             {showClearConfirm && (
                                 <div ref={modalRef} className="absolute right-0 top-full mt-2 bg-foreground border border-borders/60 rounded-lg shadow-lg p-4 z-50 w-60">
-                                    <p className="text-sm text-primary font-semibold mb-3">Clear all reading history?</p>
+                                    <p className="text-sm text-primary font-semibold mb-3">Clear all {activeTab === 'reading' ? 'reading' : 'view'} history?</p>
                                     <p className="text-xs text-muted mb-4">This action cannot be undone.</p>
                                     <div className="flex gap-2">
                                         <button onClick={() => setShowClearConfirm(false)} className="flex-1 px-3 py-2 text-sm bg-foreground/50 hover:bg-foreground text-primary rounded transition-colors" disabled={isClearing}>Cancel</button>
