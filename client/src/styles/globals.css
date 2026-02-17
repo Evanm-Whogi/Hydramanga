@@ -67,6 +67,16 @@ html {
   color: var(--toastify-text-color-dark);
 }
 
+html.lock-scroll,
+body.lock-scroll {
+  overflow: hidden !important;
+  /* This prevents the page from "jumping" when scrollbar disappears */
+  padding-right: var(--removed-body-scrollbar-width, 0px);
+  /* Prevents pull-to-refresh and elastic scrolling on mobile */
+  touch-action: none; 
+}
+
+
 /* Animations */
 
 .animate-float {
