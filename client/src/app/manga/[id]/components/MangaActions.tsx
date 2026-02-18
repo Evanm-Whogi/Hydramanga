@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
-import { MoveUpIcon, MoveDownIcon, BookOpen, MessageCircleMore, ImagesIcon } from 'lucide-react';
+import { MoveUpIcon, MoveDownIcon, BookOpen, MessageCircleMore, ImagesIcon, StarIcon } from 'lucide-react';
 import Chapters from "./Chapters";
 import Comments from "./Comments";
 import Gallery from "./Gallery";
@@ -32,35 +32,41 @@ export default function ListContainer({ manga, chapters, comments, gallery, init
 
     return (
         <>
-        <div className="flex flex-wrap gap-3 w-full place-content-between pt-10 items-center">
-            <ListDropdown seriesId={manga.id} initialListName={initialListName} mangaTitle={manga.title}/>
+        <div className="grid grid-cols-3 w-full pt-10 items-center">
 
-            <div className="flex gap-2">
+            <div className="flex justify-start">
+                <ListDropdown seriesId={manga.id} initialListName={initialListName} mangaTitle={manga.title}/>
+            </div>
+
+            <div className="flex justify-center gap-2">
                 <button onClick={() => setPage("chapters")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "chapters" ? "text-primary" : "text-muted"}`}>
                     <BookOpen className="size-6 mr-1 transition-colors" /> Chapters
                 </button>
                 <button onClick={() => setPage("comments")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "comments" ? "text-primary" : "text-muted"}`}>
                     <MessageCircleMore className="size-6 mr-1 transition-colors" /> Comments
                 </button>
+                <button onClick={() => setPage("reviews")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "reviews" ? "text-primary" : "text-muted"}`}>
+                    <StarIcon className="size-6 mr-1 transition-colors" /> Reviews
+                </button>
                 <button onClick={() => setPage("gallery")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "gallery" ? "text-primary" : "text-muted"}`}>
                     <ImagesIcon className="size-6 mr-1 transition-colors" /> Gallery
                 </button>
             </div>
 
-            <div className="flex gap-2">
-                <button onClick={() => setSortOrder("asc")} className={`p-2 bg-foreground hover:bg-foreground/50 hover:cursor-pointer ${sortOrder === "asc" ? "text-primary border border-borders" : "text-muted"}`}>
-                    <MoveUpIcon className="size-5"/>
-                </button>
-                <button onClick={() => setSortOrder("desc")} className={`p-2 bg-foreground hover:bg-foreground/50 hover:cursor-pointer ${sortOrder === "desc" ? "text-primary border border-borders" : "text-muted"}`}>
-                    <MoveDownIcon className="size-5"/>
-                </button>
+            <div className="flex justify-end">
+                {page === "chapters" && (
+                    <div className="flex gap-2">
+                        <button onClick={() => setSortOrder("asc")} className="p-2 bg-foreground hover:bg-foreground/50 hover:cursor-pointer rounded-md"><MoveUpIcon className="size-5"/></button>
+                        <button onClick={() => setSortOrder("desc")} className="p-2 bg-foreground hover:bg-foreground/50 hover:cursor-pointer rounded-md"><MoveDownIcon className="size-5"/></button>
+                    </div>
+                )}
             </div>
         </div>
 
         <div className="flex flex-col pt-2 gap-2">
             {page === "chapters" && <Chapters manga={{ ...manga, chapters: sortedChapters }} progress={importProgress} />}
             {page === "comments" && <Comments manga={manga} comments={comments} />}
-            {page === "gallery" && <Gallery gallery={gallery} />}
+            {page === "gallery" && <Gallery gallery={gallery} mangaTitle={manga.title} />}
         </div>
         </>
     )

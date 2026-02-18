@@ -1,4 +1,4 @@
-import { formatDaysAgo } from "@/lib/utils";
+import { formatTimeAgo } from "@/lib/utils";
 import { useState, useMemo, useEffect } from "react";
 import { ClockIcon, CheckIcon, BookmarkIcon } from "lucide-react";
 import { getSeriesChapterProgress, markChapterAsRead, markChapterAsUnread } from "@/services/mangaService";
@@ -236,7 +236,7 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
                                     )}
                                 </div>
                                 <div className="flex flex-wrap gap-2 md:gap-4 text-sm text-muted">
-                                    <h2 className="items-center"><ClockIcon className="inline-block mr-1 size-3 mb-0.5" />{formatDaysAgo(chapter.updatedAt)}</h2>
+                                    <h2 className="items-center"><ClockIcon className="inline-block mr-1 size-3 mb-0.5" />{formatTimeAgo(chapter.updatedAt)}</h2>
                                     <h2>{chapter.pageCount} Pages</h2>
                                     <h2>{chapter.viewStats.totalViews} Views</h2>
                                     <h2 className="hidden md:flex">ID: {chapter?.scraperId?.slice(0,3)}</h2>
