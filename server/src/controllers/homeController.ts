@@ -1,228 +1,293 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import { db, schema } from '@/db/index';
-import { eq, and, desc, inArray, isNull, asc, sql } from 'drizzle-orm';
-import { metricsService } from '@/services/metricsService';
-import { shouldFilterManga } from '@/config/contentFilter';
-import { chapters } from '@/db/schema';
+import { eq, desc, sql, getTableColumns, gte, gt } from 'drizzle-orm';
+import { chapters, series } from '@/db/schema';
 import dotenv from 'dotenv';
+import { userProgressService } from '@/services/userProgressService';
+
 dotenv.config();
 
-// Helper function to enrich manga data with view stats
-async function enrichWithViewStats(mangaList: any[]) {
-    if (!Array.isArray(mangaList) || mangaList.length === 0) return mangaList || [];
+const newDaysInterval = '3 days';
 
-    const seriesIds = mangaList.map(m => m.id).filter(Boolean);
-    if (seriesIds.length === 0) return mangaList;
+// Helper function to get date threshold based on period
+export const getThreshold = (period: string) => {
+    const now = new Date();
+    switch (period) {
+        case 'today': return new Date(now.setHours(0, 0, 0, 0));
+        case 'week': return new Date(now.setDate(now.getDate() - 7));
+        case 'month': return new Date(now.setMonth(now.getMonth() - 1));
+        default: return null;
+    }
+};
 
-    const viewStats = await db
-        .select()
-        .from(schema.mangaViewStats)
-        .where(inArray(schema.mangaViewStats.seriesId, seriesIds));
+// RECENTLY READ
+export const getRecentlyRead = async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id || (req as any).session?.userId;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const maxLimit = 20;
 
-    return mangaList.map(manga => {
-        const stats = viewStats.find(s => s.seriesId === manga.id);
-        return {
-            ...manga,
-            viewStats: stats
-                ? {
-                      totalViews: stats.totalViews,
-                      uniqueViews: stats.uniqueViews,
-                      lastViewedAt: stats.lastViewedAt,
-                  }
-                : null,
-        };
+    const progress = await userProgressService.getUserProgress(userId, maxLimit);
+    const progressList = Array.isArray(progress) ? progress : [];
+
+    res.json({
+        count: progressList.length,
+        progress: progressList,
     });
-}
+};
 
-// Helper function to enrich manga data with latest chapter
-async function enrichWithLatestChapter(mangaList: any[]) {
-    if (!Array.isArray(mangaList) || mangaList.length === 0) return mangaList || [];
+// RECENTLY ADDED (Paginated)
+export const getRecentlyAdded = async (req: Request, res: Response) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const offset = (page - 1) * limit;
+    const userId = (req as any).user?.id || (req as any).session?.userId;
 
-    const seriesIds = mangaList.map(m => m.id).filter(Boolean);
-    if (seriesIds.length === 0) return mangaList;
+    const data = await db
+        .select({ 
+            ...getTableColumns(series), 
+            latestChapterDate: sql<string>`max(${chapters.createdAt})`,
+            views: schema.mangaViewStats.totalViews,
+            isNew: sql<boolean>`exists (select 1 from ${schema.chapters} c where c.series_id = ${series.id} and c.created_at >= now() - interval ${sql.raw(`'${newDaysInterval}'`)})`.mapWith(Boolean),
+            isInUserList: userId ? sql<boolean>`exists (select 1 from ${schema.userSeriesList} usl where usl.series_id = ${series.id} and usl.user_id = ${userId})`.mapWith(Boolean) : sql<boolean>`false`,
+        })
+        .from(series)
+        .innerJoin(chapters, eq(series.id, chapters.seriesId))
+        .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
+        .groupBy(series.id, schema.mangaViewStats.totalViews)
+        .orderBy(desc(sql`max(${chapters.createdAt})`))
+        .limit(limit)
+        .offset(offset);
 
-    const latestRows = await db.select()
-        .from(chapters)
-        .where(inArray(chapters.seriesId, seriesIds))
-        .orderBy(
-            asc(chapters.seriesId),
-            desc(sql`CAST(split_part(${chapters.chapterNumber}, '.', 1) AS INTEGER)`),
-            desc(sql`CASE WHEN ${chapters.chapterNumber} LIKE '%.%' THEN CAST(split_part(${chapters.chapterNumber}, '.', 2) AS INTEGER) ELSE 0 END`)
-        );
+    res.json(data);
+};
 
-    const latestMap = new Map<number, any>();
-    for (const ch of latestRows) {
-        if (!latestMap.has(ch.seriesId)) latestMap.set(ch.seriesId, ch);
+// POPULAR CHAPTERS (Filtered by Period)
+export const getPopularChapters = async (req: Request, res: Response) => {
+    const threshold = getThreshold(req.query.period as string);
+    const limit = parseInt(req.query.limit as string) || 20;
+
+    // We change the source to group by series_id so each manga only shows up once
+    let subquery;
+
+    if (threshold) {
+        subquery = db.select({
+            // We pick the seriesId and the max view count found in that series
+            seriesId: schema.chapterViews.seriesId,
+            chapterId: sql<number>`MAX(${schema.chapterViews.chapterId})`.as('chapter_id'), 
+            viewCount: sql<number>`count(*)`.mapWith(Number).as('view_count'),
+        })
+        .from(schema.chapterViews)
+        .where(gte(schema.chapterViews.viewedAt, threshold))
+        .groupBy(schema.chapterViews.seriesId) // 1 row per Series
+        .orderBy(desc(sql`count(*)`))
+        .limit(limit)
+        .as('popular_source');
+    } else {
+        // For All Time, we join chapters to get the series_id to group by
+        subquery = db.select({
+            seriesId: chapters.seriesId,
+            chapterId: sql<number>`MAX(${chapters.id})`.as('chapter_id'),
+            viewCount: sql<number>`SUM(${schema.chapterViewStats.totalViews})`.mapWith(Number).as('view_count'),
+        })
+        .from(schema.chapterViewStats)
+        .innerJoin(chapters, eq(chapters.id, schema.chapterViewStats.chapterId))
+        .groupBy(chapters.seriesId)
+        .orderBy(desc(sql`SUM(${schema.chapterViewStats.totalViews})`))
+        .limit(limit)
+        .as('popular_source');
     }
 
-    return mangaList.map(manga => ({
-        ...manga,
-        latestChapter: latestMap.get(manga.id) || null,
-    }));
-}
-
-export default async function getHomePage(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
-    try {
-        const FeaturedIds = [1692, 6029, 5201, 3188, 247, 3397, 2410, 4323];
-        const ITEMS_PER_ROW = 8;
-        const FETCH_LIMIT = 24; // Fetch 3x to account for filtering
-
-        // Detect user id from auth/session if available
-        const userId = (req as any).user?.id || (req as any).session?.userId || null;
-
-        const [trending, addedRaw, popularRaw, recentComments, updatedRaw, featuredRaw, upcomingRaw] = await Promise.all([
-            // Trending - Using actual metrics/tracking data (7 days = week)
-            metricsService.getTrendingManga(7, FETCH_LIMIT),
-
-            // Newest
-            db.query.series.findMany({
-                where: eq(schema.series.year, 2026),
-                orderBy: [desc(schema.series.lastUpdatedAt)],
-                limit: FETCH_LIMIT,
-            }),
-
-            // Most Popular
-            db.query.series.findMany({
-                orderBy: [desc(schema.series.weightedScore)],
-                limit: FETCH_LIMIT,
-            }),
-
-            // Recent Comments
-            db.select({
-                id: schema.comments.id,
-                content: schema.comments.content,
-                createdAt: schema.comments.createdAt,
-                author: {
-                    name: schema.user.name,
-                    image: schema.user.image,
-                },
-                manga: {
-                    id: schema.series.id,
-                    title: schema.series.title,
-                },
-            })
-                .from(schema.comments)
-                .innerJoin(schema.user, eq(schema.comments.userId, schema.user.id))
-                .innerJoin(schema.series, eq(schema.comments.seriesId, schema.series.id))
-                .orderBy(desc(schema.comments.createdAt))
-                .limit(8),
-
-            // Updated
-            db.query.series.findMany({
-                where: isNull(schema.series.mergedWith),
-                orderBy: [desc(schema.series.lastUpdatedAt)],
-                limit: FETCH_LIMIT,
-            }),
-
-            // Featured
-            db.query.series.findMany({
-                where: inArray(schema.series.id, FeaturedIds),
-                limit: FETCH_LIMIT,
-            }),
-
-            // Upcoming
-            db.query.series.findMany({
-                where: eq(schema.series.status, 'upcoming'),
-                orderBy: [desc(schema.series.id)],
-                limit: FETCH_LIMIT,
-            }),
-        ]);
-
-        // Enrich trending with latest chapter first
-        let trendingWithList = await enrichWithLatestChapter(Array.isArray(trending) ? trending : []);
-
-        // Enrich all lists with view stats and latest chapter
-        let [added, popular, updated, featured, upcoming] = await Promise.all([
-            enrichWithViewStats(addedRaw).then(enrichWithLatestChapter),
-            enrichWithViewStats(popularRaw).then(enrichWithLatestChapter),
-            enrichWithViewStats(updatedRaw).then(enrichWithLatestChapter),
-            enrichWithViewStats(featuredRaw).then(enrichWithLatestChapter),
-            enrichWithViewStats(upcomingRaw).then(enrichWithLatestChapter),
-        ]);
-
-        // Filter out blocked content from all categories and slice to desired count
-        const filterAndSlice = (list: any[]) => 
-            list.filter(item => !shouldFilterManga(item.genres))
-                .filter(item => {
-                    // Filter out lolicon and shotacon content
-                    if (!item.genres || !Array.isArray(item.genres)) return true;
-                    return !item.genres.some((g: string) => 
-                        g.toLowerCase().includes('lolicon') || g.toLowerCase().includes('shotacon')
-                    );
-                })
-                .slice(0, ITEMS_PER_ROW);
-        
-        added = filterAndSlice(added);
-        popular = filterAndSlice(popular);
-        updated = filterAndSlice(updated);
-        featured = filterAndSlice(featured);
-        upcoming = filterAndSlice(upcoming);
-        trendingWithList = filterAndSlice(trendingWithList);
-
-        // If we have a user, fetch all userSeriesList rows for series returned above and attach them
-        if (userId) {
-            const collectIds = (arr: any[]) => (arr && Array.isArray(arr) ? arr.map((s: any) => s.id) : []);
-            const idsSet = new Set<number>([
-                ...collectIds(trendingWithList),
-                ...collectIds(added),
-                ...collectIds(popular),
-                ...collectIds(updated),
-                ...collectIds(featured),
-                ...collectIds(upcoming),
-            ].filter(Boolean) as number[]);
-
-            const allIds = Array.from(idsSet);
-            if (allIds.length > 0) {
-                const userSeriesRows = await db
-                    .select({
-                        userId: schema.userSeriesList.userId,
-                        seriesId: schema.userSeriesList.seriesId,
-                        listId: schema.userSeriesList.listId,
-                        updatedAt: schema.userSeriesList.updatedAt,
-                    })
-                    .from(schema.userSeriesList)
-                    .where(and(eq(schema.userSeriesList.userId, userId), inArray(schema.userSeriesList.seriesId, allIds)));
-
-                // Fetch list metadata (title/name) for the listIds referenced
-                const listIds = Array.from(new Set(userSeriesRows.map((r: any) => r.listId).filter(Boolean)));
-                let listsMeta: any[] = [];
-                if (listIds.length > 0) {
-                    listsMeta = await db
-                        .select({ id: schema.userLists.id, name: schema.userLists.name })
-                        .from(schema.userLists)
-                        .where(inArray(schema.userLists.id, listIds));
-                }
-
-                const listTitleMap = new Map<number, string>(listsMeta.map((l: any) => [l.id, l.name]));
-
-                const attach = (list: any[]) =>
-                    (list || []).map(s => ({
-                        ...s,
-                        userSeriesList: userSeriesRows
-                            .filter((u: any) => u.seriesId === s.id)
-                            .map((u: any) => ({ ...u, listTitle: listTitleMap.get(u.listId) || null })),
-                    }));
-
-                // Attach user tracking to filtered lists
-                trendingWithList = attach(trendingWithList);
-                added = attach(added);
-                popular = attach(popular);
-                updated = attach(updated);
-                featured = attach(featured);
-                upcoming = attach(upcoming);
-            }
+    const results = await db.select({
+        chapter: {
+            ...getTableColumns(chapters),
+            viewCount: subquery.viewCount,
+        },
+        series: {
+            ...getTableColumns(series),
+            totalMangaViews: schema.mangaViewStats.totalViews,
+            isNew: sql<boolean>`exists (select 1 from ${chapters} c where c.series_id = ${series.id} and c.created_at >= now() - interval '7 days')`.mapWith(Boolean),
         }
+    })
+    .from(subquery)
+    .innerJoin(chapters, eq(chapters.id, subquery.chapterId))
+    .innerJoin(series, eq(series.id, subquery.seriesId))
+    .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
+    .orderBy(desc(subquery.viewCount));
 
-        return res.json({
-            trending: trendingWithList,
-            added,
-            popular,
-            recentComments,
-            updated,
-            featured,
-            upcoming,
-        });
-    } catch (err) {
-        return next(err);
+    res.json(results);
+};
+
+// POPULAR MANGA (Filtered by Period)
+export const getPopularManga = async (req: Request, res: Response) => {
+    const threshold = getThreshold(req.query.period as string);
+    const limit = parseInt(req.query.limit as string) || 14;
+    const userId = (req as any).user?.id || (req as any).session?.userId;
+
+    const query = db.select({
+        ...getTableColumns(series),
+        views: threshold 
+            ? sql<number>`count(${schema.mangaViews.id})`.mapWith(Number) 
+            : schema.mangaViewStats.totalViews,
+        isNew: sql<boolean>`exists (
+            select 1 from ${schema.chapters} c 
+            where c.series_id = ${series.id} 
+            and c.created_at >= now() - interval ${sql.raw(`'${newDaysInterval}'`)}
+        )`.mapWith(Boolean),
+        isInUserList: userId 
+            ? sql<boolean>`exists (
+                select 1 from ${schema.userSeriesList} usl 
+                where usl.series_id = ${series.id} and usl.user_id = ${userId}
+            )`.mapWith(Boolean) 
+            : sql<boolean>`false`,
+    })
+    .from(series)
+    .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId));
+
+    if (threshold) {
+        query.innerJoin(schema.mangaViews, eq(series.id, schema.mangaViews.seriesId))
+            .where(gte(schema.mangaViews.viewedAt, threshold))
+            .groupBy(series.id, schema.mangaViewStats.totalViews)
+            // HAVING filters aggregated results (count > 0)
+            .having(sql`count(${schema.mangaViews.id}) > 0`) 
+            .orderBy(desc(sql`count(${schema.mangaViews.id})`));
+    } else {
+        // WHERE filters static column values
+        query.where(gt(schema.mangaViewStats.totalViews, 0))
+             .orderBy(desc(schema.mangaViewStats.totalViews));
     }
-}
+
+    const results = await query.limit(limit);
+    res.json(results);
+};
+
+// HIGH SCORE MANGA (Filtered by Type)
+export const getHighScores = async (req: Request, res: Response) => {
+    const type = (req.query.type as string)?.toLowerCase() || 'all';
+    const limit = parseInt(req.query.limit as string) || 14;
+    const userId = (req as any).user?.id || (req as any).session?.userId;
+
+    // 2. Main Query
+    const data = await db
+        .select({
+            ...getTableColumns(series),
+            views: schema.mangaViewStats.totalViews,
+            isNew: sql<boolean>`exists (
+                select 1 from ${schema.chapters} c 
+                where c.series_id = ${series.id} 
+                and c.created_at >= now() - interval ${sql.raw(`'${newDaysInterval}'`)}
+            )`.mapWith(Boolean),
+            isInUserList: userId 
+                ? sql<boolean>`exists (
+                    select 1 from ${schema.userSeriesList} usl 
+                    where usl.series_id = ${series.id} and usl.user_id = ${userId}
+                )`.mapWith(Boolean)
+                : sql<boolean>`false`,
+        })
+        .from(series)
+        .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
+        .where(type && type !== 'all' ? eq(series.type, type) : undefined)
+        .orderBy(desc(series.weightedScore))
+        .limit(limit);
+
+    res.json(data);
+};
+
+// MOST FOLLOWED (Filtered by Period)
+export const getMostFollowed = async (req: Request, res: Response) => {
+    const threshold = getThreshold(req.query.period as string);
+    const limit = parseInt(req.query.limit as string) || 14;
+    const userId = (req as any).user?.id || (req as any).session?.userId;
+
+    const followerCounts = db
+        .select({
+            seriesId: schema.userSeriesList.seriesId,
+            count: sql<number>`count(*)`.as('follower_count'),
+        })
+        .from(schema.userSeriesList)
+        .where(threshold ? gte(schema.userSeriesList.updatedAt, threshold) : undefined)
+        .groupBy(schema.userSeriesList.seriesId)
+        .orderBy(desc(sql`count(*)`))
+        .limit(limit)
+        .as('fc');
+
+    const data = await db
+        .select({
+            ...getTableColumns(series),
+            followerCount: followerCounts.count,
+            views: schema.mangaViewStats.totalViews,
+            isNew: sql<boolean>`exists (
+                select 1 from ${schema.chapters} c 
+                where c.series_id = ${series.id} 
+                and c.created_at >= now() - interval ${sql.raw(`'${newDaysInterval}'`)}
+            )`.mapWith(Boolean),
+            isInUserList: userId 
+                ? sql<boolean>`exists (
+                    select 1 from ${schema.userSeriesList} usl 
+                    where usl.series_id = ${series.id} and usl.user_id = ${userId}
+                )`.mapWith(Boolean)
+                : sql<boolean>`false`,
+        })
+        .from(series)
+        .innerJoin(followerCounts, eq(series.id, followerCounts.seriesId)) // Inner join filters the top list
+        .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
+        .orderBy(desc(followerCounts.count));
+
+    res.json(data);
+};
+
+// RECENT COMMENTS
+export const getRecentComments = async (req: Request, res: Response) => {
+    const limit = parseInt(req.query.limit as string) || 10;
+    const data = await db.query.comments.findMany({
+        orderBy: [desc(schema.comments.createdAt)],
+        limit: limit,
+        with: { series: true, author: true }
+    });
+    res.json(data);
+};
+
+// TOP COMMENTERS
+export const getTopCommenters = async (req: Request, res: Response) => {
+const limit = parseInt(req.query.limit as string) || 10;
+    
+    // Define our time windows
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+    const query = db.select({
+        id: schema.user.id,
+        name: schema.user.name,
+        image: schema.user.image,
+        role: schema.user.role,
+        totalComments: sql<number>`count(${schema.comments.id})`.mapWith(Number),
+        
+        currentPeriod: sql<number>`
+            count(${schema.comments.id}) filter (where ${schema.comments.createdAt} >= ${sevenDaysAgo})
+        `.mapWith(Number),
+        
+        previousPeriod: sql<number>`
+            count(${schema.comments.id}) filter (where ${schema.comments.createdAt} >= ${fourteenDaysAgo} and ${schema.comments.createdAt} < ${sevenDaysAgo})
+        `.mapWith(Number),
+
+        trend: sql<number>`
+            case 
+                when count(${schema.comments.id}) filter (where ${schema.comments.createdAt} >= ${fourteenDaysAgo} and ${schema.comments.createdAt} < ${sevenDaysAgo}) = 0 
+                then 100 -- If previous was 0, any comment is a 100% increase
+                else round(
+                    ((count(${schema.comments.id}) filter (where ${schema.comments.createdAt} >= ${sevenDaysAgo})::float - 
+                      count(${schema.comments.id}) filter (where ${schema.comments.createdAt} >= ${fourteenDaysAgo} and ${schema.comments.createdAt} < ${sevenDaysAgo})::float) / 
+                      nullif(count(${schema.comments.id}) filter (where ${schema.comments.createdAt} >= ${fourteenDaysAgo} and ${schema.comments.createdAt} < ${sevenDaysAgo}), 0)::float) * 100
+                )
+            end
+        `.mapWith(Number)
+    })
+    .from(schema.user)
+    .innerJoin(schema.comments, eq(schema.user.id, schema.comments.userId))
+    .groupBy(schema.user.id)
+    .orderBy(desc(sql`count(${schema.comments.id})`))
+    .limit(limit);
+
+    const results = await query;
+    res.json(results);
+};

@@ -214,70 +214,6 @@ export const chapters = pgTable("chapters", {
   scraperIdIdx: index("idx_chapters_scraper_id").on(t.scraperId).where(sql`${t.scraperId} IS NOT NULL`),
 }));
 
-// Relationships 
-export const chaptersRelations = relations(chapters, ({ one }) => ({
-  series: one(series, {
-    fields: [chapters.seriesId],
-    references: [series.id],
-  }),
-}));
-
-export const commentsRelations = relations(comments, ({ one, many }) => ({
-  author: one(user, {
-    fields: [comments.userId],
-    references: [user.id],
-  }),
-  series: one(series, {
-    fields: [comments.seriesId],
-    references: [series.id],
-  }),
-  parent: one(comments, {
-    fields: [comments.parentId],
-    references: [comments.id],
-    relationName: "comment_replies",
-  }),
-  replies: many(comments, {
-    relationName: "comment_replies",
-  }),
-  likes: many(commentLikes),
-}));
-
-export const commentLikesRelations = relations(commentLikes, ({ one }) => ({
-  comment: one(comments, {
-    fields: [commentLikes.commentId],
-    references: [comments.id],
-  }),
-  user: one(user, {
-    fields: [commentLikes.userId],
-    references: [user.id],
-  }),
-}));
-
-export const userListsRelations = relations(userLists, ({ one, many }) => ({
-  user: one(user, {
-    fields: [userLists.userId],
-    references: [user.id],
-  }),
-  items: many(userSeriesList),
-}));
-
-export const userSeriesListRelations = relations(userSeriesList, ({ one }) => ({
-  series: one(series, {
-    fields: [userSeriesList.seriesId],
-    references: [series.id],
-  }),
-  list: one(userLists, {
-    fields: [userSeriesList.listId],
-    references: [userLists.id],
-  }),
-}));
-
-export const seriesRelations = relations(series, ({ many }) => ({
-  usersTracking: many(userSeriesList),
-  chapters: many(chapters),
-  comments: many(comments),
-}));
-
 // Manga Views Table (for tracking unique views)
 export const mangaViews = pgTable('manga_views', {
   id: serial('id').primaryKey(),
@@ -412,7 +348,30 @@ export const mangaImportProgress = pgTable('manga_import_progress', {
   scraperIdIdx: index('idx_manga_import_progress_scraper_id').on(t.scraperId).where(sql`${t.scraperId} IS NOT NULL`),
 }));
 
-// Relations
+// User Reading Time Table (per user, per series, per chapter)
+export const userReadingTime = pgTable('user_reading_time', {
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }),
+  chapterId: integer('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  seconds: integer('seconds').notNull().default(0), // Total seconds spent reading this chapter
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.seriesId, t.chapterId] }),
+  userIdIdx: index('idx_user_reading_time_user_id').on(t.userId),
+  seriesIdIdx: index('idx_user_reading_time_series_id').on(t.seriesId),
+  chapterIdIdx: index('idx_user_reading_time_chapter_id').on(t.chapterId),
+  updatedAtIdx: index('idx_user_reading_time_updated_at').on(t.updatedAt.desc()),
+}));
+
+
+// Relationships 
+export const chaptersRelations = relations(chapters, ({ one }) => ({
+  series: one(series, {
+    fields: [chapters.seriesId],
+    references: [series.id],
+  }),
+}));
+
 export const bookmarksRelations = relations(bookmarks, ({ one }) => ({
   user: one(user, {
     fields: [bookmarks.userId],
@@ -437,17 +396,70 @@ export const inviteCodesRelations = relations(inviteCodes, ({ one }) => ({
   }),
 }));
 
-// User Reading Time Table (per user, per series, per chapter)
-export const userReadingTime = pgTable('user_reading_time', {
-  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
-  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }),
-  chapterId: integer('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
-  seconds: integer('seconds').notNull().default(0), // Total seconds spent reading this chapter
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-}, (t) => ({
-  pk: primaryKey({ columns: [t.userId, t.seriesId, t.chapterId] }),
-  userIdIdx: index('idx_user_reading_time_user_id').on(t.userId),
-  seriesIdIdx: index('idx_user_reading_time_series_id').on(t.seriesId),
-  chapterIdIdx: index('idx_user_reading_time_chapter_id').on(t.chapterId),
-  updatedAtIdx: index('idx_user_reading_time_updated_at').on(t.updatedAt.desc()),
+export const userReadingProgressRelations = relations(userReadingProgress, ({ one }) => ({
+  series: one(series, {
+    fields: [userReadingProgress.seriesId],
+    references: [series.id],
+  }),
+  // If you want to include the last chapter read:
+  lastChapter: one(chapters, {
+    fields: [userReadingProgress.lastChapterId],
+    references: [chapters.id],
+  }),
+}));
+
+export const commentsRelations = relations(comments, ({ one, many }) => ({
+  author: one(user, {
+    fields: [comments.userId],
+    references: [user.id],
+  }),
+  series: one(series, {
+    fields: [comments.seriesId],
+    references: [series.id],
+  }),
+  parent: one(comments, {
+    fields: [comments.parentId],
+    references: [comments.id],
+    relationName: "comment_replies",
+  }),
+  replies: many(comments, {
+    relationName: "comment_replies",
+  }),
+  likes: many(commentLikes),
+}));
+
+export const commentLikesRelations = relations(commentLikes, ({ one }) => ({
+  comment: one(comments, {
+    fields: [commentLikes.commentId],
+    references: [comments.id],
+  }),
+  user: one(user, {
+    fields: [commentLikes.userId],
+    references: [user.id],
+  }),
+}));
+
+export const userListsRelations = relations(userLists, ({ one, many }) => ({
+  user: one(user, {
+    fields: [userLists.userId],
+    references: [user.id],
+  }),
+  items: many(userSeriesList),
+}));
+
+export const userSeriesListRelations = relations(userSeriesList, ({ one }) => ({
+  series: one(series, {
+    fields: [userSeriesList.seriesId],
+    references: [series.id],
+  }),
+  list: one(userLists, {
+    fields: [userSeriesList.listId],
+    references: [userLists.id],
+  }),
+}));
+
+export const seriesRelations = relations(series, ({ many }) => ({
+  usersTracking: many(userSeriesList),
+  chapters: many(chapters),
+  comments: many(comments),
 }));

@@ -88,7 +88,7 @@ export default function ReadingStats() {
             {progress.length > 0 && (
                 <div className="bg-foreground rounded-lg p-6">
                     <h3 className="text-xl font-bold text-primary mb-4">Continue Reading</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="flex flex-wrap gap-4">
                         {progress.map((item) => (
                             <ContinueReadingCard key={item.seriesId} progress={item} />
                         ))}

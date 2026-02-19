@@ -24,7 +24,7 @@ function MangaCard({ manga }: { manga?: any }) {
                     )}
                     <div className="flex items-center font-bold text-primary">
                         <Eye className="size-3.5 text-blue-300 mr-1" />
-                        {manga.views > 0 ? formatViewCount(manga.views) : '0' }
+                        {manga.views > 0 ? formatViewCount(manga.views) : '0'}
                     </div>
                 </div>
             </div>
@@ -34,6 +34,7 @@ function MangaCard({ manga }: { manga?: any }) {
                     <p className="text-sm text-muted font-medium">{manga.totalChapters || 0} Chapters</p>
                 </div>
                 <h3 className="text-lg font-extrabold text-primary leading-tight line-clamp-2">{manga.title}</h3>
+                <h4 className="text-sm text-muted font-medium">Followers: {manga.followerCount}</h4>
             </div>
         </Link>
         </>

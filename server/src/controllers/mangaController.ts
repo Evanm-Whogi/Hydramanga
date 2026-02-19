@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { db, schema } from '@/db/index';
-import { eq, or, and, sql, asc, desc, count, inArray, isNull, ilike, ne, getTableColumns, isNotNull, gt, notLike } from 'drizzle-orm';
+import { eq, or, and, sql, asc, desc, count, inArray, isNull, ilike, ne, getTableColumns, isNotNull, gt, notLike, lte, gte } from 'drizzle-orm';
 import { chapters, series } from '@/db/schema';
 import path from 'path';
 import fs from 'fs-extra';
@@ -11,6 +11,8 @@ import { shouldFilterManga, getBlockedGenres } from '@/config/contentFilter';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import { cacheService } from '@/services/cacheService';
 import axios from 'axios';
+import { getCollectionsList } from '@/services/collectionsService';
+
 // Helper function to enrich manga data with view stats
 async function enrichWithViewStats(mangaList: any[]) {
     if (mangaList.length === 0) return [];
@@ -67,6 +69,9 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         const { genres, type, status, search, years, nsfw, sort = "weightedScore", order = "desc", cursor, limit = "40" } = req.query;
         const pageSize = Math.min(Number(limit), 40);
         const isAsc = String(order).toLowerCase() === 'asc';
+        const userId = (req as any).user?.id || (req as any).session?.userId;
+        const NEW_INTERVAL = '7 days';
+
         const conditions = [];
 
         const parseParam = (param: any) => {
@@ -74,106 +79,87 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
             return (Array.isArray(param) ? param : String(param).split(',')).map(v => v.trim()).filter(Boolean);
         };
 
-        // Filters logic
+        // 1. Filter Logic
         if (search) {
-            const trimmedSearch = String(search).trim();
-            // Only add search condition if the trimmed search is not empty
-            if (trimmedSearch) {
-                const pattern = `%${trimmedSearch}%`;
-                conditions.push(or(ilike(schema.series.title, pattern), ilike(schema.series.romanizedTitle, pattern), ilike(schema.series.nativeTitle, pattern)));
-            }
+            const pattern = `%${String(search).trim()}%`;
+            conditions.push(or(
+                ilike(schema.series.title, pattern), 
+                ilike(schema.series.romanizedTitle, pattern), 
+                ilike(schema.series.nativeTitle, pattern)
+            ));
         }
 
         const genreList = parseParam(genres);
-        if (genreList.length > 0) {
-            for (const g of genreList) {
-                conditions.push(sql`${schema.series.genres} @> ${JSON.stringify([g])}::jsonb`);
-            }
-        }
+        genreList.forEach(g => {
+            conditions.push(sql`${schema.series.genres} @> ${JSON.stringify([g])}::jsonb`);
+        });
 
         const typeList = parseParam(type).map(t => t.toLowerCase());
-        if (typeList.length > 0) { conditions.push(inArray(schema.series.type, typeList)); }
+        if (typeList.length > 0) conditions.push(inArray(schema.series.type, typeList));
 
         const statusList = parseParam(status);
-        if (statusList.length > 0) { conditions.push(inArray(schema.series.status, statusList)); }
+        if (statusList.length > 0) conditions.push(inArray(schema.series.status, statusList));
 
-        // Handle year filtering
+        // Year/Decade Logic
         const yearList = parseParam(years);
         if (yearList.length > 0) {
-            const yearConditions: any[] = [];
-            for (const year of yearList) {
-                if (year === 'timeless') {
-                    // Timeless means no year specified (year is null)
-                    yearConditions.push(isNull(schema.series.year));
-                } else if (year.endsWith('s')) {
-                    // Decade filter (e.g., "1950s", "2020s")
-                    const decadeStart = parseInt(year);
-                    const decadeEnd = decadeStart + 9;
-                    yearConditions.push(
-                        and(
-                            isNotNull(schema.series.year),
-                            sql`${schema.series.year} >= ${decadeStart}`,
-                            sql`${schema.series.year} <= ${decadeEnd}`
-                        )
-                    );
-                } else {
-                    // Specific year filter (e.g., "2024", "2025")
-                    const targetYear = parseInt(year);
-                    yearConditions.push(
-                        and(
-                            isNotNull(schema.series.year),
-                            sql`${schema.series.year} = ${targetYear}`
-                        )
-                    );
+            const yearConditions = yearList.map(year => {
+                if (year === 'timeless') return isNull(schema.series.year);
+                if (year.endsWith('s')) {
+                    const start = parseInt(year);
+                    return and(isNotNull(schema.series.year), gte(schema.series.year, start), lte(schema.series.year, start + 9));
                 }
-            }
-            // Use OR logic - match any of the year conditions
-            if (yearConditions.length > 0) {
-                conditions.push(or(...yearConditions));
-            }
+                return eq(schema.series.year, parseInt(year));
+            });
+            conditions.push(or(...yearConditions));
         }
 
-        // Hide NSFW content unless explicitly allowed
-        if (nsfw === 'false') { conditions.push(and(ne(schema.series.contentRating, 'erotica'), ne(schema.series.contentRating, 'pornographic')));}
-
-        // Filter blocked adult/porn genres
-        const blockedGenres = getBlockedGenres();
-        for (const blockedGenre of blockedGenres) {
-            conditions.push(sql`NOT (${schema.series.genres} @> ${JSON.stringify([blockedGenre])}::jsonb)`);
+        // Content Restrictions
+        if (nsfw === 'false') {
+            conditions.push(and(ne(schema.series.contentRating, 'erotica'), ne(schema.series.contentRating, 'pornographic')));
         }
-
-        // Exclude merged series
+        getBlockedGenres().forEach(bg => {
+            conditions.push(sql`NOT (${schema.series.genres} @> ${JSON.stringify([bg])}::jsonb)`);
+        });
         conditions.push(or(ne(schema.series.state, 'merged'), isNull(schema.series.state)));
 
-        // 2. Dynamic Sorting Logic
+        // 2. Sorting & Pagination Setup
         const columns = getTableColumns(schema.series);
         const sortKey = (sort as keyof typeof columns) || 'weightedScore';
-        
-        // Handle Numeric Casting and special column logic
         const effectiveSort = sortKey === 'totalChapters' 
             ? sql`NULLIF(${schema.series.totalChapters}, '')::int` 
             : columns[sortKey];
 
-        if (sortKey === 'totalChapters') {
-            conditions.push(and(isNotNull(schema.series.totalChapters), ne(schema.series.totalChapters, '0'), ne(schema.series.totalChapters, '')));
-        }
-
-        // 3. Keyset Pagination (Cursor)
         if (cursor) {
             const [cursorVal, cursorId] = String(cursor).split('|');
-            // Use > for ASC and < for DESC
             const operator = isAsc ? sql`>` : sql`<`;
-            const cursorValTyped = (sortKey === 'totalChapters' || typeof columns[sortKey] === 'number') 
-                ? Number(cursorVal) 
-                : cursorVal;
-            
-            conditions.push(sql`(${effectiveSort}, ${schema.series.id}) ${operator} (${cursorValTyped}, ${Number(cursorId)})`);
+            const typedVal = (sortKey === 'totalChapters' || typeof columns[sortKey] === 'number') ? Number(cursorVal) : cursorVal;
+            conditions.push(sql`(${effectiveSort}, ${schema.series.id}) ${operator} (${typedVal}, ${Number(cursorId)})`);
         }
 
-        // 4. Execution
+        // 3. Main Execution (Aggregating views and flags)
         const [totalCountResult] = await db.select({ count: count() }).from(schema.series).where(and(...conditions));
 
-        const data = await db.select().from(schema.series)
+        const data = await db
+            .select({
+                ...columns,
+                views: schema.mangaViewStats.totalViews,
+                uniqueViews: schema.mangaViewStats.uniqueViews,
+                // Request 1: Is New (chapter in last X days)
+                isNew: sql<boolean>`EXISTS (
+                    SELECT 1 FROM ${schema.chapters} c 
+                    WHERE c.series_id = ${schema.series.id} 
+                    AND c.created_at >= NOW() - INTERVAL ${sql.raw(`'${NEW_INTERVAL}'`)}
+                )`.mapWith(Boolean),
+                // Request 2: Is In User List
+                isInUserList: userId ? sql<boolean>`EXISTS (
+                    SELECT 1 FROM ${schema.userSeriesList} usl 
+                    WHERE usl.series_id = ${schema.series.id} 
+                    AND usl.user_id = ${userId}
+                )`.mapWith(Boolean) : sql<boolean>`false`.mapWith(Boolean),
+            })
+            .from(schema.series)
+            .leftJoin(schema.mangaViewStats, eq(schema.series.id, schema.mangaViewStats.seriesId))
             .where(and(...conditions))
             .orderBy(
                 isAsc ? asc(effectiveSort) : desc(effectiveSort), 
@@ -181,106 +167,54 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
             )
             .limit(pageSize + 1);
 
-        // 5. Cursor Formatting
         const hasNextPage = data.length > pageSize;
         const items = hasNextPage ? data.slice(0, -1) : data;
-        
-        // Enrich with view stats
         const seriesIds = items.map(m => m.id);
-        const viewStats = seriesIds.length > 0 ? await db
-            .select()
-            .from(schema.mangaViewStats)
-            .where(inArray(schema.mangaViewStats.seriesId, seriesIds)) : [];
-        
-        let enrichedItems = items.map(manga => {
-            const stats = viewStats.find(s => s.seriesId === manga.id);
-            return {
-                ...manga,
-                viewStats: stats ? {
-                    totalViews: stats.totalViews,
-                    uniqueViews: stats.uniqueViews,
-                    lastViewedAt: stats.lastViewedAt,
-                } : null,
-            };
-        });
-        
-        // Attach user's series list info (if available) to each manga
-        const userId = (req as any).user?.id;
-        if (userId && seriesIds.length > 0) {
-            const userSeriesEntries = await db.query.userSeriesList.findMany({
-                where: and(
-                    eq(schema.userSeriesList.userId, userId),
-                    inArray(schema.userSeriesList.seriesId, seriesIds)
-                ),
-                with: {
-                    list: {
-                        columns: {
-                            id: true,
-                            name: true,
-                            slug: true,
-                        }
-                    }
-                }
-            });
 
-            const userSeriesMap = new Map<number, any>();
-            userSeriesEntries.forEach((e: any) => userSeriesMap.set(e.seriesId, {
-                id: e.id,
-                seriesId: e.seriesId,
-                listId: e.listId,
-                addedAt: e.updatedAt,
-                listName: e.list?.name || null,
-            }));
+        // 4. Optimized Latest Chapter Fetch (Batch only for the visible items)
+        let itemsWithChapters: any[] = items; 
 
-            enrichedItems = enrichedItems.map(item => ({
-                ...item,
-                userSeriesList: userSeriesMap.get(item.id) || null,
-            }));
-        }
-
-        // Fetch latest chapter per series and attach it
         if (seriesIds.length > 0) {
-            const latestRows = await db.select()
-                .from(chapters)
-                .where(inArray(chapters.seriesId, seriesIds))
+            const latestChapters = await db.selectDistinctOn([schema.chapters.seriesId])
+                .from(schema.chapters)
+                .where(inArray(schema.chapters.seriesId, seriesIds))
                 .orderBy(
-                    asc(chapters.seriesId),
-                    // Order by integer part of chapterNumber (major) desc
-                    desc(sql`CAST(split_part(${chapters.chapterNumber}, '.', 1) AS INTEGER)`),
-                    // Order by fractional part (minor) desc, treat missing as 0
-                    desc(sql`CASE WHEN ${chapters.chapterNumber} LIKE '%.%' THEN CAST(split_part(${chapters.chapterNumber}, '.', 2) AS INTEGER) ELSE 0 END`)
+                    schema.chapters.seriesId,
+                    desc(sql`CAST(split_part(${schema.chapters.chapterNumber}, '.', 1) AS INTEGER)`),
+                    desc(sql`CASE WHEN ${schema.chapters.chapterNumber} LIKE '%.%' THEN CAST(split_part(${schema.chapters.chapterNumber}, '.', 2) AS INTEGER) ELSE 0 END`)
                 );
 
-            const latestMap = new Map<number, any>();
-            for (const ch of latestRows) {
-                if (!latestMap.has(ch.seriesId)) latestMap.set(ch.seriesId, ch);
-            }
-
-            enrichedItems = enrichedItems.map(item => ({
+            const chapterMap = new Map(latestChapters.map(c => [c.seriesId, c]));
+            
+            // By mapping directly here, TypeScript infers the combined type correctly
+            itemsWithChapters = items.map(item => ({
                 ...item,
-                latestChapter: latestMap.get(item.id) || null,
+                latestChapter: chapterMap.get(item.id) || null
             }));
+        } else {
+            // If no series, just map the empty chapters
+            itemsWithChapters = items.map(item => ({ ...item, latestChapter: null }));
         }
 
+        // 5. Build Cursor
         let nextCursor = null;
         if (hasNextPage) {
-            const lastItem = items[items.length - 1];
-            const val = lastItem[sortKey as keyof typeof lastItem] ?? 0;
-            nextCursor = `${val}|${lastItem.id}`;
+            const last = items[items.length - 1];
+            const val = last[sortKey as keyof typeof last] ?? 0;
+            nextCursor = `${val}|${last.id}`;
         }
 
         return res.json({
             meta: {
                 total: Number(totalCountResult?.count || 0),
-                count: enrichedItems.length,
-                limit: pageSize,
-                hasMore: hasNextPage,
+                hasNextPage,
                 sort,
                 order: isAsc ? 'asc' : 'desc'
             },
-            items: enrichedItems,
+            items: itemsWithChapters,
             nextCursor
         });
+
     } catch (error) {
         return next(error);
     }
@@ -860,129 +794,12 @@ export async function getGallery(req: Request, res: Response, next: NextFunction
 }
 
 export async function getCollections(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
-    // 1. Define genres with their respective descriptions
-    const genreMetadata = [
-        { name: "Romance", description: "Discover heartwarming love stories, emotional relationships, and the complexities of romantic connections in these captivating series." },
-        { name: "Comedy", description: "Dive into lighthearted stories filled with witty humor, hilarious misunderstandings, and entertaining scenarios that range from clever satire to slapstick comedy" },
-        { name: "Fantasy", description: "Journey through realms of magic, where epic quests and supernatural powers collide in spellbinding fantasy tales." },
-        { name: "Drama", description: "Real emotions, complicated relationships, and life-changing moments. These compelling stories hold up a mirror to life itself, making you feel every high and low" },
-        { name: "School Life", description: "From first-day jitters to graduation tears, these stories capture all the drama, friendship, and unforgettable moments that make school life special. Class is in session!" },
-        { name: "Shounen", description: "Experience thrilling adventures filled with intense battles, unwavering friendships, and heroic journeys where determined protagonists overcome increasingly powerful" },
-        { name: "Shoujo", description: "Experience heartfelt stories centered around young heroines navigating love, friendship, and personal growth, with distinctive art styles featuring expressive character" },
-        { name: "Seinen", description: "Sophisticated narratives and complex themes in manga series crafted for mature readers, featuring realistic storytelling." },
-        { name: "Supernatural", description: "Venture into a world where the ordinary meets the extraordinary, featuring spirits, curses, and otherworldly phenomena. These stories blur the lines between reality" },
-        { name: "Boys Love", description: "Explore heartwarming and passionate stories of romance between men, featuring emotional storytelling, character growth, and the beautiful complexities of male relationships." },
-        { name: "Slice of Life", description: "Immerse yourself in gentle stories that celebrate the beauty of everyday moments, where simple daily experiences and quiet personal growth create meaningful connections." },
-        { name: "Ecchi", description: "Playful and suggestive comedies featuring romantic mishaps, awkward situations, and light fanservice, blending humor with romance in entertaining and cheeky" },
-        { name: "Mystery", description: "Unravel thrilling mysteries filled with suspense, unexpected twists, and complex characters. These stories will keep you guessing until the very end." },
-         { name: "Horror", description: "Brace yourself for chilling tales that delve into the darkest corners of fear, featuring supernatural entities, psychological terror, and spine-tingling suspense." },
-         { name: "Action", description: "Experience high-octane excitement with intense battles, daring feats, and relentless energy. These stories are packed with adrenaline-pumping action from start to finish." },
-         { name: "Adventure", description: "Embark on epic journeys filled with exploration, danger, and discovery. These stories take you to uncharted territories where heroes face thrilling challenges." },
-         { name: "Psychological", description: "Delve into the complexities of the human mind with stories that explore psychological tension, moral dilemmas, and the intricate workings of characters' psyches." },
-         { name: "Tragedy", description: "Experience powerful narratives that explore themes of loss, sacrifice, and the human condition. These stories evoke deep emotions and often leave a lasting impact on readers." },
-         { name: "Award Winning", description: "Discover critically acclaimed manga series that have received prestigious awards for their exceptional storytelling, art, and impact on the medium." },
-         { name: "Avant Garde", description: "Explore experimental and unconventional manga that pushes the boundaries of storytelling and art, offering unique and thought-provoking experiences." },
-         { name: "Gourmet", description: "Savor delicious stories centered around food, cooking, and culinary adventures. These manga will whet your appetite with mouthwatering dishes and heartfelt narratives." },
-         { name: "Gender Bender", description: "Experience stories that challenge traditional gender roles, featuring characters who crossdress, switch genders, or explore fluid identities, often with humor and heart." },
-        { name: "Harem", description: "Dive into romantic comedies where a single protagonist finds themselves surrounded by multiple love interests, leading to humorous and heartfelt situations." },
-        { name: "Historical", description: "Travel back in time with stories set in various historical periods, blending real events and figures with compelling narratives and rich world-building." },
-        { name: "Josei", description: "Experience mature and realistic stories that explore the lives, relationships, and personal growth of adult women." },
-        { name: "Mahou Shoujo", description: "Enter a world of magic and wonder with stories featuring young heroines who transform into magical beings." },
-        { name: "Martial Arts", description: "Experience intense battles and disciplined training in stories centered around martial arts, where characters strive for strength and honor." },
-        { name: "Mature", description: "Explore complex themes and mature storytelling that delves into the intricacies of human relationships, societal issues, and personal growth." },
-        { name: "Mecha", description: "Dive into futuristic worlds where giant robots and advanced technology play a central role in epic battles and intricate plots." },
-        { name: "Music", description: "Experience the rhythm of stories centered around music, where characters pursue their passions, form bands, and navigate the highs and lows of the music industry." },
-        { name: "Sci-Fi", description: "Venture into speculative futures with stories that explore advanced technology, space exploration, and the impact of science on society." },
-        { name: "Shoujo Ai", description: "Discover tender and emotional stories of romance between young women, featuring heartfelt narratives and deep emotional connections." },
-        { name: "Shounen Ai", description: "Explore sweet and emotional stories of romance between young men, focusing on character development and heartfelt relationships." },
-        { name: "Sports", description: "Get in the game with stories that capture the thrill of competition, teamwork, and personal growth through sports." },
-        { name: "Suspense", description: "Experience nail-biting tension and uncertainty in stories that keep you on the edge of your seat with unexpected twists and high stakes." },
-        { name: "Thriller", description: "Dive into fast-paced and gripping narratives filled with danger, intrigue, and suspense that will keep you hooked until the last page." },
-        { name: "Yaoi", description: "Explore passionate and emotional stories of romance between men, featuring intense relationships and heartfelt storytelling." },
-        { name: "Yuri", description: "Discover beautiful and emotional stories of romance between women, featuring deep emotional connections and heartfelt narratives." },
-        { name: "Lolicon", description: "Note: This genre contains content that may be inappropriate or offensive to some audiences. It typically features romantic or sexual relationships involving underage characters. Please exercise discretion when exploring this genre." },
-        { name: "Shotacon", description: "Note: This genre contains content that may be inappropriate or offensive to some audiences. It typically features romantic or sexual relationships involving underage characters. Please exercise discretion when exploring this genre." },
-        { name: "Hentai", description: "Explicit adult content featuring graphic depictions of sexual themes. This genre is intended for mature audiences only and often explores a wide range of fantasies and fetishes." },
-        { name: "Smut", description: "Steamy stories that focus on explicit romantic and sexual relationships, often blending passionate storytelling with mature themes." },
-        { name: "Doujinshi", description: "Fan-created works that can range from lighthearted parodies to original stories, often exploring popular series or unique concepts with a personal touch." },
-        { name: "Adult", description: "Mature content that explores explicit themes, relationships, and narratives intended for adult audiences, often delving into complex and provocative storytelling." },
-        { name: "Erotica", description: "Sensual and provocative stories that explore themes of desire, intimacy, and passion, often with explicit content intended for mature audiences." },
-        { name: "Girls Love", description: "Discover tender and emotional stories of romance between young women, featuring heartfelt narratives and deep emotional connections." },
-    ];
-
-    // Fallback description for any genre not explicitly defined above
-    const defaultDescription = "Explore a curated selection of popular titles within this category.";
-
-    const cacheKey = `collections:genres:v2`; // Updated key since data structure changed
-    const cacheTtlSeconds = 3 * 24 * 60 * 60; // 3 days
-
     try {
-        const collectionsData = await cacheService.getOrSet(
-            {
-                key: cacheKey,
-                ttl: cacheTtlSeconds,
-                staleIfError: cacheTtlSeconds,
-            },
-            async () => {
-                const genreNames = genreMetadata.map(g => g.name);
-
-                const results = await db.execute(sql`
-                    WITH expanded_manga AS (
-                        SELECT 
-                            jsonb_array_elements_text(${schema.series.genres}) as genre,
-                            ${schema.series.id} as id,
-                            ${schema.series.title} as title,
-                            ${schema.series.cover} as cover,
-                            ${schema.series.weightedScore} as "weightedScore",
-                            CASE WHEN ${schema.series.weightedScore} >= 75 THEN 1 ELSE 2 END as priority
-                        FROM ${schema.series}
-                        WHERE ${schema.series.genres} IS NOT NULL
-                    ),
-                    ranked_manga AS (
-                        SELECT *,
-                            ROW_NUMBER() OVER(
-                                PARTITION BY genre 
-                                ORDER BY priority ASC, RANDOM() 
-                            ) as rank,
-                            COUNT(*) OVER(PARTITION BY genre) as total_count
-                        FROM expanded_manga
-                        WHERE genre = ANY(ARRAY[${sql.join(genreNames.map(g => sql`${g}`), sql`, `)}])
-                    )
-                    SELECT * FROM ranked_manga WHERE rank <= 3
-                `);
-
-                const data: any = {};
-                
-                // 2. Pre-fill with name and description
-                genreMetadata.forEach(g => {
-                    data[g.name] = { 
-                        description: g.description,
-                        count: 0, 
-                        topManga: [] 
-                    };
-                });
-
-                const rows = (results.rows || results) as any[];
-
-                rows.forEach((row) => {
-                    const { genre, total_count, id, title, cover, weightedScore } = row;
-                    if (data[genre]) {
-                        data[genre].count = Number(total_count);
-                        data[genre].topManga.push({ id, title, cover, weightedScore });
-                    }
-                });
-
-                return data;
-            }
-        );
-
-        return res.json(collectionsData);
+        const collections = await getCollectionsList();
+        
+        return res.json(collections);
     } catch (error) {
-        if (typeof logger !== 'undefined') {
-            logger.error(`Collection Query Error: ${(error as Error).message}`, { service: 'mangaController' });
-        } else {
-            console.error("Collection Query Error:", error);
-        }
+        logger.error(`Error fetching collections: ${(error as Error).message}`, { service: 'mangaController' });
         return res.status(500).json({ error: "Failed to fetch collections" });
     }
 }

@@ -1,0 +1,57 @@
+"use client"
+import { Star, Eye } from "lucide-react";
+import Link from "next/link";
+import { formatToRating } from "@/lib/utils";
+import { memo } from "react";
+
+function PopularChapterCard({ manga }: { manga?: any }) {
+
+    // Determine if the latest chapter is new (within the last 2 days)
+    const latestChapter = manga?.latestChapter?.createdAt || null;
+    const isNew = latestChapter ? (() => {
+        const createdAt = new Date(latestChapter).getTime();
+        const today = new Date().getTime();
+        const diffDays = (today - createdAt) / (1000 * 60 * 60 * 24);
+        return diffDays <= 2;
+    })() : false;
+
+    return (
+        <>
+        <Link href={`manga/${manga.series.id}`} className="flex flex-col w-full h-fit group">
+            <div className="relative aspect-2/3 w-full overflow-hidden rounded-2xl">
+                <img src={`${manga.series?.cover?.raw.url || '/notFound.png'}`} alt={manga.series.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                { isNew && (
+                    <div className="absolute top-2 right-2 z-5">
+                        <span className="bg-accent/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-bold shadow-lg">
+                            NEW
+                        </span>
+                    </div>
+                )}
+                <div className="absolute bottom-0 inset-x-0 flex justify-between items-center p-3 bg-linear-to-t from-transparent-card/80 to-transparent-card/50">
+                    <div className="flex items-center font-bold text-primary"><Star className="size-3.5 text-yellow-400 mr-1 fill-yellow-400" />{formatToRating(manga.series.rating)}</div>
+
+                    <div className="flex items-center font-bold text-primary">
+                        <Eye className="size-3.5 text-blue-300 mr-1" />
+                        {manga.series.views > 0 ? formatViewCount(manga.series.views) : '0'}
+                    </div>
+                </div>
+            </div>
+            <div className="pt-2 text-center space-y-1">
+                <div className="flex place-content-between">
+                    <p className="text-sm text-muted font-medium capitalize">Chapter: {manga.chapter?.chapterNumber || 0}</p>
+                    <p className="text-sm text-muted font-medium">{manga.chapter?.viewCount || 0} Views</p>
+                </div>
+                <h3 className="text-lg font-extrabold text-primary leading-tight line-clamp-2"></h3>
+            </div>
+        </Link>
+        </>
+    );
+}
+
+export default memo(PopularChapterCard);
+
+function formatViewCount(count: number): string {
+    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
+    if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
+    return count.toString();
+}
