@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import { getHomepage } from '@/services/mangaService';
+import {getHighScores} from '@/services/homeService';
 import Lists from "./components/Lists";
 import Hero from './components/Hero';
-import ContinueReading from './components/ContinueReading';
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
@@ -17,14 +16,12 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function Home() {
-  const mangaData = await getHomepage();
-  const trendingManga = mangaData?.trending?.[0] || mangaData?.popular?.[0]; // Fallback if no trending
+  const highScores = await getHighScores();
 
   return (
     <>
-      <Hero mangaData={trendingManga} />
-      <ContinueReading />
-      <Lists mangaData={mangaData} />
+      <Hero mangaData={highScores[0]} />
+      <Lists />
     </>
   )
 }

@@ -12,7 +12,7 @@ export default function CommentCard({ comment }: { comment: any }) {
                 </div>
             </div>
             <p className="text-base pb-12 md:pb-6">{comment.content}</p>
-            <Link href={`/manga/${comment.manga.id}`} className="absolute bottom-0 left-0 p-2 mt-2 text-sm text-primary hover:text-accent"><span className="text-muted">On:</span> {comment.manga.title}</Link>
+            <Link href={`/manga/${comment.series.id}`} className="absolute bottom-0 left-0 p-2 mt-2 text-sm text-primary hover:text-accent"><span className="text-muted">On:</span> {comment.series.title}</Link>
         </div>
     );
 }

@@ -22,8 +22,8 @@ export default function ContinueReadingCard({ progress }: ContinueReadingCardPro
     return (
         <Link 
             href={`/manga/${progress.seriesId}/read/${progress.lastChapterId}?page=${progress.lastPageNumber}`}
-            className="flex flex-col bg-foreground/50 rounded-lg overflow-hidden group">
-            <div className="relative aspect-video w-full overflow-hidden">
+            className="flex flex-col bg-foreground/50 rounded-lg overflow-hidden group max-w-48">
+            <div className="relative aspect-video w-full overflow-hidden h-72 max-h-72 max-w-48">
                 <img src={coverUrl} alt={progress.seriesTitle} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                 <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/40 to-transparent" />
                 
