@@ -281,7 +281,7 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
                         image: true,
                     },
                 },
-                likes: true,
+                votes: true,
                 replies: {
                     with: {
                         author: {
@@ -291,7 +291,7 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
                                 image: true,
                             },
                         },
-                        likes: true,
+                        votes: true,
                     },
                     orderBy: (comments, { asc }) => [asc(comments.createdAt)],
                 },
@@ -789,7 +789,7 @@ export async function getGallery(req: Request, res: Response, next: NextFunction
         return res.json(gallery);
     } catch (error) {
         logger.error(`Error fetching gallery: ${(error as Error).message}`, { service: 'mangaController' });
-        return res.status(500).json({ error: "Error fetching gallery" });
+        return res.status(200).json({ gallery: [] }); // Return empty gallery on error to avoid breaking the client
     }
 }
 

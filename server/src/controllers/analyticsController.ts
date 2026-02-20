@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { metricsService } from '@/services/metricsService';
 import { userProgressService } from '@/services/userProgressService';
 import logger from '@/services/loggerService';
+import { db, schema } from '@/db/index';
+import { eq, avg, count } from 'drizzle-orm';
 
 /**
  * Get trending manga for a specific time period
@@ -49,9 +51,20 @@ export async function getMangaAnalytics(req: Request, res: Response, next: NextF
       return res.status(400).json({ error: 'Invalid series ID' });
     }
 
-    const [mangaStats, chapterStats] = await Promise.all([
+    const [mangaStats, chapterStats, ratingResult, reviewCount] = await Promise.all([
       metricsService.getMangaStats(seriesId),
       metricsService.getSeriesChapterStats(seriesId),
+      db.select({ avg: avg(schema.reviews.rating) })
+        .from(schema.reviews)
+        .where(eq(schema.reviews.seriesId, seriesId))
+        .then((rows) => {
+          const raw = rows[0]?.avg;
+          return raw != null ? Math.round(parseFloat(raw as string) * 10) / 10 : null;
+        }),
+      db.select({ count: count() })
+        .from(schema.reviews)
+        .where(eq(schema.reviews.seriesId, seriesId))
+        .then((rows) => rows[0]?.count || 0),
     ]);
 
     // Disable browser caching for analytics - ensure fresh data
@@ -63,7 +76,7 @@ export async function getMangaAnalytics(req: Request, res: Response, next: NextF
       status: 200,
       seriesId,
       stats: {
-        manga: mangaStats,
+        manga: { ...mangaStats, reviewRating: ratingResult, reviewCount: reviewCount },
         chapters: chapterStats,
       },
     });

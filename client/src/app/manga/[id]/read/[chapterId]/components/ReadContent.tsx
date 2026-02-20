@@ -21,6 +21,72 @@ import {
 } from '@/lib/readerSettings';
 
 const SIDEBAR_WIDTH_PX = 260;
+const EAGER_COUNT = 5;
+
+const LazyMangaPage = React.memo(function LazyMangaPage({
+  src,
+  index,
+  alt,
+  className,
+  style,
+}: {
+  src: string;
+  index: number;
+  alt: string;
+  className: string;
+  style: React.CSSProperties;
+}) {
+  const eager = index < EAGER_COUNT;
+  const [activeSrc, setActiveSrc] = useState(eager ? src : '');
+  const [loaded, setLoaded] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (eager) return;
+    const el = wrapperRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setActiveSrc(src);
+          io.disconnect();
+        }
+      },
+      // Start loading 2 full viewport heights before the image enters view
+      { rootMargin: '200% 0px' }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [eager, src]);
+
+  return (
+    // The wrapper is always in the DOM so querySelectorAll('img') navigation
+    // can still measure its position via the wrapper's bounding rect.
+    <div ref={wrapperRef} className="w-full relative" style={{ minHeight: loaded ? undefined : '600px' }}>
+      {/* Skeleton placeholder until the image is loaded */}
+      {!loaded && (
+        <div className="absolute inset-0 bg-foreground/20 animate-pulse" style={{ minHeight: '600px' }} />
+      )}
+      <img
+        // img is always in the DOM; before src is set it is visually hidden
+        // but its position still equals the wrapper's position for scroll math.
+        src={activeSrc || undefined}
+        alt={alt}
+        className={className}
+        style={{
+          ...style,
+          // Only show after fully loaded so the skeleton stays visible during fetch
+          visibility: loaded ? 'visible' : 'hidden',
+          position: loaded ? 'static' : 'absolute',
+        }}
+        onLoad={() => setLoaded(true)}
+        referrerPolicy="strict-origin-when-cross-origin"
+        fetchPriority={eager ? 'high' : 'low'}
+        decoding={eager ? 'sync' : 'async'}
+      />
+    </div>
+  );
+});
 
 interface Chapter {
   id: number;
@@ -1029,7 +1095,14 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         {/* Image Container */}
         <div ref={containerRef} className="image-stack w-full max-w-212.5 z-5" style={containerStyles}>
           {imageItems.map((item, index) => (
-            <img key={index} src={item.src} alt={`Page ${index + 1}`} className={getImageClassName} style={getImageStyle} loading={index < 3 ? 'eager' : 'lazy'} referrerPolicy="strict-origin-when-cross-origin" />
+            <LazyMangaPage
+              key={`${item.chapterId}-${index}`}
+              src={item.src}
+              index={index}
+              alt={`Page ${index + 1}`}
+              className={getImageClassName}
+              style={getImageStyle}
+            />
           ))}
         </div>
 

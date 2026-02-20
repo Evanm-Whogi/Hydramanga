@@ -100,6 +100,13 @@ export interface ScraperConfig {
         priority: number; // 1 = highest priority
         enabled: boolean;
     };
+    toonily: {
+        baseUrl: string;
+        userAgent: string;
+        timeout: number; // milliseconds
+        priority: number; // 1 = highest priority
+        enabled: boolean;
+    };
 }
 
 /**
@@ -295,6 +302,13 @@ export class AppConfigService {
                     timeout: parseEnvNumber('MANGATARO_TIMEOUT', 30000), // 30 seconds
                     priority: parseEnvNumber('MANGATARO_PRIORITY', 2), // 2 = second priority
                     enabled: parseEnvBoolean('MANGATARO_ENABLED', true),
+                },
+                toonily: {
+                    baseUrl: 'https://toonily.com',
+                    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    timeout: parseEnvNumber('TOONILY_TIMEOUT', 30000), // 30 seconds
+                    priority: parseEnvNumber('TOONILY_PRIORITY', 5), // 5 = fifth priority
+                    enabled: parseEnvBoolean('TOONILY_ENABLED', true),
                 },
             },
 

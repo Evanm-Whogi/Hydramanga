@@ -9,9 +9,6 @@ export default function Gallery({ gallery, mangaTitle }: { gallery: any, mangaTi
         setFilteredGallery(filteredGallery);
     }, [selectedLanguage]);
 
-    console.log("Gallery items:", gallery);
-    console.log("Selected language:", selectedLanguage);
-    console.log("Filtered gallery items:", filteredGallery);
     return (
         <>
         <div className="space-y-4 w-full">
@@ -23,12 +20,17 @@ export default function Gallery({ gallery, mangaTitle }: { gallery: any, mangaTi
             <h1 className="text-muted font-semibold">{filteredGallery.length} Covers for {mangaTitle}</h1>
   
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                {filteredGallery.length === 0 && (<p className="text-muted col-span-full text-center">No gallery images available</p>)}
-                {filteredGallery.map((item: any) => (
-                    <a href={item.image.raw.url} key={item.id} className="border border-borders rounded-md overflow-hidden h-120">
-                        <img src={item.image.raw.url} alt={`Gallery image ${item.id}`} className="w-full h-full object-cover" />
-                    </a>
-                ))}
+                {filteredGallery.length > 0 ? (
+                    filteredGallery.map((item: any) => (
+                        <a href={item.image.raw.url} key={item.id} target="_blank" rel="noopener noreferrer" className="group block border border-borders rounded-md overflow-hidden h-80 bg-gray-100">
+                            <img src={item.image.thumbnail?.url || item.image.raw.url} alt={item.description || "Gallery photo"} loading="lazy" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                        </a>
+                    ))
+                ) : (
+                    <div className="col-span-full py-10 text-center">
+                        <p className="text-muted">No gallery images available</p>
+                    </div>
+                )}
             </div>
         </div>
         </>
