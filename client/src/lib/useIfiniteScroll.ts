@@ -5,19 +5,23 @@ export function useInfiniteScroll(filters: any) {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [cursor, setCursor] = useState<any>(null);
   const [meta, setMeta] = useState<any>(null);
+  
+  // 1. Move cursor to a Ref so it doesn't trigger useCallback re-creations
+  const cursorRef = useRef<any>(null); 
   const lastTrackedSearch = useRef<string>('');
   const previousFilters = useRef<any>({});
   const isFetchingRef = useRef(false);
 
   const fetchData = useCallback(async (isInitial = false) => {
-    if (isFetchingRef.current) return;
+    if (isFetchingRef.current || (!isInitial && !hasMore)) return;
     
     isFetchingRef.current = true;
     setLoading(true);
+
     try {
-      const currentCursor = isInitial ? '' : cursor;
+      // 2. Use the Ref value here
+      const currentCursor = isInitial ? '' : cursorRef.current;
       const params = new URLSearchParams();
 
       Object.entries(filters).forEach(([key, value]) => {
@@ -26,15 +30,12 @@ export function useInfiniteScroll(filters: any) {
         } else if (value !== undefined && value !== null && value !== '') {
           const stringValue = String(value).trim();
           if (key === 'search' && !stringValue) return;
-          if (stringValue || key !== 'search') params.append(key, stringValue);
+          params.append(key, stringValue);
         }
       });
 
       params.append('limit', '40');
-
-      if (currentCursor) {
-        params.append('cursor', String(currentCursor));
-      }
+      if (currentCursor) params.append('cursor', String(currentCursor));
 
       const response = await fetch(`/api/manga/search?${params.toString()}`);
       if (!response.ok) throw new Error('Network response was not ok');
@@ -42,11 +43,13 @@ export function useInfiniteScroll(filters: any) {
 
       if (data && data.items) {
         setItems(prev => isInitial ? data.items : [...prev, ...data.items]);
-        setHasMore(data.meta?.hasMore ?? false);
-        setCursor(data.nextCursor);
+        // 3. Update Ref and State
+        setHasMore(data.meta?.hasNextPage ?? !!data.nextCursor);
+        cursorRef.current = data.nextCursor; 
+        
         if (isInitial) {
           setMeta(data.meta);
-          
+
           if (filters.search && filters.search.length >= 2 && filters.search !== lastTrackedSearch.current) {
             trackSearch(filters.search, data.meta?.total || data.items.length, {
               genres: filters.genres,
@@ -77,19 +80,29 @@ export function useInfiniteScroll(filters: any) {
         }
       }
     } catch (err) {
+      console.error("Fetch error:", err);
       setHasMore(false);
     } finally {
       setLoading(false);
       isFetchingRef.current = false;
     }
-  }, [cursor, filters]);
+  }, [filters, hasMore]); 
 
-    useEffect(() => {
-        setItems([]);
-        setCursor(null);
-        setHasMore(true);
-        fetchData(true);
-    }, [filters.search, filters.genres?.join(','), filters.type, filters.status, filters.years?.join(','), filters.sort, filters.nsfw]);
+  // Reset logic when filters change
+  useEffect(() => {
+    setItems([]);
+    setHasMore(true);
+    cursorRef.current = null; // Reset the ref
+    fetchData(true);
+  }, [
+    filters.search, 
+    filters.genres?.sort().join(','), // Added sort to prevent accidental triggers
+    filters.type, 
+    filters.status, 
+    filters.years?.sort().join(','), 
+    filters.sort, 
+    filters.nsfw
+  ]);
 
-    return { items, loading, hasMore, meta, fetchData };
+  return { items, loading, hasMore, meta, fetchData };
 }

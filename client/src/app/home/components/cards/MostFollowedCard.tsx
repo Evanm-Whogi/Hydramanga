@@ -33,7 +33,7 @@ function MangaCard({ manga }: { manga?: any }) {
                     <p className="text-sm text-muted font-medium capitalize">{manga.type || 'Unknown Type'}</p>
                     <p className="text-sm text-muted font-medium">{manga.totalChapters || 0} Chapters</p>
                 </div>
-                <h3 className="text-lg font-extrabold text-primary leading-tight line-clamp-2">{manga.title}</h3>
+                <h3 className="text-lg text-primary leading-tight line-clamp-2">{manga.title}</h3>
                 <h4 className="text-sm text-muted font-medium">Followers: {manga.followerCount}</h4>
             </div>
         </Link>

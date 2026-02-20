@@ -6,21 +6,12 @@ import { memo } from "react";
 
 function PopularChapterCard({ manga }: { manga?: any }) {
 
-    // Determine if the latest chapter is new (within the last 2 days)
-    const latestChapter = manga?.latestChapter?.createdAt || null;
-    const isNew = latestChapter ? (() => {
-        const createdAt = new Date(latestChapter).getTime();
-        const today = new Date().getTime();
-        const diffDays = (today - createdAt) / (1000 * 60 * 60 * 24);
-        return diffDays <= 2;
-    })() : false;
-
     return (
         <>
         <Link href={`manga/${manga.series.id}`} className="flex flex-col w-full h-fit group">
             <div className="relative aspect-2/3 w-full overflow-hidden rounded-2xl">
                 <img src={`${manga.series?.cover?.raw.url || '/notFound.png'}`} alt={manga.series.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                { isNew && (
+                { manga.isNew && (
                     <div className="absolute top-2 right-2 z-5">
                         <span className="bg-accent/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-bold shadow-lg">
                             NEW
@@ -41,7 +32,7 @@ function PopularChapterCard({ manga }: { manga?: any }) {
                     <p className="text-sm text-muted font-medium capitalize">Chapter: {manga.chapter?.chapterNumber || 0}</p>
                     <p className="text-sm text-muted font-medium">{manga.chapter?.viewCount || 0} Views</p>
                 </div>
-                <h3 className="text-lg font-extrabold text-primary leading-tight line-clamp-2"></h3>
+                <h3 className="text-lg text-primary leading-tight line-clamp-2">{manga.series.title}</h3>
             </div>
         </Link>
         </>

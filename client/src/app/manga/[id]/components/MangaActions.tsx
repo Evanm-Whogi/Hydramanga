@@ -4,6 +4,7 @@ import { MoveUpIcon, MoveDownIcon, BookOpen, MessageCircleMore, ImagesIcon, Star
 import Chapters from "./Chapters";
 import Comments from "./Comments";
 import Gallery from "./Gallery";
+import Reviews from "./Reviews";
 import ListDropdown from "./ListDropdown"
 
 interface MangaActionsProps {
@@ -66,6 +67,7 @@ export default function ListContainer({ manga, chapters, comments, gallery, init
         <div className="flex flex-col pt-2 gap-2">
             {page === "chapters" && <Chapters manga={{ ...manga, chapters: sortedChapters }} progress={importProgress} />}
             {page === "comments" && <Comments manga={manga} comments={comments} />}
+            {page === "reviews" && <Reviews seriesId={manga.id} />}
             {page === "gallery" && <Gallery gallery={gallery} mangaTitle={manga.title} />}
         </div>
         </>

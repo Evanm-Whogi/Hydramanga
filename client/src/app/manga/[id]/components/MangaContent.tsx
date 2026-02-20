@@ -1,14 +1,15 @@
 "use client";
 import { useEffect, useState, memo, useTransition, Fragment, useRef } from 'react';
 import { getMangaAnalytics, triggerMangaScan } from '@/services/mangaService';
-import { formatDate, formatToStars, formatToRating } from '@/lib/utils';
+import {  formatToRating, formatTimeAgo } from '@/lib/utils';
 import Link from 'next/link';
 import MangaActions from './MangaActions';
 import RecommendedManga from './RecommendedManga';
-import { Eye, TrendingUp, Bookmark } from 'lucide-react';
+import { Eye, Bookmark, UserCheck, TriangleAlert, Star } from 'lucide-react';
 import { useMangaViewTracking } from '@/hooks/useViewTracking';
 import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
 import { showImportProgressToast, updateImportProgressToast, dismissImportProgressToast } from '@/components/ImportProgressToast';
+import { WARNING_GENRES, WARNING_RATINGS } from '@/constants/filters';
 
 // Memoized Header to prevent blur/filter recalculations on state changes
 const MangaHeader = memo(({ cover }: { cover: string }) => {
@@ -258,11 +259,16 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
 
     return () => {
       isMounted = false;
+      isFetchingAnalytics.current = false;
       clearInterval(intervalId);
     };
   }, [mangaId, manga.chapters?.length, manga.title])
 
-  const lastChapterDate = manga.chapters.length > 0 ? manga.chapters[manga.chapters.length - 1].updatedAt : null;
+  // Determine last chapter update date for analytics section
+  const lastChapterDate = manga.chapters.length > 0 ? new Date(manga.chapters.reduce((latest: string, chapter: any) => {
+    const chapterDate = new Date(chapter.updatedAt);
+    return chapterDate > new Date(latest) ? chapter.updatedAt : latest;
+  }, manga.chapters[0].updatedAt)) : null;
 
   // Format description with line breaks, bold, and italics
   const formattedDescription = manga.description
@@ -288,6 +294,28 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
       })
     : null;
 
+    const containsAdultContent =
+      WARNING_GENRES.some((genre) => manga.genres?.includes(genre)) ||
+      WARNING_RATINGS.some((rating) => manga.contentRating?.toLowerCase() === rating);
+
+    const containsAdultWarning = containsAdultContent ? (
+      <div className="bg-foreground/50 border border-borders rounded-md p-2 w-full flex items-center gap-2">
+        <p className="font-bold text-lg text-accent items-center"><TriangleAlert className="inline mr-2 size-5" />Reader Discretion:</p>
+        <div className="flex gap-2 items-center flex-wrap mt-1">
+          {WARNING_GENRES.filter((genre) => manga.genres?.includes(genre)).map((genre, index) => (
+            <span key={index} className="px-2 py-1 bg-red-400/20 rounded-md text-sm text-red-400">
+              {genre}
+            </span>
+          ))}
+          {WARNING_RATINGS.filter((rating) => manga.contentRating?.toLowerCase() === rating).map((rating, index) => (
+            <span key={index} className="px-2 py-1 bg-red-400/20 rounded-md text-sm text-red-400">
+              {rating.charAt(0).toUpperCase() + rating.slice(1)}
+            </span>
+          ))}
+        </div>
+      </div>
+    ) : null;
+
   return (
     <>
       <MangaHeader cover={manga?.cover?.x350?.x3 || manga?.cover?.raw?.url || "/notFound.png"} />
@@ -295,8 +323,15 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
         <div className="flex flex-col lg:flex-row gap-6 lg:place-content-evenly mb-5">
           {/* Main Content */}
           <div className="flex flex-col space-y-3 w-full lg:w-2/3 mb-5">
-            <h1 className="text-2xl md:text-3xl font-bold">
-              {manga.title} <span className="text-sm md:text-base text-muted">{formatToStars(manga.weightedScore)} {formatToRating(manga.weightedScore)}</span>
+              {containsAdultContent && containsAdultWarning}
+            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
+              {manga.title} 
+               {analytics?.manga && (
+                <span className="text-sm md:text-base text-muted items-center">
+                  <Star className="inline mr-1 mb-1 size-4 fill-green-600 text-green-600 items-center" />
+                  {analytics?.manga?.reviewRating || formatToRating(manga.rating) || 0} <span className="text-sm text-muted">({analytics?.manga?.reviewCount || 0} Reviews)</span>
+                </span>
+               )}
             </h1>
             { manga.romanizedTitle || manga.nativeTitle ? (
             <h2 className="text-base md:text-lg text-muted font-semibold">[{manga.romanizedTitle} | {manga.nativeTitle}]</h2>
@@ -311,14 +346,14 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
                     <span className="ml-1">views</span>
                   </div>
                   <div className="flex items-center">
-                    <TrendingUp className="size-3 md:size-4 mr-1 text-accent" />
-                    <span className="font-semibold">{formatNumber(analytics.manga.uniqueViews)}</span>
-                    <span className="ml-1">unique</span>
-                  </div>
-                  <div className="flex items-center">
                     <Bookmark className="size-3 md:size-4 mr-1 text-yellow-400" />
                     <span className="font-semibold">{formatNumber(analytics.manga.bookmarks)}</span>
                     <span className="ml-1">bookmarks</span>
+                  </div>
+                  <div className="flex items-center">
+                    <UserCheck className="size-3 md:size-4 mr-1 text-green-400" />
+                    <span className="font-semibold">{formatNumber(analytics.manga.followers)}</span>
+                    <span className="ml-1">Followed</span>
                   </div>
                 </div>
               )}
@@ -390,10 +425,10 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
             <div className="bg-foreground rounded-md p-4 md:p-5 w-full">
               <div className="flex flex-col gap-2 text-xs md:text-sm">
                 <div className="flex justify-between text-muted">
-                  Meta Updated: <span className="text-normal">{formatDate(manga.lastUpdatedAt)}</span>
+                  Meta Updated: <span className="text-normal">{formatTimeAgo(manga.lastUpdatedAt)}</span>
                 </div>
                 <div className="flex justify-between text-muted">
-                  Chapters Updated: <span className="text-normal">{lastChapterDate ? formatDate(lastChapterDate) : 'N/A'}</span>
+                  Chapters Updated: <span className="text-normal">{lastChapterDate ? formatTimeAgo(lastChapterDate) : 'N/A'}</span>
                 </div>
               </div>
             </div>

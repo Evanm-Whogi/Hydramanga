@@ -59,3 +59,6 @@ export const DEFAULT_FILTERS = {
 
 export const DEFAULT_NSFW_VALUE = "true";
 export const SORT_DEFAULT = "weightedScore";
+
+export const WARNING_GENRES = ["Hentai", "Adult", "Doujinshi", "Lolicon", "Shotacon", "Erotica", "Smut"] as const;
+export const WARNING_RATINGS = ["suggestive", "erotica", "pornographic"] as const;

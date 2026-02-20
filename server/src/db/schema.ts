@@ -167,7 +167,6 @@ export const comments = pgTable("comments", {
   userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
   seriesId: integer("seriesId").notNull().references(() => series.id, { onDelete: "cascade" }),
   parentId: integer("parentId").references((): any => comments.id, { onDelete: "cascade" }),
-  stars: integer("stars"),
   isSpoiler: boolean("isSpoiler").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -179,15 +178,42 @@ export const comments = pgTable("comments", {
   parentIdIdx: index("idx_comments_parent_id").on(t.parentId).where(sql`${t.parentId} IS NOT NULL`),
 }));
 
-// Comment Likes
+// Comment Votes (like / dislike)
 export const commentLikes = pgTable("comment_likes", {
   userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
   commentId: integer("commentId").notNull().references(() => comments.id, { onDelete: "cascade" }),
+  type: text("type").notNull().default("like"), // 'like' | 'dislike'
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (t) => ({
   pk: primaryKey({ columns: [t.userId, t.commentId] }),
-  // Performance index for comment-centric like lookups
   commentIdIdx: index("idx_comment_likes_comment_id").on(t.commentId),
+}));
+
+// Reviews (one per user per series)
+export const reviews = pgTable("reviews", {
+  id: serial("id").primaryKey(),
+  content: text("content").notNull(),
+  rating: integer("rating").notNull(),   // 1–10
+  userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
+  seriesId: integer("seriesId").notNull().references(() => series.id, { onDelete: "cascade" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (t) => ({
+  userSeriesUniq: uniqueIndex("idx_reviews_user_series").on(t.userId, t.seriesId),
+  seriesIdIdx: index("idx_reviews_series_id").on(t.seriesId),
+  seriesDateIdx: index("idx_reviews_series_date").on(t.seriesId, t.createdAt.desc()),
+  userIdIdx: index("idx_reviews_user_id").on(t.userId),
+}));
+
+// Review Votes (like / dislike — one vote per user per review)
+export const reviewVotes = pgTable("review_votes", {
+  userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
+  reviewId: integer("reviewId").notNull().references(() => reviews.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // 'like' | 'dislike'
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.reviewId] }),
+  reviewIdIdx: index("idx_review_votes_review_id").on(t.reviewId),
 }));
 
 
@@ -425,7 +451,7 @@ export const commentsRelations = relations(comments, ({ one, many }) => ({
   replies: many(comments, {
     relationName: "comment_replies",
   }),
-  likes: many(commentLikes),
+  votes: many(commentLikes),
 }));
 
 export const commentLikesRelations = relations(commentLikes, ({ one }) => ({
@@ -435,6 +461,29 @@ export const commentLikesRelations = relations(commentLikes, ({ one }) => ({
   }),
   user: one(user, {
     fields: [commentLikes.userId],
+    references: [user.id],
+  }),
+}));
+
+export const reviewsRelations = relations(reviews, ({ one, many }) => ({
+  author: one(user, {
+    fields: [reviews.userId],
+    references: [user.id],
+  }),
+  series: one(series, {
+    fields: [reviews.seriesId],
+    references: [series.id],
+  }),
+  votes: many(reviewVotes),
+}));
+
+export const reviewVotesRelations = relations(reviewVotes, ({ one }) => ({
+  review: one(reviews, {
+    fields: [reviewVotes.reviewId],
+    references: [reviews.id],
+  }),
+  user: one(user, {
+    fields: [reviewVotes.userId],
     references: [user.id],
   }),
 }));
@@ -462,4 +511,5 @@ export const seriesRelations = relations(series, ({ many }) => ({
   usersTracking: many(userSeriesList),
   chapters: many(chapters),
   comments: many(comments),
+  reviews: many(reviews),
 }));

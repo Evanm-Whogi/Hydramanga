@@ -23,9 +23,10 @@ export const formatToRating = (rating: number | null, maxScale: number = 100): n
 
 export const formatToStars = (score: number) => {
   const totalStars = 5;
-  // Normalize a 0-100 score to a 0-5 scale, then trim
-  const activeStars = Math.floor(score / 20); 
-  
+
+  // Normalize from 0-10 
+  const activeStars = Math.round((score / 10) * totalStars);
+
   // Ensure the value never goes below 0 or above 5 to prevent errors
   const clampedStars = Math.min(Math.max(activeStars, 0), totalStars);
   const emptyStarsCount = totalStars - clampedStars;

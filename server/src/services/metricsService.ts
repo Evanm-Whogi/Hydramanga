@@ -274,11 +274,21 @@ class MetricsService {
         .where(eq(schema.userSeriesList.seriesId, seriesId))
         .limit(1);
 
+      const totalFollowers = await db
+        .select({ count: sql<number>`COUNT(*)`.as('count') })
+        .from(schema.userSeriesList)
+        .where(
+          and(
+            eq(schema.userSeriesList.seriesId, seriesId),
+          )
+        );
+
       const result = {
         seriesId,
         totalViews: stats[0]?.totalViews || 0,
         uniqueViews: stats[0]?.uniqueViews || 0,
         bookmarks: totalBookmarks[0]?.count || 0,
+        followers: totalFollowers[0]?.count || 0,
         lastViewedAt: stats[0]?.lastViewedAt || null,
       };
 

@@ -7,6 +7,7 @@ import mangaRoutes from '@/routes/mangaRoutes';
 import progressRoutes from '@/routes/progressRoutes';
 import analyticsRoutes from '@/routes/analyticsRoutes';
 import commentRoutes from '@/routes/commentRoutes';
+import reviewRoutes from '@/routes/reviewRoutes';
 import announcementRoutes from '@/routes/announcementRoutes';
 import inviteRoutes from '@/routes/inviteRoutes';
 import adminRoutes from '@/routes/adminRoutes';
@@ -33,6 +34,7 @@ module.exports = (app: Express) => {
 
     // Content Routes
     app.use('/comments', authMiddleware, commentRoutes);
+    app.use('/reviews', authMiddleware, reviewRoutes);
     app.use('/announcements', authMiddleware, announcementRoutes);
     app.use('/invites', inviteRoutes); // Some endpoints don't require auth (validate, use)
 

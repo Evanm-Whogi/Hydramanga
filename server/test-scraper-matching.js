@@ -22,6 +22,7 @@ const { WeebCentralScraper } = require('@/scrapers/implementations/WeebCentralSc
 const { NHentaiScraper } = require('@/scrapers/implementations/nHentaiScraper');
 const { MangaDexScraper } = require('@/scrapers/implementations/MangaDexScraper');
 const { MangaTaroScraper } = require('@/scrapers/implementations/MangaTaroScraper');
+const { ToonilyScraper } = require('@/scrapers/implementations/ToonilyScraper');
 const logger = require('@/services/loggerService').default;
 const dotenv = require('dotenv');
 dotenv.config();
@@ -120,8 +121,9 @@ async function testScraperMatching(mangaId) {
         const scraperPriorities = [
             { name: 'WeebCentral', priority: process.env.WEEB_CENTRAL_PRIORITY || 1 },
             { name: 'MangaTaro', priority: process.env.MANGATARO_PRIORITY || 2 },
-            { name: 'nHentai', priority: process.env.NHENTAI_PRIORITY || 3 },
+            { name: 'Toonily', priority: process.env.TOONILY_PRIORITY || 3 },
             { name: 'MangaDex', priority: process.env.MANGADEX_PRIORITY || 4 },
+            { name: 'nHentai', priority: process.env.NHENTAI_PRIORITY || 5 },
         ];
 
         console.log(`Scraper Priorities:`);
@@ -207,6 +209,43 @@ async function testScraperMatching(mangaId) {
                 error: err.message
             });
         }
+        // Test Toonily
+        try {
+            console.log(`\n🔍 Testing Toonily...`);
+            const scraper = new ToonilyScraper();
+            const result = await scraper.findBestMatch(m.title, {
+                nativeTitle: m.nativeTitle,
+                romanizedTitle: m.romanizedTitle,
+                secondaryTitles,
+            });
+            
+            if (result) {
+                console.log(`   ✅ FOUND: "${result.title}"`);
+                console.log(`      URL: ${result.href}`);
+                console.log(`      Score: ${result.score}`);
+                results.push({
+                    scraper: 'Toonily',
+                    found: true,
+                    title: result.title,
+                    url: result.href,
+                    score: result.score
+                });
+            } else {
+                console.log(`   ❌ NOT FOUND`);
+                results.push({
+                    scraper: 'Toonily',
+                    found: false
+                });
+            }
+        } catch (err) {
+            console.log(`   ❌ ERROR: ${err.message}`);
+            results.push({
+                scraper: 'Toonily',
+                found: false,
+                error: err.message
+            });
+        }
+
         // Test nHentai
         try {
             console.log(`\n🔍 Testing nHentai...`);
@@ -302,11 +341,12 @@ async function testScraperMatching(mangaId) {
             const priorities = {
                 'WeebCentral': 1,
                 'MangaTaro': 2,
-                'nHentai': 3,
-                'MangaDex': 4
+                'Toonily': 3,
+                'MangaDex': 4,
+                'nHentai': 5
             };
             
-            const mainSources = ['WeebCentral', 'MangaTaro', 'MangaDex'];
+            const mainSources = ['WeebCentral', 'MangaTaro', 'Toonily', 'MangaDex'];
             
             // Match ScraperManager's NEW sorting logic with exact match bonus and nHentai deprioritization
             foundResults.sort((a, b) => {

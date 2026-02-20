@@ -3,7 +3,7 @@
 @plugin "@tailwindcss/typography";
 
 @theme {
-  --color-accent: #FA4033;
+  --color-accent: #9370DB;
   --color-primary: white;
   --color-background: #161819;
   --color-foreground: #1E2021;
@@ -47,7 +47,7 @@
 }
 
 
-* {
+body {
   font-family: "Lexend Deca", sans-serif;
   font-weight: 400;
 }
