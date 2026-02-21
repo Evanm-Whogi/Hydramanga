@@ -18,6 +18,11 @@ function PopularChapterCard({ manga }: { manga?: any }) {
                         </span>
                     </div>
                 )}
+                <div className="absolute top-2 left-2 z-5">
+                    <span className="bg-background/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-bold shadow-lg">
+                        {manga.series.totalChapters || 0}
+                    </span>
+                </div>
                 <div className="absolute bottom-0 inset-x-0 flex justify-between items-center p-3 bg-linear-to-t from-transparent-card/80 to-transparent-card/50">
                     <div className="flex items-center font-bold text-primary"><Star className="size-3.5 text-yellow-400 mr-1 fill-yellow-400" />{formatToRating(manga.series.rating)}</div>
 
@@ -29,8 +34,8 @@ function PopularChapterCard({ manga }: { manga?: any }) {
             </div>
             <div className="pt-2 text-center space-y-1">
                 <div className="flex place-content-between">
-                    <p className="text-sm text-muted font-medium capitalize">Chapter: {manga.chapter?.chapterNumber || 0}</p>
-                    <p className="text-sm text-muted font-medium">{manga.chapter?.viewCount || 0} Views</p>
+                    <p className="text-sm text-muted font-medium capitalize">Ch. {manga.chapter?.chapterNumber || 0}</p>
+                    <p className="text-sm text-muted font-medium">{manga.chapter?.viewCount || 0} reads</p>
                 </div>
                 <h3 className="text-lg text-primary leading-tight line-clamp-2">{manga.series.title}</h3>
             </div>

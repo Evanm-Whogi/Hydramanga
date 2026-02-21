@@ -1,4 +1,4 @@
-import { formatDate } from '@/lib/utils';
+import { formatDate, formatTimeAgo } from '@/lib/utils';
 import Link from 'next/link';
 
 function renderInline(line: string, keyOffset: number): React.ReactNode[] {
@@ -73,7 +73,7 @@ export default function CommentCard({ comment }: { comment: any }) {
                 <img src={comment.author.image || '/default-avatar.jpg'} alt={comment.author.name} className="w-10 h-10 rounded-full mr-3" />
                 <div>
                     <h3 className="text-lg font-semibold">{comment.author.name}</h3>
-                    <p className="text-sm text-muted">{formatDate(comment.createdAt)}</p>
+                    <p className="text-sm text-muted">{formatTimeAgo(comment.createdAt)}</p>
                 </div>
             </div>
             <p className="text-base pb-12 md:pb-6"><MarkdownText text={comment.content} /></p>

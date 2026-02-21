@@ -14,11 +14,15 @@ import adminRoutes from '@/routes/adminRoutes';
 import pageRoutes from '@/routes/pageRoutes';
 import listRoutes from '@/routes/listRoutes';
 import contactRoutes from '@/routes/contactRoutes';
+import userRoutes from '@/routes/userRoutes';
 
 module.exports = (app: Express) => {
 
     // Apply tracking middleware globally to track views
     app.use(trackingMiddleware);
+
+    // User Routes (profile pictures)
+    app.use('/users', authMiddleware, userRoutes);
 
     app.use('/manga', authMiddleware, mangaRoutes);
     app.use('/manga/progress', authMiddleware, progressRoutes);

@@ -9,6 +9,7 @@ import PopularChapterCard from "@/app/home/components/cards/PopularChapterCard";
 import ContinueReadingCard from "@/components/ContinueReadingCard";
 import CommentCard from "@/app/home/components/cards/CommentCard";
 import CollectionsCard from "@/app/home/components/cards/CollectionsCard";
+import RecentCard from "@/app/home/components/cards/RecentCard";
 import { getCollections } from "@/services/mangaService";
 
 import CarouselSection from "@/app/home/components/CarouselSection"
@@ -130,7 +131,7 @@ export default function Lists() {
                             <SectionHeader title="Recently Added" />
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4 md:gap-6">
                                 {recentlyAdded.map((manga) => (
-                                    <MangaCard key={`added-${manga.id}`} manga={manga} />
+                                    <RecentCard key={`added-${manga.id}`} manga={manga} />
                                 ))}
                             </div>
                             {hasMore && (

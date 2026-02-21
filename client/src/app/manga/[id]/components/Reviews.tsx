@@ -211,13 +211,13 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
                             <div className="text-muted text-sm">{reviews.length} review{reviews.length !== 1 ? 's' : ''}</div>
                         </div>
                     </div>
-                    <div className="flex flex-col w-1/2">
+                    <div className="flex flex-col w-full md:w-1/2">
                         {Array.from({ length: 10 }, (_, i) => i + 1).reverse().map((n) => {
                             const count = reviews.filter((r) => r.rating === n).length;
                             const percentage = reviews.length > 0 ? (count / reviews.length) * 100 : 0;
                             return (
                                 <div key={n} className="flex items-center gap-2 space-y-1">
-                                    <span className="text-sm w-16">{n} star{n !== 1 ? 's' : ''}</span>
+                                    <span className="text-sm w-20">{n} star{n !== 1 ? 's' : ''}</span>
                                     <div className="w-full bg-background rounded h-3">
                                         <div className="bg-accent h-3 rounded" style={{ width: `${percentage}%` }}></div>
                                     </div>
