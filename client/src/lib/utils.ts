@@ -54,19 +54,24 @@ export const formatTimeAgo = (value?: string | Date | null): string => {
 
     let date: Date;
     if (value instanceof Date) {
-        date = value;
+      date = value;
     } else {
-        const rawValue = value.split('Z')[0].split('+')[0]; 
-        const normalized = rawValue.replace(' ', 'T');
-        date = new Date(normalized);
+        let normalized = value.replace(' ', 'T');
+        // Trim fractional seconds to 3 digits (JS Date only supports up to milliseconds)
+        normalized = normalized.replace(/\.\d+/, (m) => m.slice(0, 4));
+        // Normalize timezone offset to ±HH:MM format
+        normalized = normalized.replace(/([+-])(\d{2}):?(\d{2})$/, '$1$2:$3');
+        normalized = normalized.replace(/([+-])(\d{2})$/, '$1$2:00');
+        // If no timezone present, assume UTC
+        if (!/([zZ]|[+-]\d{2}:\d{2})$/.test(normalized)) {
+      }
+      date = new Date(normalized);
     }
 
     if (Number.isNaN(date.getTime())) return 'unknown';
 
     const now = Date.now();
-    // diffMs will now be the difference between "Now" and the "Raw Numbers"
     const diffMs = Math.max(0, now - date.getTime());
-    
     const diffMins = Math.floor(diffMs / (1000 * 60));
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -76,13 +81,12 @@ export const formatTimeAgo = (value?: string | Date | null): string => {
     if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
     if (diffDays < 7) return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
 
-    // ... (rest of your logic for weeks/months/years)
     const weeks = Math.floor(diffDays / 7);
     if (diffDays < 30) return `${weeks} week${weeks === 1 ? '' : 's'} ago`;
-    
+
     const months = Math.floor(diffDays / 30);
     if (diffDays < 365) return `${months} month${months === 1 ? '' : 's'} ago`;
-    
+
     const years = Math.floor(diffDays / 365);
     return `${years} year${years === 1 ? '' : 's'} ago`;
 };

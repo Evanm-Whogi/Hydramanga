@@ -70,7 +70,7 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         const pageSize = Math.min(Number(limit), 40);
         const isAsc = String(order).toLowerCase() === 'asc';
         const userId = (req as any).user?.id || (req as any).session?.userId;
-        const NEW_INTERVAL = '7 days';
+        const NEW_INTERVAL = '3 days';
 
         const conditions = [];
 
@@ -157,6 +157,11 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                     WHERE usl.series_id = ${schema.series.id} 
                     AND usl.user_id = ${userId}
                 )`.mapWith(Boolean) : sql<boolean>`false`.mapWith(Boolean),
+                // Request 3: Follower Count
+                followerCount: sql<number>`(
+                    SELECT COUNT(*) FROM ${schema.userSeriesList} usl 
+                    WHERE usl.series_id = ${schema.series.id}
+                )`,
             })
             .from(schema.series)
             .leftJoin(schema.mangaViewStats, eq(schema.series.id, schema.mangaViewStats.seriesId))

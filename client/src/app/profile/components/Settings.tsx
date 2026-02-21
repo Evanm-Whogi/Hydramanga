@@ -1,20 +1,26 @@
 'use client';
 import InputField from "@/components/InputField";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { updateUser, changeEmail, changePassword, sendVerificationEmail, signOut, useSession, listSessions, revokeSession } from "@/lib/auth";
+import { uploadProfilePicture, deleteProfilePicture } from "@/services/userService";
 import { toast } from "react-toastify";
 import { useRouter } from "next/navigation";
 import { trackAuthEvent } from "@/lib/analytics";
+import { Upload, X } from "lucide-react";
 
 export default function Settings({ user }: { user: any }) {
     const router = useRouter();
     const { data: activeSession } = useSession();
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const [name, setName] = useState(user.name);
     const [email, setEmail] = useState(user.email);
     const [avatarUrl, setAvatarUrl] = useState(user.image || "");
+    const [previewUrl, setPreviewUrl] = useState(user.image || "");
     const [oldPassword, setOldPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [sessions, setSessions] = useState<any[]>([]);
+    const [uploading, setUploading] = useState(false);
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
     // Fetch Sessions
     const fetchSessions = async () => {
@@ -44,18 +50,12 @@ export default function Settings({ user }: { user: any }) {
                 router.refresh();
             }
 
-            if (avatarUrl && avatarUrl !== user.image) {
-                const { error } = await updateUser({ image: avatarUrl });
-                if (error) throw new Error(error.message);
-                router.refresh();
-            }
-
             if (email !== user.email) {
                 const { error } = await changeEmail({ newEmail: email });
                 if (error) throw new Error(error.message);
                 toast.success("Information updated. Please check your new email to verify the change.");
                 router.refresh();
-            } else {
+            } else if (name !== user.name) {
                 toast.success("Profile updated successfully!");
                 router.refresh();
             }
@@ -104,6 +104,72 @@ export default function Settings({ user }: { user: any }) {
         }
     };
 
+    // Handle file selection
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Validate file type
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        if (!allowedTypes.includes(file.type)) return toast.error('Only JPEG, PNG, GIF, and WebP images are allowed');
+
+        // Validate file size (5MB)
+        const maxSize = 5 * 1024 * 1024;
+        if (file.size > maxSize) return toast.error('File size must be less than 5MB');
+
+        setSelectedFile(file);
+
+        // Create preview
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setPreviewUrl(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    // Handle profile picture upload
+    const handleUploadProfilePicture = async () => {
+        if (!selectedFile) return toast.error('Please select a file');
+
+        setUploading(true);
+        try {
+            const data = await uploadProfilePicture(selectedFile);
+            toast.success('Profile picture uploaded successfully!');
+            setSelectedFile(null);
+            setAvatarUrl(data.image);
+            setPreviewUrl(data.image);
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+            // Refresh user state across the app
+            await updateUser({ image: data.image });
+        } catch (err: any) {
+            toast.error(err.message || 'Failed to upload profile picture');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    // Handle profile picture deletion
+    const handleDeleteProfilePicture = async () => {
+        if (confirm('Are you sure you want to delete your profile picture?')) {
+            try {
+                const data = await deleteProfilePicture();
+                toast.success('Profile picture deleted successfully!');
+                setAvatarUrl(data.image);
+                setPreviewUrl(data.image);
+                setSelectedFile(null);
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                }
+                // Refresh user state across the app
+                await updateUser({ image: data.image });
+            } catch (err: any) {
+                toast.error(err.message || 'Failed to delete profile picture');
+            }
+        }
+    };
+
     return (
         <div className="flex flex-col">
             <div className="flex flex-col md:flex-row w-full gap-6">
@@ -114,12 +180,51 @@ export default function Settings({ user }: { user: any }) {
                         <div className="flex flex-col space-y-3 grow">
                             <InputField label="Username" placeholder={user.name} value={name} onChange={(e: any) => setName(e.target.value)} />
                             <InputField label="Email" placeholder={user.email} value={email} onChange={(e: any) => setEmail(e.target.value)} />
-                            <InputField label="Avatar URL" placeholder="https://..." value={avatarUrl} onChange={(e: any) => setAvatarUrl(e.target.value)} />
-                            <div className="flex items-center gap-3 pt-1">
-                                <div className="w-14 h-14 rounded-md overflow-hidden border border-borders bg-background">
-                                    <img src={avatarUrl || user.image || '/default-avatar.jpg'} alt="avatar preview" className="w-full h-full object-cover" />
+                            
+                            <div className="flex flex-col space-y-2">
+                                <label className="text-sm font-semibold text-primary">Profile Picture</label>
+                                <div className="flex items-center gap-4">
+                                    <div className="w-20 h-20 rounded-md overflow-hidden border border-borders bg-background">
+                                        <img src={previewUrl || user.image || '/default-avatar.jpg'} alt="avatar preview" className="w-full h-full object-cover" />
+                                    </div>
+                                    <div className="flex flex-col gap-2">
+                                        <input
+                                            ref={fileInputRef}
+                                            type="file"
+                                            accept="image/jpeg,image/png,image/gif,image/webp"
+                                            onChange={handleFileSelect}
+                                            className="hidden"
+                                        />
+                                        <button
+                                            onClick={() => fileInputRef.current?.click()}
+                                            disabled={uploading}
+                                            className="flex items-center gap-2 bg-background hover:bg-background/50 disabled:opacity-50 px-3 py-2 rounded-lg text-sm hover:cursor-pointer transition-colors"
+                                        >
+                                            <Upload className="size-4" />
+                                            Choose Image
+                                        </button>
+                                        {selectedFile && (
+                                            <button
+                                                onClick={handleUploadProfilePicture}
+                                                disabled={uploading}
+                                                className="bg-green-600 hover:bg-green-700 disabled:opacity-50 px-3 py-2 rounded-lg text-sm text-white hover:cursor-pointer transition-colors"
+                                            >
+                                                {uploading ? 'Uploading...' : 'Upload'}
+                                            </button>
+                                        )}
+                                        {!avatarUrl.startsWith('/default') && avatarUrl && (
+                                            <button
+                                                onClick={handleDeleteProfilePicture}
+                                                disabled={uploading}
+                                                className="flex items-center gap-2 bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 px-3 py-2 rounded-lg text-sm text-red-500 hover:cursor-pointer transition-colors"
+                                            >
+                                                <X className="size-4" />
+                                                Delete
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
-                                <p className="text-xs text-muted">Paste an image URL (square works best).</p>
+                                <p className="text-xs text-muted">JPEG, PNG, GIF, or WebP. Max 5MB.</p>
                             </div>
                         </div>
                         <button

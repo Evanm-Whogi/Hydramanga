@@ -1,8 +1,10 @@
 'use client';
 import { useRef, useCallback, useState, useEffect } from 'react';
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Grid2X2, TextAlignJustify } from "lucide-react";
 import { useInfiniteScroll } from '@/lib/useIfiniteScroll';
 import MangaCard from "@/components/MangaCard";
+import MangaCardList from "@/app/discover/components/MangaCardList";
+
 interface MangaListProps {
   filters: {
     search: string;
@@ -18,6 +20,7 @@ export default function MangaList({ filters }: MangaListProps) {
     const { items, loading, hasMore, meta, fetchData } = useInfiniteScroll(filters);
     const observer = useRef<IntersectionObserver | null>(null);
     const [showButton, setShowButton] = useState(false);
+    const [displayMode, setDisplayMode] = useState<'grid' | 'list'>('grid');
 
     const lastElementRef = useCallback((node: HTMLDivElement) => {
         if (loading) return;
@@ -44,16 +47,28 @@ export default function MangaList({ filters }: MangaListProps) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
+
     return (
         <section id="MangaList" className="pb-25 relative">
             <div className="container mx-auto text-primary space-y-2">
-                <div className="text-sm text-gray-400">Total: {meta?.total || 0} items</div>
-                <div className="grid grid-cols-2 md:grid-cols-8 gap-6">
+                <div className="flex flex-row place-content-between items-center">
+                    <div className="text-sm text-gray-400">Total: {meta?.total || 0} items</div>
+                    <div className="flex flex-row gap-2 mb-2">
+                        <button onClick={() => setDisplayMode('grid')} className={`p-2 rounded-md cursor-pointer transition-colors ${displayMode === 'grid' ? 'bg-accent text-foreground' : 'bg-foreground hover:bg-foreground/50'}`}><Grid2X2 className="size-5" /></button>
+                        <button onClick={() => setDisplayMode('list')} className={`p-2 rounded-md cursor-pointer transition-colors ${displayMode === 'list' ? 'bg-accent text-foreground' : 'bg-foreground hover:bg-foreground/50'}`}><TextAlignJustify className="size-5" /></button>
+                    </div>
+
+                </div>
+                <div className={`grid ${displayMode === 'grid' ? 'grid-cols-2 md:grid-cols-8' : 'grid-cols-2'} gap-6`}>
                     {items.map((item, index) => {
                         const isLastElement = items.length === index + 1;
                         return (
                             <div key={item.id} ref={isLastElement ? lastElementRef : null}>
-                                <MangaCard manga={item} />
+                                {displayMode === 'grid' ? (
+                                    <MangaCard manga={item} />
+                                ) : (
+                                    <MangaCardList manga={item} />
+                                )}
                             </div>
                         )
                     })}

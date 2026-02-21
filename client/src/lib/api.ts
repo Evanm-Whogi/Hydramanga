@@ -160,3 +160,31 @@ export const apiPut = async (url: string, data?: any) => {
         await handleBackendError(error);
     }
 };
+export const apiPostFormData = async (url: string, formData: FormData) => {
+    if (typeof window !== 'undefined') {
+        const res = await fetch(`${getClientApiBase()}${url}`, {
+            method: 'POST',
+            credentials: 'include',
+            body: formData,
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || data?.message || 'Request failed');  
+        return data;
+    }
+
+    try {
+        const instance = await getServerInstance();
+        const res = await instance.post(url, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        return res.data;
+    } catch (error: any) {
+        if (error.response?.data) {
+            const errorData = error.response.data;
+            const errorMessage = errorData.error || errorData.message || 'Request failed';
+            throw new Error(errorMessage);
+        }
+        await handleBackendError(error);
+    }
+};

@@ -17,6 +17,11 @@ function MangaCard({ manga }: { manga?: any }) {
                         </span>
                     </div>
                 )}
+                <div className="absolute top-2 left-2 z-5">
+                    <span className="bg-background/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-bold shadow-lg">
+                        {manga.totalChapters || 0}
+                    </span>
+                </div>
                 <div className="absolute bottom-0 inset-x-0 flex justify-between items-center p-3 bg-linear-to-t from-transparent-card/80 to-transparent-card/50">
                     <div className="flex items-center font-bold text-primary"><Star className="size-3.5 text-yellow-400 mr-1 fill-yellow-400" />{formatToRating(manga.rating)}</div>
                     { manga.isInUserList && (
@@ -31,10 +36,9 @@ function MangaCard({ manga }: { manga?: any }) {
             <div className="pt-2 text-center space-y-1">
                 <div className="flex place-content-between">
                     <p className="text-sm text-muted font-medium capitalize">{manga.type || 'Unknown Type'}</p>
-                    <p className="text-sm text-muted font-medium">{manga.totalChapters || 0} Chapters</p>
+                    <p className="text-sm text-muted font-medium">{manga.followerCount || 0} Followers</p>
                 </div>
                 <h3 className="text-lg text-primary leading-tight line-clamp-2">{manga.title}</h3>
-                <h4 className="text-sm text-muted font-medium">Followers: {manga.followerCount}</h4>
             </div>
         </Link>
         </>

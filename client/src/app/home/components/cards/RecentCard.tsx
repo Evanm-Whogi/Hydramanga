@@ -1,10 +1,10 @@
 "use client"
 import { Star, Eye, BookmarkCheck } from "lucide-react";
 import Link from "next/link";
-import { formatToRating } from "@/lib/utils";
+import { formatToRating, formatTimeAgo } from "@/lib/utils";
 import { memo } from "react";
 
-function MangaCard({ manga }: { manga?: any }) {
+function RecentCard({ manga }: { manga?: any }) {
     return (
         <>
         <Link href={`manga/${manga.id}`} className="flex flex-col w-full h-fit group">
@@ -36,7 +36,7 @@ function MangaCard({ manga }: { manga?: any }) {
             <div className="pt-2 text-center space-y-1">
                 <div className="flex place-content-between">
                     <p className="text-sm text-muted font-medium capitalize">{manga.type || 'Unknown Type'}</p>
-                    <p className="text-sm text-muted font-medium capitalize">{(manga.status === 'releasing' ) ? 'Ongoing' : manga.status || 'Unknown Status'}</p>
+                    <p className="text-sm text-muted font-medium">{formatTimeAgo(manga.latestChapterDate || 0)}</p>
                 </div>
                 <h3 className="text-lg text-primary leading-tight line-clamp-2">{manga.title}</h3>
             </div>
@@ -45,7 +45,7 @@ function MangaCard({ manga }: { manga?: any }) {
     );
 }
 
-export default memo(MangaCard);
+export default memo(RecentCard);
 
 function formatViewCount(count: number): string {
     if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
