@@ -114,17 +114,15 @@ export default function Lists() {
                     <div className="w-full lg:w-3/4 space-y-16 min-w-0">
 
                         {/* Reading History */}
-                        <CarouselSection title="Continue Reading">
-                            {recentlyRead?.progress?.length > 0 ? (
-                                recentlyRead.progress.map((manga: any) => (
-                                    <div key={`continue-reading-${manga.seriesId}`}>
-                                        <ContinueReadingCard progress={manga} />
-                                    </div>
-                                ))
-                            ) : (
-                                <p className="text-center text-muted py-10">No reading history found. Start reading to see your progress here!</p>
-                            )}
-                        </CarouselSection>
+                        {recentlyRead?.progress?.length > 0 && (
+                            <CarouselSection title="Continue Reading">
+                                    {recentlyRead.progress.map((manga: any) => (
+                                        <div key={`continue-reading-${manga.seriesId}`}>
+                                            <ContinueReadingCard progress={manga} />
+                                        </div>
+                                    ))}
+                            </CarouselSection>
+                        )}
 
                         {/* Recently Added */}
                         <section>

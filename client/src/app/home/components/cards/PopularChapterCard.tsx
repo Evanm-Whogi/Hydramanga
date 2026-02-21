@@ -12,13 +12,13 @@ function PopularChapterCard({ manga }: { manga?: any }) {
             <div className="relative aspect-2/3 w-full overflow-hidden rounded-2xl">
                 <img src={`${manga.series?.cover?.raw.url || '/notFound.png'}`} alt={manga.series.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                 { manga.isNew && (
-                    <div className="absolute top-2 right-2 z-5">
+                    <div className="absolute top-2 right-2 z-5" title="Newly Added">
                         <span className="bg-accent/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-bold shadow-lg">
                             NEW
                         </span>
                     </div>
                 )}
-                <div className="absolute top-2 left-2 z-5">
+                <div className="absolute top-2 left-2 z-5" title="Total Chapters">
                     <span className="bg-background/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-bold shadow-lg">
                         {manga.series.totalChapters || 0}
                     </span>

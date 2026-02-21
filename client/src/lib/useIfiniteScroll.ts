@@ -53,6 +53,7 @@ export function useInfiniteScroll(filters: any) {
           if (filters.search && filters.search.length >= 2 && filters.search !== lastTrackedSearch.current) {
             trackSearch(filters.search, data.meta?.total || data.items.length, {
               genres: filters.genres,
+              tags: filters.tags,
               types: filters.types,
               statuses: filters.statuses,
               years: filters.years,
@@ -97,6 +98,7 @@ export function useInfiniteScroll(filters: any) {
   }, [
     filters.search, 
     filters.genres?.sort().join(','), // Added sort to prevent accidental triggers
+    filters.tags?.sort().join(','),
     filters.type, 
     filters.status, 
     filters.years?.sort().join(','), 
