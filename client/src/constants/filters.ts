@@ -50,6 +50,7 @@ export const FILTER_OPTIONS = {
 export const DEFAULT_FILTERS = {
   search: "",
   genres: [] as string[],
+  tags: [] as string[],
   types: [] as string[],
   statuses: [] as string[],
   years: [] as string[],

@@ -66,13 +66,30 @@ async function enrichWithLatestChapter(mangaList: any[]) {
 // Search manga with filters, sorting, and pagination (Infinite Scroll)
 export async function searchManga(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
-        const { genres, type, status, search, years, nsfw, sort = "weightedScore", order = "desc", cursor, limit = "40" } = req.query;
+        const { genres, tags, type, status, search, years, nsfw, sort = "weightedScore", order = "desc", cursor, limit = "40" } = req.query;
         const pageSize = Math.min(Number(limit), 40);
         const isAsc = String(order).toLowerCase() === 'asc';
         const userId = (req as any).user?.id || (req as any).session?.userId;
         const NEW_INTERVAL = '3 days';
 
-        const conditions = [];
+        const normalizeQueryForCache = (query: Request['query']) => {
+            const entries = Object.entries(query)
+                .filter(([, value]) => value !== undefined)
+                .map(([key, value]) => {
+                    if (Array.isArray(value)) {
+                        return [key, value.map(v => String(v)).sort()];
+                    }
+                    return [key, String(value)];
+                })
+                .sort(([a]: any, [b]: any) => a.localeCompare(b));
+
+            return JSON.stringify(entries);
+        };
+
+        const cacheKey = `manga:search:${userId || 'anon'}:${normalizeQueryForCache(req.query)}`;
+        const cacheTtlSeconds = 5 * 60;
+
+        const conditions: any = [];
 
         const parseParam = (param: any) => {
             if (!param) return [];
@@ -92,6 +109,11 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         const genreList = parseParam(genres);
         genreList.forEach(g => {
             conditions.push(sql`${schema.series.genres} @> ${JSON.stringify([g])}::jsonb`);
+        });
+
+        const tagList = parseParam(tags);
+        tagList.forEach(tag => {
+            conditions.push(sql`${schema.series.tags} @> ${JSON.stringify([tag])}::jsonb`);
         });
 
         const typeList = parseParam(type).map(t => t.toLowerCase());
@@ -137,89 +159,129 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
             conditions.push(sql`(${effectiveSort}, ${schema.series.id}) ${operator} (${typedVal}, ${Number(cursorId)})`);
         }
 
-        // 3. Main Execution (Aggregating views and flags)
-        const [totalCountResult] = await db.select({ count: count() }).from(schema.series).where(and(...conditions));
-
-        const data = await db
-            .select({
-                ...columns,
-                views: schema.mangaViewStats.totalViews,
-                uniqueViews: schema.mangaViewStats.uniqueViews,
-                // Request 1: Is New (chapter in last X days)
-                isNew: sql<boolean>`EXISTS (
-                    SELECT 1 FROM ${schema.chapters} c 
-                    WHERE c.series_id = ${schema.series.id} 
-                    AND c.created_at >= NOW() - INTERVAL ${sql.raw(`'${NEW_INTERVAL}'`)}
-                )`.mapWith(Boolean),
-                // Request 2: Is In User List
-                isInUserList: userId ? sql<boolean>`EXISTS (
-                    SELECT 1 FROM ${schema.userSeriesList} usl 
-                    WHERE usl.series_id = ${schema.series.id} 
-                    AND usl.user_id = ${userId}
-                )`.mapWith(Boolean) : sql<boolean>`false`.mapWith(Boolean),
-                // Request 3: Follower Count
-                followerCount: sql<number>`(
-                    SELECT COUNT(*) FROM ${schema.userSeriesList} usl 
-                    WHERE usl.series_id = ${schema.series.id}
-                )`,
-            })
-            .from(schema.series)
-            .leftJoin(schema.mangaViewStats, eq(schema.series.id, schema.mangaViewStats.seriesId))
-            .where(and(...conditions))
-            .orderBy(
-                isAsc ? asc(effectiveSort) : desc(effectiveSort), 
-                isAsc ? asc(schema.series.id) : desc(schema.series.id)
-            )
-            .limit(pageSize + 1);
-
-        const hasNextPage = data.length > pageSize;
-        const items = hasNextPage ? data.slice(0, -1) : data;
-        const seriesIds = items.map(m => m.id);
-
-        // 4. Optimized Latest Chapter Fetch (Batch only for the visible items)
-        let itemsWithChapters: any[] = items; 
-
-        if (seriesIds.length > 0) {
-            const latestChapters = await db.selectDistinctOn([schema.chapters.seriesId])
-                .from(schema.chapters)
-                .where(inArray(schema.chapters.seriesId, seriesIds))
-                .orderBy(
-                    schema.chapters.seriesId,
-                    desc(sql`CAST(split_part(${schema.chapters.chapterNumber}, '.', 1) AS INTEGER)`),
-                    desc(sql`CASE WHEN ${schema.chapters.chapterNumber} LIKE '%.%' THEN CAST(split_part(${schema.chapters.chapterNumber}, '.', 2) AS INTEGER) ELSE 0 END`)
-                );
-
-            const chapterMap = new Map(latestChapters.map(c => [c.seriesId, c]));
-            
-            // By mapping directly here, TypeScript infers the combined type correctly
-            itemsWithChapters = items.map(item => ({
-                ...item,
-                latestChapter: chapterMap.get(item.id) || null
-            }));
-        } else {
-            // If no series, just map the empty chapters
-            itemsWithChapters = items.map(item => ({ ...item, latestChapter: null }));
-        }
-
-        // 5. Build Cursor
-        let nextCursor = null;
-        if (hasNextPage) {
-            const last = items[items.length - 1];
-            const val = last[sortKey as keyof typeof last] ?? 0;
-            nextCursor = `${val}|${last.id}`;
-        }
-
-        return res.json({
-            meta: {
-                total: Number(totalCountResult?.count || 0),
-                hasNextPage,
-                sort,
-                order: isAsc ? 'asc' : 'desc'
+        const payload = await cacheService.getOrSet({
+                key: cacheKey,
+                ttl: cacheTtlSeconds,
+                staleIfError: cacheTtlSeconds,
             },
-            items: itemsWithChapters,
-            nextCursor
-        });
+            async () => {
+                // 3. Main Execution (Aggregating views and flags)
+                const [totalCountResult] = await db.select({ count: count() }).from(schema.series).where(and(...conditions));
 
+                const data = await db
+                    .select({
+                        ...columns,
+                        views: schema.mangaViewStats.totalViews,
+                        uniqueViews: schema.mangaViewStats.uniqueViews,
+                        // Request 1: Is New (chapter in last X days)
+                        isNew: sql<boolean>`EXISTS (
+                            SELECT 1 FROM ${schema.chapters} c 
+                            WHERE c.series_id = ${schema.series.id} 
+                            AND c.created_at >= NOW() - INTERVAL ${sql.raw(`'${NEW_INTERVAL}'`)}
+                        )`.mapWith(Boolean),
+                        // Request 2: Is In User List
+                        isInUserList: userId ? sql<boolean>`EXISTS (
+                            SELECT 1 FROM ${schema.userSeriesList} usl 
+                            WHERE usl.series_id = ${schema.series.id} 
+                            AND usl.user_id = ${userId}
+                        )`.mapWith(Boolean) : sql<boolean>`false`.mapWith(Boolean),
+                        // Request 3: Follower Count
+                        followerCount: sql<number>`(
+                            SELECT COUNT(*) FROM ${schema.userSeriesList} usl 
+                            WHERE usl.series_id = ${schema.series.id}
+                        )`,
+                    })
+                    .from(schema.series)
+                    .leftJoin(schema.mangaViewStats, eq(schema.series.id, schema.mangaViewStats.seriesId))
+                    .where(and(...conditions))
+                    .orderBy(
+                        isAsc ? asc(effectiveSort) : desc(effectiveSort), 
+                        isAsc ? asc(schema.series.id) : desc(schema.series.id)
+                    )
+                    .limit(pageSize + 1);
+
+                const hasNextPage = data.length > pageSize;
+                const items = hasNextPage ? data.slice(0, -1) : data;
+                const seriesIds = items.map(m => m.id);
+
+                // 4. Optimized Latest Chapter Fetch (Batch only for the visible items)
+                let itemsWithChapters: any[] = items; 
+
+                if (seriesIds.length > 0) {
+                    const latestChapters = await db.selectDistinctOn([schema.chapters.seriesId])
+                        .from(schema.chapters)
+                        .where(inArray(schema.chapters.seriesId, seriesIds))
+                        .orderBy(
+                            schema.chapters.seriesId,
+                            desc(sql`CAST(split_part(${schema.chapters.chapterNumber}, '.', 1) AS INTEGER)`),
+                            desc(sql`CASE WHEN ${schema.chapters.chapterNumber} LIKE '%.%' THEN CAST(split_part(${schema.chapters.chapterNumber}, '.', 2) AS INTEGER) ELSE 0 END`)
+                        );
+
+                    const chapterMap = new Map(latestChapters.map(c => [c.seriesId, c]));
+                    
+                    // By mapping directly here, TypeScript infers the combined type correctly
+                    itemsWithChapters = items.map(item => ({
+                        ...item,
+                        latestChapter: chapterMap.get(item.id) || null
+                    }));
+                } else {
+                    // If no series, just map the empty chapters
+                    itemsWithChapters = items.map(item => ({ ...item, latestChapter: null }));
+                }
+
+                // 5. Build Cursor
+                let nextCursor = null;
+                if (hasNextPage) {
+                    const last = items[items.length - 1];
+                    const val = last[sortKey as keyof typeof last] ?? 0;
+                    nextCursor = `${val}|${last.id}`;
+                }
+
+                return {
+                    meta: {
+                        total: Number(totalCountResult?.count || 0),
+                        hasNextPage,
+                        sort,
+                        order: isAsc ? 'asc' : 'desc'
+                    },
+                    items: itemsWithChapters,
+                    nextCursor
+                };
+            }
+        );
+
+        return res.json(payload);
+
+    } catch (error) {
+        return next(error);
+    }
+}
+
+export async function getMangaTags(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+    try {
+        const cacheKey = 'manga:tags:all';
+        const cacheTtlSeconds = 7 * 24 * 60 * 60;
+
+        const tags = await cacheService.getOrSet(
+            {
+                key: cacheKey,
+                ttl: cacheTtlSeconds,
+                staleIfError: cacheTtlSeconds,
+            },
+            async () => {
+                const results = await db.execute(sql`
+                    SELECT DISTINCT jsonb_array_elements_text(${schema.series.tags}) as tag
+                    FROM ${schema.series}
+                    WHERE ${schema.series.tags} IS NOT NULL
+                    ORDER BY tag ASC
+                `);
+
+                const rows = (results.rows || results) as Array<{ tag?: string | null }>;
+                return rows.map(row => row.tag).filter((tag): tag is string => Boolean(tag));
+            }
+        );
+
+        return res.json({ tags });
     } catch (error) {
         return next(error);
     }

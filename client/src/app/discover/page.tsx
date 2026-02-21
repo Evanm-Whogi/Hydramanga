@@ -16,6 +16,7 @@ function CatalogInner() {
   const initialFilters = {
     search: '',
     genres: [],
+    tags: [],
     sort: 'weightedScore',
     type: '',
     status: '',

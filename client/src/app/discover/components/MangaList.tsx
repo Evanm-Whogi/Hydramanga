@@ -9,9 +9,11 @@ interface MangaListProps {
   filters: {
     search: string;
     genres: string[];
+    tags: string[];
     sort: string;
     type: string;
     status: string;
+    years: string[];
     nsfw: string;
   };
 }

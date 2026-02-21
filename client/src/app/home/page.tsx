@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import {getHighScores} from '@/services/homeService';
+import { getPopularManga } from '@/services/homeService';
 import Lists from "./components/Lists";
 import Hero from './components/Hero';
 
@@ -16,11 +16,11 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function Home() {
-  const highScores = await getHighScores();
+  const highScores = await getPopularManga();
 
   return (
     <>
-      <Hero mangaData={highScores[0]} />
+      <Hero mangaData={highScores || []} />
       <Lists />
     </>
   )

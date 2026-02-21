@@ -5,10 +5,12 @@ import { FILTER_OPTIONS, DEFAULT_NSFW_VALUE } from '@/constants/filters';
 import MultiDropdown from '@/components/Checkbox';
 import SingleDropdown from '@/components/Dropdown';
 import SearchBar from '@/components/SearchBar';
+import TagDropdown from '@/components/TagDropdown';
 
 interface FiltersPanelProps {
   onSearchChange: (search: string) => void;
   onGenresChange: (genres: string[]) => void;
+  onTagsChange: (tags: string[]) => void;
   onTypesChange: (types: string[]) => void;
   onStatusesChange: (statuses: string[]) => void;
   onYearsChange: (years: string[]) => void;
@@ -16,11 +18,13 @@ interface FiltersPanelProps {
   onNsfwChange: (nsfw: string) => void;
   initialSearch?: string;
   initialGenres?: string[];
+  initialTags?: string[];
   initialTypes?: string[];
   initialStatuses?: string[];
   initialYears?: string[];
   initialSort?: string;
   initialNsfw?: string;
+  tagOptions?: string[];
   showListSelector?: boolean;
   listOptions?: Array<{ label: string; value: string }>;
   onListChange?: (list: string) => void;
@@ -30,6 +34,7 @@ interface FiltersPanelProps {
 function FiltersPanel({
   onSearchChange,
   onGenresChange,
+  onTagsChange,
   onTypesChange,
   onStatusesChange,
   onYearsChange,
@@ -37,11 +42,13 @@ function FiltersPanel({
   onNsfwChange,
   initialSearch = '',
   initialGenres = [],
+  initialTags = [],
   initialTypes = [],
   initialStatuses = [],
   initialYears = [],
   initialSort = 'weightedScore',
   initialNsfw = DEFAULT_NSFW_VALUE,
+  tagOptions = [],
   showListSelector = false,
   listOptions = [],
   onListChange,
@@ -75,8 +82,9 @@ function FiltersPanel({
           NSFW: {isNsfwEnabled ? 'ON' : 'OFF'}
         </button>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-5 justify-between items-center gap-3 md:gap-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-6 justify-between items-center gap-3 md:gap-6">
         <MultiDropdown label="All genres" options={FILTER_OPTIONS.genres as any} onChange={onGenresChange} initialValue={initialGenres} size="w-full" />
+        <TagDropdown label="All tags" options={tagOptions} onChange={onTagsChange} initialValue={initialTags} size="w-full" />
         <SingleDropdown options={FILTER_OPTIONS.sort as any} onChange={onSortChange} initialValue={initialSort} size="w-full" />
         <MultiDropdown label="All formats" options={FILTER_OPTIONS.types as any} onChange={onTypesChange} initialValue={initialTypes} size="w-full" />
         <MultiDropdown label="All statuses" options={FILTER_OPTIONS.status as any} onChange={onStatusesChange} initialValue={initialStatuses} size="w-full" />

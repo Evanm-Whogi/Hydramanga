@@ -25,6 +25,10 @@ export async function getCollections(): Promise<any> {
     return await apiGet(`/manga/collections`);
 }
 
+export async function getAllTags(): Promise<{ tags: string[] }> {
+    return await apiGet(`/manga/tags`);
+}
+
 export async function fetchGallery(id: any): Promise<any> {
     return await apiGet(`/manga/${id}/gallery`);
 }
