@@ -30,6 +30,17 @@
   --color-transparent-card: #ffffff;
 }
 
+.theme-night {
+  --color-accent: #9370DB;
+  --color-primary: #E8E8E8;
+  --color-background: #000000;
+  --color-foreground: #0A0A0A;
+  --color-borders: #2a2a2a;
+  --color-muted: #B0B0B0;
+  --toastify-text-color-dark: #E8E8E8;
+  --color-transparent-card: #000000;
+}
+
 @utility container {
   margin-inline: auto;
   width: 100%;

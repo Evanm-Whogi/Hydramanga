@@ -6,12 +6,13 @@ import PostHogProvider from '@/providers/PostHogProvider';
 import { PageTrackingProvider } from '@/components/PageTrackingProvider';
 import ErrorTracker from '@/providers/ErrorTracker';
 import { useSession } from '@/lib/useUser';
+import { cookies } from 'next/headers';
 
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 
 export async function generateMetadata(): Promise<Metadata> {
-   const siteConfig = {
+  const siteConfig = {
     name: process.env.NEXT_PUBLIC_NAME,
     slogan: process.env.NEXT_PUBLIC_SLOGAN,
     description: process.env.NEXT_PUBLIC_DESC,
@@ -47,21 +48,16 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default async function RootLayout({children}: Readonly<{children: React.ReactNode;}>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode; }>) {
   const session = await useSession();
+  const cookieStore = await cookies();
+  const themeMode = cookieStore.get('theme-mode')?.value || 'theme-dark';
+  const themeAccent = cookieStore.get('theme-accent')?.value;
 
-  // Suppress hydration is due to issues with certain browser extensions (eg. Grammarly) that inject elements into the DOM. This applies to the <html> and <body> tags.
   return (
-    <html lang="en" suppressHydrationWarning={true} className="theme-dark">
+    <html lang="en" suppressHydrationWarning={true} className={themeMode} style={themeAccent ? { '--color-accent': themeAccent } as React.CSSProperties : undefined}>
       <head>
-        <script>
-          {`
-            (function() {
-              const theme = localStorage.getItem('theme') || 'theme-dark';
-              document.documentElement.className = theme;
-            })();
-          `}
-        </script>
+
       </head>
       <body className="bg-background text-primary min-h-screen flex flex-col" suppressHydrationWarning={true}>
         <PostHogProvider>
@@ -70,7 +66,7 @@ export default async function RootLayout({children}: Readonly<{children: React.R
               <UserProvider initialSession={session}>
                 <Navbar />
                 <main className="flex-1">
-                    {children}
+                  {children}
                 </main>
                 <Footer />
               </UserProvider>
