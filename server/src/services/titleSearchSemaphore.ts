@@ -1,29 +1,38 @@
 /**
  * Title Search Semaphore
- * Prevents concurrent title searches across all manga to avoid rate limiting
- * Ensures only one title is being searched for at a time globally
+ * Limits concurrent title searches across all manga to avoid rate limiting.
+ * Allows up to MAX_CONCURRENT searches at a time (counting semaphore).
  */
 
+const MAX_CONCURRENT = 3;
+
 class TitleSearchSemaphore {
-    private searchInProgress = false;
+    private activeCount = 0;
     private waitQueue: Array<() => void> = [];
 
-    async lock<T>(fn: () => Promise<T>): Promise<T> {
-        // Wait until semaphore is free
-        while (this.searchInProgress) {
-            await new Promise(resolve => {
-                this.waitQueue.push(resolve as any);
-            });
+    private async acquire(): Promise<void> {
+        if (this.activeCount < MAX_CONCURRENT) {
+            this.activeCount++;
+            return;
         }
+        await new Promise<void>(resolve => {
+            this.waitQueue.push(resolve);
+        });
+        this.activeCount++;
+    }
 
-        this.searchInProgress = true;
+    private release(): void {
+        this.activeCount--;
+        const next = this.waitQueue.shift();
+        if (next) next();
+    }
+
+    async lock<T>(fn: () => Promise<T>): Promise<T> {
+        await this.acquire();
         try {
             return await fn();
         } finally {
-            this.searchInProgress = false;
-            // Wake up next waiter
-            const next = this.waitQueue.shift();
-            if (next) next();
+            this.release();
         }
     }
 }

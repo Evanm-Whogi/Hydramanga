@@ -28,6 +28,8 @@ import {
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
+import { createWriteStream } from 'fs';
+import { pipeline } from 'stream/promises';
 
 const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const API_BASE = appConfig.scraper.mangaDex.apiUrl;
@@ -603,53 +605,58 @@ export class MangaDexScraper implements IChapterScraper {
             { service: 'mangaDexScraper' }
         );
 
-        for (let i = 0; i < images.length; i++) {
-            const filePath = path.join(
-                dir,
-                `${(i + 1).toString().padStart(2, '0')}.webp`
-            );
+        const batchSize = 8;
+        // Delay between batches to avoid rate limits on at-home/CDN (images are not api.mangadex.org but nodes can still throttle)
+        const BATCH_DELAY_MS = 400;
+        const imageHeaders = {
+            Referer: referer,
+            'User-Agent': appConfig.scraper.mangaDex.userAgent,
+            Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+        };
 
-            try {
-                logger.debug(
-                    `[MangaDex] Downloading image ${i + 1}/${images.length} from: ${images[i]}`,
-                    { service: 'mangaDexScraper' }
-                );
+        const downloadOne = async (imageUrl: string, i: number) => {
+            const filePath = path.join(dir, `${(i + 1).toString().padStart(2, '0')}.webp`);
+            const response = await axios.get(imageUrl, {
+                responseType: 'stream',
+                timeout: appConfig.scraper.mangaDex.timeout,
+                headers: imageHeaders,
+            });
 
-                const response = await MangaDexScraper.rateLimitedRequest(images[i], {
-                    responseType: 'arraybuffer',
-                    headers: {
-                        Referer: referer,
-                        'User-Agent': appConfig.scraper.mangaDex.userAgent,
-                        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-                        'Accept-Language': 'en-US,en;q=0.9',
-                    },
-                });
+                const transformer = sharp({ failOn: 'none' })
+                    .resize({ 
+                        width: 2500,               // Cap width at a reasonable manga standard
+                        height: 16383,             // Allow for long-strip vertical webtoons
+                        fit: 'inside', 
+                        withoutEnlargement: true,
+                        fastShrinkOnLoad: true     // BIG WIN: Shrinks while reading, saves massive CPU
+                    })
+                    .webp({ 
+                        quality: 75,               // Slightly lower quality (80 to 75) saves ~20% size
+                        effort: 2,                 // BIG WIN: 2 is much faster than the default 4 or 6
+                        smartSubsample: true       // Keeps text sharp in manga
+                    });
 
-                const buffer = Buffer.from(response.data);
-                
-                if (buffer.length === 0) {
-                    logger.warn(
-                        `[MangaDex] Image ${i + 1} returned empty buffer from: ${images[i]}`,
-                        { service: 'mangaDexScraper' }
+                    await pipeline(
+                        response.data,
+                        transformer,
+                        createWriteStream(filePath)
                     );
-                }
+        };
 
-                // Convert to webp
-                await sharp(buffer)
-                    .webp({ quality: 80 })
-                    .toFile(filePath);
-
-                const fileSizeKb = (buffer.length / 1024).toFixed(2);
-                logger.debug(
-                    `[MangaDex] Successfully wrote image ${i + 1} (${fileSizeKb}KB) to ${filePath}`,
-                    { service: 'mangaDexScraper' }
-                );
-            } catch (err: any) {
-                logger.error(
-                    `[MangaDex] Failed to download image ${i + 1} from ${images[i]}: ${err.message}`,
-                    { service: 'mangaDexScraper' }
-                );
-                throw err;
+        for (let batchStart = 0; batchStart < images.length; batchStart += batchSize) {
+            const batchEnd = Math.min(batchStart + batchSize, images.length);
+            const batch = images.slice(batchStart, batchEnd);
+            await Promise.all(
+                batch.map((imageUrl, j) =>
+                    downloadOne(imageUrl, batchStart + j).catch((err: any) => {
+                        logger.error(`[MangaDex] Failed to download image ${batchStart + j + 1} from ${imageUrl}: ${err.message}`, { service: 'mangaDexScraper' });
+                        throw err;
+                    })
+                )
+            );
+            if (batchEnd < images.length) {
+                await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
             }
         }
 

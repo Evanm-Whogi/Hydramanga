@@ -1,19 +1,20 @@
 /**
  * MangaTaro Scraper Implementation
  * 
- * Scraper for mangataro.org manga source using their REST API for search.
+ * Scraper for mangataro.org manga source using their REST API for search and chapter content.
  * Implements the IChapterScraper interface for integration with ScraperManager.
  * 
  * Features:
  * - REST API-based search with JSON response
  * - Chapter list scraping via browser with tab interaction
- * - Lazy-loaded image extraction with scroll-to-load
+ * - Chapter images via auth/chapter-content API (no page open/scroll)
  * - Image download with proper headers
  * - Robust error handling and logging
  * 
  * Site Structure:
  * - Base URL: https://mangataro.org
- * - Search API: https://mangataro.org/wp-json/manga/v1/load (POST)
+ * - Search API: https://mangataro.org/auth/search (POST)
+ * - Chapter content API: https://mangataro.org/auth/chapter-content?chapter_id={id}
  * - Manga URL: https://mangataro.org/manga/{slug}
  * - Chapter URL: https://mangataro.org/read/{slug}/ch{number}-{id}
  */
@@ -36,6 +37,8 @@ import {
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
+import { createWriteStream } from 'fs';
+import { pipeline } from 'stream/promises';
 
 const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const API_BASE = appConfig.scraper.mangaTaro.apiUrl;
@@ -64,6 +67,14 @@ interface MangaTaroSearchResponse {
     results: MangaTaroSearchItem[];
 }
 
+interface MangaTaroChapterContentResponse {
+    success: boolean;
+    chapter_id: number;
+    chapter_type: string;
+    images: string[];
+    total: number;
+}
+
 /**
  * Sanitize folder/file names
  */
@@ -74,6 +85,15 @@ const safeName = (val: string): string => {
         .toLowerCase();
     return cleaned || 'chapter';
 };
+
+/**
+ * Extract chapter ID from MangaTaro chapter URL.
+ * e.g. https://mangataro.org/read/.../ch456-636003 -> 636003
+ */
+function extractChapterIdFromUrl(url: string): number | null {
+    const match = url.match(/ch\d+-(\d+)(?:\?|$)/);
+    return match ? parseInt(match[1], 10) : null;
+}
 
 /**
  * Calculate title similarity (0-100)
@@ -117,7 +137,7 @@ export class MangaTaroScraper implements IChapterScraper {
 
     // Browser pool for reusing browser instances
     private static browserPool: any[] = [];
-    private static readonly MAX_BROWSERS = 3; // Max 3 browsers in pool
+    private static readonly MAX_BROWSERS = 6; // Match default chapter download concurrency
     private static browserPoolLock = false;
 
     private static readonly httpAgent = new http.Agent({
@@ -445,126 +465,40 @@ export class MangaTaroScraper implements IChapterScraper {
         mangaName: string,
         folderName: string
     ): Promise<DownloadedChapter> {
-        const browser = await MangaTaroScraper.getBrowser(); // Use pool instead of launching new
-        const context = await browser.newContext({
-            userAgent: appConfig.scraper.mangaTaro.userAgent,
-        });
-        const page = await context.newPage();
-
-        try {
-            // Navigate to chapter page
-            await page.goto(url, {
-                waitUntil: 'domcontentloaded',
-                timeout: 30000,
-            });
-
-            // Wait for chapter images container (reduced timeout)
-            try {
-                await page.waitForSelector('div#chapter-images-container', { timeout: 5000 });
-            } catch (e) {
-                throw new Error(`Could not find chapter images container at ${url}`);
-            }
-
-            // Scroll to load all lazy-loaded images - optimized fast pass
-            const totalImageElements = await page.evaluate(() => {
-                return document.querySelectorAll('div.comic-image-container img.comic-image').length;
-            });
-
-            // Fast single pass scroll
-            await page.evaluate(() => {
-                window.scrollTo(0, 0);
-            });
-            await page.waitForTimeout(50); // Reduced from 100ms to 50ms
-
-            const pageHeight = await page.evaluate(() => document.body.scrollHeight);
-            const viewportHeight = await page.evaluate(() => window.innerHeight);
-            
-            // Very fast scroll in full viewport increments
-            const scrollStep = viewportHeight;
-            let currentScroll = 0;
-            
-            while (currentScroll < pageHeight) {
-                await page.evaluate((step: number) => window.scrollBy(0, step), scrollStep);
-                currentScroll += scrollStep;
-                await page.waitForTimeout(25); // Reduced from 50ms to 25ms
-            }
-
-            // Final scroll to absolute bottom
-            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-            await page.waitForTimeout(100); // Reduced from 200ms to 100ms
-
-            // Extract image URLs with comprehensive attribute checking
-            const imageUrls: any = await page.evaluate(() => {
-                const images = Array.from(
-                    document.querySelectorAll('div.comic-image-container img.comic-image')
-                );
-
-                const urls: string[] = [];
-                const missingUrls: number[] = [];
-
-                for (let i = 0; i < images.length; i++) {
-                    const img = images[i] as HTMLImageElement;
-                    const src = (img.src || '').trim();
-                    const dataSrc = (img.dataset.src || (img as any)['data-src'] || '').trim();
-                    const lazySrc = (img.dataset.lazySrc || '').trim();
-                    const originalSrc = (img.dataset.original || '').trim();
-                    
-                    // Try multiple possible attributes
-                    const possibleUrls = [dataSrc, lazySrc, originalSrc, src].filter(u => u && u.startsWith('http'));
-                    
-                    if (possibleUrls.length > 0) {
-                        urls.push(possibleUrls[0]);
-                    } else {
-                        // Track which images failed to load
-                        missingUrls.push(i + 1);
-                    }
-                }
-
-                return { urls, missingUrls, totalElements: images.length };
-            });
-
-            // Only log debug info if images are missing
-            if (imageUrls.missingUrls.length > 0) {
-                logger.warn(
-                    `[MangaTaro] Missing ${imageUrls.missingUrls.length} images at positions: ${imageUrls.missingUrls.slice(0, 10).join(', ')}${imageUrls.missingUrls.length > 10 ? '...' : ''}`,
-                    { service: 'mangaTaroScraper' }
-                );
-            }
-
-            // Remove duplicates
-            const uniqueImageUrls: any = Array.from(new Set(imageUrls.urls));
-
-            logger.debug(
-                `[MangaTaro] Extracted ${uniqueImageUrls.length} unique URLs from ${imageUrls.totalElements} image elements`,
-                { service: 'mangaTaroScraper' }
-            );
-
-            if (uniqueImageUrls.length === 0) {
-                throw new Error(`No images found at ${url}`);
-            }
-
-            logger.info(
-                `[MangaTaro] Found ${uniqueImageUrls.length} images for chapter ${chapterNumber}`,
-                { service: 'mangaTaroScraper' }
-            );
-
-            // Download images
-            const storagePrefix = await this.downloadImages(
-                uniqueImageUrls,
-                seriesId,
-                chapterNumber,
-                url
-            );
-
-            return {
-                storagePrefix,
-                pageCount: uniqueImageUrls.length,
-            };
-        } finally {
-            await page.close().catch(() => {});
-            await context.close().catch(() => {});
-            await MangaTaroScraper.releaseBrowser(browser); // Return to pool instead of closing
+        const chapterId = extractChapterIdFromUrl(url);
+        if (chapterId == null) {
+            throw new Error(`Could not extract chapter ID from URL: ${url}`);
         }
+
+        const contentUrl = `${SITE_BASE}/auth/chapter-content?chapter_id=${chapterId}`;
+        const response = await MangaTaroScraper.axiosInstance.get<MangaTaroChapterContentResponse>(contentUrl);
+
+        const data = response.data;
+        if (!data?.success || !Array.isArray(data.images) || data.images.length === 0) {
+            throw new Error(
+                data?.success === false
+                    ? `Chapter content API failed for chapter_id=${chapterId}`
+                    : `No images in chapter content response for ${url}`
+            );
+        }
+
+        const imageUrls = data.images;
+        logger.info(
+            `[MangaTaro] Fetched ${imageUrls.length} image URLs for chapter ${chapterNumber} (chapter_id=${chapterId})`,
+            { service: 'mangaTaroScraper' }
+        );
+
+        const storagePrefix = await this.downloadImages(
+            imageUrls,
+            seriesId,
+            chapterNumber,
+            url
+        );
+
+        return {
+            storagePrefix,
+            pageCount: imageUrls.length,
+        };
     }
 
     /**
@@ -585,7 +519,7 @@ export class MangaTaroScraper implements IChapterScraper {
 
         const maxRetries = 3;
         const retryDelayMs = 1000; // Base delay for exponential backoff
-        const batchSize = 8; // Download 8 images at a time to avoid overwhelming connection pool
+        const batchSize = 10;
 
         // Download a single image with retry logic
         const downloadImage = async (imageUrl: string, i: number) => {
@@ -600,7 +534,7 @@ export class MangaTaroScraper implements IChapterScraper {
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
                 try {
                     const response = await MangaTaroScraper.axiosInstance.get(imageUrl, {
-                        responseType: 'arraybuffer',
+                        responseType: 'stream',
                         timeout: 15000, // Reduced from 30s to 15s
                         maxRedirects: 5,
                         headers: {
@@ -622,11 +556,25 @@ export class MangaTaroScraper implements IChapterScraper {
                         throw new Error('Empty response from server');
                     }
 
-                    // Convert to webp
-                    const buffer = Buffer.from(response.data);
-                    await sharp(buffer)
-                        .webp({ quality: 80 })
-                        .toFile(filePath);
+                   const transformer = sharp({ failOn: 'none' })
+                        .resize({ 
+                            width: 2500,               // Cap width at a reasonable manga standard
+                            height: 16383,             // Allow for long-strip vertical webtoons
+                            fit: 'inside', 
+                            withoutEnlargement: true,
+                            fastShrinkOnLoad: true     // BIG WIN: Shrinks while reading, saves massive CPU
+                        })
+                        .webp({ 
+                            quality: 75,               // Slightly lower quality (80 to 75) saves ~20% size
+                            effort: 2,                 // BIG WIN: 2 is much faster than the default 4 or 6
+                            smartSubsample: true       // Keeps text sharp in manga
+                        });
+    
+                        await pipeline(
+                            response.data,
+                            transformer,
+                            createWriteStream(filePath)
+                        );
 
                     logger.debug(
                         `[MangaTaro] Downloaded image ${i + 1}/${images.length}`,
@@ -675,16 +623,20 @@ export class MangaTaroScraper implements IChapterScraper {
             }
         };
 
-        // Download images in batches to avoid connection pool exhaustion
+        // Download images in batches to avoid connection pool exhaustion and CDN rate limits
+        const delayBetweenBatchesMs = 25;
         for (let batchStart = 0; batchStart < images.length; batchStart += batchSize) {
             const batchEnd = Math.min(batchStart + batchSize, images.length);
             const batch = images.slice(batchStart, batchEnd);
-            
-            const batchPromises = batch.map((imageUrl, localIndex) => 
-                downloadImage(imageUrl, batchStart + localIndex)
+
+            await Promise.all(
+                batch.map((imageUrl, localIndex) =>
+                    downloadImage(imageUrl, batchStart + localIndex)
+                )
             );
-            
-            await Promise.all(batchPromises);
+            if (batchEnd < images.length && delayBetweenBatchesMs > 0) {
+                await new Promise((r) => setTimeout(r, delayBetweenBatchesMs));
+            }
         }
 
         return storagePrefix;

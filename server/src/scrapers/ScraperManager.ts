@@ -195,9 +195,10 @@ export class ScraperManager {
                     }
                 } catch (error) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                    const stack = error instanceof Error ? error.stack : undefined;
                     logger.error(
-                        `Scraper ${metadata.name} failed: ${errorMessage}`,
-                        { service: 'scraperManager' }
+                        `Scraper ${metadata.name} failed during download: ${errorMessage}${stack ? `\n${stack}` : ''}`,
+                        { service: 'scraperManager', error: error instanceof Error ? error : undefined }
                     );
 
                     this.recordAttempt(
@@ -294,11 +295,11 @@ export class ScraperManager {
 
             const bestMatch = matches[0];
 
-            // Cache the result (5 minute TTL)
+            // Cache the result (30 minute TTL)
             await cacheService.set(cacheKey, {
                 scraperId: bestMatch.scraper.getMetadata().id,
                 result: bestMatch.result,
-            }, 300);
+            }, 1800);
 
             return { scraper: bestMatch.scraper, result: bestMatch.result };
         });

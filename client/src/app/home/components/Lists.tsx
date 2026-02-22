@@ -198,7 +198,7 @@ export default function Lists() {
                             <aside className="space-y-6">
                                 {recentComments?.length > 0 && (
                                     <>
-                                        <h2 className="text-2xl font-bold mb-6">Recent Comments</h2>
+                                        <h2 className="text-3xl font-bold mb-6">Recent Comments</h2>
                                         <div className="space-y-4">
                                             {recentComments.map((comment: any) => (
                                                 <CommentCard key={comment.id} comment={comment} />
@@ -208,7 +208,7 @@ export default function Lists() {
                                 )}
                                 {topCommenters?.length > 0 && (
                                     <>
-                                        <h2 className="text-2xl font-bold mb-6">Top Commenters</h2>
+                                        <h2 className="text-3xl font-bold mb-6">Top Commenters</h2>
                                         <div className="space-y-4">
                                             {topCommenters.map((user: any) => (
                                                 <div key={user.id} className="bg-foreground p-4 rounded-md shadow-md flex items-center gap-4">

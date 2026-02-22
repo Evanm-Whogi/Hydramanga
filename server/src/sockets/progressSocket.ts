@@ -1,15 +1,71 @@
+import Redis from 'ioredis';
 import { Server, Socket } from 'socket.io';
 import { mangaProgressService, MangaProgress } from '@/services/mangaProgressService';
 import logger from '@/services/loggerService';
 import { setIOInstance } from '@/sockets/socketManager';
+import { appConfig } from '@/config/appConfig';
+
+const PROGRESS_CHANNEL_PREFIX = 'manga:progress:';
+
+/**
+ * Start Redis subscriber so progress updates published by the worker are forwarded to WebSocket clients.
+ * Worker has no Socket.IO; it only publishes to Redis. Server subscribes here and emits to the /progress namespace.
+ */
+function startProgressRedisSubscriber(io: Server) {
+  const subscriber = new Redis({
+    host: appConfig.redis.host,
+    port: appConfig.redis.port,
+    password: appConfig.redis.password,
+    ...(appConfig.redis.db != null && { db: appConfig.redis.db }),
+  });
+
+  subscriber.psubscribe('manga:progress:*', (err) => {
+    if (err) {
+      logger.error(`Progress Redis psubscribe error: ${err}`, { service: 'progressSocket' });
+      return;
+    }
+    logger.info('Subscribed to Redis progress channel manga:progress:*', { service: 'progressSocket' });
+  });
+
+  subscriber.on('pmessage', (pattern: string, channel: string, message: string) => {
+    try {
+      const seriesIdStr = channel.slice(PROGRESS_CHANNEL_PREFIX.length);
+      const seriesId = parseInt(seriesIdStr, 10);
+      if (Number.isNaN(seriesId)) return;
+
+      const data = JSON.parse(message) as MangaProgress;
+      const room = `manga:progress:${seriesId}`;
+      const payload = { type: 'progress' as const, data };
+
+      io.of('/progress').to(room).emit('progress', payload);
+
+      if (data.status === 'completed' || data.status === 'failed') {
+        const donePayload = { type: 'done' as const, data };
+        io.of('/progress').to(room).emit('progress', donePayload);
+        logger.info(`Import ${data.status} for series ${seriesId}, forwarded from Redis to WebSocket`, {
+          service: 'progressSocket',
+        });
+      }
+    } catch (e) {
+      logger.error(`Progress Redis pmessage parse error: ${e}`, { service: 'progressSocket' });
+    }
+  });
+
+  subscriber.on('error', (err) => {
+    logger.error(`Progress Redis subscriber error: ${err}`, { service: 'progressSocket' });
+  });
+}
 
 /**
  * WebSocket namespace handler for real-time manga import progress
  * Replaces SSE streaming with bidirectional WebSocket communication
  */
 export function setupProgressSocket(io: Server) {
-  // Store the Socket.IO instance globally for use in services
+  // Store the Socket.IO instance globally for use in services (in-process emits)
   setIOInstance(io);
+
+  // Forward Redis progress updates from worker to WebSocket clients
+  startProgressRedisSubscriber(io);
 
   const progressNamespace = io.of('/progress');
 

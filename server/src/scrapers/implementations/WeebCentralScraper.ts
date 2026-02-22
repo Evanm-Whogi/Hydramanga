@@ -28,6 +28,8 @@ import { WeebCentralSearcher } from '@/services/weebCentralSearcher';
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
+import { createWriteStream } from 'fs';
+import { pipeline } from 'stream/promises';
 
 const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 
@@ -46,6 +48,9 @@ const safeName = (val: string): string => {
  * WeebCentral Scraper
  */
 export class WeebCentralScraper implements IChapterScraper {
+    private static browserPool: any[] = [];
+    private static readonly MAX_BROWSERS = 5; // match queue concurrency so multiple chapters can run in parallel
+
     private readonly metadata: ScraperMetadata = {
         id: 'weebcentral',
         name: 'WeebCentral',
@@ -53,6 +58,37 @@ export class WeebCentralScraper implements IChapterScraper {
         priority: appConfig.scraper.weebCentral.priority,
         enabled: appConfig.scraper.weebCentral.enabled,
     };
+
+    private static async getBrowser() {
+        if (WeebCentralScraper.browserPool.length > 0) {
+            return WeebCentralScraper.browserPool.pop();
+        }
+        logger.debug('[WeebCentral] Launching new browser for pool', { service: 'weebCentralScraper' });
+        return chromium.launch({
+            headless: true,
+            args: ['--disable-dev-shm-usage', '--no-sandbox'],
+        });
+    }
+
+    private static async releaseBrowser(browser: any) {
+        if (!browser) return;
+        try {
+            if (!browser.isConnected()) {
+                await browser.close().catch(() => {});
+                return;
+            }
+            if (WeebCentralScraper.browserPool.length < WeebCentralScraper.MAX_BROWSERS) {
+                WeebCentralScraper.browserPool.push(browser);
+                logger.debug(`[WeebCentral] Browser returned to pool (${WeebCentralScraper.browserPool.length}/${WeebCentralScraper.MAX_BROWSERS})`, { service: 'weebCentralScraper' });
+            } else {
+                await browser.close().catch(() => {});
+                logger.debug('[WeebCentral] Browser closed (pool full)', { service: 'weebCentralScraper' });
+            }
+        } catch (error) {
+            logger.warn(`[WeebCentral] Error releasing browser: ${error}`, { service: 'weebCentralScraper' });
+            await browser.close().catch(() => {});
+        }
+    }
 
     getMetadata(): ScraperMetadata {
         return { ...this.metadata };
@@ -113,7 +149,7 @@ export class WeebCentralScraper implements IChapterScraper {
         secondaryTitles?: string[],
         coverUrl?: string,
     ): AsyncGenerator<ScrapedChapter, void, undefined> {
-        const browser = await chromium.launch({ headless: true });
+        const browser = await WeebCentralScraper.getBrowser();
         const context = await browser.newContext({
             userAgent: appConfig.scraper.weebCentral.userAgent,
         });
@@ -200,7 +236,7 @@ export class WeebCentralScraper implements IChapterScraper {
         } finally {
             await page.close().catch(() => {});
             await context.close().catch(() => {});
-            await browser.close().catch(() => {});
+            await WeebCentralScraper.releaseBrowser(browser);
         }
     }
 
@@ -211,7 +247,7 @@ export class WeebCentralScraper implements IChapterScraper {
         mangaName: string,
         folderName: string
     ): Promise<DownloadedChapter> {
-        const browser = await chromium.launch({ headless: true });
+        const browser = await WeebCentralScraper.getBrowser();
         const context = await browser.newContext({
             userAgent: appConfig.scraper.weebCentral.userAgent,
         });
@@ -252,11 +288,9 @@ export class WeebCentralScraper implements IChapterScraper {
                         { service: 'weebCentralScraper' }
                     );
 
-                    // Use networkidle on first attempt, fallback to domcontentloaded on retries
-                    const waitStrategy = attempt === 1 ? 'networkidle' : 'domcontentloaded';
-                    
+                    // Use domcontentloaded to avoid timeout; networkidle often never fires on ad-heavy pages
                     await page.goto(url, {
-                        waitUntil: waitStrategy,
+                        waitUntil: 'domcontentloaded',
                         timeout: 45000,
                     });
 
@@ -296,36 +330,76 @@ export class WeebCentralScraper implements IChapterScraper {
                 );
             }
 
-            // Extract images with retry logic and progressive loading
+            // Prefer dedicated /images endpoint (same as other WeebCentral tools) — more reliable than reader DOM
+            const imagesUrl = `${url.replace(/\/$/, '')}/images?reading_style=long_strip`;
             let finalImages: string[] = [];
+
+ try {
+                await page.goto(imagesUrl, {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 25000,
+                });
+                
+                // Short timeout: if /images doesn't show imgs quickly, fall back to reader
+                await page.waitForSelector('img', { timeout: 5000, state: 'attached' });
+                await page.waitForTimeout(1500);
+
+                finalImages = await page.evaluate((base: string) => {
+                    const resolve = (href: string) => {
+                        if (!href || href.includes('broken_image')) return '';
+                        if (href.startsWith('http')) return href;
+                        try {
+                            return new URL(href, base).href;
+                        } catch {
+                            return '';
+                        }
+                    };
+                    return Array.from(document.querySelectorAll('img'))
+                        .map(img => img.getAttribute('src') || img.getAttribute('data-src'))
+                        .map(src => resolve(src || ''))
+                        .filter((href): href is string => !!href && href.startsWith('http'));
+                }, imagesUrl);
+                if (finalImages.length > 0) {
+                    logger.debug(
+                        `[WeebCentral] Got ${finalImages.length} images from /images endpoint`,
+                        { service: 'weebCentralScraper' }
+                    );
+                }
+            } catch (err: any) {
+                 logger.debug(
+                    `[WeebCentral] /images endpoint unavailable (${err?.message?.split('\n')[0] ?? err}), using reader page`,
+                    { service: 'weebCentralScraper' }
+                );
+            }
+
+            // Fallback: extract from reader page with retry and progressive loading
             let extractAttempt = 0;
             const maxExtractAttempts = 4;
 
             while (finalImages.length === 0 && extractAttempt < maxExtractAttempts) {
                 extractAttempt++;
 
+                await page.goto(url, {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 45000,
+                });
+
                 logger.info(
-                    `[WeebCentral] Attempting to extract images (attempt ${extractAttempt}/${maxExtractAttempts})`,
+                    `[WeebCentral] Attempting to extract images from reader (attempt ${extractAttempt}/${maxExtractAttempts})`,
                     { service: 'weebCentralScraper' }
                 );
 
-                // Wait for initial page load with increasing timeout
-                const initialWait = 2000 + (extractAttempt - 1) * 1500; // 2s, 3.5s, 5s, 6.5s
+                const initialWait = 2000 + (extractAttempt - 1) * 1500;
                 await page.waitForTimeout(initialWait);
 
                 // Progressive scrolling to trigger lazy loading
                 try {
                     const scrollSteps = 3;
                     const scrollAmount = await page.evaluate(() => window.innerHeight * 0.8);
-                    
                     for (let i = 0; i < scrollSteps; i++) {
-                        await page.evaluate((amount: any) => {
-                            window.scrollBy(0, amount);
-                        }, scrollAmount);
-                        await page.waitForTimeout(500);
+                        await page.evaluate((amount: number) => window.scrollBy(0, amount), scrollAmount);
+                        await page.waitForTimeout(400);
                     }
-                    
-                    // Scroll back to top
                     await page.evaluate(() => window.scrollTo(0, 0));
                     await page.waitForTimeout(300);
                 } catch (err) {
@@ -335,76 +409,65 @@ export class WeebCentralScraper implements IChapterScraper {
                     );
                 }
 
-                // Wait for images to appear
+                const imageSelector = 'img[alt*="Page"], img.maw-w-full, img[data-src][src*="http"], main img[src^="http"]';
                 try {
-                    await page.waitForSelector('img[alt*="Page"], img.maw-w-full', { 
-                        timeout: 8000,
-                        state: 'visible'
+                    await page.waitForSelector(imageSelector, {
+                        timeout: 12000,
+                        state: 'visible',
                     });
-                    // Extra wait for all images to load
-                    await page.waitForTimeout(1500);
+                    await page.waitForTimeout(1200);
                 } catch (err) {
                     logger.warn(
                         `[WeebCentral] Image selector wait timed out on attempt ${extractAttempt}`,
                         { service: 'weebCentralScraper' }
                     );
-                    
-                    // If this isn't the last attempt, continue to retry
                     if (extractAttempt < maxExtractAttempts) {
+                        await page.waitForTimeout(2000 * extractAttempt);
                         continue;
                     }
                 }
 
-                // Extract image URLs - Try primary selector
+                // Primary: reader img.maw-w-full / known CDNs
                 finalImages = await page
                     .evaluate(() => {
-                        return Array.from(document.querySelectorAll('img.maw-w-full'))
-                            .map(
-                                img =>
-                                    img.getAttribute('data-src') || img.getAttribute('src')
-                            )
+                        const imgs = document.querySelectorAll('img.maw-w-full, img[alt*="Page"], main img');
+                        return Array.from(imgs)
+                            .map(img => img.getAttribute('data-src') || img.getAttribute('src'))
                             .filter(
                                 (src): src is string =>
                                     !!src &&
+                                    src.startsWith('http') &&
+                                    !src.includes('broken_image') &&
                                     (src.includes('planeptune.us') ||
-                                        src.includes('googleusercontent'))
+                                        src.includes('googleusercontent') ||
+                                        src.includes('lh3.google') ||
+                                        /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(src))
                             );
                     })
-                    .catch((err: any) => {
-                        logger.warn(
-                            `[WeebCentral] Primary selector failed for ${folderName}: ${err.message}`,
-                            { service: 'weebCentralScraper' }
-                        );
-                        return [];
-                    });
+                    .catch(() => []);
 
-                // Fallback selector
+                // Fallback: any img in main with http src
                 if (finalImages.length === 0) {
                     finalImages = await page
                         .evaluate(() => {
-                            return Array.from(
-                                document.querySelectorAll('img[alt*="Page"]')
-                            )
-                                .map(img => img.getAttribute('src'))
+                            const imgs = document.querySelectorAll('img[src^="http"], img[data-src^="http"]');
+                            return Array.from(imgs)
+                                .map(img => img.getAttribute('data-src') || img.getAttribute('src'))
                                 .filter(
-                                    (src): src is string => !!src && src.startsWith('http')
+                                    (src): src is string =>
+                                        !!src &&
+                                        src.startsWith('http') &&
+                                        !src.includes('broken_image')
                                 );
                         })
-                        .catch((err: any) => {
-                            logger.warn(
-                                `[WeebCentral] Fallback selector failed for ${folderName}: ${err.message}`,
-                                { service: 'weebCentralScraper' }
-                            );
-                            return [];
-                        });
+                        .catch(() => []);
                 }
 
                 if (finalImages.length === 0 && extractAttempt < maxExtractAttempts) {
                     logger.warn(
-                        `[WeebCentral] No images found on attempt ${extractAttempt}, retrying...`,
+                        `[WeebCentral] No images on attempt ${extractAttempt}, retrying...`,
                         { service: 'weebCentralScraper' }
                     );
-                    // Wait before retry with exponential backoff
                     await page.waitForTimeout(2000 * extractAttempt);
                 }
             }
@@ -433,12 +496,12 @@ export class WeebCentralScraper implements IChapterScraper {
         } finally {
             await page.close().catch(() => {});
             await context.close().catch(() => {});
-            await browser.close().catch(() => {});
+            await WeebCentralScraper.releaseBrowser(browser);
         }
     }
 
     /**
-     * Download images to local filesystem
+     * Download images to local filesystem (batched parallel, short delay between batches to avoid CDN rate limits)
      */
     private async downloadImages(
         images: string[],
@@ -453,47 +516,62 @@ export class WeebCentralScraper implements IChapterScraper {
             fs.mkdirSync(dir, { recursive: true });
         }
 
-        for (let i = 0; i < images.length; i++) {
-            const filePath = path.join(
-                dir,
-                `${(i + 1).toString().padStart(2, '0')}.webp`
-            );
+        const batchSize = 10;
+        const headers = {
+            Referer: referer,
+            'User-Agent': appConfig.scraper.weebCentral.userAgent,
+            Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+            Pragma: 'no-cache',
+            'Sec-Fetch-Dest': 'image',
+            'Sec-Fetch-Mode': 'no-cors',
+            'Sec-Fetch-Site': 'cross-site',
+        };
 
+        const downloadOne = async (imageUrl: string, i: number) => {
+            const filePath = path.join(dir, `${(i + 1).toString().padStart(2, '0')}.webp`);
             try {
-                const response = await axios.get(images[i], {
-                    responseType: 'arraybuffer',
+                const response = await axios.get(imageUrl, {
+                    responseType: 'stream',
                     timeout: 15000,
-                    headers: {
-                        Referer: referer,
-                        'User-Agent': appConfig.scraper.weebCentral.userAgent,
-                        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-                        'Accept-Language': 'en-US,en;q=0.9',
-                        'Cache-Control': 'no-cache',
-                        Connection: 'keep-alive',
-                        Pragma: 'no-cache',
-                        'Sec-Fetch-Dest': 'image',
-                        'Sec-Fetch-Mode': 'no-cors',
-                        'Sec-Fetch-Site': 'cross-site',
-                    },
+                    headers,
                 });
 
-                // Convert to webp
-                const buffer = Buffer.from(response.data);
-                await sharp(buffer)
-                    .webp({ quality: 80 })
-                    .toFile(filePath);
-                
-                // Small delay between image downloads to avoid rate limiting
-                // Skip delay on last image
-                if (i < images.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 150));
-                }
+                const transformer = sharp({ failOn: 'none' })
+                    .resize({ 
+                        width: 2500,               // Cap width at a reasonable manga standard
+                        height: 16383,             // Allow for long-strip vertical webtoons
+                        fit: 'inside', 
+                        withoutEnlargement: true,
+                        fastShrinkOnLoad: true     // BIG WIN: Shrinks while reading, saves massive CPU
+                    })
+                    .webp({ 
+                        quality: 75,               // Slightly lower quality (80 to 75) saves ~20% size
+                        effort: 2,                 // BIG WIN: 2 is much faster than the default 4 or 6
+                        smartSubsample: true       // Keeps text sharp in manga
+                    });
+
+                    await pipeline(
+                        response.data,
+                        transformer,
+                        createWriteStream(filePath)
+                    );
             } catch (err: any) {
-                logger.error(
-                    `[WeebCentral] Failed to download image ${i + 1}: ${err.message}`,
-                    { service: 'weebCentralScraper' }
-                );
+                logger.error(`[WeebCentral] Failed to download image ${i + 1}: ${err.message}`, { service: 'weebCentralScraper' });
                 throw err;
+            }
+        };
+
+        for (let batchStart = 0; batchStart < images.length; batchStart += batchSize) {
+            const batchEnd = Math.min(batchStart + batchSize, images.length);
+            const batch = images.slice(batchStart, batchEnd);
+            await Promise.all(
+                batch.map((imageUrl, j) => downloadOne(imageUrl, batchStart + j))
+            );
+            if (batchEnd < images.length) {
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
         }
 
