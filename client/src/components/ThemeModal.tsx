@@ -10,7 +10,6 @@ const MODE_COOKIE = 'theme-mode';
 const ACCENT_COOKIE = 'theme-accent';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
-
 function getCookie(name: string): string | null {
     if (typeof document === 'undefined') return null;
     const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
@@ -20,7 +19,6 @@ function getCookie(name: string): string | null {
 function setCookie(name: string, value: string) {
     document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`;
 }
-
 
 export function applyThemeMode(mode: ThemeMode) {
     document.documentElement.className = mode;
