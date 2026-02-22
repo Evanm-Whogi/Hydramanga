@@ -47,6 +47,7 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
   const [selectedYears, setSelectedYears] = useState<string[]>([]);
   const [selectedSort, setSelectedSort] = useState('weightedScore');
   const [nsfw, setNsfw] = useState('true');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
   const yearMatches = useCallback((year: number | undefined, filters: string[]): boolean => {
     if (!filters || filters.length === 0 || filters.includes('timeless')) return true;
@@ -190,6 +191,7 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
             initialList={selectedList}
             onSearchChange={setSearch}
             onGenresChange={setSelectedGenres}
+            onTagsChange={setSelectedTags}
             onTypesChange={setSelectedTypes}
             onStatusesChange={setSelectedStatuses}
             onYearsChange={setSelectedYears}

@@ -46,8 +46,8 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./data/manga:/data/manga:ro
-    ports:
-      - "8080:80"
+    expose:
+      - "80"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1/health"]
       interval: 10s
@@ -110,8 +110,6 @@ services:
       NEXT_PUBLIC_URL: https://manga.chit.sh
       # Public backend URL for WebSocket connections from client
       NEXT_PUBLIC_BACKEND_URL: https://manga.chit.sh
-    ports:
-      - "3000:3000"
 
   cloudflared:
     image: cloudflare/cloudflared:latest

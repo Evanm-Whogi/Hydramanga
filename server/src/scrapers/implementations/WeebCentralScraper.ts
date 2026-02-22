@@ -15,6 +15,7 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
+import sharp from 'sharp';
 import {
     IChapterScraper,
     ScrapedChapter,
@@ -455,7 +456,7 @@ export class WeebCentralScraper implements IChapterScraper {
         for (let i = 0; i < images.length; i++) {
             const filePath = path.join(
                 dir,
-                `${(i + 1).toString().padStart(2, '0')}.jpg`
+                `${(i + 1).toString().padStart(2, '0')}.webp`
             );
 
             try {
@@ -476,7 +477,11 @@ export class WeebCentralScraper implements IChapterScraper {
                     },
                 });
 
-                fs.writeFileSync(filePath, Buffer.from(response.data));
+                // Convert to webp
+                const buffer = Buffer.from(response.data);
+                await sharp(buffer)
+                    .webp({ quality: 80 })
+                    .toFile(filePath);
                 
                 // Small delay between image downloads to avoid rate limiting
                 // Skip delay on last image
