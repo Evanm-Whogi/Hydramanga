@@ -18,11 +18,22 @@ export const uploadProfilePicture = async (req: Request, res: Response) => {
     const userDir = path.dirname(originalPath);
     const webpFilename = path.basename(req.file.filename, path.extname(req.file.filename)) + '.webp';
     const webpPath = path.join(userDir, webpFilename);
-    await sharp(originalPath)
-      .webp({ quality: 80 })
-      .toFile(webpPath);
-    // Remove the original uploaded file
-    await fs.remove(originalPath);
+    const tempPath = path.join(userDir, `.temp_${webpFilename}`);
+    
+    try {
+      // Convert to webp using a temporary file to avoid input/output conflict
+      await sharp(originalPath)
+        .webp({ quality: 80 })
+        .toFile(tempPath);
+      // Remove the original uploaded file
+      await fs.remove(originalPath);
+      // Rename temp file to final webp path
+      await fs.move(tempPath, webpPath, { overwrite: true });
+    } catch (err) {
+      // Clean up temp file if conversion failed
+      await fs.remove(tempPath).catch(() => {});
+      throw err;
+    }
     const relativePath = `/media/pfp/${userId}/${webpFilename}`;
 
     // Delete old profile picture if it exists and is not the default

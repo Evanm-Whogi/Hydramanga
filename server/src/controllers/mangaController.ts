@@ -545,7 +545,7 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
         
         for (let i = 1; i <= pageCount; i++) {
             const pageNumber = formatPageNumber(i, chapter.scraperId);
-            const imageUrl = `${baseUrl}/${chapter.storagePrefix}/${pageNumber}.jpg`;
+            const imageUrl = `${baseUrl}/${chapter.storagePrefix}/${pageNumber}.webp`;
             images.push(imageUrl);
         }
 
@@ -555,7 +555,7 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
         const mergedPages = isSinglePageSeries
             ? allChapters.map((ch) => {
                 const pageNumber = formatPageNumber(1, ch.scraperId);
-                const imageUrl = `${baseUrl}/${ch.storagePrefix}/${pageNumber}.jpg`;
+                const imageUrl = `${baseUrl}/${ch.storagePrefix}/${pageNumber}.webp`;
                 return {
                     chapterId: ch.id,
                     chapterNumber: ch.chapterNumber,
