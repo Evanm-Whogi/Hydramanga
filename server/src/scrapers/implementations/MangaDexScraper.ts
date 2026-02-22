@@ -16,6 +16,7 @@
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
+import sharp from 'sharp';
 import {
     IChapterScraper,
     ScrapedChapter,
@@ -605,7 +606,7 @@ export class MangaDexScraper implements IChapterScraper {
         for (let i = 0; i < images.length; i++) {
             const filePath = path.join(
                 dir,
-                `${(i + 1).toString().padStart(2, '0')}.jpg`
+                `${(i + 1).toString().padStart(2, '0')}.webp`
             );
 
             try {
@@ -633,7 +634,10 @@ export class MangaDexScraper implements IChapterScraper {
                     );
                 }
 
-                fs.writeFileSync(filePath, buffer);
+                // Convert to webp
+                await sharp(buffer)
+                    .webp({ quality: 80 })
+                    .toFile(filePath);
 
                 const fileSizeKb = (buffer.length / 1024).toFixed(2);
                 logger.debug(

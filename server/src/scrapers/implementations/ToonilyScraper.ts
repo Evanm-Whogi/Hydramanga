@@ -22,6 +22,7 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
+import sharp from 'sharp';
 import http from 'http';
 import https from 'https';
 import {
@@ -587,7 +588,7 @@ export class ToonilyScraper implements IChapterScraper {
         const downloadImage = async (imageUrl: string, i: number) => {
             const filePath = path.join(
                 dir,
-                `${(i + 1).toString().padStart(3, '0')}.jpg`
+                `${(i + 1).toString().padStart(3, '0')}.webp`
             );
 
             let lastError: any;
@@ -606,7 +607,11 @@ export class ToonilyScraper implements IChapterScraper {
                         throw new Error(`HTTP ${response.status}`);
                     }
 
-                    fs.writeFileSync(filePath, Buffer.from(response.data));
+                    // Convert to webp
+                    const buffer = Buffer.from(response.data);
+                    await sharp(buffer)
+                        .webp({ quality: 80 })
+                        .toFile(filePath);
                     logger.debug(
                         `[Toonily] Downloaded image ${i + 1} (attempt ${attempt})`,
                         { service: 'toonilyScraper' }

@@ -23,6 +23,7 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
+import sharp from 'sharp';
 import {
     IChapterScraper,
     ScrapedChapter,
@@ -456,7 +457,7 @@ export class NHentaiScraper implements IChapterScraper {
         for (let i = 0; i < images.length; i++) {
             const filePath = path.join(
                 dir,
-                `${(i + 1).toString().padStart(2, '0')}.jpg`
+                `${(i + 1).toString().padStart(2, '0')}.webp`
             );
 
             console.log(`[DOWNLOAD] Image ${i + 1}/${images.length}: URL = ${images[i].substring(0, 80)}...`);
@@ -510,7 +511,10 @@ export class NHentaiScraper implements IChapterScraper {
 
                     const format = isJpeg ? 'JPEG' : isWebP ? 'WebP' : 'PNG';
 
-                    fs.writeFileSync(filePath, buffer);
+                    // Convert to webp
+                    await sharp(buffer)
+                        .webp({ quality: 80 })
+                        .toFile(filePath);
 
                     const fileSize = fs.statSync(filePath).size;
 

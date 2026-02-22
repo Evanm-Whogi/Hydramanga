@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import sharp from 'sharp';
 import { db, schema } from '@/db/index';
 import { eq } from 'drizzle-orm';
 import fs from 'fs-extra';
@@ -11,7 +12,18 @@ export const uploadProfilePicture = async (req: Request, res: Response) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     
-    const relativePath = `/media/pfp/${userId}/${req.file.filename}`;
+
+    // Convert uploaded image to webp
+    const originalPath = req.file.path;
+    const userDir = path.dirname(originalPath);
+    const webpFilename = path.basename(req.file.filename, path.extname(req.file.filename)) + '.webp';
+    const webpPath = path.join(userDir, webpFilename);
+    await sharp(originalPath)
+      .webp({ quality: 80 })
+      .toFile(webpPath);
+    // Remove the original uploaded file
+    await fs.remove(originalPath);
+    const relativePath = `/media/pfp/${userId}/${webpFilename}`;
 
     // Delete old profile picture if it exists and is not the default
     const userData = await db
