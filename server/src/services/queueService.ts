@@ -50,7 +50,9 @@ class QueueService {
 
             logger.info(`Creating queue '${queueName}' with connection: ${this.redisConnection.host}:${this.redisConnection.port}`, { service: 'queueService' });
             this.queues[queueName] = new Queue(queueName, queueOptions);
-            this.createWorker(queueName);
+            if (process.env.RUN_WORKERS === 'true') {
+                this.createWorker(queueName);
+            }
         }
         return this.queues[queueName];
     }

@@ -36,6 +36,8 @@ import {
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
+import { createWriteStream } from 'fs';
+import { pipeline } from 'stream/promises';
 
 const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const SITE_BASE = 'https://toonily.com';
@@ -116,7 +118,7 @@ export class ToonilyScraper implements IChapterScraper {
 
     // Browser pool for reusing browser instances
     private static browserPool: any[] = [];
-    private static readonly MAX_BROWSERS = 3;
+    private static readonly MAX_BROWSERS = 5;
 
     private static readonly httpAgent = new http.Agent({
         keepAlive: true,
@@ -583,7 +585,7 @@ export class ToonilyScraper implements IChapterScraper {
 
         const maxRetries = 3;
         const retryDelayMs = 1000;
-        const batchSize = 8;
+        const batchSize = 10; // Number of images to download in parallel per batch
 
         const downloadImage = async (imageUrl: string, i: number) => {
             const filePath = path.join(
@@ -596,7 +598,7 @@ export class ToonilyScraper implements IChapterScraper {
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
                 try {
                     const response = await ToonilyScraper.axiosInstance.get(imageUrl, {
-                        responseType: 'arraybuffer',
+                        responseType: 'stream',
                         headers: {
                             Referer: referer,
                             'User-Agent': appConfig.scraper.toonily.userAgent,
@@ -607,11 +609,26 @@ export class ToonilyScraper implements IChapterScraper {
                         throw new Error(`HTTP ${response.status}`);
                     }
 
-                    // Convert to webp
-                    const buffer = Buffer.from(response.data);
-                    await sharp(buffer)
-                        .webp({ quality: 80 })
-                        .toFile(filePath);
+                    const transformer = sharp({ failOn: 'none' })
+                        .resize({ 
+                            width: 2500,               // Cap width at a reasonable manga standard
+                            height: 16383,             // Allow for long-strip vertical webtoons
+                            fit: 'inside', 
+                            withoutEnlargement: true,
+                            fastShrinkOnLoad: true     // BIG WIN: Shrinks while reading, saves massive CPU
+                        })
+                        .webp({ 
+                            quality: 75,               // Slightly lower quality (80 to 75) saves ~20% size
+                            effort: 2,                 // BIG WIN: 2 is much faster than the default 4 or 6
+                            smartSubsample: true       // Keeps text sharp in manga
+                        });
+
+                    await pipeline(
+                        response.data,
+                        transformer,
+                        createWriteStream(filePath)
+                    );
+
                     logger.debug(
                         `[Toonily] Downloaded image ${i + 1} (attempt ${attempt})`,
                         { service: 'toonilyScraper' }

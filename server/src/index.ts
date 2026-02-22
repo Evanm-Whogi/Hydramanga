@@ -9,14 +9,11 @@ import { auth } from '@/utils/auth';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
-import { initCronJobs, stopCronJobs } from '@/jobs/cron';
-import path from 'path';
 import http from 'http';
 import { Server } from 'socket.io';
 import { setupProgressSocket } from '@/sockets/progressSocket';
 import * as Sentry from "@sentry/node";
 import { initSentry } from "@/sentry";
-import { mangaRecoveryService } from '@/services/mangaRecoveryService';
 dotenv.config();
 
 // Initialize Sentry if enabled
@@ -33,7 +30,6 @@ import '@/services/loggerService';
 import '@/services/queueService';
 import { queueService } from '@/services/queueService';
 import logger from '@/services/loggerService';
-import { initializeScrapers } from '@/scrapers';
 
 // Constants
 const app: Express = express();
@@ -74,22 +70,6 @@ app.use(isMaintenance);
 
 // Routes
 require('@/routes')(app);
-
-// Initialize scrapers (must be done before cron jobs)
-initializeScrapers();
-
-// Recover incomplete manga downloads from previous session
-// This must run after queue service is initialized but before cron jobs
-(async () => {
-  try {
-    await mangaRecoveryService.recoverIncompleteDownloads();
-  } catch (error) {
-    logger.error(`Failed to run recovery service: ${error}`, { service: 'server' });
-  }
-})();
-
-// Cron jobs (trending rescans, etc.)
-initCronJobs();
 
 // Error Handler
 app.use((err: Error, req: any, res: any, next: any) => {
@@ -140,11 +120,7 @@ const gracefulShutdown = async () => {
   });
 
   try {
-    // Stop cron jobs
-    stopCronJobs();
-    logger.info('Cron jobs stopped');
-
-    // Close queue workers and connections
+    // Close queue connections (no workers on server)
     await queueService.closeAll();
     logger.info('Queue service closed');
 

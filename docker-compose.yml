@@ -73,6 +73,7 @@ services:
     environment:
       NODE_ENV: production
       DOCKER: 'true'
+      RUN_WORKERS: 'false'
       DATABASE_URL: postgres://mangaScrolls:rhL51qGFDyJZyild6bGlj7h5KDbMd8G7@db:5432/mangaScrolls
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -92,6 +93,40 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.worker
+    env_file:
+      - ./server/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      RUN_WORKERS: 'true'
+      DATABASE_URL: postgres://mangaScrolls:rhL51qGFDyJZyild6bGlj7h5KDbMd8G7@db:5432/mangaScrolls
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CHAPTER_STORAGE_ROOT: /data/manga
+      MEDIA_BASE_URL: https://manga.chit.sh/media/manga
+    volumes:
+      - ./data/manga:/data/manga
+      - ./data/profile-pictures:/data/profile-pictures
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '6'
+          memory: 8G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
 
   web:
     build:

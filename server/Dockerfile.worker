@@ -1,0 +1,30 @@
+# Same build stage as main Dockerfile
+FROM node:20-bookworm AS base
+WORKDIR /app
+
+COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./
+RUN npm ci
+
+COPY . .
+RUN npm run build && npm run db:generate
+
+# Worker runtime: Playwright deps only, no cloudflared, no migrations
+FROM node:20-bookworm AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN npx -y playwright@latest install-deps
+
+COPY --from=base /app/package.json ./package.json
+COPY --from=base /app/tsconfig.json ./tsconfig.json
+COPY --from=base /app/drizzle.config.ts ./drizzle.config.ts
+COPY --from=base /app/node_modules ./node_modules
+COPY --from=base /app/dist ./dist
+COPY --from=base /app/src/db/schema.ts ./src/db/schema.ts
+COPY --from=base /app/src/db/migrations ./src/db/migrations
+COPY --from=base /app/src/templates ./dist/templates
+
+# Install Chromium browser (install-deps above only installs system libs; the binary is required for scrapers)
+RUN npx playwright install chromium
+
+CMD ["node", "-r", "tsconfig-paths/register", "dist/worker.js"]

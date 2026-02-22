@@ -1,6 +1,6 @@
 import { formatTimeAgo } from "@/lib/utils";
 import { useState, useMemo, useEffect } from "react";
-import { ClockIcon, CheckIcon, BookmarkIcon } from "lucide-react";
+import { ClockIcon, CheckIcon, BookmarkIcon, SearchIcon, ArrowUpDown } from "lucide-react";
 import { getSeriesChapterProgress, markChapterAsRead, markChapterAsUnread } from "@/services/mangaService";
 import { getSeriesBookmarks, removeBookmark } from "@/services/bookmarkService";
 import BookmarkModal from "@/components/BookmarkModal";
@@ -28,13 +28,29 @@ interface BookmarkData {
 
 export default function Chapters({ manga, progress }: { manga: any; progress?: any }) {
     const [showAll, setShowAll] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
     const [chapterProgress, setChapterProgress] = useState<ChapterProgress>({});
     const [bookmarks, setBookmarks] = useState<BookmarkData>({});
     const [bookmarkModal, setBookmarkModal] = useState({ isOpen: false, chapterId: 0 });
     const [isOperating, setIsOperating] = useState(false);
     
-    // Use chapters as-is (already sorted by parent component)
-    const chapters = manga.chapters || [];
+    const rawChapters = manga.chapters || [];
+    
+    // Sort by chapter number, then filter by search, then paginate
+    const chapters = useMemo(() => {
+        const sorted = [...rawChapters].sort((a: any, b: any) => {
+            const order = (a.chapterNumber ?? "").toString().localeCompare((b.chapterNumber ?? "").toString(), undefined, { numeric: true, sensitivity: "base" });
+            return sortOrder === "asc" ? order : -order;
+        });
+        if (!searchQuery.trim()) return sorted;
+        const q = searchQuery.trim().toLowerCase();
+        return sorted.filter((ch: any) => {
+            const title = (ch.title ?? "").toLowerCase();
+            const num = (ch.chapterNumber ?? "").toString().toLowerCase();
+            return title.includes(q) || num.includes(q);
+        });
+    }, [rawChapters, sortOrder, searchQuery]);
     
     const visibleChapters = useMemo(() => {
         return showAll ? chapters : chapters.slice(0, CHAPTERS_PER_PAGE);
@@ -200,18 +216,42 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
                         <p className="text-lg text-muted mb-2">Scanning for chapters...</p>
                         <p className="text-sm text-muted/70">Please wait</p>
                     </div>
-                ) : progress?.status === 'downloading' && chapters.length === 0 ? (
+                ) : progress?.status === 'downloading' && rawChapters.length === 0 ? (
                     <div className="p-8 text-center bg-foreground rounded-lg">
                         <p className="text-lg text-muted mb-2">Downloading chapters...</p>
                         <p className="text-sm text-muted/70">Please wait</p>
                     </div>
-                ) : chapters.length === 0 ? (
+                ) : rawChapters.length === 0 ? (
                     <div className="p-8 text-center bg-foreground rounded-lg">
                         <p className="text-lg text-muted mb-2">Chapters not found</p>
                         <p className="text-sm text-muted/70">No Scrapers Available</p>
                     </div>
                 ) : (
-                    visibleChapters.map((chapter: any) => {
+                    <>
+                    <div className="flex items-center gap-2 mb-4">
+                        <div className="relative flex-1 max-w-sm">
+                            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted" />
+                            <input
+                                type="search"
+                                placeholder="Search chapters..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-9 pr-3 py-2 bg-foreground border border-transparent rounded-md text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent"
+                            />
+                        </div>
+                        <button
+                            onClick={() => setSortOrder((o) => (o === "asc" ? "desc" : "asc"))}
+                            className="flex items-center gap-2 px-4 py-2 bg-foreground hover:bg-foreground/50 hover:cursor-pointer rounded-md shrink-0"
+                            title={sortOrder === "asc" ? "Newest first" : "Oldest first"}
+                        >
+                            <ArrowUpDown className="size-5" /> Order
+                        </button>
+                    </div>
+                    {visibleChapters.length === 0 ? (
+                        <div className="p-8 text-center bg-foreground rounded-lg">
+                            <p className="text-lg text-muted">No chapters match your search</p>
+                        </div>
+                    ) : visibleChapters.map((chapter: any) => {
                     const progress = chapterProgress[chapter.id];
                     const progressPercentage = progress?.percentageCompleted || 0;
                     const lastPageNumber = progress?.lastPageNumber || 0;
@@ -270,7 +310,8 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
                         </div>
                     </Link>
                     );
-                })
+                })}
+                    </>
                 )}
             </div>
             

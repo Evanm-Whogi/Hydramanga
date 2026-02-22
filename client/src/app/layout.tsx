@@ -56,9 +56,6 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 
   return (
     <html lang="en" suppressHydrationWarning={true} className={themeMode} style={themeAccent ? { '--color-accent': themeAccent } as React.CSSProperties : undefined}>
-      <head>
-
-      </head>
       <body className="bg-background text-primary min-h-screen flex flex-col" suppressHydrationWarning={true}>
         <PostHogProvider>
           <ErrorTracker>

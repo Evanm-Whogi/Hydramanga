@@ -539,7 +539,7 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
         const pageCount = chapter.pageCount || 0;
         const images: string[] = [];
         const formatPageNumber = (page: number, scraperId?: string | null) => {
-            const padLength = scraperId === 'mangataro' ? 3 : 2;
+            const padLength = scraperId === 'mangataro' || scraperId === 'toonily' ? 3 : 2;
             return page.toString().padStart(padLength, '0');
         };
         

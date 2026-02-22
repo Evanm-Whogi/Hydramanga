@@ -34,6 +34,8 @@ import {
 } from '../interfaces/IChapterScraper';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
+import { createWriteStream } from 'fs';
+import { pipeline } from 'stream/promises';
 
 const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 
@@ -52,6 +54,9 @@ const safeName = (val: string): string => {
  * nHentai Scraper
  */
 export class NHentaiScraper implements IChapterScraper {
+    private static browserPool: any[] = [];
+    private static readonly MAX_BROWSERS = 2;
+
     private readonly metadata: ScraperMetadata = {
         id: 'nhentai',
         name: 'nHentai',
@@ -59,6 +64,37 @@ export class NHentaiScraper implements IChapterScraper {
         priority: appConfig.scraper.nHentai.priority,
         enabled: appConfig.scraper.nHentai.enabled,
     };
+
+    private static async getBrowser() {
+        if (NHentaiScraper.browserPool.length > 0) {
+            return NHentaiScraper.browserPool.pop();
+        }
+        logger.debug('[nHentai] Launching new browser for pool', { service: 'nHentaiScraper' });
+        return chromium.launch({
+            headless: true,
+            args: ['--disable-dev-shm-usage', '--no-sandbox'],
+        });
+    }
+
+    private static async releaseBrowser(browser: any) {
+        if (!browser) return;
+        try {
+            if (!browser.isConnected()) {
+                await browser.close().catch(() => {});
+                return;
+            }
+            if (NHentaiScraper.browserPool.length < NHentaiScraper.MAX_BROWSERS) {
+                NHentaiScraper.browserPool.push(browser);
+                logger.debug(`[nHentai] Browser returned to pool (${NHentaiScraper.browserPool.length}/${NHentaiScraper.MAX_BROWSERS})`, { service: 'nHentaiScraper' });
+            } else {
+                await browser.close().catch(() => {});
+                logger.debug('[nHentai] Browser closed (pool full)', { service: 'nHentaiScraper' });
+            }
+        } catch (error) {
+            logger.warn(`[nHentai] Error releasing browser: ${error}`, { service: 'nHentaiScraper' });
+            await browser.close().catch(() => {});
+        }
+    }
 
     getMetadata(): ScraperMetadata {
         return { ...this.metadata };
@@ -86,7 +122,7 @@ export class NHentaiScraper implements IChapterScraper {
             { service: 'nHentaiScraper' }
         );
 
-        const browser = await chromium.launch({ headless: true });
+        const browser = await NHentaiScraper.getBrowser();
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         });
@@ -106,7 +142,7 @@ export class NHentaiScraper implements IChapterScraper {
                     timeout: 30000,
                 });
 
-                await page.waitForTimeout(2000);
+                await page.waitForSelector('.gallery', { timeout: 8000 }).catch(() => {});
 
                 // Extract all gallery results and score them
                 const results = await page.evaluate(() => {
@@ -138,10 +174,10 @@ export class NHentaiScraper implements IChapterScraper {
                 }
 
                 // Score results based on title match
-                const scored = results.map(result => {
+                const scored = results.map((result: { href: string; title: string; galleryId: string }) => {
                     const score = this.scoreMatch(result.title, variant);
                     return { ...result, score };
-                }).sort((a, b) => b.score - a.score);
+                }).sort((a: { score: number }, b: { score: number }) => b.score - a.score);
 
                 const bestMatch = scored[0];
                 if (bestMatch.score > 0) {
@@ -178,7 +214,7 @@ export class NHentaiScraper implements IChapterScraper {
         } finally {
             await page.close().catch(() => {});
             await context.close().catch(() => {});
-            await browser.close().catch(() => {});
+            await NHentaiScraper.releaseBrowser(browser);
         }
     }
 
@@ -238,7 +274,7 @@ export class NHentaiScraper implements IChapterScraper {
         secondaryTitles?: string[],
         coverUrl?: string
     ): AsyncGenerator<ScrapedChapter, void, undefined> {
-        const browser = await chromium.launch({ headless: true });
+        const browser = await NHentaiScraper.getBrowser();
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         });
@@ -354,7 +390,7 @@ export class NHentaiScraper implements IChapterScraper {
         } finally {
             await page.close().catch(() => {});
             await context.close().catch(() => {});
-            await browser.close().catch(() => {});
+            await NHentaiScraper.releaseBrowser(browser);
         }
     }
 
@@ -365,7 +401,7 @@ export class NHentaiScraper implements IChapterScraper {
         mangaName: string,
         chapterTitle: string
     ): Promise<DownloadedChapter> {
-        const browser = await chromium.launch({ headless: true });
+        const browser = await NHentaiScraper.getBrowser();
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         });
@@ -423,12 +459,12 @@ export class NHentaiScraper implements IChapterScraper {
         } finally {
             await page.close().catch(() => {});
             await context.close().catch(() => {});
-            await browser.close().catch(() => {});
+            await NHentaiScraper.releaseBrowser(browser);
         }
     }
 
     /**
-     * Download images to local filesystem with retry logic
+     * Download images to local filesystem with retry logic (batched parallel, batch size 6)
      */
     private async downloadImages(
         images: string[],
@@ -443,7 +479,6 @@ export class NHentaiScraper implements IChapterScraper {
             fs.mkdirSync(dir, { recursive: true });
         }
 
-        console.log(`[DOWNLOAD] Starting download for chapter ${chapterNumber}: ${images.length} images`);
         logger.info(
             `[nHentai] Starting download for chapter ${chapterNumber}: ${images.length} images to ${dir}`,
             { service: 'nHentaiScraper' }
@@ -453,98 +488,87 @@ export class NHentaiScraper implements IChapterScraper {
         const BASE_TIMEOUT = 20000;
         const RETRY_DELAYS = [500, 1500, 3000];
         const MIN_IMAGE_SIZE = 100;
+        const batchSize = 6;
+        const headers = {
+            Referer: referer,
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+        };
 
-        for (let i = 0; i < images.length; i++) {
-            const filePath = path.join(
-                dir,
-                `${(i + 1).toString().padStart(2, '0')}.webp`
-            );
-
-            console.log(`[DOWNLOAD] Image ${i + 1}/${images.length}: URL = ${images[i].substring(0, 80)}...`);
+        const downloadOne = async (imageUrl: string, i: number) => {
+            const filePath = path.join(dir, `${(i + 1).toString().padStart(2, '0')}.webp`);
             let lastError: any;
-            let success = false;
-
             for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
                 try {
-                    console.log(`[DOWNLOAD] Image ${i + 1}: Attempt ${attempt}/${MAX_RETRIES}`);
-                    logger.debug(
-                        `[nHentai] Downloading image ${i + 1}/${images.length} (attempt ${attempt}/${MAX_RETRIES})`,
-                        { service: 'nHentaiScraper' }
-                    );
-
-                    const startTime = Date.now();
-                    const response = await axios.get(images[i], {
-                        responseType: 'arraybuffer',
+                    const response = await axios.get(imageUrl, {
+                        responseType: 'stream',
                         timeout: BASE_TIMEOUT,
-                        headers: {
-                            Referer: referer,
-                            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                            Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-                            'Accept-Language': 'en-US,en;q=0.9',
-                        },
+                        headers,
                     });
-                    const fetchTime = Date.now() - startTime;
-
                     const dataLength = response.data.length;
-
                     const contentType = response.headers['content-type'] || '';
-
                     if (!contentType.includes('image')) {
                         throw new Error(`Received non-image content: ${contentType}`);
                     }
-
                     if (dataLength < MIN_IMAGE_SIZE) {
                         throw new Error(`Downloaded image too small: ${dataLength}/${MIN_IMAGE_SIZE} bytes`);
                     }
-
-                    // Check for valid image format (JPEG, WebP, or PNG)
                     const buffer = Buffer.from(response.data);
                     const isJpeg = buffer.slice(0, 3).equals(Buffer.from([0xFF, 0xD8, 0xFF]));
                     const isWebP = buffer.slice(0, 4).equals(Buffer.from([0x52, 0x49, 0x46, 0x46])) &&
-                                   buffer.slice(8, 12).equals(Buffer.from([0x57, 0x45, 0x42, 0x50]));
+                        buffer.slice(8, 12).equals(Buffer.from([0x57, 0x45, 0x42, 0x50]));
                     const isPng = buffer.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]));
-
                     if (!isJpeg && !isWebP && !isPng) {
                         const hex = buffer.slice(0, 10).toString('hex');
                         throw new Error(`Invalid image format. Got: ${hex}`);
                     }
-
-                    const format = isJpeg ? 'JPEG' : isWebP ? 'WebP' : 'PNG';
-
-                    // Convert to webp
-                    await sharp(buffer)
-                        .webp({ quality: 80 })
-                        .toFile(filePath);
-
-                    const fileSize = fs.statSync(filePath).size;
-
-                    success = true;
-                    break;
+                    
+                    const transformer = sharp({ failOn: 'none' })
+                        .resize({ 
+                            width: 2500,               // Cap width at a reasonable manga standard
+                            height: 16383,             // Allow for long-strip vertical webtoons
+                            fit: 'inside', 
+                            withoutEnlargement: true,
+                            fastShrinkOnLoad: true     // BIG WIN: Shrinks while reading, saves massive CPU
+                        })
+                        .webp({ 
+                            quality: 75,               // Slightly lower quality (80 to 75) saves ~20% size
+                            effort: 2,                 // BIG WIN: 2 is much faster than the default 4 or 6
+                            smartSubsample: true       // Keeps text sharp in manga
+                        });
+    
+                        await pipeline(
+                            response.data,
+                            transformer,
+                            createWriteStream(filePath)
+                        );
+                    return;
                 } catch (err: any) {
                     lastError = err;
                     const errorCode = err.response?.status || err.code || 'UNKNOWN';
-                    console.log(`[DOWNLOAD] Image ${i + 1}: Failed - ${errorCode} (${err.message})`);
-
                     logger.warn(
                         `[nHentai] Attempt ${attempt}/${MAX_RETRIES} failed for image ${i + 1}: HTTP ${errorCode} - ${err.message}`,
                         { service: 'nHentaiScraper' }
                     );
-
                     if (attempt < MAX_RETRIES) {
-                        const delayMs = RETRY_DELAYS[attempt - 1];
-                        console.log(`[DOWNLOAD] Image ${i + 1}: Retrying after ${delayMs}ms...`);
-                        await new Promise(resolve => setTimeout(resolve, delayMs));
+                        await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[attempt - 1]));
                     }
                 }
             }
+            logger.error(
+                `[nHentai] Failed to download image ${i + 1} after ${MAX_RETRIES} attempts: ${lastError?.message}`,
+                { service: 'nHentaiScraper' }
+            );
+            throw lastError || new Error(`Failed to download image ${i + 1}`);
+        };
 
-            if (!success) {
-                console.log(`[DOWNLOAD] Image ${i + 1}: FAILED after ${MAX_RETRIES} attempts`);
-                logger.error(
-                    `[nHentai] Failed to download image ${i + 1} after ${MAX_RETRIES} attempts: ${lastError?.message}`,
-                    { service: 'nHentaiScraper' }
-                );
-                throw lastError || new Error(`Failed to download image ${i + 1}`);
+        for (let batchStart = 0; batchStart < images.length; batchStart += batchSize) {
+            const batchEnd = Math.min(batchStart + batchSize, images.length);
+            const batch = images.slice(batchStart, batchEnd);
+            await Promise.all(batch.map((imageUrl, j) => downloadOne(imageUrl, batchStart + j)));
+            if (batchEnd < images.length) {
+                await new Promise(resolve => setTimeout(resolve, 150));
             }
         }
 
