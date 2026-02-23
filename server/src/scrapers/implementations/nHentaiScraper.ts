@@ -34,8 +34,6 @@ import {
 } from '../interfaces/IChapterScraper';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
-import { createWriteStream } from 'fs';
-import { pipeline } from 'stream/promises';
 
 const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 
@@ -502,11 +500,12 @@ export class NHentaiScraper implements IChapterScraper {
             for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
                 try {
                     const response = await axios.get(imageUrl, {
-                        responseType: 'stream',
+                        responseType: 'arraybuffer',
                         timeout: BASE_TIMEOUT,
                         headers,
                     });
-                    const dataLength = response.data.length;
+                    const buffer = Buffer.from(response.data as ArrayBuffer);
+                    const dataLength = buffer.length;
                     const contentType = response.headers['content-type'] || '';
                     if (!contentType.includes('image')) {
                         throw new Error(`Received non-image content: ${contentType}`);
@@ -514,7 +513,6 @@ export class NHentaiScraper implements IChapterScraper {
                     if (dataLength < MIN_IMAGE_SIZE) {
                         throw new Error(`Downloaded image too small: ${dataLength}/${MIN_IMAGE_SIZE} bytes`);
                     }
-                    const buffer = Buffer.from(response.data);
                     const isJpeg = buffer.slice(0, 3).equals(Buffer.from([0xFF, 0xD8, 0xFF]));
                     const isWebP = buffer.slice(0, 4).equals(Buffer.from([0x52, 0x49, 0x46, 0x46])) &&
                         buffer.slice(8, 12).equals(Buffer.from([0x57, 0x45, 0x42, 0x50]));
@@ -523,26 +521,21 @@ export class NHentaiScraper implements IChapterScraper {
                         const hex = buffer.slice(0, 10).toString('hex');
                         throw new Error(`Invalid image format. Got: ${hex}`);
                     }
-                    
-                    const transformer = sharp({ failOn: 'none' })
-                        .resize({ 
-                            width: 2500,               // Cap width at a reasonable manga standard
-                            height: 16383,             // Allow for long-strip vertical webtoons
-                            fit: 'inside', 
+
+                    await sharp(buffer, { failOn: 'none' })
+                        .resize({
+                            width: 2500,
+                            height: 16383,
+                            fit: 'inside',
                             withoutEnlargement: true,
-                            fastShrinkOnLoad: true     // BIG WIN: Shrinks while reading, saves massive CPU
+                            fastShrinkOnLoad: true,
                         })
-                        .webp({ 
-                            quality: 75,               // Slightly lower quality (80 to 75) saves ~20% size
-                            effort: 2,                 // BIG WIN: 2 is much faster than the default 4 or 6
-                            smartSubsample: true       // Keeps text sharp in manga
-                        });
-    
-                        await pipeline(
-                            response.data,
-                            transformer,
-                            createWriteStream(filePath)
-                        );
+                        .webp({
+                            quality: 75,
+                            effort: 2,
+                            smartSubsample: true,
+                        })
+                        .toFile(filePath);
                     return;
                 } catch (err: any) {
                     lastError = err;

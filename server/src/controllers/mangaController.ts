@@ -165,81 +165,117 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                 staleIfError: cacheTtlSeconds,
             },
             async () => {
-                // 3. Main Execution (Aggregating views and flags)
-                const [totalCountResult] = await db.select({ count: count() }).from(schema.series).where(and(...conditions));
-
-                const data = await db
+                // Phase 1: Lightweight ID + sort key query (no JOINs, no correlated subqueries)
+                const idQuery = db
                     .select({
-                        ...columns,
-                        views: schema.mangaViewStats.totalViews,
-                        uniqueViews: schema.mangaViewStats.uniqueViews,
-                        // Request 1: Is New (chapter in last X days)
-                        isNew: sql<boolean>`EXISTS (
-                            SELECT 1 FROM ${schema.chapters} c 
-                            WHERE c.series_id = ${schema.series.id} 
-                            AND c.created_at >= NOW() - INTERVAL ${sql.raw(`'${NEW_INTERVAL}'`)}
-                        )`.mapWith(Boolean),
-                        // Request 2: Is In User List
-                        isInUserList: userId ? sql<boolean>`EXISTS (
-                            SELECT 1 FROM ${schema.userSeriesList} usl 
-                            WHERE usl.series_id = ${schema.series.id} 
-                            AND usl.user_id = ${userId}
-                        )`.mapWith(Boolean) : sql<boolean>`false`.mapWith(Boolean),
-                        // Request 3: Follower Count
-                        followerCount: sql<number>`(
-                            SELECT COUNT(*) FROM ${schema.userSeriesList} usl 
-                            WHERE usl.series_id = ${schema.series.id}
-                        )`,
+                        id: schema.series.id,
+                        sortVal: effectiveSort,
                     })
                     .from(schema.series)
-                    .leftJoin(schema.mangaViewStats, eq(schema.series.id, schema.mangaViewStats.seriesId))
                     .where(and(...conditions))
                     .orderBy(
-                        isAsc ? asc(effectiveSort) : desc(effectiveSort), 
+                        isAsc ? asc(effectiveSort) : desc(effectiveSort),
                         isAsc ? asc(schema.series.id) : desc(schema.series.id)
                     )
                     .limit(pageSize + 1);
 
-                const hasNextPage = data.length > pageSize;
-                const items = hasNextPage ? data.slice(0, -1) : data;
-                const seriesIds = items.map(m => m.id);
+                // Run count only on first page (no cursor); run in parallel with id query
+                const countPromise = cursor
+                    ? Promise.resolve(null as { count: number } | null)
+                    : db.select({ count: count() }).from(schema.series).where(and(...conditions)).then((r) => r[0] ?? null);
 
-                // 4. Optimized Latest Chapter Fetch (Batch only for the visible items)
-                let itemsWithChapters: any[] = items; 
+                const [idRows, totalCountResult] = await Promise.all([idQuery, countPromise]);
 
-                if (seriesIds.length > 0) {
-                    const latestChapters = await db.selectDistinctOn([schema.chapters.seriesId])
-                        .from(schema.chapters)
-                        .where(inArray(schema.chapters.seriesId, seriesIds))
-                        .orderBy(
-                            schema.chapters.seriesId,
-                            desc(sql`CAST(split_part(${schema.chapters.chapterNumber}, '.', 1) AS INTEGER)`),
-                            desc(sql`CASE WHEN ${schema.chapters.chapterNumber} LIKE '%.%' THEN CAST(split_part(${schema.chapters.chapterNumber}, '.', 2) AS INTEGER) ELSE 0 END`)
-                        );
-
-                    const chapterMap = new Map(latestChapters.map(c => [c.seriesId, c]));
-                    
-                    // By mapping directly here, TypeScript infers the combined type correctly
-                    itemsWithChapters = items.map(item => ({
-                        ...item,
-                        latestChapter: chapterMap.get(item.id) || null
-                    }));
-                } else {
-                    // If no series, just map the empty chapters
-                    itemsWithChapters = items.map(item => ({ ...item, latestChapter: null }));
+                const hasNextPage = idRows.length > pageSize;
+                const idRowsPage = hasNextPage ? idRows.slice(0, -1) : idRows;
+                const seriesIds = idRowsPage.map((r) => r.id);
+                if (seriesIds.length === 0) {
+                    return {
+                        meta: {
+                            total: totalCountResult ? Number(totalCountResult.count) : undefined,
+                            hasNextPage: false,
+                            sort,
+                            order: isAsc ? 'asc' : 'desc'
+                        },
+                        items: [],
+                        nextCursor: null as string | null
+                    };
                 }
 
-                // 5. Build Cursor
-                let nextCursor = null;
-                if (hasNextPage) {
-                    const last = items[items.length - 1];
-                    const val = last[sortKey as keyof typeof last] ?? 0;
+                // Phase 2: Full data for these IDs only (single join, no per-row subqueries)
+                const fullRows = await db
+                    .select({
+                        ...columns,
+                        views: schema.mangaViewStats.totalViews,
+                        uniqueViews: schema.mangaViewStats.uniqueViews,
+                    })
+                    .from(schema.series)
+                    .leftJoin(schema.mangaViewStats, eq(schema.series.id, schema.mangaViewStats.seriesId))
+                    .where(inArray(schema.series.id, seriesIds));
+
+                // Preserve sort order (IN clause doesn't guarantee order)
+                const orderMap = new Map(seriesIds.map((id, i) => [id, i]));
+                fullRows.sort((a, b) => (orderMap.get(a.id) ?? 0) - (orderMap.get(b.id) ?? 0));
+
+                // Batch-fetch isNew, isInUserList, followerCount in parallel
+                const [newSeriesIds, userListSeriesIds, followerCounts] = await Promise.all([
+                    db.selectDistinct({ seriesId: schema.chapters.seriesId })
+                        .from(schema.chapters)
+                        .where(
+                            and(
+                                inArray(schema.chapters.seriesId, seriesIds),
+                                sql`${schema.chapters.createdAt} >= NOW() - INTERVAL ${sql.raw(`'${NEW_INTERVAL}'`)}`
+                            )
+                        )
+                        .then((rows) => new Set(rows.map((r) => r.seriesId))),
+                    userId
+                        ? db.select({ seriesId: schema.userSeriesList.seriesId })
+                            .from(schema.userSeriesList)
+                            .where(and(eq(schema.userSeriesList.userId, userId), inArray(schema.userSeriesList.seriesId, seriesIds)))
+                            .then((rows) => new Set(rows.map((r) => r.seriesId)))
+                        : Promise.resolve(new Set<number>()),
+                    db.select({
+                            seriesId: schema.userSeriesList.seriesId,
+                            cnt: count(),
+                        })
+                        .from(schema.userSeriesList)
+                        .where(inArray(schema.userSeriesList.seriesId, seriesIds))
+                        .groupBy(schema.userSeriesList.seriesId)
+                        .then((rows) => new Map(rows.map((r) => [r.seriesId, Number(r.cnt)]))),
+                ]);
+
+                const items = fullRows.map((row) => ({
+                    ...row,
+                    isNew: newSeriesIds.has(row.id),
+                    isInUserList: userListSeriesIds.has(row.id),
+                    followerCount: followerCounts.get(row.id) ?? 0,
+                }));
+
+                // Latest chapters for this page only
+                const latestChapters = await db.selectDistinctOn([schema.chapters.seriesId])
+                    .from(schema.chapters)
+                    .where(inArray(schema.chapters.seriesId, seriesIds))
+                    .orderBy(
+                        schema.chapters.seriesId,
+                        desc(sql`CAST(split_part(${schema.chapters.chapterNumber}, '.', 1) AS INTEGER)`),
+                        desc(sql`CASE WHEN ${schema.chapters.chapterNumber} LIKE '%.%' THEN CAST(split_part(${schema.chapters.chapterNumber}, '.', 2) AS INTEGER) ELSE 0 END`)
+                    );
+                const chapterMap = new Map(latestChapters.map((c) => [c.seriesId, c]));
+                const itemsWithChapters = items.map((item) => ({
+                    ...item,
+                    latestChapter: chapterMap.get(item.id) ?? null,
+                }));
+
+                let nextCursor: string | null = null;
+                if (hasNextPage && idRowsPage.length > 0) {
+                    const last = idRowsPage[idRowsPage.length - 1];
+                    const val = last.sortVal ?? 0;
                     nextCursor = `${val}|${last.id}`;
                 }
 
                 return {
                     meta: {
-                        total: Number(totalCountResult?.count || 0),
+                        total: totalCountResult != null ? Number(totalCountResult.count) : undefined,
                         hasNextPage,
                         sort,
                         order: isAsc ? 'asc' : 'desc'
