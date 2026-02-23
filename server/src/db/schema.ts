@@ -112,6 +112,9 @@ export const series = pgTable('series', {
   // Composite Filter Logic
   filterLogicIdx: index('idx_series_filter_logic').on(t.type, t.status, t.rating.desc()),
   statusRatingIdx: index('idx_series_status_rating').on(t.status, t.rating.desc()),
+
+  // Discovery default sort (weighted score + id for cursor pagination)
+  weightedScoreIdIdx: index('idx_series_weighted_score_id').on(t.weightedScore.desc(), t.id),
 }));
 
 // User Custom Lists Table

@@ -89,9 +89,10 @@ const safeName = (val: string): string => {
 /**
  * Extract chapter ID from MangaTaro chapter URL.
  * e.g. https://mangataro.org/read/.../ch456-636003 -> 636003
+ * e.g. https://mangataro.org/read/.../ch23-2-611614 -> 611614 (Chapter 23.2)
  */
 function extractChapterIdFromUrl(url: string): number | null {
-    const match = url.match(/ch\d+-(\d+)(?:\?|$)/);
+    const match = url.match(/ch[\d-]+-(\d+)(?:\?|$)/);
     return match ? parseInt(match[1], 10) : null;
 }
 
