@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { db, schema } from '@/db/index';
-import { eq, desc, sql, getTableColumns, gte, gt } from 'drizzle-orm';
+import { eq, desc, sql, getTableColumns, gte, gt, inArray, and } from 'drizzle-orm';
 import { chapters, series } from '@/db/schema';
 import dotenv from 'dotenv';
 import { userProgressService } from '@/services/userProgressService';
@@ -233,6 +233,51 @@ export const getMostFollowed = async (req: Request, res: Response) => {
         .orderBy(desc(followerCounts.count));
 
     res.json(data);
+};
+
+export const getRecentChaptersFromUserList = async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id || (req as any).session?.userId;
+    if (!userId) return res.json([]);
+
+    const limit = Math.min(parseInt(req.query.limit as string) || 30, 50);
+
+    const userSeriesIds = await db
+        .selectDistinct({ seriesId: schema.userSeriesList.seriesId })
+        .from(schema.userSeriesList)
+        .where(eq(schema.userSeriesList.userId, userId));
+
+    const seriesIds = userSeriesIds.map((r) => r.seriesId);
+    if (seriesIds.length === 0) return res.json([]);
+
+    // Only chapters released within the last 3 days, from favorited manga
+    const results = await db
+        .select({
+            chapter: getTableColumns(chapters),
+            series: {
+                ...getTableColumns(series),
+                views: schema.mangaViewStats.totalViews,
+                isNew: sql<boolean>`exists (
+                    select 1 from ${schema.chapters} c
+                    where c.series_id = ${series.id}
+                    and c.created_at >= now() - interval ${sql.raw(`'${newDaysInterval}'`)}
+                )`.mapWith(Boolean),
+            },
+        })
+        .from(chapters)
+        .innerJoin(series, eq(series.id, chapters.seriesId))
+        .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
+        .where(and(
+            inArray(chapters.seriesId, seriesIds),
+            gte(chapters.createdAt, sql`now() - interval ${sql.raw(`'${newDaysInterval}'`)}`)
+        ))
+        .orderBy(desc(chapters.createdAt))
+        .limit(limit);
+
+    const formatted = results.map((row) => ({
+        chapter: row.chapter,
+        series: row.series,
+    }));
+    res.json(formatted);
 };
 
 // RECENT COMMENTS

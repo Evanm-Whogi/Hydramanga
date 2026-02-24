@@ -31,3 +31,7 @@ export async function getRecentComments(limit: number = 20): Promise<any> {
 export async function getTopCommenters(limit: number = 20): Promise<any> {
     return await apiGet(`/home/topCommenters?limit=${limit}`);
 }
+
+export async function getRecentChaptersFromUserList(limit: number = 20): Promise<any> {
+    return await apiGet(`/home/recentChaptersFromList?limit=${limit}`);
+}

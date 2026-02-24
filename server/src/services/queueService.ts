@@ -18,6 +18,7 @@ import logger from '@/services/loggerService';
 import { queueJobFunction } from '@/types/types'; // Import types
 import { jobHandlerRegistry } from '@/jobs/handlers/JobHandlerRegistry';
 import { appConfig } from '@/config/appConfig';
+import { discordService } from '@/services/discordService';
 
 class QueueService {
     private queues: { [key: string]: Queue } = {};
@@ -145,9 +146,28 @@ class QueueService {
                 }
             );
 
+            const maxAttempts = job?.opts?.attempts || 3;
+            const allRetriesExhausted = job?.attemptsMade >= maxAttempts;
+
+            // Chapter scan: notify Discord only when all retries are exhausted
+            if (queueName === 'mangaChapterImportQueue' && allRetriesExhausted) {
+                try {
+                    const jobData = job?.data;
+                    if (jobData?.seriesId && jobData?.mangaTitle) {
+                        await discordService.notifyScraperFailed(
+                            jobData.mangaTitle,
+                            jobData.seriesId,
+                            [],
+                            jobData.coverUrl
+                        );
+                    }
+                } catch (discordError) {
+                    logger.error(`Failed to send Discord scraper failure notification: ${discordError}`, { service: 'queueService' });
+                }
+            }
+
             // Only mark as failed if all retries are exhausted (for chapter downloads)
-            if (queueName === 'mangaChapterDownloadQueue' && 
-                job?.attemptsMade >= (job?.opts?.attempts || 3)) {
+            if (queueName === 'mangaChapterDownloadQueue' && allRetriesExhausted) {
                 try {
                     const { mangaProgressService } = await import('@/services/mangaProgressService');
                     const jobData = job?.data;
