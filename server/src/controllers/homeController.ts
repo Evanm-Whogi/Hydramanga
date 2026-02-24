@@ -239,7 +239,7 @@ export const getRecentChaptersFromUserList = async (req: Request, res: Response)
     const userId = (req as any).user?.id || (req as any).session?.userId;
     if (!userId) return res.json([]);
 
-    const limit = Math.min(parseInt(req.query.limit as string) || 30, 50);
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 30);
 
     const userSeriesIds = await db
         .selectDistinct({ seriesId: schema.userSeriesList.seriesId })
@@ -249,7 +249,27 @@ export const getRecentChaptersFromUserList = async (req: Request, res: Response)
     const seriesIds = userSeriesIds.map((r) => r.seriesId);
     if (seriesIds.length === 0) return res.json([]);
 
-    // Only chapters released within the last 3 days, from favorited manga
+    // Latest chapter per manga, only if that chapter was released within the last 3 days
+    const latestResult = await db.execute(sql`
+        WITH recent AS (
+            SELECT series_id, id, created_at,
+                   row_number() OVER (PARTITION BY series_id ORDER BY created_at DESC, id DESC) AS rn
+            FROM chapters
+            WHERE series_id = ANY(ARRAY[${sql.join(seriesIds.map((id) => sql`${id}`), sql`, `)}]::int[])
+              AND created_at >= now() - interval ${sql.raw(`'${newDaysInterval}'`)}
+        )
+        SELECT id AS chapter_id, series_id, created_at
+        FROM recent
+        WHERE rn = 1
+        ORDER BY created_at DESC
+        LIMIT ${limit}
+    `);
+
+    const rows = (latestResult.rows || latestResult) as Array<{ chapter_id: number }>;
+    if (rows.length === 0) return res.json([]);
+
+    const chapterIds = rows.map((r) => r.chapter_id);
+
     const results = await db
         .select({
             chapter: getTableColumns(chapters),
@@ -266,12 +286,8 @@ export const getRecentChaptersFromUserList = async (req: Request, res: Response)
         .from(chapters)
         .innerJoin(series, eq(series.id, chapters.seriesId))
         .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
-        .where(and(
-            inArray(chapters.seriesId, seriesIds),
-            gte(chapters.createdAt, sql`now() - interval ${sql.raw(`'${newDaysInterval}'`)}`)
-        ))
-        .orderBy(desc(chapters.createdAt))
-        .limit(limit);
+        .where(inArray(chapters.id, chapterIds))
+        .orderBy(desc(chapters.createdAt));
 
     const formatted = results.map((row) => ({
         chapter: row.chapter,
