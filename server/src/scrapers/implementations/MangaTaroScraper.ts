@@ -328,6 +328,7 @@ export class MangaTaroScraper implements IChapterScraper {
         nativeTitle?: string,
         secondaryTitles?: string[],
         coverUrl?: string,
+        mangaPageUrl?: string,
     ): AsyncGenerator<ScrapedChapter, void, undefined> {
         const browser = await MangaTaroScraper.getBrowser(); // Use pool instead of launching new
         const context = await browser.newContext({
@@ -336,26 +337,37 @@ export class MangaTaroScraper implements IChapterScraper {
         const page = await context.newPage();
 
         try {
-            // Find best manga series match
-            const bestMatch = await this.findBestMatch(mangaName, {
-                seriesId,
-                romanizedTitle,
-                nativeTitle,
-                secondaryTitles,
-                coverUrl,
-            });
+            let pageUrl: string;
 
-            if (!bestMatch) {
-                throw new Error(`Could not find manga link for "${mangaName}"`);
+            if (mangaPageUrl) {
+                pageUrl = mangaPageUrl;
+                logger.info(
+                    `[MangaTaro] Using saved URL for "${mangaName}"`,
+                    { service: 'mangaTaroScraper' }
+                );
+            } else {
+                // Find best manga series match
+                const bestMatch = await this.findBestMatch(mangaName, {
+                    seriesId,
+                    romanizedTitle,
+                    nativeTitle,
+                    secondaryTitles,
+                    coverUrl,
+                });
+
+                if (!bestMatch) {
+                    throw new Error(`Could not find manga link for "${mangaName}"`);
+                }
+
+                pageUrl = bestMatch.href;
+                logger.info(
+                    `[MangaTaro] Found series page: ${bestMatch.href} (${bestMatch.title})`,
+                    { service: 'mangaTaroScraper' }
+                );
             }
 
-            logger.info(
-                `[MangaTaro] Found series page: ${bestMatch.href} (${bestMatch.title})`,
-                { service: 'mangaTaroScraper' }
-            );
-
             // Navigate to manga page
-            await page.goto(bestMatch.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
             // Close welcome modal if it exists
             try {
