@@ -130,6 +130,21 @@ export interface IChapterScraper {
     ): Promise<MangaSearchResult | undefined>;
 
     /**
+     * Search for manga and return multiple results with scores (for admin/source matching).
+     * Used to display a carousel of candidates per source.
+     *
+     * @param query - Primary search query (e.g. manga title or variant).
+     * @param options - Additional search options (romanized title, series ID, etc.).
+     * @param limit - Maximum number of results to return (default 10).
+     * @returns Promise<MangaSearchResult[]> - Array of matches with scores, sorted by score descending.
+     */
+    search(
+        query: string,
+        options?: SearchOptions,
+        limit?: number
+    ): Promise<MangaSearchResult[]>;
+
+    /**
      * Scrape chapter list from manga page
      * 
      * This is an async generator that yields chapters as they're discovered.

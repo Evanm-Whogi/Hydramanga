@@ -320,6 +320,37 @@ export class MangaTaroScraper implements IChapterScraper {
         }
     }
 
+    async search(query: string, options?: SearchOptions, limit = 10): Promise<MangaSearchResult[]> {
+        const q = (query || '').trim();
+        if (!q) return [];
+
+        try {
+            const response = await MangaTaroScraper.axiosInstance.post(
+                `${SITE_BASE}/auth/search`,
+                { query: q, limit: Math.max(limit, 20) }
+            );
+
+            const data: MangaTaroSearchResponse = response.data;
+            if (!data.success || !Array.isArray(data.results) || data.results.length === 0) {
+                return [];
+            }
+
+            const scored = data.results
+                .map((result) => ({
+                    href: result.permalink,
+                    title: result.title,
+                    score: calculateTitleSimilarity(result.title, q),
+                }))
+                .filter((r) => r.score >= 70)
+                .sort((a, b) => b.score - a.score);
+
+            return scored.slice(0, limit);
+        } catch (error) {
+            logger.error(`[MangaTaro] search() failed: ${error}`, { service: 'mangaTaroScraper' });
+            return [];
+        }
+    }
+
     async* scrapeChapters(
         mangaName: string,
         checkExists: (chapterNumber: string) => Promise<boolean>,

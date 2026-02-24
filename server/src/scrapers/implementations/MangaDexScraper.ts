@@ -291,6 +291,56 @@ export class MangaDexScraper implements IChapterScraper {
         }
     }
 
+    async search(query: string, options?: SearchOptions, limit = 10): Promise<MangaSearchResult[]> {
+        const q = (query || '').trim();
+        if (!q) return [];
+
+        try {
+            const response = await MangaDexScraper.rateLimitedRequest(
+                `${MANGA_ENDPOINT}`,
+                {
+                    params: {
+                        title: q,
+                        limit: Math.min(limit, 20),
+                        offset: 0,
+                        includes: ['author', 'artist', 'cover_art'],
+                    },
+                }
+            );
+
+            const mangas = response.data.data || [];
+            const results: MangaSearchResult[] = [];
+
+            for (const manga of mangas) {
+                const mangaId = manga.id;
+                let title =
+                    manga.attributes?.title?.[ENGLISH_LANG_CODE] ||
+                    manga.attributes?.title?.['ja'] ||
+                    manga.attributes?.title?.['ko'] ||
+                    (manga.attributes?.title && Object.values(manga.attributes.title)[0]) ||
+                    '';
+                if (typeof title !== 'string') title = '';
+                title = (title as string).trim();
+                if (!title) continue;
+
+                const similarity = this.calculateTitleSimilarity(title.toLowerCase(), q.toLowerCase());
+                if (similarity < 50) continue;
+
+                results.push({
+                    href: `${SITE_BASE}/title/${mangaId}`,
+                    title,
+                    score: Math.max(Math.round(similarity), 50),
+                });
+            }
+
+            results.sort((a, b) => b.score - a.score);
+            return results.slice(0, limit);
+        } catch (error) {
+            logger.error(`[MangaDex] search() failed: ${error}`, { service: 'mangaDexScraper' });
+            return [];
+        }
+    }
+
     async* scrapeChapters(
         mangaName: string,
         checkExists: (chapterNumber: string) => Promise<boolean>,

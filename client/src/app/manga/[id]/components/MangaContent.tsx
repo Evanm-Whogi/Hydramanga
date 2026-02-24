@@ -5,10 +5,12 @@ import {  formatToRating, formatTimeAgo } from '@/lib/utils';
 import Link from 'next/link';
 import MangaActions from './MangaActions';
 import RecommendedManga from './RecommendedManga';
-import { Eye, Bookmark, UserCheck, TriangleAlert, Star } from 'lucide-react';
+import { Eye, Bookmark, UserCheck, TriangleAlert, Star, Pencil } from 'lucide-react';
 import { useMangaViewTracking } from '@/hooks/useViewTracking';
 import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
+import { useUser } from '@/providers/UserProvider';
 import { showImportProgressToast, updateImportProgressToast, dismissImportProgressToast } from '@/components/ImportProgressToast';
+import AdminMangaEditModal from './AdminMangaEditModal';
 import { WARNING_GENRES, WARNING_RATINGS } from '@/constants/filters';
 
 // Memoized Header to prevent blur/filter recalculations on state changes
@@ -133,7 +135,10 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
   const [wasActiveOnLoad, setWasActiveOnLoad] = useState(false);
   const [initialProgressReceived, setInitialProgressReceived] = useState(false);
   const [localChapters, setLocalChapters] = useState(manga.chapters || []);
+  const [adminModalOpen, setAdminModalOpen] = useState(false);
   const mangaId = Number(manga.id);
+  const { user } = useUser();
+  const isAdmin = user?.role === 'admin';
 
   // Reset progress tracking state when manga changes
   useEffect(() => {
@@ -332,6 +337,17 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
                   {analytics?.manga?.reviewRating || formatToRating(manga.rating) || 0} <span className="text-sm text-muted">({analytics?.manga?.reviewCount || 0} Reviews)</span>
                 </span>
                )}
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setAdminModalOpen(true)}
+                  className="p-2 cursor-pointer rounded-md bg-foreground hover:bg-foreground/80 text-muted hover:text-primary"
+                  title="Edit manga (admin)"
+                  aria-label="Edit manga"
+                >
+                  <Pencil className="size-5" />
+                </button>
+              )}
             </h1>
             { manga.romanizedTitle || manga.nativeTitle ? (
             <h2 className="text-base md:text-lg text-muted font-semibold">[{manga.romanizedTitle} | {manga.nativeTitle}]</h2>
@@ -469,6 +485,19 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
           </div>
         </div>
       </div>
+
+      {isAdmin && adminModalOpen && (
+        <AdminMangaEditModal
+          mangaId={mangaId}
+          mangaTitle={manga.title}
+          secondaryTitles={manga.secondaryTitles}
+          currentScraperId={progress?.scraperId}
+          currentScraperUrl={progress?.scraperUrl}
+          onClose={() => setAdminModalOpen(false)}
+          onSourceSet={() => {}}
+          onVariantAdded={() => {}}
+        />
+      )}
     </>
   );
 }

@@ -116,6 +116,33 @@ class MangaOrchestratorService {
     logger.info(`Queued on-demand scan for ${mangaTitle} (${seriesId})`, { service: 'mangaOrchestratorService' });
   }
 
+  // Enqueue a single rescan for one series (admin or manual). Always enqueues a chapter-scan job to check for new chapters.
+  async enqueueSingleRescan(seriesId: number) {
+    const [manga] = await db
+      .select({ title: series.title, romanizedTitle: series.romanizedTitle, cover: series.cover })
+      .from(series)
+      .where(eq(series.id, seriesId))
+      .limit(1);
+    if (!manga?.title) {
+      logger.warn(`enqueueSingleRescan: series ${seriesId} not found`, { service: 'mangaOrchestratorService' });
+      return;
+    }
+    const progress = await mangaProgressService.getProgress(seriesId);
+    if (progress && (progress.status === 'scanning' || progress.status === 'downloading')) {
+      logger.info(`Series ${seriesId} is already ${progress.status}, skipping rescan`, { service: 'mangaOrchestratorService' });
+      return;
+    }
+    const coverUrl = manga.cover ? (manga.cover as any)?.x350?.x1 || (manga.cover as any)?.x250?.x1 || (manga.cover as any)?.raw?.url : undefined;
+    await queueService.addJob('mangaChapterImportQueue', `Rescan ${manga.title}`, {
+      mangaTitle: manga.title,
+      seriesId,
+      romanizedTitle: manga.romanizedTitle || undefined,
+      isFirstScan: false,
+      coverUrl,
+    }, { jobId: `rescan-${seriesId}`, attempts: 2 });
+    logger.info(`Queued rescan for series ${seriesId} (${manga.title})`, { service: 'mangaOrchestratorService' });
+  }
+
   // Rescan all non-trending manga that have chapters (auto-monitored)
   async enqueueMonitoredRescans() {
     try {

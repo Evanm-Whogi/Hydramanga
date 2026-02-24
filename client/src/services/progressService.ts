@@ -10,6 +10,8 @@ export interface MangaImportProgress {
   updatedAt: string;
   completedAt?: string | null;
   errorMessage?: string | null;
+  scraperId?: string | null;
+  scraperUrl?: string | null;
   lastDownloadedChapter?: {
     id?: number;
     chapterNumber: string;

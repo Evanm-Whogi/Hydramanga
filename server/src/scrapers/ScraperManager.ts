@@ -586,6 +586,43 @@ export class ScraperManager {
     }
 
     /**
+     * Search all enabled scrapers for a query and return results per source (for admin source matching).
+     * Does not use cache; each call runs fresh searches across all scrapers.
+     *
+     * @param mangaName - Primary manga name / search query.
+     * @param options - Search options (romanized title, native title, secondary titles, etc.).
+     * @param limitPerSource - Max results per scraper (default 10).
+     * @returns Array of { scraperId, scraperName, results } for each enabled scraper.
+     */
+    async searchAllSources(mangaName: string, options?: SearchOptions, limitPerSource = 10): Promise<Array<{ scraperId: string; scraperName: string; results: MangaSearchResult[] }>> {
+        const enabledScrapers = this.getEnabledScrapers();
+        const out: Array<{ scraperId: string; scraperName: string; results: MangaSearchResult[] }> = [];
+
+        await Promise.all(
+            enabledScrapers.map(async (scraper) => {
+                const meta = scraper.getMetadata();
+                try {
+                    const canHandle = await scraper.canHandle(mangaName, options?.seriesId);
+                    if (!canHandle) {
+                        out.push({ scraperId: meta.id, scraperName: meta.name, results: [] });
+                        return;
+                    }
+                    const results = await scraper.search(mangaName, options, limitPerSource);
+                    out.push({ scraperId: meta.id, scraperName: meta.name, results: results || [] });
+                } catch (err) {
+                    logger.warn(
+                        `Scraper ${meta.name} search failed: ${err instanceof Error ? err.message : err}`,
+                        { service: 'scraperManager' }
+                    );
+                    out.push({ scraperId: meta.id, scraperName: meta.name, results: [] });
+                }
+            })
+        );
+
+        return out;
+    }
+
+    /**
      * Get scraper statistics
      */
     getStats(): {

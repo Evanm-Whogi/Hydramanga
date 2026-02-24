@@ -334,6 +334,50 @@ export class ToonilyScraper implements IChapterScraper {
         }
     }
 
+    async search(query: string, options?: SearchOptions, limit = 10): Promise<MangaSearchResult[]> {
+        const q = (query || '').trim();
+        if (!q) return [];
+
+        const browser = await ToonilyScraper.getBrowser();
+        const context = await browser.newContext({
+            userAgent: appConfig.scraper.toonily.userAgent,
+        });
+        await context.addCookies([{ name: 'toonily-mature', value: '1', domain: 'toonily.com', path: '/' }]);
+        const page = await context.newPage();
+
+        try {
+            const slug = titleToSlug(q);
+            const searchUrl = `${SITE_BASE}/search/${encodeURIComponent(slug)}`;
+            await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.waitForTimeout(500);
+
+            const results: Array<{ href: string; title: string }> = await page.evaluate(() => {
+                const items = Array.from(document.querySelectorAll('div.page-item-detail.manga'));
+                return items.map((item) => {
+                    const titleAnchor = item.querySelector<HTMLAnchorElement>('div.post-title a');
+                    const thumbAnchor = item.querySelector<HTMLAnchorElement>('div.item-thumb a[title]');
+                    const title = titleAnchor?.textContent?.trim() || thumbAnchor?.getAttribute('title') || '';
+                    const href = titleAnchor?.href || thumbAnchor?.href || '';
+                    return { href, title };
+                }).filter((r) => r.href && r.title);
+            });
+
+            const scored = results
+                .map((r) => ({ ...r, score: calculateTitleSimilarity(r.title, q) }))
+                .filter((r) => r.score >= 70)
+                .sort((a, b) => b.score - a.score);
+
+            return scored.slice(0, limit).map(({ href, title, score }) => ({ href, title, score }));
+        } catch (error) {
+            logger.error(`[Toonily] search() failed: ${error}`, { service: 'toonilyScraper' });
+            return [];
+        } finally {
+            await page.close().catch(() => {});
+            await context.close().catch(() => {});
+            await ToonilyScraper.releaseBrowser(browser);
+        }
+    }
+
     /**
      * Scrape chapter list from the series page and yield each new chapter.
      *

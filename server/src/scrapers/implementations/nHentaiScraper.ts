@@ -216,6 +216,51 @@ export class NHentaiScraper implements IChapterScraper {
         }
     }
 
+    async search(query: string, _options?: SearchOptions, limit = 10): Promise<MangaSearchResult[]> {
+        const q = (query || '').trim();
+        if (!q) return [];
+
+        const browser = await NHentaiScraper.getBrowser();
+        const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        });
+        const page = await context.newPage();
+
+        try {
+            const searchUrl = `https://nhentai.net/search/?q=${encodeURIComponent(q)}`;
+            await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.waitForSelector('.gallery', { timeout: 8000 }).catch(() => {});
+
+            const results = await page.evaluate(() => {
+                return Array.from(document.querySelectorAll('div.gallery a.cover'))
+                    .map((galleryDiv) => {
+                        const href = (galleryDiv as HTMLAnchorElement).href;
+                        const match = href.match(/\/g\/(\d+)\//);
+                        if (!match) return null;
+                        const galleryId = match[1];
+                        const caption = galleryDiv.querySelector('div.caption')?.textContent?.trim();
+                        const title = caption || `Gallery ${galleryId}`;
+                        return { href: `https://nhentai.net/g/${galleryId}/`, title };
+                    })
+                    .filter((r): r is { href: string; title: string } => r !== null);
+            });
+
+            const scored = results
+                .map((r: { href: string; title: string }) => ({ ...r, score: this.scoreMatch(r.title, q) }))
+                .filter((r: { score: number }) => r.score > 0)
+                .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
+
+            return scored.slice(0, limit).map(({ href, title, score }: { href: string; title: string; score: number }) => ({ href, title, score }));
+        } catch (error) {
+            logger.error(`[nHentai] search() failed: ${error}`, { service: 'nHentaiScraper' });
+            return [];
+        } finally {
+            await page.close().catch(() => {});
+            await context.close().catch(() => {});
+            await NHentaiScraper.releaseBrowser(browser);
+        }
+    }
+
     /**
      * Score a title based on match quality with search term
      * Higher scores = better matches
