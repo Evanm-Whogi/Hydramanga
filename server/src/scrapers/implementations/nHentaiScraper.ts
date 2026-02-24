@@ -270,7 +270,8 @@ export class NHentaiScraper implements IChapterScraper {
         romanizedTitle?: string,
         nativeTitle?: string,
         secondaryTitles?: string[],
-        coverUrl?: string
+        coverUrl?: string,
+        mangaPageUrl?: string,
     ): AsyncGenerator<ScrapedChapter, void, undefined> {
         const browser = await NHentaiScraper.getBrowser();
         const context = await browser.newContext({
@@ -279,34 +280,52 @@ export class NHentaiScraper implements IChapterScraper {
         const page = await context.newPage();
 
         try {
-            // Find the gallery
-            const bestMatch = await this.findBestMatch(mangaName, {
-                seriesId,
-                coverUrl,
-                romanizedTitle,
-                nativeTitle,
-                secondaryTitles,
-            });
+            let pageUrl: string;
+            let galleryId: string;
 
-            if (!bestMatch) {
-                logger.error(`[nHentai] Could not find gallery for "${mangaName}"`);
-                return;
+            if (mangaPageUrl) {
+                const match = mangaPageUrl.match(/\/g\/(\d+)\//);
+                if (!match) {
+                    logger.error(`[nHentai] Invalid gallery URL: ${mangaPageUrl}`);
+                    return;
+                }
+                galleryId = match[1];
+                pageUrl = mangaPageUrl;
+                logger.info(
+                    `[nHentai] Using saved URL for "${mangaName}"`,
+                    { service: 'nHentaiScraper' }
+                );
+            } else {
+                // Find the gallery
+                const bestMatch = await this.findBestMatch(mangaName, {
+                    seriesId,
+                    coverUrl,
+                    romanizedTitle,
+                    nativeTitle,
+                    secondaryTitles,
+                });
+
+                if (!bestMatch) {
+                    logger.error(`[nHentai] Could not find gallery for "${mangaName}"`);
+                    return;
+                }
+
+                const galleryMatch = bestMatch.href.match(/\/g\/(\d+)\//);
+                if (!galleryMatch) {
+                    logger.error(`[nHentai] Invalid gallery URL: ${bestMatch.href}`);
+                    return;
+                }
+
+                galleryId = galleryMatch[1];
+                pageUrl = bestMatch.href;
+                logger.info(
+                    `[nHentai] Starting scrape for gallery ${galleryId}: "${mangaName}"`,
+                    { service: 'nHentaiScraper' }
+                );
             }
-
-            const galleryMatch = bestMatch.href.match(/\/g\/(\d+)\//);
-            if (!galleryMatch) {
-                logger.error(`[nHentai] Invalid gallery URL: ${bestMatch.href}`);
-                return;
-            }
-
-            const galleryId = galleryMatch[1];
-            logger.info(
-                `[nHentai] Starting scrape for gallery ${galleryId}: "${mangaName}"`,
-                { service: 'nHentaiScraper' }
-            );
 
             // Go to gallery index page (where thumbnails are displayed)
-            await page.goto(bestMatch.href, {
+            await page.goto(pageUrl, {
                 waitUntil: 'domcontentloaded',
                 timeout: 30000,
             });
@@ -379,7 +398,7 @@ export class NHentaiScraper implements IChapterScraper {
                 }
 
                 yield {
-                    url: `${bestMatch.href}${pageNum}/`,
+                    url: `${pageUrl}${pageNum}/`,
                     title: `Page ${pageNum}`,
                     number: chapterNum,
                     isSpecial: false,

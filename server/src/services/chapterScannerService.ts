@@ -10,7 +10,7 @@
  */
 
 import { db } from '@/db';
-import { chapters, series } from '@/db/schema';
+import { chapters, series, mangaImportProgress } from '@/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { scraperManager } from '@/scrapers';
 import { queueService } from '@/services/queueService';
@@ -127,6 +127,13 @@ export class ChapterScannerService {
 
                 const secondaryTitles = this.extractSecondaryTitleStrings(manga?.secondaryTitles);
 
+        // Fetch saved scraper URL from import progress (avoids re-searching on rescans)
+        const [progress] = await db
+            .select({ scraperUrl: mangaImportProgress.scraperUrl, scraperId: mangaImportProgress.scraperId })
+            .from(mangaImportProgress)
+            .where(eq(mangaImportProgress.seriesId, seriesId))
+            .limit(1);
+
         Sentry.addBreadcrumb({
             message: 'Chapter scan started',
             level: 'info',
@@ -168,6 +175,8 @@ export class ChapterScannerService {
                         manga?.nativeTitle || undefined,
                         secondaryTitles,
                         coverUrl,
+                        progress?.scraperUrl ?? undefined,
+                        progress?.scraperId ?? undefined,
                     );
                 },
                 { op: 'scraper.init', tags: { series_id: String(seriesId) } }

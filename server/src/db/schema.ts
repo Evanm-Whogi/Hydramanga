@@ -367,6 +367,7 @@ export const mangaImportProgress = pgTable('manga_import_progress', {
   downloadedChapters: integer('downloaded_chapters').notNull().default(0),
   status: importStatusEnum('status').notNull().default('scanning'),
   scraperId: text('scraper_id'), // ID of the scraper used for this import (e.g., 'mangadex', 'weebcentral', null if unknown)
+  scraperUrl: text('scraper_url'), // URL of the manga page on the scraper (avoids re-searching on rescans)
   startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp('completed_at', { withTimezone: true }),

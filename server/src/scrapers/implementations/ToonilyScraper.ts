@@ -355,6 +355,7 @@ export class ToonilyScraper implements IChapterScraper {
         nativeTitle?: string,
         secondaryTitles?: string[],
         coverUrl?: string,
+        mangaPageUrl?: string,
     ): AsyncGenerator<ScrapedChapter, void, undefined> {
         const browser = await ToonilyScraper.getBrowser();
         const context = await browser.newContext({
@@ -364,24 +365,35 @@ export class ToonilyScraper implements IChapterScraper {
         const page = await context.newPage();
 
         try {
-            const bestMatch = await this.findBestMatch(mangaName, {
-                seriesId,
-                romanizedTitle,
-                nativeTitle,
-                secondaryTitles,
-                coverUrl,
-            });
+            let pageUrl: string;
 
-            if (!bestMatch) {
-                throw new Error(`[Toonily] Could not find manga link for "${mangaName}"`);
+            if (mangaPageUrl) {
+                pageUrl = mangaPageUrl;
+                logger.info(
+                    `[Toonily] Using saved URL for "${mangaName}"`,
+                    { service: 'toonilyScraper' }
+                );
+            } else {
+                const bestMatch = await this.findBestMatch(mangaName, {
+                    seriesId,
+                    romanizedTitle,
+                    nativeTitle,
+                    secondaryTitles,
+                    coverUrl,
+                });
+
+                if (!bestMatch) {
+                    throw new Error(`[Toonily] Could not find manga link for "${mangaName}"`);
+                }
+
+                pageUrl = bestMatch.href;
+                logger.info(
+                    `[Toonily] Found series page: ${bestMatch.href} (${bestMatch.title})`,
+                    { service: 'toonilyScraper' }
+                );
             }
 
-            logger.info(
-                `[Toonily] Found series page: ${bestMatch.href} (${bestMatch.title})`,
-                { service: 'toonilyScraper' }
-            );
-
-            await page.goto(bestMatch.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
             // Wait for chapter list
             try {

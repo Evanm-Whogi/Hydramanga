@@ -148,6 +148,7 @@ export class WeebCentralScraper implements IChapterScraper {
         nativeTitle?: string,
         secondaryTitles?: string[],
         coverUrl?: string,
+        mangaPageUrl?: string,
     ): AsyncGenerator<ScrapedChapter, void, undefined> {
         const browser = await WeebCentralScraper.getBrowser();
         const context = await browser.newContext({
@@ -156,30 +157,41 @@ export class WeebCentralScraper implements IChapterScraper {
         const page = await context.newPage();
 
         try {
-            // Find best manga series match
-            const bestMatch = await this.findBestMatch(mangaName, {
-                seriesId,
-                romanizedTitle,
-                nativeTitle,
-                secondaryTitles,
-                coverUrl,
-            });
+            let pageUrl: string;
 
-            if (!bestMatch) {
-                const error = `Could not find manga link for "${mangaName}"`;
-                logger.error(
-                    `[WeebCentral] ${error}`,
+            if (mangaPageUrl) {
+                pageUrl = mangaPageUrl;
+                logger.info(
+                    `[WeebCentral] Using saved URL for "${mangaName}"`,
                     { service: 'weebCentralScraper' }
                 );
-                throw new Error(error);
+            } else {
+                // Find best manga series match
+                const bestMatch = await this.findBestMatch(mangaName, {
+                    seriesId,
+                    romanizedTitle,
+                    nativeTitle,
+                    secondaryTitles,
+                    coverUrl,
+                });
+
+                if (!bestMatch) {
+                    const error = `Could not find manga link for "${mangaName}"`;
+                    logger.error(
+                        `[WeebCentral] ${error}`,
+                        { service: 'weebCentralScraper' }
+                    );
+                    throw new Error(error);
+                }
+
+                pageUrl = bestMatch.href;
+                logger.info(
+                    `[WeebCentral] Found series page: ${bestMatch.href} (${bestMatch.title})`,
+                    { service: 'weebCentralScraper' }
+                );
             }
 
-            logger.info(
-                `[WeebCentral] Found series page: ${bestMatch.href} (${bestMatch.title})`,
-                { service: 'weebCentralScraper' }
-            );
-
-            await page.goto(bestMatch.href, { waitUntil: 'domcontentloaded' });
+            await page.goto(pageUrl, { waitUntil: 'domcontentloaded' });
 
             // Click "Show All" button if present
             const showAllBtnSelector = 'button[hx-get*="full-chapter-list"]';
