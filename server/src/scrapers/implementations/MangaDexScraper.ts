@@ -299,33 +299,47 @@ export class MangaDexScraper implements IChapterScraper {
         nativeTitle?: string,
         secondaryTitles?: string[],
         coverUrl?: string,
+        mangaPageUrl?: string,
     ): AsyncGenerator<ScrapedChapter, void, undefined> {
         try {
-            // Find best manga series match
-            const bestMatch = await this.findBestMatch(mangaName, {
-                seriesId,
-                romanizedTitle,
-                nativeTitle,
-                secondaryTitles,
-                coverUrl,
-            });
+            let mangaId: string;
 
-            if (!bestMatch) {
-                const error = `Could not find manga link for "${mangaName}"`;
-                logger.error(
-                    `[MangaDex] ${error}`,
+            if (mangaPageUrl) {
+                const match = mangaPageUrl.match(/\/title\/([a-f0-9-]+)/);
+                if (!match) {
+                    throw new Error(`Could not extract manga ID from URL: ${mangaPageUrl}`);
+                }
+                mangaId = match[1];
+                logger.info(
+                    `[MangaDex] Using saved URL for manga ID: ${mangaId}`,
                     { service: 'mangaDexScraper' }
                 );
-                throw new Error(error);
-            }
+            } else {
+                // Find best manga series match
+                const bestMatch = await this.findBestMatch(mangaName, {
+                    seriesId,
+                    romanizedTitle,
+                    nativeTitle,
+                    secondaryTitles,
+                    coverUrl,
+                });
 
-            // Extract manga ID from URL
-            const mangaIdMatch = bestMatch.href.match(/\/title\/([a-f0-9-]+)/);
-            if (!mangaIdMatch) {
-                throw new Error(`Could not extract manga ID from URL: ${bestMatch.href}`);
-            }
+                if (!bestMatch) {
+                    const error = `Could not find manga link for "${mangaName}"`;
+                    logger.error(
+                        `[MangaDex] ${error}`,
+                        { service: 'mangaDexScraper' }
+                    );
+                    throw new Error(error);
+                }
 
-            const mangaId = mangaIdMatch[1];
+                // Extract manga ID from URL
+                const mangaIdMatch = bestMatch.href.match(/\/title\/([a-f0-9-]+)/);
+                if (!mangaIdMatch) {
+                    throw new Error(`Could not extract manga ID from URL: ${bestMatch.href}`);
+                }
+                mangaId = mangaIdMatch[1];
+            }
 
             logger.info(
                 `[MangaDex] Fetching chapters for manga ID: ${mangaId}`,
