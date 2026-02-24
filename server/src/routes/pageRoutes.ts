@@ -1,5 +1,5 @@
 import { Router, RequestHandler } from 'express';
-import {getRecentlyRead, getRecentlyAdded, getPopularChapters, getPopularManga, getHighScores, getMostFollowed, getRecentComments, getTopCommenters  } from '@/controllers/homeController';
+import {getRecentlyRead, getRecentlyAdded, getPopularChapters, getPopularManga, getHighScores, getMostFollowed, getRecentChaptersFromUserList, getRecentComments, getTopCommenters  } from '@/controllers/homeController';
 import getIndexPage from '@/controllers/indexController';
 import { authMiddleware } from '@/middlewares/auth';
 
@@ -12,6 +12,7 @@ router.get('/home/popularChapters', authMiddleware, getPopularChapters as Reques
 router.get('/home/popularManga', authMiddleware, getPopularManga as RequestHandler);
 router.get('/home/highScores', authMiddleware, getHighScores as RequestHandler);
 router.get('/home/mostFollowed', authMiddleware, getMostFollowed as RequestHandler);
+router.get('/home/recentChaptersFromList', authMiddleware, getRecentChaptersFromUserList as RequestHandler);
 router.get('/home/recentComments', authMiddleware, getRecentComments as RequestHandler);
 router.get('/home/topCommenters', authMiddleware, getTopCommenters as RequestHandler);
 

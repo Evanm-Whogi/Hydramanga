@@ -26,7 +26,6 @@ import {
     SearchOptions,
 } from './interfaces/IChapterScraper';
 import logger from '@/services/loggerService';
-import { discordService } from '@/services/discordService';
 import { titleSearchSemaphore } from '@/services/titleSearchSemaphore';
 import { cacheService } from '@/services/cacheService';
 
@@ -404,16 +403,7 @@ export class ScraperManager {
                 { service: 'scraperManager' }
             );
 
-            // Notify Discord of failure if we have a series ID
-            if (seriesId) {
-                await discordService.notifyScraperFailed(
-                    mangaName,
-                    seriesId,
-                    [],
-                    coverUrl
-                );
-            }
-
+            // Discord notification is sent by the queue layer only when all retries are exhausted
             throw error;
         }
     }

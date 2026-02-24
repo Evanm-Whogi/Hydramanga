@@ -50,7 +50,7 @@ class MangaOrchestratorService {
   async enqueueTrendingChapterScans(limit = 100) {
     logger.info(`[CRON] Enqueuing trending chapter scans (top ${limit})`, { service: 'mangaOrchestratorService' });
     const trending = await db
-      .select({ id: series.id, title: series.title, romanizedTitle: series.romanizedTitle })
+      .select({ id: series.id, title: series.title, romanizedTitle: series.romanizedTitle, cover: series.cover })
       .from(series)
       .orderBy(desc(series.weightedScore), desc(series.lastUpdatedAt))
       .limit(limit);
@@ -58,8 +58,9 @@ class MangaOrchestratorService {
     const filtered = trending.filter((r) => !isIgnored(r.title));
     
     for (const row of filtered) {
+      const coverUrl = row.cover ? (row.cover as any)?.x350?.x1 || (row.cover as any)?.x250?.x1 || (row.cover as any)?.raw?.url || undefined : undefined;
       await queueService.addJob('mangaChapterImportQueue', `Trending sync ${row.title}`,
-        { mangaTitle: row.title, seriesId: row.id, romanizedTitle: row.romanizedTitle },
+        { mangaTitle: row.title, seriesId: row.id, romanizedTitle: row.romanizedTitle, coverUrl },
         { jobId: `trending-${row.id}`, attempts: 3 }
       );
     }
@@ -103,7 +104,7 @@ class MangaOrchestratorService {
     const romanizedTitle = manga?.romanizedTitle || undefined;
     const coverUrl = manga?.cover ? (manga.cover as any)?.x350?.x1 || (manga.cover as any)?.x250?.x1 || (manga.cover as any)?.raw?.url || undefined : undefined;
     
-    await queueService.addJob('mangaChapterImportQueue', `On-demand sync ${mangaTitle}`, { mangaTitle, seriesId, romanizedTitle, isFirstScan: true }, { 
+    await queueService.addJob('mangaChapterImportQueue', `On-demand sync ${mangaTitle}`, { mangaTitle, seriesId, romanizedTitle, isFirstScan: true, coverUrl }, { 
         jobId, 
         attempts: 2,
         removeOnComplete: { age: 300, count: 1000 } // Keep completed jobs for 5 minutes
@@ -122,30 +123,30 @@ class MangaOrchestratorService {
       const trendingIds = trending.map(t => t.id);
       
       // Find all series with at least one chapter that aren't in top trending
-      let results: Array<{ id: number; title: string | null }>;
+      let results: Array<{ id: number; title: string | null; cover: unknown }>;
       
       if (trendingIds.length > 0) {
         results = await db
-          .selectDistinct({ id: series.id, title: series.title })
+          .selectDistinct({ id: series.id, title: series.title, cover: series.cover })
           .from(series)
           .innerJoin(chapters, eq(chapters.seriesId, series.id))
           .where(sql`NOT ${inArray(series.id, trendingIds)}`);
       } else {
         results = await db
-          .selectDistinct({ id: series.id, title: series.title })
+          .selectDistinct({ id: series.id, title: series.title, cover: series.cover })
           .from(series)
           .innerJoin(chapters, eq(chapters.seriesId, series.id));
       }
 
       // Filter out results with null titles
-      const monitored = results.filter((m): m is { id: number; title: string } => m.title !== null && m.title !== undefined);
+      const monitored = results.filter((m): m is { id: number; title: string; cover: unknown } => m.title !== null && m.title !== undefined);
       
       let enqueuedCount = 0;
       for (const manga of monitored) {
         if (isIgnored(manga.title)) continue;
-        
+        const coverUrl = manga.cover ? (manga.cover as any)?.x350?.x1 || (manga.cover as any)?.x250?.x1 || (manga.cover as any)?.raw?.url || undefined : undefined;
         await queueService.addJob('mangaChapterImportQueue', `Monitored rescan ${manga.title}`,
-          { mangaTitle: manga.title, seriesId: manga.id },
+          { mangaTitle: manga.title, seriesId: manga.id, coverUrl },
           { jobId: `monitored-${manga.id}`, attempts: 2 }
         );
         enqueuedCount++;

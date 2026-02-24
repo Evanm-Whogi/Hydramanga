@@ -10,6 +10,7 @@ import ContinueReadingCard from "@/components/ContinueReadingCard";
 import CommentCard from "@/app/home/components/cards/CommentCard";
 import CollectionsCard from "@/app/home/components/cards/CollectionsCard";
 import RecentCard from "@/app/home/components/cards/RecentCard";
+import RecentChapterFromListCard from "@/app/home/components/cards/RecentChapterFromListCard";
 import { getCollections } from "@/services/mangaService";
 
 import CarouselSection from "@/app/home/components/CarouselSection"
@@ -99,12 +100,14 @@ export default function Lists() {
     const [recentComments, setRecentComments] = useState([]);
     const [topCommenters, setTopCommenters] = useState([]);
     const [collections, setCollections] = useState([]);
+    const [recentChaptersFromList, setRecentChaptersFromList] = useState<any[]>([]);
 
     useEffect(() => {
         homeService.getRecentlyRead().then(setRecentlyRead).catch(() => {});
         homeService.getRecentComments().then(setRecentComments).catch(() => {});
         homeService.getTopCommenters().then(setTopCommenters).catch(() => {});
         getCollections().then(setCollections).catch(() => {});
+        homeService.getRecentChaptersFromUserList(30).then(setRecentChaptersFromList).catch(() => setRecentChaptersFromList([]));
     }, []);
 
     return (
@@ -121,6 +124,17 @@ export default function Lists() {
                                             <ContinueReadingCard progress={manga} />
                                         </div>
                                     ))}
+                            </CarouselSection>
+                        )}
+
+                        {/* New chapters from your list (within 3 days) */}
+                        {recentChaptersFromList?.length > 0 && (
+                            <CarouselSection title="New chapters from your list (last 3 days)">
+                                {recentChaptersFromList.map((item: any) => (
+                                    <div key={`list-chapter-${item.series?.id}-${item.chapter?.id}`} className="flex-[0_0_45%] lg:flex-[0_0_14%]">
+                                        <RecentChapterFromListCard item={item} />
+                                    </div>
+                                ))}
                             </CarouselSection>
                         )}
 
