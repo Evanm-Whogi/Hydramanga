@@ -20,6 +20,8 @@ export interface MangaProgress {
   updatedAt: Date;
   completedAt?: Date | null;
   errorMessage?: string | null;
+  scraperId?: string | null;
+  scraperUrl?: string | null;
   lastDownloadedChapter?: {
     id?: number;
     chapterNumber: string;
@@ -502,6 +504,8 @@ class MangaProgressService {
         updatedAt: dbProgress.updatedAt,
         completedAt: dbProgress.completedAt,
         errorMessage: dbProgress.errorMessage,
+        scraperId: dbProgress.scraperId ?? undefined,
+        scraperUrl: dbProgress.scraperUrl ?? undefined,
       };
 
       // Repopulate Redis cache
@@ -555,6 +559,48 @@ class MangaProgressService {
       logger.info(`Cleaned up progress data for series ${seriesId}`, { service: 'mangaProgressService' });
     } catch (error) {
       logger.error(`Failed to cleanup progress for series ${seriesId}: ${error}`, { service: 'mangaProgressService' });
+    }
+  }
+
+  /**
+   * Set the scraper source for a series (admin override).
+   * Updates manga_import_progress.scraperId and scraperUrl so the next scan uses this source.
+   */
+  async setScraperMatch(seriesId: number, scraperId: string, scraperUrl: string): Promise<void> {
+    try {
+      const [existing] = await db
+        .select()
+        .from(mangaImportProgress)
+        .where(eq(mangaImportProgress.seriesId, seriesId))
+        .limit(1);
+
+      if (existing) {
+        await db
+          .update(mangaImportProgress)
+          .set({
+            scraperId,
+            scraperUrl,
+            updatedAt: new Date(),
+          })
+          .where(eq(mangaImportProgress.seriesId, seriesId));
+      } else {
+        await db.insert(mangaImportProgress).values({
+          seriesId,
+          totalChapters: 0,
+          downloadedChapters: 0,
+          status: 'scanning',
+          scraperId,
+          scraperUrl,
+          startedAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+
+      await this.getRedis().del(`${PROGRESS_CHANNEL_PREFIX}${seriesId}`);
+      logger.info(`Set scraper match for series ${seriesId}: ${scraperId}`, { service: 'mangaProgressService' });
+    } catch (error) {
+      logger.error(`Failed to set scraper match for series ${seriesId}: ${error}`, { service: 'mangaProgressService' });
+      throw error;
     }
   }
 

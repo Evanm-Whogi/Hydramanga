@@ -140,6 +140,19 @@ export class WeebCentralScraper implements IChapterScraper {
         }
     }
 
+    async search(query: string, options?: SearchOptions, limit = 10): Promise<MangaSearchResult[]> {
+        try {
+            const results = await WeebCentralSearcher.queryAPI((query || '').trim());
+            return results
+                .filter((r) => r.score > 0)
+                .slice(0, limit)
+                .map((r) => ({ href: r.href, title: r.title, score: r.score }));
+        } catch (error) {
+            logger.error(`[WeebCentral] search() failed: ${error}`, { service: 'weebCentralScraper' });
+            return [];
+        }
+    }
+
     async* scrapeChapters(
         mangaName: string,
         checkExists: (chapterNumber: string) => Promise<boolean>,

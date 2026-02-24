@@ -160,6 +160,25 @@ export const apiPut = async (url: string, data?: any) => {
         await handleBackendError(error);
     }
 };
+
+export const apiPatch = async (url: string, data?: any) => {
+    if (typeof window !== 'undefined') {
+        return clientFetch(url, { method: 'PATCH', body: JSON.stringify(data ?? {}) });
+    }
+
+    try {
+        const instance = await getServerInstance();
+        const res = await instance.patch(url, data);
+        return res.data;
+    } catch (error: any) {
+        if (error.response?.data) {
+            const errorData = error.response.data;
+            const errorMessage = errorData.message || 'Request failed';
+            throw new Error(errorMessage);
+        }
+        await handleBackendError(error);
+    }
+};
 export const apiPostFormData = async (url: string, formData: FormData) => {
     if (typeof window !== 'undefined') {
         const res = await fetch(`${getClientApiBase()}${url}`, {

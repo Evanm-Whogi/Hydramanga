@@ -29,7 +29,11 @@ import { isMaintenance } from '@/middlewares/maintenance';
 import '@/services/loggerService';
 import '@/services/queueService';
 import { queueService } from '@/services/queueService';
+import { initializeScrapers } from '@/scrapers';
 import logger from '@/services/loggerService';
+
+// Initialize scrapers so admin scraper-search API can query all sources (worker has its own instance)
+initializeScrapers();
 
 // Constants
 const app: Express = express();
