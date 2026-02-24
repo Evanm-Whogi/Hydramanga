@@ -150,6 +150,7 @@ export interface IChapterScraper {
      * @param nativeTitle - Native title in original language
     * @param secondaryTitles - Secondary/alternative titles for matching
      * @param coverUrl - Cover image URL (for error notifications)
+     * @param mangaPageUrl - Optional pre-resolved URL to the manga page (skips findBestMatch when set)
      * @yields ScrapedChapter - Chapter metadata for each discovered chapter
      */
     scrapeChapters(
@@ -160,6 +161,7 @@ export interface IChapterScraper {
         nativeTitle?: string,
         secondaryTitles?: string[],
         coverUrl?: string,
+        mangaPageUrl?: string,
     ): AsyncGenerator<ScrapedChapter, void, undefined>;
 
     /**

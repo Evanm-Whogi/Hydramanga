@@ -28,6 +28,9 @@ import {
 import logger from '@/services/loggerService';
 import { titleSearchSemaphore } from '@/services/titleSearchSemaphore';
 import { cacheService } from '@/services/cacheService';
+import { db } from '@/db';
+import { mangaImportProgress } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 
 /**
  * Scraper attempt result (for logging and debugging)
@@ -307,12 +310,18 @@ export class ScraperManager {
     /**
      * Scrape chapters using best match selection
      * Finds the best manga match across ALL scrapers, then scrapes its chapters
-     * 
+     * When mangaUrl and scraperId are provided (e.g. from manga_import_progress), skips findBestMatch.
+     * When seriesId is provided and we do findBestMatch, persists the result to manga_import_progress for future runs.
+     *
      * @param mangaName - Name of the manga
      * @param checkExists - Function to check if chapter already exists
-     * @param seriesId - Series ID from database
+     * @param seriesId - Series ID from database (used for persisting scraperUrl/scraperId when we resolve)
      * @param romanizedTitle - Romanized title for search
+     * @param nativeTitle - Native title for search
+     * @param secondaryTitles - Secondary titles for search
      * @param coverUrl - Cover URL for notifications
+     * @param mangaUrl - Optional pre-resolved manga page URL (skip findBestMatch when set)
+     * @param scraperId - Optional scraper id to use when mangaUrl is set
      * @returns Async generator yielding chapters
      */
     async* scrapeChapters(
@@ -323,6 +332,8 @@ export class ScraperManager {
         nativeTitle?: string,
         secondaryTitles?: string[],
         coverUrl?: string,
+        mangaUrl?: string,
+        scraperId?: string,
     ): AsyncGenerator<ScrapedChapter, void, undefined> {
         logger.info(
             `Scraping chapters for "${mangaName}"`,
@@ -330,31 +341,75 @@ export class ScraperManager {
         );
 
         try {
-            // First, find the best manga match across ALL scrapers using the new selection logic
-            const bestMatchResult = await this.findBestMatch(mangaName, {
-                seriesId,
-                romanizedTitle,
-                nativeTitle,
-                secondaryTitles,
-                coverUrl,
-            });
+            let scraper: IChapterScraper | undefined;
+            let pageUrl: string | undefined;
 
-            if (!bestMatchResult) {
-                throw new Error(`Failed to find "${mangaName}" using any available scraper`);
+            if (mangaUrl && scraperId) {
+                const resolved = this.getScraperById(scraperId);
+                if (resolved) {
+                    scraper = resolved;
+                    pageUrl = mangaUrl;
+                    logger.info(
+                        `Using saved URL for "${mangaName}" (${scraperId})`,
+                        { service: 'scraperManager' }
+                    );
+                }
             }
 
-            const { scraper, result } = bestMatchResult;
-            const metadata = scraper.getMetadata();
+            if (!scraper || !pageUrl) {
+                // Find the best manga match across ALL scrapers
+                const bestMatchResult = await this.findBestMatch(mangaName, {
+                    seriesId,
+                    romanizedTitle,
+                    nativeTitle,
+                    secondaryTitles,
+                    coverUrl,
+                });
 
-            logger.info(
-                `Using ${metadata.name} for "${mangaName}" (score: ${result.score})`,
-                { service: 'scraperManager' }
-            );
+                if (!bestMatchResult) {
+                    throw new Error(`Failed to find "${mangaName}" using any available scraper`);
+                }
+
+                const { scraper: matchedScraper, result } = bestMatchResult;
+                scraper = matchedScraper;
+                pageUrl = result.href;
+
+                const meta = scraper.getMetadata();
+
+                // Persist URL and scraper on import progress so future cron jobs can skip findBestMatch
+                if (seriesId != null) {
+                    try {
+                        await db
+                            .update(mangaImportProgress)
+                            .set({
+                                scraperUrl: result.href,
+                                scraperId: meta.id,
+                            })
+                            .where(eq(mangaImportProgress.seriesId, seriesId));
+                        logger.info(
+                            `Saved scraper URL for series ${seriesId} (${meta.id})`,
+                            { service: 'scraperManager' }
+                        );
+                    } catch (updateErr) {
+                        logger.warn(
+                            `Failed to persist scraper URL for series ${seriesId}: ${updateErr}`,
+                            { service: 'scraperManager' }
+                        );
+                    }
+                }
+
+                logger.info(
+                    `Using ${meta.name} for "${mangaName}" (score: ${result.score})`,
+                    { service: 'scraperManager' }
+                );
+            }
+
+            const metadata = scraper.getMetadata();
 
             try {
                 let chapterCount = 0;
 
-                // Scrape chapters from the selected scraper
+                // Scrape chapters from the selected scraper (pass pageUrl so scraper skips its own findBestMatch)
                 for await (const chapter of scraper.scrapeChapters(
                     mangaName,
                     checkExists,
@@ -363,6 +418,7 @@ export class ScraperManager {
                     nativeTitle,
                     secondaryTitles,
                     coverUrl,
+                    pageUrl,
                 )) {
                     chapterCount++;
                     // Attach scraper ID to chapter before yielding
