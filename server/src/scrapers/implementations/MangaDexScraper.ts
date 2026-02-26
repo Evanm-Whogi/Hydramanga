@@ -72,7 +72,7 @@ export class MangaDexScraper implements IChapterScraper {
 
     // Rate limiting: delay between requests in milliseconds
     // MangaDex has strict rate limits; use conservative delays
-    private static readonly REQUEST_DELAY_MS = 1500;  // 1.5 seconds between requests
+    private static readonly REQUEST_DELAY_MS = 2500;
     private static lastRequestTime = 0;
 
     private static readonly axiosInstance = axios.create({
@@ -214,6 +214,7 @@ export class MangaDexScraper implements IChapterScraper {
                             limit: 10,
                             offset: 0,
                             includes: ['author', 'artist', 'cover_art'],
+                            contentRating: ['safe', 'suggestive', 'erotica', 'pornographic'],
                         },
                     }
                 );
@@ -304,6 +305,7 @@ export class MangaDexScraper implements IChapterScraper {
                         limit: Math.min(limit, 20),
                         offset: 0,
                         includes: ['author', 'artist', 'cover_art'],
+                        contentRating: ['safe', 'suggestive', 'erotica', 'pornographic'],
                     },
                 }
             );
@@ -583,6 +585,7 @@ export class MangaDexScraper implements IChapterScraper {
                                 chapter: 'asc',
                             },
                             includes: ['manga', 'scanlation_group', 'user'],
+                            contentRating: ['safe', 'suggestive', 'erotica', 'pornographic'],
                         },
                     }
                 );
@@ -669,9 +672,9 @@ export class MangaDexScraper implements IChapterScraper {
             { service: 'mangaDexScraper' }
         );
 
-        const batchSize = 8;
+        const batchSize = 4;
         // Delay between batches to avoid rate limits on at-home/CDN (images are not api.mangadex.org but nodes can still throttle)
-        const BATCH_DELAY_MS = 400;
+        const BATCH_DELAY_MS = 1200;
         const imageHeaders = {
             Referer: referer,
             'User-Agent': appConfig.scraper.mangaDex.userAgent,

@@ -95,9 +95,9 @@ class MangaOrchestratorService {
       }
     }
     
-    // Initialize progress to 'scanning' state
+    // Initialize progress to 'scanning' state for a first scan (no existing chapters yet)
     // This ensures WebSocket clients see the scanning state before the job is processed
-    await mangaProgressService.initializeProgress(seriesId);
+    await mangaProgressService.initializeProgress(seriesId, 0, 0);
     
     // Fetch romanizedTitle and cover from database
     const [manga] = await db.select({ romanizedTitle: series.romanizedTitle, cover: series.cover }).from(series).where(eq(series.id, seriesId));

@@ -93,10 +93,25 @@ export class ChapterScannerService {
         const newChapters: string[] = [];
         let previewRemaining = isFirstScan ? appConfig.queues.mangaChapterDownloadQueue.previewCount : 0;
 
-        // Initialize progress tracking
+        // Determine how many chapters already exist before this scan (important for rescans)
+        const existingChapters = await withSpan(
+            'fetch_existing_chapters_before_scan',
+            async () => {
+                return db
+                    .select({ id: chapters.id })
+                    .from(chapters)
+                    .where(eq(chapters.seriesId, seriesId));
+            },
+            { op: 'db.read', tags: { series_id: String(seriesId) } }
+        );
+        const baseChapterCount = existingChapters.length;
+
+        // Initialize progress tracking:
+        // - First scan: baseChapterCount will be 0 (no chapters yet)
+        // - Rescans: baseChapterCount represents already downloaded chapters
         await withSpan(
             'initialize_progress_tracking',
-            async () => mangaProgressService.initializeProgress(seriesId),
+            async () => mangaProgressService.initializeProgress(seriesId, baseChapterCount, baseChapterCount),
             { op: 'db.write', tags: { series_id: String(seriesId) } }
         );
 
@@ -257,7 +272,12 @@ export class ChapterScannerService {
             if (foundCount > 0) {
                 await withSpan(
                     'update_progress_total_chapters',
-                    async () => mangaProgressService.setTotalChapters(seriesId, foundCount, firstScraperId),
+                    async () =>
+                        mangaProgressService.setTotalChapters(
+                            seriesId,
+                            baseChapterCount + foundCount,
+                            firstScraperId
+                        ),
                     { op: 'db.write', tags: { series_id: String(seriesId) } }
                 );
 
@@ -285,28 +305,15 @@ export class ChapterScannerService {
                         { op: 'db.write', tags: { series_id: String(seriesId) } }
                     );
                 } else {
-                    // Monitored rescan found no new chapters - mark as completed immediately
-                    // Get the actual chapter count for this series for proper reporting
-                    const existingChaptersCount = await withSpan(
-                        'fetch_existing_chapters_count',
-                        async () => {
-                            return db
-                                .select()
-                                .from(chapters)
-                                .where(eq(chapters.seriesId, seriesId));
-                        },
-                        { op: 'db.read', tags: { series_id: String(seriesId) } }
-                    );
-                    
                     // Mark as completed with all existing chapters already downloaded
                     await withSpan(
                         'mark_monitored_rescan_complete',
-                        async () => mangaProgressService.markCompleted(seriesId, existingChaptersCount.length),
+                        async () => mangaProgressService.markCompleted(seriesId, baseChapterCount),
                         { op: 'db.write', tags: { series_id: String(seriesId) } }
                     );
                     
                     logger.info(
-                        `[SCANNER] Monitored rescan for ${mangaTitle}: no new chapters found. Series has ${existingChaptersCount.length} chapters.`,
+                        `[SCANNER] Monitored rescan for ${mangaTitle}: no new chapters found. Series has ${baseChapterCount} chapters.`,
                         { service: 'chapterScannerService' }
                     );
 
@@ -315,7 +322,7 @@ export class ChapterScannerService {
                         level: 'info',
                         data: {
                             series_id: seriesId,
-                            existing_chapters: existingChaptersCount.length,
+                            existing_chapters: baseChapterCount,
                         },
                     });
                 }

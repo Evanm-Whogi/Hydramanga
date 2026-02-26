@@ -77,15 +77,19 @@ class MangaProgressService {
     return this.redis;
   }
 
-  // Initialize progress tracking for a new manga import
-  async initializeProgress(seriesId: number): Promise<void> {
+  // Initialize progress tracking for a manga import (first scan or rescan)
+  async initializeProgress(
+    seriesId: number,
+    initialTotalChapters: number = 0,
+    initialDownloadedChapters: number = 0,
+  ): Promise<void> {
     try {
       // Insert or reset progress in database
       await db.insert(mangaImportProgress)
         .values({
           seriesId,
-          totalChapters: 0,
-          downloadedChapters: 0,
+          totalChapters: initialTotalChapters,
+          downloadedChapters: initialDownloadedChapters,
           status: 'scanning',
           startedAt: new Date(),
           updatedAt: new Date(),
@@ -93,8 +97,8 @@ class MangaProgressService {
         .onConflictDoUpdate({
           target: mangaImportProgress.seriesId,
           set: {
-            totalChapters: 0,
-            downloadedChapters: 0,
+            totalChapters: initialTotalChapters,
+            downloadedChapters: initialDownloadedChapters,
             status: 'scanning',
             startedAt: new Date(),
             updatedAt: new Date(),
@@ -106,10 +110,12 @@ class MangaProgressService {
       // Store in Redis for real-time access
       const progressData: MangaProgress = {
         seriesId,
-        totalChapters: 0,
-        downloadedChapters: 0,
+        totalChapters: initialTotalChapters,
+        downloadedChapters: initialDownloadedChapters,
         status: 'scanning',
-        percentage: 0,
+        percentage: initialTotalChapters > 0
+          ? Math.round((initialDownloadedChapters / Math.max(initialTotalChapters, 1)) * 100)
+          : 0,
         startedAt: new Date(),
         updatedAt: new Date(),
       };
