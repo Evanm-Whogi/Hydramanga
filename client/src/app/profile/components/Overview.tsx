@@ -51,13 +51,13 @@ export default function Overview({ user, isOwner }: { user: any; isOwner: boolea
                         </div>
                     </div>
                 ) : (
-                    <div className="group relative w-full">
+                    <div className="group relative w-full items-center">
                         <p className="text-gray-300">{user.bio || <span className="italic text-gray-500">No bio yet...</span>}</p>
                         
                         {isOwner && (
                             <button
                                 onClick={() => setIsEditing(true)}
-                                className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-background rounded-md"
+                                className="absolute right-0 top-0 rounded-md hover:text-accent"
                                 title="Edit Bio">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>

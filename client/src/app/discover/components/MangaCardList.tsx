@@ -7,12 +7,12 @@ function MangaCardList({ manga }: { manga?: any }) {
     return (
         <>
         <Link href={`manga/${manga.id}`} className="flex flex-row w-full h-fit group bg-foreground rounded-md">
-            <div className="relative aspect-2/3 w-32 overflow-hidden rounded-lg">
+            <div className="relative aspect-2/3 w-lg lg:w-32 xl:w-32 overflow-hidden rounded-lg">
                 <img src={`${manga?.cover?.raw.url || '/notFound.png'}`} alt={manga.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
             </div>
             <div className="flex flex-col gap-2 ml-4 mt-2">
                 <h1 className="text-2xl font-bold">{manga.title}</h1>
-                <div className="flex flex-row gap-2">
+                <div className="flex flex-row flex-wrap gap-2">
                     <span className="text-sm text-muted font-medium uppercase">{manga.type || 'Unknown Type'}</span>
                     <span className="text-sm text-muted font-medium">{manga.year}</span>
                     <span className="text-sm text-muted font-medium uppercase">{(manga.status === 'releasing' ) ? 'Ongoing' : manga.status || 'Unknown Status'}</span>

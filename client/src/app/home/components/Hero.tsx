@@ -43,7 +43,7 @@ export default function Hero({ mangaData }: any) {
     }, [emblaApi]);
 
     return (
-        <section id="hero" className="pt-25 relative overflow-hidden">
+        <section id="hero" className="pt-25 relative overflow-hidden mb-15 md:mb-15 xl:mb-0">
             <div className="absolute inset-0 -z-50 min-h-[55vh] overflow-hidden">
                 <div className="absolute inset-0 bg-cover bg-center scale-100" style={{ backgroundImage: `url(${selectedManga?.cover?.raw.url || "/notFound.png"})`}}/>
                 <div className="absolute inset-0 bg-linear-to-r from-background via-background/95 to-background/60" />
@@ -61,12 +61,12 @@ export default function Hero({ mangaData }: any) {
                         </div>
                     </button>
                     {/* Carousel Content */}
-                    <div className="overflow-hidden w-full px-1 min-w-0" ref={emblaRef}>
+                    <div className="overflow-hidden w-full min-w-0" ref={emblaRef}>
                         <div className="flex">
                             {topManga.map((manga: any, index: number) => (
-                                <div key={manga.id || index} className="flex-[0_0_100%] min-w-0 px-1">
-                                    <div className="flex flex-row items-center justify-between space-x-6">
-                                        <div className="flex flex-col space-y-4 max-w-6xl">
+                                <div key={manga.id || index} className="flex-[0_0_100%] min-w-0 overflow-hidden">
+                                    <div className="flex flex-row items-center justify-between space-x-6 min-w-0 px-3 md:px-4">
+                                        <div className="flex flex-col space-y-4 max-w-6xl w-full min-w-0">
                                             <div className="flex px-4 py-2 bg-accent/20 backdrop-blur-sm rounded-full items-center w-fit animate-glow border border-accent/40 animate-shimmer">
                                                 <TrendingUp className="size-5 mr-2" />
                                                 <span className="text-sm font-semibold">#{index +1} Trending This Week</span>
@@ -78,7 +78,7 @@ export default function Hero({ mangaData }: any) {
                                                     <Pill key={genre} text={genre} theme="accent" size="px-2.5 py-0.5" />
                                                 ))}
                                             </div>
-                                            <div className="text-lg text-muted max-w-4xl mt-3 line-clamp-4">{manga.description}</div>
+                                            <div className="text-lg text-muted max-w-4xl mt-3 line-clamp-4 wrap-break-words">{manga.description}</div>
                                             <div className="flex mt-4 space-x-6">
                                                 <div className="flex items-center text-xl font-bold">
                                                     <div className="mr-1 bg-yellow-600/20 backdrop-blur-sm rounded-md p-2 border border-yellow-600/40 flex items-center justify-center">

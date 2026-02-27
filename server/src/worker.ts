@@ -23,13 +23,13 @@ async function main() {
 
     initializeScrapers();
 
-    try {
-        await mangaRecoveryService.recoverIncompleteDownloads();
-    } catch (error) {
-        logger.error(`Failed to run recovery service: ${error}`, { service: 'worker' });
-    }
+    // try {
+    //     await mangaRecoveryService.recoverIncompleteDownloads();
+    // } catch (error) {
+    //     logger.error(`Failed to run recovery service: ${error}`, { service: 'worker' });
+    // }
 
-    initCronJobs();
+    // initCronJobs();
     logger.info('Worker started: queues, scrapers, cron, and recovery initialized', { service: 'worker' });
 }
 
@@ -37,7 +37,7 @@ const gracefulShutdown = async () => {
     logger.info('Worker received shutdown signal, starting graceful shutdown...');
 
     try {
-        stopCronJobs();
+        // stopCronJobs();
         logger.info('Cron jobs stopped', { service: 'worker' });
 
         await queueService.closeAll();
