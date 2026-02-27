@@ -51,9 +51,9 @@ export default function TagDropdown({title, label = "All tags", options, size, o
                             <div className="px-2 py-1.5 text-sm text-muted">No tags found.</div>
                         )}
                         {filteredOptions.map((tag) => (
-                            <label key={tag} className="flex items-center px-2 py-1.5 rounded hover:bg-white/5 cursor-pointer space-x-3 group">
-                                <input type="checkbox" checked={selectedValues.includes(tag)} onChange={() => toggle(tag)} className="w-4 h-4 rounded border-borders bg-gray-700 text-blue-500 focus:ring-blue-500"/>
-                                <span className="text-sm text-primary group-hover:text-gray-300 transition-colors">{tag}</span>
+                            <label key={tag} className="flex items-center gap-3 px-2 py-1.5 rounded hover:bg-white/5 cursor-pointer group min-w-0">
+                                <input type="checkbox" checked={selectedValues.includes(tag)} onChange={() => toggle(tag)} className="w-4 h-4 shrink-0 rounded border-borders bg-gray-700 text-blue-500 focus:ring-blue-500"/>
+                                <span className="text-sm text-primary group-hover:text-gray-300 transition-colors min-w-0 wrap-break-words">{tag}</span>
                             </label>
                         ))}
                     </div>

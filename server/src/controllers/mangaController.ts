@@ -165,117 +165,81 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                 staleIfError: cacheTtlSeconds,
             },
             async () => {
-                // Phase 1: Lightweight ID + sort key query (no JOINs, no correlated subqueries)
-                const idQuery = db
-                    .select({
-                        id: schema.series.id,
-                        sortVal: effectiveSort,
-                    })
-                    .from(schema.series)
-                    .where(and(...conditions))
-                    .orderBy(
-                        isAsc ? asc(effectiveSort) : desc(effectiveSort),
-                        isAsc ? asc(schema.series.id) : desc(schema.series.id)
-                    )
-                    .limit(pageSize + 1);
+                // 3. Main Execution (Aggregating views and flags)
+                const [totalCountResult] = await db.select({ count: count() }).from(schema.series).where(and(...conditions));
 
-                // Run count only on first page (no cursor); run in parallel with id query
-                const countPromise = cursor
-                    ? Promise.resolve(null as { count: number } | null)
-                    : db.select({ count: count() }).from(schema.series).where(and(...conditions)).then((r) => r[0] ?? null);
-
-                const [idRows, totalCountResult] = await Promise.all([idQuery, countPromise]);
-
-                const hasNextPage = idRows.length > pageSize;
-                const idRowsPage = hasNextPage ? idRows.slice(0, -1) : idRows;
-                const seriesIds = idRowsPage.map((r) => r.id);
-                if (seriesIds.length === 0) {
-                    return {
-                        meta: {
-                            total: totalCountResult ? Number(totalCountResult.count) : undefined,
-                            hasNextPage: false,
-                            sort,
-                            order: isAsc ? 'asc' : 'desc'
-                        },
-                        items: [],
-                        nextCursor: null as string | null
-                    };
-                }
-
-                // Phase 2: Full data for these IDs only (single join, no per-row subqueries)
-                const fullRows = await db
+                const data = await db
                     .select({
                         ...columns,
                         views: schema.mangaViewStats.totalViews,
                         uniqueViews: schema.mangaViewStats.uniqueViews,
+                        // Request 1: Is New (chapter in last X days)
+                        isNew: sql<boolean>`EXISTS (
+                            SELECT 1 FROM ${schema.chapters} c 
+                            WHERE c.series_id = ${schema.series.id} 
+                            AND c.created_at >= NOW() - INTERVAL ${sql.raw(`'${NEW_INTERVAL}'`)}
+                        )`.mapWith(Boolean),
+                        // Request 2: Is In User List
+                        isInUserList: userId ? sql<boolean>`EXISTS (
+                            SELECT 1 FROM ${schema.userSeriesList} usl 
+                            WHERE usl.series_id = ${schema.series.id} 
+                            AND usl.user_id = ${userId}
+                        )`.mapWith(Boolean) : sql<boolean>`false`.mapWith(Boolean),
+                        // Request 3: Follower Count
+                        followerCount: sql<number>`(
+                            SELECT COUNT(*) FROM ${schema.userSeriesList} usl 
+                            WHERE usl.series_id = ${schema.series.id}
+                        )`,
                     })
                     .from(schema.series)
                     .leftJoin(schema.mangaViewStats, eq(schema.series.id, schema.mangaViewStats.seriesId))
-                    .where(inArray(schema.series.id, seriesIds));
-
-                // Preserve sort order (IN clause doesn't guarantee order)
-                const orderMap = new Map(seriesIds.map((id, i) => [id, i]));
-                fullRows.sort((a, b) => (orderMap.get(a.id) ?? 0) - (orderMap.get(b.id) ?? 0));
-
-                // Batch-fetch isNew, isInUserList, followerCount in parallel
-                const [newSeriesIds, userListSeriesIds, followerCounts] = await Promise.all([
-                    db.selectDistinct({ seriesId: schema.chapters.seriesId })
-                        .from(schema.chapters)
-                        .where(
-                            and(
-                                inArray(schema.chapters.seriesId, seriesIds),
-                                sql`${schema.chapters.createdAt} >= NOW() - INTERVAL ${sql.raw(`'${NEW_INTERVAL}'`)}`
-                            )
-                        )
-                        .then((rows) => new Set(rows.map((r) => r.seriesId))),
-                    userId
-                        ? db.select({ seriesId: schema.userSeriesList.seriesId })
-                            .from(schema.userSeriesList)
-                            .where(and(eq(schema.userSeriesList.userId, userId), inArray(schema.userSeriesList.seriesId, seriesIds)))
-                            .then((rows) => new Set(rows.map((r) => r.seriesId)))
-                        : Promise.resolve(new Set<number>()),
-                    db.select({
-                            seriesId: schema.userSeriesList.seriesId,
-                            cnt: count(),
-                        })
-                        .from(schema.userSeriesList)
-                        .where(inArray(schema.userSeriesList.seriesId, seriesIds))
-                        .groupBy(schema.userSeriesList.seriesId)
-                        .then((rows) => new Map(rows.map((r) => [r.seriesId, Number(r.cnt)]))),
-                ]);
-
-                const items = fullRows.map((row) => ({
-                    ...row,
-                    isNew: newSeriesIds.has(row.id),
-                    isInUserList: userListSeriesIds.has(row.id),
-                    followerCount: followerCounts.get(row.id) ?? 0,
-                }));
-
-                // Latest chapters for this page only
-                const latestChapters = await db.selectDistinctOn([schema.chapters.seriesId])
-                    .from(schema.chapters)
-                    .where(inArray(schema.chapters.seriesId, seriesIds))
+                    .where(and(...conditions))
                     .orderBy(
-                        schema.chapters.seriesId,
-                        desc(sql`CAST(split_part(${schema.chapters.chapterNumber}, '.', 1) AS INTEGER)`),
-                        desc(sql`CASE WHEN ${schema.chapters.chapterNumber} LIKE '%.%' THEN CAST(split_part(${schema.chapters.chapterNumber}, '.', 2) AS INTEGER) ELSE 0 END`)
-                    );
-                const chapterMap = new Map(latestChapters.map((c) => [c.seriesId, c]));
-                const itemsWithChapters = items.map((item) => ({
-                    ...item,
-                    latestChapter: chapterMap.get(item.id) ?? null,
-                }));
+                        isAsc ? asc(effectiveSort) : desc(effectiveSort), 
+                        isAsc ? asc(schema.series.id) : desc(schema.series.id)
+                    )
+                    .limit(pageSize + 1);
 
-                let nextCursor: string | null = null;
-                if (hasNextPage && idRowsPage.length > 0) {
-                    const last = idRowsPage[idRowsPage.length - 1];
-                    const val = last.sortVal ?? 0;
+                const hasNextPage = data.length > pageSize;
+                const items = hasNextPage ? data.slice(0, -1) : data;
+                const seriesIds = items.map(m => m.id);
+
+                // 4. Optimized Latest Chapter Fetch (Batch only for the visible items)
+                let itemsWithChapters: any[] = items; 
+
+                if (seriesIds.length > 0) {
+                    const latestChapters = await db.selectDistinctOn([schema.chapters.seriesId])
+                        .from(schema.chapters)
+                        .where(inArray(schema.chapters.seriesId, seriesIds))
+                        .orderBy(
+                            schema.chapters.seriesId,
+                            desc(sql`CAST(split_part(${schema.chapters.chapterNumber}, '.', 1) AS INTEGER)`),
+                            desc(sql`CASE WHEN ${schema.chapters.chapterNumber} LIKE '%.%' THEN CAST(split_part(${schema.chapters.chapterNumber}, '.', 2) AS INTEGER) ELSE 0 END`)
+                        );
+
+                    const chapterMap = new Map(latestChapters.map(c => [c.seriesId, c]));
+                    
+                    // By mapping directly here, TypeScript infers the combined type correctly
+                    itemsWithChapters = items.map(item => ({
+                        ...item,
+                        latestChapter: chapterMap.get(item.id) || null
+                    }));
+                } else {
+                    // If no series, just map the empty chapters
+                    itemsWithChapters = items.map(item => ({ ...item, latestChapter: null }));
+                }
+
+                // 5. Build Cursor
+                let nextCursor = null;
+                if (hasNextPage) {
+                    const last = items[items.length - 1];
+                    const val = last[sortKey as keyof typeof last] ?? 0;
                     nextCursor = `${val}|${last.id}`;
                 }
 
                 return {
                     meta: {
-                        total: totalCountResult != null ? Number(totalCountResult.count) : undefined,
+                        total: Number(totalCountResult?.count || 0),
                         hasNextPage,
                         sort,
                         order: isAsc ? 'asc' : 'desc'
@@ -763,6 +727,8 @@ const GENRE_WEIGHTS: Record<string, number> = {
 
 const DEFAULT_GENRE_WEIGHT = 2.0;
 
+const RECOMMENDATIONS_CACHE_TTL = 3 * 24 * 60 * 60; // 3 days
+
 // Get recommended manga based on genres
 export async function getRecommendedManga(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
@@ -773,75 +739,78 @@ export async function getRecommendedManga(req: Request, res: Response, next: Nex
             return res.status(400).json({ status: 400, message: "Invalid manga ID" });
         }
 
-        // Get current manga's genres
-        const currentManga = await db
-            .select({ genres: schema.series.genres })
-            .from(schema.series)
-            .where(eq(schema.series.id, id))
-            .limit(1);
+        const cacheKey = `manga:recommendations:${id}:${limit}`;
+        const result = await cacheService.getOrSet(
+            { key: cacheKey, ttl: RECOMMENDATIONS_CACHE_TTL },
+            async () => {
+                const currentManga = await db
+                    .select({ genres: schema.series.genres })
+                    .from(schema.series)
+                    .where(eq(schema.series.id, id))
+                    .limit(1);
 
-        if (!currentManga.length || !currentManga[0].genres) {
-            return res.json([]);
-        }
-
-        const genres = currentManga[0].genres as string[];
-        const currentGenres = genres.map(g => g?.toLowerCase().trim()).filter(Boolean);
-        
-        if (currentGenres.length === 0) {
-            return res.json([]);
-        }
-
-        const primaryGenre = currentGenres[0];
-        const genreSet = new Set(currentGenres);
-
-        // Simple, fast query: get high-quality manga with matching genres
-        const recommendations = await db
-            .select({
-                id: schema.series.id,
-                title: schema.series.title,
-                cover: schema.series.cover,
-                genres: schema.series.genres,
-                weightedScore: schema.series.weightedScore,
-                status: schema.series.status,
-                type: schema.series.type,
-                contentRating: schema.series.contentRating,
-            })
-            .from(schema.series)
-            .where(
-                and(
-                    ne(schema.series.id, id),
-                    isNotNull(schema.series.genres),
-                    gt(schema.series.weightedScore, 0)
-                )
-            )
-            .orderBy(desc(schema.series.weightedScore))
-            .limit(limit * 6);
-
-        if (!recommendations.length) {
-            return res.json([]);
-        }
-
-        // Score and filter in JS
-        const scored = recommendations
-            .map(manga => ({
-                ...manga,
-                matchCount: (manga.genres as string[])
-                    .filter(g => genreSet.has(g.toLowerCase().trim()))
-                    .length
-            }))
-            .filter(m => m.matchCount > 0)
-            .filter(m => !shouldFilterManga(m.genres as any)) // Filter out blocked content
-            .sort((a, b) => {
-                if (b.matchCount !== a.matchCount) {
-                    return b.matchCount - a.matchCount; // More matching genres first
+                if (!currentManga.length || !currentManga[0].genres) {
+                    return [];
                 }
-                return (b.weightedScore || 0) - (a.weightedScore || 0); // Then by score
-            })
-            .slice(0, limit)
-            .map(({ matchCount, ...rest }) => rest);
 
-        // If no genre matches, just return top results
-        return res.json(scored.length > 0 ? scored : recommendations.filter(m => !shouldFilterManga(m.genres as any)).slice(0, limit));
+                const genres = currentManga[0].genres as string[];
+                const currentGenres = genres.map(g => g?.toLowerCase().trim()).filter(Boolean);
+
+                if (currentGenres.length === 0) {
+                    return [];
+                }
+
+                const genreSet = new Set(currentGenres);
+
+                const recommendations = await db
+                    .select({
+                        id: schema.series.id,
+                        title: schema.series.title,
+                        cover: schema.series.cover,
+                        genres: schema.series.genres,
+                        weightedScore: schema.series.weightedScore,
+                        status: schema.series.status,
+                        type: schema.series.type,
+                        contentRating: schema.series.contentRating,
+                    })
+                    .from(schema.series)
+                    .where(
+                        and(
+                            ne(schema.series.id, id),
+                            isNotNull(schema.series.genres),
+                            gt(schema.series.weightedScore, 0)
+                        )
+                    )
+                    .orderBy(desc(schema.series.weightedScore))
+                    .limit(limit * 6);
+
+                if (!recommendations.length) {
+                    return [];
+                }
+
+                const scored = recommendations
+                    .map(manga => ({
+                        ...manga,
+                        matchCount: (manga.genres as string[])
+                            .filter(g => genreSet.has(g.toLowerCase().trim()))
+                            .length
+                    }))
+                    .filter(m => m.matchCount > 0)
+                    .filter(m => !shouldFilterManga(m.genres as any))
+                    .sort((a, b) => {
+                        if (b.matchCount !== a.matchCount) {
+                            return b.matchCount - a.matchCount;
+                        }
+                        return (b.weightedScore || 0) - (a.weightedScore || 0);
+                    })
+                    .slice(0, limit)
+                    .map(({ matchCount, ...rest }) => rest);
+
+                return scored.length > 0 ? scored : recommendations.filter(m => !shouldFilterManga(m.genres as any)).slice(0, limit);
+            }
+        );
+
+        return res.json(result);
     } catch (error) {
         logger.error(`Failed to get recommendations: ${(error as Error).message}`, { service: 'mangaController' });
         return next(error);
@@ -899,7 +868,6 @@ export async function getGallery(req: Request, res: Response, next: NextFunction
 export async function getCollections(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
         const collections = await getCollectionsList();
-        
         return res.json(collections);
     } catch (error) {
         logger.error(`Error fetching collections: ${(error as Error).message}`, { service: 'mangaController' });

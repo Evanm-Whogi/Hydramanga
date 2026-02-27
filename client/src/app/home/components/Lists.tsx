@@ -113,8 +113,8 @@ export default function Lists() {
     return (
         <section id="lists" className="pb-25">
             <div className="container mx-auto text-primary space-y-24 mt-10 md:mt-0">
-                <div className="flex flex-col lg:flex-row gap-12">
-                    <div className="w-full lg:w-3/4 space-y-16 min-w-0">
+                <div className="flex flex-col lg:flex-col xl:flex-row gap-12">
+                    <div className="w-full lg:w-full xl:w-3/4 space-y-16 min-w-0">
 
                         {/* Reading History */}
                         {recentlyRead?.progress?.length > 0 && (
@@ -141,7 +141,7 @@ export default function Lists() {
                         {/* Recently Added */}
                         <section>
                             <SectionHeader title="Recently Added" />
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4 md:gap-6">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-7 gap-4 md:gap-6">
                                 {recentlyAdded.map((manga) => (
                                     <RecentCard key={`added-${manga.id}`} manga={manga} />
                                 ))}
@@ -208,7 +208,7 @@ export default function Lists() {
                             ))}
                         </CarouselSection>
                     </div>
-                    <div className="w-full lg:w-1/4">
+                    <div className="w-full lg:w-full xl:w-1/4">
                             <aside className="space-y-6">
                                 {recentComments?.length > 0 && (
                                     <>

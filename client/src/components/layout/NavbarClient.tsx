@@ -77,7 +77,7 @@ export default function NavbarClient() {
     return (
         <>
             <nav id="header" className={`fixed top-0 left-0 w-full z-50 transition-all duration-300 border-b ${isScrolled ? 'bg-foreground border-borders shadow-lg' : 'bg-foreground/5 backdrop-blur-md border-white/10'}`}>
-                <div className="flex container items-center h-18 pt-2 mx-auto px-5 md:px-0 justify-between">
+                <div className="flex container items-center h-18 pt-2 mx-auto px-5 lg:px-0 justify-between min-w-0">
                     {/* Left Section */}
                     <div className="flex items-center gap-8 h-full">
                         <Link href="/" className="z-50 flex items-center h-full w-55.5">
@@ -91,7 +91,7 @@ export default function NavbarClient() {
                                 style={{ height: '100%', width: 'auto' }}
                             />
                         </Link>
-                        <nav className="hidden md:flex items-center space-x-6 text-md text-muted ml-6">
+                        <nav className="hidden xl:flex items-center space-x-6 text-md text-muted ml-6">
                             {user ? (
                                 <>
                                     <NavItem href='/home' icon={<HouseIcon className="size-4 inline" />} label='Home' />
@@ -106,7 +106,7 @@ export default function NavbarClient() {
 
                     {/* Right Section */}
                     <div className="flex items-center gap-6">
-                        <div className="hidden md:flex items-center gap-3">
+                        <div className="hidden xl:flex items-center gap-3">
                             {user ? (
                                 <>
                                     <div onClick={toggleRandomManga} className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><DicesIcon className="size-4" />Random</div>
@@ -144,13 +144,13 @@ export default function NavbarClient() {
                                 </div>
                             )}
                         </div>
-                        <button onClick={() => setIsOpen(!isOpen)} aria-label="Menu" className="md:hidden p-2 text-muted"><ListIcon className="size-6" /></button>
+                        <button onClick={() => setIsOpen(!isOpen)} aria-label="Menu" className="xl:hidden p-2 text-muted"><ListIcon className="size-6" /></button>
                     </div>
                 </div>
 
                 {/* Mobile Nav */}
                 {isOpen && (
-                    <div ref={mobileMenuRef} className="md:hidden border-t border-borders bg-foreground/95 backdrop-blur-sm">
+                    <div ref={mobileMenuRef} className="xl:hidden border-t border-borders bg-foreground/95 backdrop-blur-sm">
                         <div className="px-5 py-4 space-y-4">
                             {user ? (
                                 <>

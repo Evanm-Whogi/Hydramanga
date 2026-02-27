@@ -61,7 +61,7 @@ export default function MangaList({ filters }: MangaListProps) {
                     </div>
 
                 </div>
-                <div className={`grid ${displayMode === 'grid' ? 'grid-cols-2 md:grid-cols-8' : 'grid-cols-2'} gap-6`}>
+                <div className={`grid ${displayMode === 'grid' ? 'grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-8' : 'grid-cols-1 xl:grid-cols-2'} gap-6`}>
                     {items.map((item, index) => {
                         const isLastElement = items.length === index + 1;
                         return (

@@ -9,11 +9,6 @@
   --color-foreground: #1E2021;
   --color-borders: #424242;
   --color-muted: #D4D4D4;
-  --breakpoint-2xl: 132rem; 
-  --breakpoint-xl: 100rem;
-  --breakpoint-lg: 80rem;
-  --breakpoint-md: 48rem;
-  --breakpoint-sm: 30rem;
   --toastify-text-color-dark: #F5F7F8;
   --color-transparent-card: #000000;
 }
@@ -44,17 +39,24 @@
 @utility container {
   margin-inline: auto;
   width: 100%;
-  
-  padding-inline: 1.5rem;
+  box-sizing: border-box;
+  padding-inline: 1rem;
 
-  @variant sm { padding-inline: 2rem; }
-  @variant md { padding-inline: 3rem; }
-  @variant lg { padding-inline: 4rem; }
-  @variant sm { max-width: var(--breakpoint-sm); }
-  @variant md { max-width: var(--breakpoint-md); }
-  @variant lg { max-width: var(--breakpoint-lg); }
-  @variant xl { max-width: var(--breakpoint-xl); }
-  @variant 2xl { max-width: var(--breakpoint-2xl); }
+  @variant sm {
+    max-width: 80rem;
+  }
+  @variant md {
+    max-width: 80rem;
+  }
+  @variant lg {
+    max-width: 80rem;
+  }
+  @variant xl {
+    max-width: 100rem;
+  }
+  @variant 2xl {
+    max-width: 132rem;
+  }
 }
 
 
@@ -66,11 +68,6 @@ body {
 html {
   overflow-y: scroll;
   scrollbar-gutter: stable;
-}
-
-.container {
-  padding-left: 1.5rem;
-  padding-right: 1.5rem;
 }
 
 /* Overright the close button for toasts */
