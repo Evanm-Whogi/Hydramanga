@@ -1,14 +1,30 @@
 import { formatTimeAgo } from "@/lib/utils";
-import { useState, useMemo, useEffect } from "react";
-import { ClockIcon, CheckIcon, BookmarkIcon, SearchIcon, ArrowUpDown } from "lucide-react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { ClockIcon, CheckIcon, BookmarkIcon, SearchIcon, ChevronDownIcon } from "lucide-react";
 import { getSeriesChapterProgress, markChapterAsRead, markChapterAsUnread } from "@/services/mangaService";
-import { getSeriesBookmarks, removeBookmark } from "@/services/bookmarkService";
+import { getSeriesBookmarks, removeBookmark, addBookmark } from "@/services/bookmarkService";
 import BookmarkModal from "@/components/BookmarkModal";
 import { toast } from "react-toastify";
 import { trackBookmarkAction } from "@/lib/analytics";
 import Link from "next/link";
 
 const CHAPTERS_PER_PAGE = 24;
+
+type FilterOption = "all" | "unread" | "read" | "bookmarked";
+type SortOption = "chapterNumber" | "uploadDate" | "name";
+
+const FILTER_OPTIONS: { value: FilterOption; label: string }[] = [
+    { value: "all", label: "All" },
+    { value: "unread", label: "Unread" },
+    { value: "bookmarked", label: "Bookmarked" },
+    { value: "read", label: "Read" },
+];
+
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+    { value: "chapterNumber", label: "By Chapter Number" },
+    { value: "uploadDate", label: "By Upload Date" },
+    { value: "name", label: "By Name" },
+];
 
 interface ChapterProgress {
     [chapterId: number]: {
@@ -26,197 +42,338 @@ interface BookmarkData {
     };
 }
 
+function useClickOutside(ref: React.RefObject<HTMLElement | null>, handler: () => void) {
+    useEffect(() => {
+        const listener = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) handler();
+        };
+        document.addEventListener("mousedown", listener);
+        return () => document.removeEventListener("mousedown", listener);
+    }, [ref, handler]);
+}
+
 export default function Chapters({ manga, progress }: { manga: any; progress?: any }) {
     const [showAll, setShowAll] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    const [sortBy, setSortBy] = useState<SortOption>("chapterNumber");
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+    const [filter, setFilter] = useState<FilterOption>("all");
+    const [filterOpen, setFilterOpen] = useState(false);
+    const [sortOpen, setSortOpen] = useState(false);
     const [chapterProgress, setChapterProgress] = useState<ChapterProgress>({});
     const [bookmarks, setBookmarks] = useState<BookmarkData>({});
     const [bookmarkModal, setBookmarkModal] = useState({ isOpen: false, chapterId: 0 });
     const [isOperating, setIsOperating] = useState(false);
-    
+    const [selectModeEnabled, setSelectModeEnabled] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const [anchorIndex, setAnchorIndex] = useState<number | null>(null);
+    const [bulkOperating, setBulkOperating] = useState(false);
+    const filterRef = useRef<HTMLDivElement>(null);
+    const sortRef = useRef<HTMLDivElement>(null);
+
+    const closeFilterDropdown = useCallback(() => setFilterOpen(false), []);
+    const closeSortDropdown = useCallback(() => setSortOpen(false), []);
+    useClickOutside(filterRef, closeFilterDropdown);
+    useClickOutside(sortRef, closeSortDropdown);
+
     const rawChapters = manga.chapters || [];
-    
-    // Sort by chapter number, then filter by search, then paginate
+
+    const fetchProgress = useCallback(async () => {
+        try {
+            const response = await getSeriesChapterProgress(manga.id);
+            if (response?.chapters && Array.isArray(response.chapters)) {
+                const progressMap: ChapterProgress = {};
+                response.chapters.forEach((ch: any) => {
+                    progressMap[ch.chapterId] = {
+                        lastPageNumber: ch.lastPageNumber,
+                        pageCount: ch.pageCount || 0,
+                        percentageCompleted: ch.percentageCompleted || 0,
+                    };
+                });
+                setChapterProgress(progressMap);
+            }
+        } catch (error) {
+            console.error("Failed to fetch chapter progress:", error);
+        }
+    }, [manga.id]);
+
+    const fetchBookmarks = useCallback(async () => {
+        try {
+            const response = await getSeriesBookmarks(manga.id);
+            if (response?.bookmarks && Array.isArray(response.bookmarks)) {
+                const bookmarkMap: BookmarkData = {};
+                response.bookmarks.forEach((b: any) => {
+                    bookmarkMap[b.chapterId] = {
+                        id: b.id,
+                        note: b.note,
+                        createdAt: b.createdAt,
+                    };
+                });
+                setBookmarks(bookmarkMap);
+            }
+        } catch (error) {
+            console.error("Failed to fetch bookmarks:", error);
+        }
+    }, [manga.id]);
+
+    // Filter by status, then by search, then sort, then paginate
     const chapters = useMemo(() => {
-        const sorted = [...rawChapters].sort((a: any, b: any) => {
-            const order = (a.chapterNumber ?? "").toString().localeCompare((b.chapterNumber ?? "").toString(), undefined, { numeric: true, sensitivity: "base" });
-            return sortOrder === "asc" ? order : -order;
+        let list = rawChapters;
+
+        if (filter !== "all") {
+            list = list.filter((ch: any) => {
+                const progressPct = chapterProgress[ch.id]?.percentageCompleted ?? 0;
+                const isRead = progressPct >= 100;
+                const isBookmarked = !!bookmarks[ch.id];
+                if (filter === "unread") return !isRead;
+                if (filter === "read") return isRead;
+                if (filter === "bookmarked") return isBookmarked;
+                return true;
+            });
+        }
+
+        if (searchQuery.trim()) {
+            const q = searchQuery.trim().toLowerCase();
+            list = list.filter((ch: any) => {
+                const title = (ch.title ?? "").toLowerCase();
+                const num = (ch.chapterNumber ?? "").toString().toLowerCase();
+                return title.includes(q) || num.includes(q);
+            });
+        }
+
+        const sorted = [...list].sort((a: any, b: any) => {
+            let cmp = 0;
+            if (sortBy === "chapterNumber") {
+                cmp = (a.chapterNumber ?? "").toString().localeCompare((b.chapterNumber ?? "").toString(), undefined, { numeric: true, sensitivity: "base" });
+            } else if (sortBy === "uploadDate") {
+                const tA = new Date(a.updatedAt ?? 0).getTime();
+                const tB = new Date(b.updatedAt ?? 0).getTime();
+                cmp = tA - tB;
+            } else {
+                cmp = (a.title ?? "").localeCompare(b.title ?? "", undefined, { sensitivity: "base" });
+            }
+            return sortOrder === "asc" ? cmp : -cmp;
         });
-        if (!searchQuery.trim()) return sorted;
-        const q = searchQuery.trim().toLowerCase();
-        return sorted.filter((ch: any) => {
-            const title = (ch.title ?? "").toLowerCase();
-            const num = (ch.chapterNumber ?? "").toString().toLowerCase();
-            return title.includes(q) || num.includes(q);
-        });
-    }, [rawChapters, sortOrder, searchQuery]);
-    
+        return sorted;
+    }, [rawChapters, filter, searchQuery, sortBy, sortOrder, chapterProgress, bookmarks]);
+
     const visibleChapters = useMemo(() => {
         return showAll ? chapters : chapters.slice(0, CHAPTERS_PER_PAGE);
     }, [chapters, showAll]);
-    
+
     const hasMore = !showAll && chapters.length > CHAPTERS_PER_PAGE;
 
-    // Fetch per-chapter reading progress for this manga series
-    useEffect(() => {
-        const fetchProgress = async () => {
-            try {
-                const response = await getSeriesChapterProgress(manga.id);
-                if (response?.chapters && Array.isArray(response.chapters)) {
-                    const progressMap: ChapterProgress = {};
-                    response.chapters.forEach((ch: any) => {
-                        progressMap[ch.chapterId] = {
-                            lastPageNumber: ch.lastPageNumber,
-                            pageCount: ch.pageCount || 0,
-                            percentageCompleted: ch.percentageCompleted || 0,
-                        };
-                    });
-                    setChapterProgress(progressMap);
+    useEffect(() => { fetchProgress(); }, [fetchProgress]);
+    useEffect(() => { fetchBookmarks(); }, [fetchBookmarks]);
+
+    const toggleSelect = useCallback((chapterId: number) => {
+        setSelectedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(chapterId)) next.delete(chapterId);
+            else next.add(chapterId);
+            return next;
+        });
+    }, []);
+
+    const selectAllVisible = useCallback(() => {
+        setSelectedIds((prev) => {
+            const ids = new Set(visibleChapters.map((ch: any) => ch.id));
+            return prev.size === ids.size ? new Set() : ids;
+        });
+    }, [visibleChapters]);
+
+    const clearSelection = useCallback(() => {
+        setSelectedIds(new Set());
+        setAnchorIndex(null);
+    }, []);
+
+    const exitSelectMode = useCallback(() => {
+        setSelectModeEnabled(false);
+        clearSelection();
+    }, [clearSelection]);
+
+    const handleRowClick = useCallback(
+        (e: React.MouseEvent, chapterId: number, index: number) => {
+            if (e.shiftKey) {
+                if (anchorIndex !== null) {
+                    const lo = Math.min(anchorIndex, index);
+                    const hi = Math.max(anchorIndex, index);
+                    const idsInRange = visibleChapters.slice(lo, hi + 1).map((ch: any) => ch.id);
+                    setSelectedIds((prev) => new Set([...prev, ...idsInRange]));
+                } else {
+                    toggleSelect(chapterId);
                 }
-            } catch (error) {
-                console.error('Failed to fetch chapter progress:', error);
+                setAnchorIndex(index);
+            } else {
+                toggleSelect(chapterId);
+                setAnchorIndex(index);
             }
-        };
-        
-        fetchProgress();
-    }, [manga.id]);
+        },
+        [anchorIndex, visibleChapters, toggleSelect]
+    );
 
-    // Fetch bookmarks for this series
-    useEffect(() => {
-        const fetchBookmarks = async () => {
+    const runBulkAction = useCallback(
+        async (
+            action: (chapterId: number) => Promise<unknown>,
+            successMsg: string,
+            errorMsg: string,
+            refetch: () => Promise<void>
+        ) => {
+            if (selectedIds.size === 0 || bulkOperating) return;
+            setBulkOperating(true);
             try {
-                const response = await getSeriesBookmarks(manga.id);
-                if (response?.bookmarks && Array.isArray(response.bookmarks)) {
-                    const bookmarkMap: BookmarkData = {};
-                    response.bookmarks.forEach((b: any) => {
-                        bookmarkMap[b.chapterId] = {
-                            id: b.id,
-                            note: b.note,
-                            createdAt: b.createdAt,
-                        };
-                    });
-                    setBookmarks(bookmarkMap);
+                const results = await Promise.allSettled(Array.from(selectedIds).map(action));
+                const failed = results.filter((r) => r.status === "rejected").length;
+                await refetch();
+                const count = selectedIds.size;
+                if (failed === 0) {
+                    toast.success(successMsg);
+                    clearSelection();
+                } else {
+                    toast.warning(`${count - failed} done, ${failed} failed`);
                 }
-            } catch (error) {
-                console.error('Failed to fetch bookmarks:', error);
+            } catch {
+                toast.error(errorMsg);
+            } finally {
+                setBulkOperating(false);
             }
-        };
-        
-        fetchBookmarks();
-    }, [manga.id]);
+        },
+        [selectedIds, bulkOperating, clearSelection]
+    );
 
-    const handleMarkAsRead = async (e: React.MouseEvent, chapterId: number) => {
-        if (isOperating) return;
-        e.preventDefault();
-        e.stopPropagation();
-        
-        setIsOperating(true);
-        try {
-            await markChapterAsRead(manga.id, chapterId);
-            toast.success('Chapter marked as read');
-            
-            // Update local state to reflect the change
-            setChapterProgress(prev => ({
-                ...prev,
-                [chapterId]: {
-                    lastPageNumber: chapters.find((ch: any) => ch.id === chapterId)?.pageCount || 0,
-                    pageCount: chapters.find((ch: any) => ch.id === chapterId)?.pageCount || 0,
-                    percentageCompleted: 100,
-                },
-            }));
-        } catch (error) {
-            console.error('Failed to mark chapter as read:', error);
-        } finally {
-            setIsOperating(false);
-        }
-    };
+    const handleBulkMarkAsRead = useCallback(
+        () =>
+            runBulkAction(
+                (id) => markChapterAsRead(manga.id, id),
+                `${selectedIds.size} chapter(s) marked as read`,
+                "Failed to update chapters",
+                fetchProgress
+            ),
+        [manga.id, selectedIds.size, runBulkAction, fetchProgress]
+    );
 
-    const handleMarkAsUnread = async (e: React.MouseEvent, chapterId: number) => {
-        if (isOperating) return;
-        e.preventDefault();
-        e.stopPropagation();
-        
-        setIsOperating(true);
-        try {
-            await markChapterAsUnread(chapterId);
-            
-            // Remove from local state
-            setChapterProgress(prev => {
-                const updated = { ...prev };
-                delete updated[chapterId];
-                return updated;
-            });
-        } catch (error) {
-            console.error('Failed to mark chapter as unread:', error);
-        } finally {
-            setIsOperating(false);
-        }
-    };
+    const handleBulkMarkAsUnread = useCallback(
+        () =>
+            runBulkAction(
+                (id) => markChapterAsUnread(id),
+                `${selectedIds.size} chapter(s) marked as unread`,
+                "Failed to update chapters",
+                fetchProgress
+            ),
+        [selectedIds.size, runBulkAction, fetchProgress]
+    );
 
-    const handleBookmarkClick = (e: React.MouseEvent, chapterId: number) => {
+    const handleBulkBookmark = useCallback(
+        () =>
+            runBulkAction(
+                (id) => addBookmark(manga.id, id),
+                `${selectedIds.size} chapter(s) bookmarked`,
+                "Failed to bookmark chapters",
+                fetchBookmarks
+            ),
+        [manga.id, selectedIds.size, runBulkAction, fetchBookmarks]
+    );
+
+    const handleBulkRemoveBookmark = useCallback(
+        () =>
+            runBulkAction(
+                (id) => removeBookmark(manga.id, id),
+                `Bookmark removed from ${selectedIds.size} chapter(s)`,
+                "Failed to remove bookmarks",
+                fetchBookmarks
+            ),
+        [manga.id, selectedIds.size, runBulkAction, fetchBookmarks]
+    );
+
+    const handleMarkAsRead = useCallback(
+        async (e: React.MouseEvent, chapterId: number) => {
+            if (isOperating) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setIsOperating(true);
+            try {
+                await markChapterAsRead(manga.id, chapterId);
+                toast.success("Chapter marked as read");
+                const ch = chapters.find((c: any) => c.id === chapterId);
+                const pageCount = ch?.pageCount ?? 0;
+                setChapterProgress((prev) => ({
+                    ...prev,
+                    [chapterId]: { lastPageNumber: pageCount, pageCount, percentageCompleted: 100 },
+                }));
+            } catch (error) {
+                console.error("Failed to mark chapter as read:", error);
+            } finally {
+                setIsOperating(false);
+            }
+        },
+        [manga.id, chapters, isOperating]
+    );
+
+    const handleMarkAsUnread = useCallback(
+        async (e: React.MouseEvent, chapterId: number) => {
+            if (isOperating) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setIsOperating(true);
+            try {
+                await markChapterAsUnread(chapterId);
+                toast.success("Chapter marked as unread");
+                setChapterProgress((prev) => {
+                    const updated = { ...prev };
+                    delete updated[chapterId];
+                    return updated;
+                });
+            } catch (error) {
+                console.error("Failed to mark chapter as unread:", error);
+            } finally {
+                setIsOperating(false);
+            }
+        },
+        [isOperating]
+    );
+
+    const handleBookmarkClick = useCallback((e: React.MouseEvent, chapterId: number) => {
         e.preventDefault();
         e.stopPropagation();
         setBookmarkModal({ isOpen: true, chapterId });
-    };
+    }, []);
 
-    const handleRemoveBookmark = async (e: React.MouseEvent, chapterId: number) => {
-        if (isOperating) return;
-        e.preventDefault();
-        e.stopPropagation();
-        
-        setIsOperating(true);
-        const chapter = chapters.find((ch: any) => ch.id === chapterId);
-        const note = bookmarks[chapterId]?.note;
-        try {
-            await removeBookmark(manga.id, chapterId);
-            setBookmarks(prev => {
-                const updated = { ...prev };
-                delete updated[chapterId];
-                return updated;
-            });
-            trackBookmarkAction('removed', manga.id.toString(), manga.title, chapterId.toString(), chapter?.chapterNumber, note);
-        } catch (error) {
-            console.error('Failed to remove bookmark:', error);
-        } finally {
-            setIsOperating(false);
-        }
-    };
-
-    const handleBookmarkSuccess = () => {
-        // Refetch bookmarks to update UI
-        const fetchBookmarks = async () => {
+    const handleRemoveBookmark = useCallback(
+        async (e: React.MouseEvent, chapterId: number) => {
+            if (isOperating) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setIsOperating(true);
             try {
-                const response = await getSeriesBookmarks(manga.id);
-                if (response?.bookmarks && Array.isArray(response.bookmarks)) {
-                    const bookmarkMap: BookmarkData = {};
-                    response.bookmarks.forEach((b: any) => {
-                        bookmarkMap[b.chapterId] = {
-                            id: b.id,
-                            note: b.note,
-                            createdAt: b.createdAt,
-                        };
-                    });
-                    setBookmarks(bookmarkMap);
-                }
+                await removeBookmark(manga.id, chapterId);
+                setBookmarks((prev) => {
+                    const updated = { ...prev };
+                    delete updated[chapterId];
+                    return updated;
+                });
+                const chapter = chapters.find((ch: any) => ch.id === chapterId);
+                trackBookmarkAction("removed", manga.id.toString(), manga.title, chapterId.toString(), chapter?.chapterNumber, bookmarks[chapterId]?.note);
             } catch (error) {
-                console.error('Failed to fetch bookmarks:', error);
+                console.error("Failed to remove bookmark:", error);
+            } finally {
+                setIsOperating(false);
             }
-        };
-        
-        fetchBookmarks();
-    };
+        },
+        [manga.id, manga.title, chapters, bookmarks, isOperating]
+    );
+
+    const handleBookmarkSuccess = useCallback(() => { fetchBookmarks(); }, [fetchBookmarks]);
     
     return (
         <>
         <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mt-4">
-                {progress?.status === 'scanning' ? (
+            <div className="grid gap-4 mt-4">
+                {progress?.status === "scanning" ? (
                     <div className="p-8 text-center bg-foreground rounded-lg">
                         <p className="text-lg text-muted mb-2">Scanning for chapters...</p>
                         <p className="text-sm text-muted/70">Please wait</p>
                     </div>
-                ) : progress?.status === 'downloading' && rawChapters.length === 0 ? (
+                ) : progress?.status === "downloading" && rawChapters.length === 0 ? (
                     <div className="p-8 text-center bg-foreground rounded-lg">
                         <p className="text-lg text-muted mb-2">Downloading chapters...</p>
                         <p className="text-sm text-muted/70">Please wait</p>
@@ -228,8 +385,8 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
                     </div>
                 ) : (
                     <>
-                    <div className="flex items-center gap-2 mb-4">
-                        <div className="relative flex-1 max-w-sm">
+                    <div className="flex flex-row flex-wrap place-content-between items-center gap-2 mb-4">
+                        <div className="relative flex-1 min-w-[200px] max-w-sm">
                             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted" />
                             <input
                                 type="search"
@@ -239,19 +396,94 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
                                 className="w-full pl-9 pr-3 py-2 bg-foreground border border-transparent rounded-md text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent"
                             />
                         </div>
-                        <button
-                            onClick={() => setSortOrder((o) => (o === "asc" ? "desc" : "asc"))}
-                            className="flex items-center gap-2 px-4 py-2 bg-foreground hover:bg-foreground/50 hover:cursor-pointer rounded-md shrink-0"
-                            title={sortOrder === "asc" ? "Newest first" : "Oldest first"}
-                        >
-                            <ArrowUpDown className="size-5" /> Order
-                        </button>
+                        <div className="flex flex-row flex-wrap gap-2 items-center">
+                            <button
+                                type="button"
+                                onClick={() => (selectModeEnabled ? exitSelectMode() : setSelectModeEnabled(true))}
+                                className={`px-4 py-2 rounded-md cursor-pointer transition-colors ${selectModeEnabled ? "bg-accent hover:bg-accent/80 text-white" : "bg-foreground hover:bg-foreground/50"}`}
+                            >
+                                {selectModeEnabled ? "Done" : "Select Mode"}
+                            </button>
+                            <div ref={filterRef} className="relative shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => { setFilterOpen((o) => !o); setSortOpen(false); }}
+                                    className="flex items-center gap-2 px-4 py-2 bg-foreground hover:bg-foreground/50 rounded-md cursor-pointer"
+                                >
+                                    Filter: {FILTER_OPTIONS.find((o) => o.value === filter)?.label ?? "All"}
+                                    <ChevronDownIcon className={`size-4 transition-transform ${filterOpen ? "rotate-180" : ""}`} />
+                                </button>
+                                {filterOpen && (
+                                    <div className="absolute top-full left-0 mt-1 min-w-[140px] bg-foreground rounded-md shadow-xl z-50 border border-white/10 overflow-hidden">
+                                        {FILTER_OPTIONS.map((opt) => (
+                                            <button
+                                                key={opt.value}
+                                                type="button"
+                                                onClick={() => { setFilter(opt.value); setFilterOpen(false); }}
+                                                className={`block w-full px-4 py-2 text-left hover:bg-white/10 ${filter === opt.value ? "bg-white/5 text-accent" : ""}`}
+                                            >
+                                                {opt.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <div ref={sortRef} className="relative shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => { setSortOpen((o) => !o); setFilterOpen(false); }}
+                                    className="flex items-center gap-2 px-4 py-2 bg-foreground hover:bg-foreground/50 rounded-md cursor-pointer"
+                                >
+                                    {SORT_OPTIONS.find((o) => o.value === sortBy)?.label ?? "Sort"}
+                                    <ChevronDownIcon className={`size-4 transition-transform ${sortOpen ? "rotate-180" : ""}`} />
+                                </button>
+                                {sortOpen && (
+                                    <div className="absolute top-full right-0 mt-1 min-w-[180px] bg-foreground rounded-md shadow-xl z-50 border border-white/10 overflow-hidden">
+                                        {SORT_OPTIONS.map((opt) => (
+                                            <button
+                                                key={opt.value}
+                                                type="button"
+                                                onClick={() => { setSortBy(opt.value); setSortOpen(false); }}
+                                                className={`block w-full px-4 py-2 text-left hover:bg-white/10 ${sortBy === opt.value ? "bg-white/5 text-accent" : ""}`}
+                                            >
+                                                {opt.label}
+                                            </button>
+                                        ))}
+                                        <div className="h-px bg-white/10" />
+                                        <button
+                                            type="button"
+                                            onClick={() => { setSortOrder((o) => (o === "asc" ? "desc" : "asc")); setSortOpen(false); }}
+                                            className="block w-full px-4 py-2 text-left hover:bg-white/10 text-sm text-muted"
+                                        >
+                                            Order: {sortOrder === "asc" ? "Ascending" : "Descending"}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
+                    {selectModeEnabled && (
+                        <div className="flex flex-wrap items-center gap-2 mb-4 p-3 bg-foreground/80 rounded-md border border-white/10">
+                            <button type="button" onClick={selectAllVisible} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm">Select all</button>
+                            {selectedIds.size > 0 && (
+                                <>
+                                    <button type="button" onClick={handleBulkMarkAsRead} disabled={bulkOperating} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm disabled:opacity-50">Mark as Read</button>
+                                    <button type="button" onClick={handleBulkMarkAsUnread} disabled={bulkOperating} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm disabled:opacity-50">Mark Unread</button>
+                                    <button type="button" onClick={handleBulkBookmark} disabled={bulkOperating} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm disabled:opacity-50">Bookmark</button>
+                                    <button type="button" onClick={handleBulkRemoveBookmark} disabled={bulkOperating} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm disabled:opacity-50">Remove Bookmark</button>
+                                    <button type="button" onClick={clearSelection} className="px-3 py-1.5 rounded bg-background/50 hover:bg-background/80 text-sm text-muted">Clear</button>
+                                    <span className="text-sm text-muted shrink-0">{selectedIds.size} selected</span>
+                                </>
+                            )}
+                        </div>
+                    )}
                     {visibleChapters.length === 0 ? (
                         <div className="p-8 text-center bg-foreground rounded-lg">
                             <p className="text-lg text-muted">No chapters match your search</p>
                         </div>
-                    ) : visibleChapters.map((chapter: any) => {
+                    ) : (
+                    <>
+                    {visibleChapters.map((chapter: any, index: number) => {
                     const progress = chapterProgress[chapter.id];
                     const progressPercentage = progress?.percentageCompleted || 0;
                     const lastPageNumber = progress?.lastPageNumber || 0;
@@ -261,11 +493,36 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
                     const resumePage = hasProgress && !isFullyRead ? Math.max(1, lastPageNumber) : 1;
                     const isBookmarked = !!bookmarks[chapter.id];
                     const href = `/manga/${manga.id}/read/${chapter.id}${hasProgress && !isFullyRead ? `?page=${resumePage}` : ''}`;
-                    
+                    const isSelected = selectedIds.has(chapter.id);
+
                     return (
-                    <Link href={href} key={chapter.id} className={`p-3 w-full bg-foreground hover:bg-foreground/50 cursor-pointer rounded-md transition-colors ${isFullyRead ? 'opacity-50' : ''}`}>
+                    <div
+                        key={chapter.id}
+                        role={selectModeEnabled ? "button" : undefined}
+                        tabIndex={selectModeEnabled ? 0 : undefined}
+                        onClick={(e) => {
+                            if (selectModeEnabled) {
+                                e.preventDefault();
+                                handleRowClick(e, chapter.id, index);
+                            }
+                        }}
+                        onKeyDown={selectModeEnabled ? (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                handleRowClick(e as unknown as React.MouseEvent, chapter.id, index);
+                            }
+                        } : undefined}
+                        className={`p-3 w-full rounded-md transition-colors flex gap-3 items-center ${selectModeEnabled ? "cursor-pointer select-none" : ""} ${selectModeEnabled && isSelected ? "bg-accent/50" : "bg-foreground hover:bg-foreground/50"} ${isFullyRead && !selectModeEnabled ? "opacity-50" : ""}`}
+                    >
+                        <Link
+                            href={href}
+                            className="flex-1 min-w-0"
+                            onClick={(e) => {
+                                if (selectModeEnabled) e.preventDefault();
+                            }}
+                        >
                         <div className="flex justify-between items-center">
-                            <div className="flex-1">
+                            <div className="flex-1 min-w-0">
                                 <div className={`flex items-center gap-2`}>
                                     <h1 className={`text-xl line-clamp-2 ${isFullyRead ? 'text-muted' : ''}`}>{chapter.title}</h1>
                                     {isFullyRead && <CheckIcon className={`inline-block size-5 text-green-500 shrink-0`} />}
@@ -278,7 +535,7 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
                                 <div className="flex flex-wrap gap-2 md:gap-4 text-sm text-muted">
                                     <h2 className="items-center"><ClockIcon className="inline-block mr-1 size-3 mb-0.5" />{formatTimeAgo(chapter.updatedAt)}</h2>
                                     <h2>{chapter.pageCount} Pages</h2>
-                                    <h2>{chapter.viewStats.totalViews} Views</h2>
+                                    <h2>{chapter.viewStats?.totalViews ?? 0} Views</h2>
                                     <h2 className="hidden md:flex">ID: {chapter?.scraperId?.slice(0,3)}</h2>
                                 </div>
 
@@ -298,19 +555,20 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
                                 )}
                             </div>
                             <div className="ml-4 shrink-0 flex flex-col gap-2">
-                                <button onClick={(e) => isFullyRead ? handleMarkAsUnread(e, chapter.id) : handleMarkAsRead(e, chapter.id)} disabled={isOperating} className="hover:cursor-pointer px-4 py-2 bg-background hover:bg-background/50 rounded-lg text-xs whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50">
-                                    {isFullyRead ? 'Mark Unread' : 'Mark as Read'}
+                                <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); isFullyRead ? handleMarkAsUnread(e, chapter.id) : handleMarkAsRead(e, chapter.id); }} disabled={isOperating} className="hover:cursor-pointer px-4 py-2 bg-background hover:bg-background/50 rounded-lg text-xs whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50">
+                                    {isFullyRead ? "Mark Unread" : "Mark as Read"}
                                 </button>
-
-                                <button onClick={(e) => isBookmarked ? handleRemoveBookmark(e, chapter.id) : handleBookmarkClick(e, chapter.id)} disabled={isOperating} className="px-4 py-2 bg-background hover:bg-background/50 rounded-lg text-xs whitespace-nowrap hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
-                                    {isBookmarked ? 'Remove Bookmark' : 'Bookmark'}
+                                <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); isBookmarked ? handleRemoveBookmark(e, chapter.id) : handleBookmarkClick(e, chapter.id); }} disabled={isOperating} className="px-4 py-2 bg-background hover:bg-background/50 rounded-lg text-xs whitespace-nowrap hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
+                                    {isBookmarked ? "Remove Bookmark" : "Bookmark"}
                                 </button>
-
                             </div>
                         </div>
-                    </Link>
+                        </Link>
+                    </div>
                     );
                 })}
+                    </>
+                    )}
                     </>
                 )}
             </div>

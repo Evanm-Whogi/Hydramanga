@@ -19,6 +19,11 @@ interface CatalogFiltersProps {
   availableTags?: string[];
 }
 
+function toArray(v: string | string[] | undefined): string[] {
+  if (!v) return [];
+  return Array.isArray(v) ? v : [v];
+}
+
 function CatalogFilters({ filters, onFilterChange, params, availableTags = [] }: CatalogFiltersProps) {
   return (
     <section id="catalog-filters" className="py-12">
@@ -35,8 +40,8 @@ function CatalogFilters({ filters, onFilterChange, params, availableTags = [] }:
           initialSearch={params?.search}
           initialGenres={params?.genres}
           initialTags={params?.tags}
-          initialTypes={params?.type}
-          initialStatuses={params?.status}
+          initialTypes={toArray(params?.type)}
+          initialStatuses={toArray(params?.status)}
           initialYears={params?.years}
           initialSort={params?.sort}
           initialNsfw={params?.nsfw}

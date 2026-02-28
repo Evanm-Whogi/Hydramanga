@@ -21,13 +21,13 @@ export default function ListContainer({ manga, chapters, comments, gallery, init
 
     return (
         <>
-        <div className="grid grid-cols-1 md:grid-cols-3 w-full pt-10 items-center">
+        <div className="grid grid-cols-1 xl:grid-cols-3 w-full pt-10 items-center space-y-4 xl:space-y-0">
 
             <div className="flex justify-start">
                 <ListDropdown seriesId={manga.id} initialListName={initialListName} mangaTitle={manga.title}/>
             </div>
 
-            <div className="flex flex-col md:flex-row justify-end gap-2 my-5 md:my-0">
+            <div className="flex flex-col xl:flex-row justify-end gap-2 my-5 md:my-0">
                 <button onClick={() => setPage("chapters")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "chapters" ? "text-primary" : "text-muted"}`}>
                     <BookOpen className="size-6 mr-1 transition-colors" /> Chapters
                 </button>
