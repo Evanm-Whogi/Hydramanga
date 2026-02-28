@@ -14,16 +14,21 @@ export async function fetchAnnouncements(req: Request, res: Response, next: Next
     }
 }
 
-// Create a new announcement
+// Create a new announcement (admin only; content is Markdown)
 export async function createAnnouncement(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
-        const { title, content, type, isPublished, publishedAt } = req.body;
+        const { title, content, type, isPublished } = req.body;
+        const titleStr = typeof title === 'string' ? title.trim() : '';
+        const contentStr = typeof content === 'string' ? content : (content != null ? String(content) : '');
+        const typeStr = typeof type === 'string' && type ? type : 'info';
+        const published = Boolean(isPublished);
+
         const [newAnnouncement] = await db.insert(schema.announcements).values({
-            title,
-            content,
-            type,
-            isPublished,
-            publishedAt
+            title: titleStr || '',
+            content: contentStr,
+            type: typeStr,
+            isPublished: published,
+            ...(published && { publishedAt: new Date() }),
         }).returning();
         return res.status(201).json(newAnnouncement);
     } catch (error) {
