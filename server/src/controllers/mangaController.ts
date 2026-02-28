@@ -97,8 +97,9 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
             return JSON.stringify(entries);
         };
 
-        const cacheKey = `manga:search:${userId || 'anon'}:${hideNsfw}:${normalizeQueryForCache(req.query)}`;
-        const cacheTtlSeconds = 5 * 60; // 5 minutes
+        // Global cache key: only filters + hideNsfw (no userId); isInUserList merged per-request for logged-in users
+        const cacheKey = `manga:search:${hideNsfw}:${normalizeQueryForCache(req.query)}`;
+        const cacheTtlSeconds = 60 * 60; // 1 hour (series table updates ~every 5 days)
 
         const conditions: any = [];
 
@@ -174,10 +175,10 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                 staleIfError: cacheTtlSeconds,
             },
             async () => {
-                // 3. Main Execution (Aggregating views and flags)
-                const [totalCountResult] = await db.select({ count: count() }).from(schema.series).where(and(...conditions));
-
-                const data = await db
+                // 3. Main Execution: run count and data query in parallel to reduce latency
+                const [countRows, data] = await Promise.all([
+                    db.select({ count: count() }).from(schema.series).where(and(...conditions)),
+                    db
                     .select({
                         ...columns,
                         views: schema.mangaViewStats.totalViews,
@@ -188,12 +189,8 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                             WHERE c.series_id = ${schema.series.id} 
                             AND c.created_at >= NOW() - INTERVAL ${sql.raw(`'${NEW_INTERVAL}'`)}
                         )`.mapWith(Boolean),
-                        // Request 2: Is In User List
-                        isInUserList: userId ? sql<boolean>`EXISTS (
-                            SELECT 1 FROM ${schema.userSeriesList} usl 
-                            WHERE usl.series_id = ${schema.series.id} 
-                            AND usl.user_id = ${userId}
-                        )`.mapWith(Boolean) : sql<boolean>`false`.mapWith(Boolean),
+                        // Request 2: Is In User List (always false in cache; merged per-request below for logged-in users)
+                        isInUserList: sql<boolean>`false`.mapWith(Boolean),
                         // Request 3: Follower Count
                         followerCount: sql<number>`(
                             SELECT COUNT(*) FROM ${schema.userSeriesList} usl 
@@ -207,7 +204,9 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                         isAsc ? asc(effectiveSort) : desc(effectiveSort), 
                         isAsc ? asc(schema.series.id) : desc(schema.series.id)
                     )
-                    .limit(pageSize + 1);
+                    .limit(pageSize + 1),
+                ]);
+                const totalCountResult = countRows[0];
 
                 const hasNextPage = data.length > pageSize;
                 const items = hasNextPage ? data.slice(0, -1) : data;
@@ -259,7 +258,55 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
             }
         );
 
-        return res.json(payload);
+        // Merge fresh data that must not be cached: views, rating, isInUserList (and optionally followerCount)
+        let responsePayload = payload;
+        if (payload.items.length > 0) {
+            const seriesIds = payload.items.map((m: { id: number }) => m.id);
+            const [freshStatsRows, followerCountRows, inListRows] = await Promise.all([
+                db
+                    .select({
+                        id: schema.series.id,
+                        rating: schema.series.rating,
+                        weightedScore: schema.series.weightedScore,
+                        totalViews: schema.mangaViewStats.totalViews,
+                        uniqueViews: schema.mangaViewStats.uniqueViews,
+                    })
+                    .from(schema.series)
+                    .leftJoin(schema.mangaViewStats, eq(schema.series.id, schema.mangaViewStats.seriesId))
+                    .where(inArray(schema.series.id, seriesIds)),
+                db
+                    .select({ seriesId: schema.userSeriesList.seriesId, count: count() })
+                    .from(schema.userSeriesList)
+                    .where(inArray(schema.userSeriesList.seriesId, seriesIds))
+                    .groupBy(schema.userSeriesList.seriesId),
+                userId
+                    ? db
+                          .select({ seriesId: schema.userSeriesList.seriesId })
+                          .from(schema.userSeriesList)
+                          .where(and(eq(schema.userSeriesList.userId, userId), inArray(schema.userSeriesList.seriesId, seriesIds)))
+                    : Promise.resolve([]),
+            ]);
+            const statsMap = new Map(freshStatsRows.map((r: { id: number; rating: number | null; weightedScore: number | null; totalViews: number | null; uniqueViews: number | null }) => [r.id, r]));
+            const followerCountMap = new Map(followerCountRows.map((r: { seriesId: number; count: number }) => [r.seriesId, Number(r.count)]));
+            const inListSet = new Set(inListRows.map((r: { seriesId: number }) => r.seriesId));
+            responsePayload = {
+                ...payload,
+                items: payload.items.map((item: any) => {
+                    const fresh = statsMap.get(item.id);
+                    return {
+                        ...item,
+                        rating: fresh?.rating ?? item.rating,
+                        weightedScore: fresh?.weightedScore ?? item.weightedScore,
+                        views: fresh?.totalViews ?? item.views,
+                        uniqueViews: fresh?.uniqueViews ?? item.uniqueViews,
+                        followerCount: followerCountMap.get(item.id) ?? 0,
+                        isInUserList: userId ? inListSet.has(item.id) : item.isInUserList,
+                    };
+                }),
+            };
+        }
+
+        return res.json(responsePayload);
 
     } catch (error) {
         return next(error);

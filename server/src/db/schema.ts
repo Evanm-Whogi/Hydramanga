@@ -103,6 +103,8 @@ export const series = pgTable('series', {
   lastUpdatedIdx: index('idx_series_last_updated').on(t.lastUpdatedAt.desc()),
   
   // Search Inside Genres and Tags (GIN indexes)
+  genresGin: index('idx_series_genres').using('gin', t.genres),
+  tagsGin: index('idx_series_tags').using('gin', t.tags),
   genresV2Gin: index('idx_series_genres_v2').using('gin', t.genresV2),
   tagsV2Gin: index('idx_series_tags_v2').using('gin', t.tagsV2),
   
@@ -236,6 +238,8 @@ export const chapters = pgTable("chapters", {
 }, (t) => ({
   // Index for fetching a series' chapters quickly
   seriesIdIdx: index("idx_chapters_series_id").on(t.seriesId),
+  // "Is new" check: chapter in last N days (search/catalog)
+  seriesCreatedIdx: index("idx_chapters_series_created").on(t.seriesId, t.createdAt.desc()),
   // Unique constraint to prevent duplicate chapters per series
   unq: uniqueIndex("idx_chapters_series_unique").on(t.seriesId, t.chapterNumber),
   // Performance indexes for chapter sorting and filtering
