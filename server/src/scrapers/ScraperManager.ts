@@ -119,19 +119,39 @@ export class ScraperManager {
         mangaName: string,
         options?: SearchOptions
     ): Promise<{ scraper: IChapterScraper; result: MangaSearchResult } | undefined> {
-        // Check cache first
-        const cacheKey = `titleSearch:${mangaName.toLowerCase()}`;
+        // Normalize title for cache key (trim to avoid key variations from whitespace)
+        const normalizedTitle = (mangaName || '').trim().toLowerCase();
+        if (!normalizedTitle) {
+            logger.warn('findBestMatch called with empty manga name', { service: 'scraperManager' });
+            return undefined;
+        }
+
+        // Cache key includes seriesId to avoid returning wrong manga for different series with same title
+        const seriesIdPart = options?.seriesId != null ? String(options.seriesId) : 'global';
+        const cacheKey = `titleSearch:${seriesIdPart}:${normalizedTitle}`;
+
+        // Check cache first (only successful lookups are cached; never cache "not found")
         const cached = await cacheService.get<{ scraperId: string; result: MangaSearchResult }>(cacheKey);
         if (cached) {
             const scraper = this.getScraperById(cached.scraperId);
             if (scraper) {
-                logger.debug(`Cache hit for title search: "${mangaName}"`, { service: 'scraperManager' });
+                logger.debug(`Cache hit for title search: "${mangaName}" (seriesId: ${seriesIdPart})`, { service: 'scraperManager' });
                 return { scraper, result: cached.result };
             }
         }
 
         // Lock to prevent concurrent title searches (rate limiting protection)
         return await titleSearchSemaphore.lock(async () => {
+            // Double-check cache after acquiring lock (another request may have just populated it)
+            const recheck = await cacheService.get<{ scraperId: string; result: MangaSearchResult }>(cacheKey);
+            if (recheck) {
+                const scraper = this.getScraperById(recheck.scraperId);
+                if (scraper) {
+                    logger.debug(`Cache hit (recheck) for title search: "${mangaName}"`, { service: 'scraperManager' });
+                    return { scraper, result: recheck.result };
+                }
+            }
+
             const enabledScrapers = this.getEnabledScrapers();
 
             if (enabledScrapers.length === 0) {
@@ -297,11 +317,13 @@ export class ScraperManager {
 
             const bestMatch = matches[0];
 
-            // Cache the result (30 minute TTL)
-            await cacheService.set(cacheKey, {
-                scraperId: bestMatch.scraper.getMetadata().id,
-                result: bestMatch.result,
-            }, 1800);
+            // Only cache successful results - NEVER cache "not found" to avoid persisting transient failures
+            if (bestMatch) {
+                await cacheService.set(cacheKey, {
+                    scraperId: bestMatch.scraper.getMetadata().id,
+                    result: bestMatch.result,
+                }, 1800);
+            }
 
             return { scraper: bestMatch.scraper, result: bestMatch.result };
         });
