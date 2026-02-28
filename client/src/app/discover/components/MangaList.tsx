@@ -14,7 +14,6 @@ interface MangaListProps {
     type: string;
     status: string;
     years: string[];
-    nsfw: string;
   };
 }
 

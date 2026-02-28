@@ -12,7 +12,6 @@ interface CatalogFiltersProps {
     status: string;
     years: string[];
     sort: string;
-    nsfw: string;
   };
   onFilterChange: (filters: Partial<any>) => void;
   params?: any;
@@ -36,7 +35,6 @@ function CatalogFilters({ filters, onFilterChange, params, availableTags = [] }:
           onStatusesChange={(val: string[]) => onFilterChange({ status: val })}
           onYearsChange={(val: string[]) => onFilterChange({ years: val })}
           onSortChange={(val: string) => onFilterChange({ sort: val })}
-          onNsfwChange={(val: string) => onFilterChange({ nsfw: val })}
           initialSearch={params?.search}
           initialGenres={params?.genres}
           initialTags={params?.tags}
@@ -44,7 +42,6 @@ function CatalogFilters({ filters, onFilterChange, params, availableTags = [] }:
           initialStatuses={toArray(params?.status)}
           initialYears={params?.years}
           initialSort={params?.sort}
-          initialNsfw={params?.nsfw}
           tagOptions={availableTags}
         />
       </div>

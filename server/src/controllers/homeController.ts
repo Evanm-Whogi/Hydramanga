@@ -5,6 +5,8 @@ import { chapters, series } from '@/db/schema';
 import dotenv from 'dotenv';
 import { userProgressService } from '@/services/userProgressService';
 import { cacheService } from '@/services/cacheService';
+import { getUserSettings } from '@/services/userSettingsService';
+import { getNsfwFilterConditions } from '@/config/contentFilter';
 
 dotenv.config();
 
@@ -48,12 +50,14 @@ export const getRecentlyAdded = async (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 20;
     const offset = (page - 1) * limit;
     const userId = (req as any).user?.id || (req as any).session?.userId;
+    const { hideNsfw } = await getUserSettings(userId);
 
-    const cacheKey = `home:recentlyAdded:${userId ?? 'anon'}:${page}:${limit}`;
+    const cacheKey = `home:recentlyAdded:${userId ?? 'anon'}:${hideNsfw}:${page}:${limit}`;
+    const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
     const data = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.userSpecific },
-        async () =>
-            db
+        async () => {
+            const base = db
                 .select({
                     ...getTableColumns(series),
                     latestChapterDate: sql<string>`max(${chapters.createdAt})`,
@@ -63,11 +67,13 @@ export const getRecentlyAdded = async (req: Request, res: Response) => {
                 })
                 .from(series)
                 .innerJoin(chapters, eq(series.id, chapters.seriesId))
-                .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
-                .groupBy(series.id, schema.mangaViewStats.totalViews)
+                .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId));
+            const withWhere = nsfwConditions.length ? base.where(and(...nsfwConditions)) : base;
+            return withWhere.groupBy(series.id, schema.mangaViewStats.totalViews)
                 .orderBy(desc(sql`max(${chapters.createdAt})`))
                 .limit(limit)
-                .offset(offset)
+                .offset(offset);
+        }
     );
     res.json(data);
 };
@@ -77,8 +83,11 @@ export const getPopularChapters = async (req: Request, res: Response) => {
     const period = (req.query.period as string) || 'week';
     const threshold = getThreshold(period);
     const limit = parseInt(req.query.limit as string) || 20;
+    const userId = (req as any).user?.id || (req as any).session?.userId;
+    const { hideNsfw } = await getUserSettings(userId);
 
-    const cacheKey = `home:popularChapters:${period}:${limit}`;
+    const cacheKey = `home:popularChapters:${userId ?? 'anon'}:${hideNsfw}:${period}:${limit}`;
+    const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
     const results = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.global },
         async () => {
@@ -108,7 +117,7 @@ export const getPopularChapters = async (req: Request, res: Response) => {
                     .limit(limit)
                     .as('popular_source');
             }
-            return db.select({
+            const base = db.select({
                 chapter: {
                     ...getTableColumns(chapters),
                     viewCount: subquery.viewCount,
@@ -122,8 +131,9 @@ export const getPopularChapters = async (req: Request, res: Response) => {
                 .from(subquery)
                 .innerJoin(chapters, eq(chapters.id, subquery.chapterId))
                 .innerJoin(series, eq(series.id, subquery.seriesId))
-                .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
-                .orderBy(desc(subquery.viewCount));
+                .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId));
+            const withWhere = nsfwConditions.length ? base.where(and(...nsfwConditions)) : base;
+            return withWhere.orderBy(desc(subquery.viewCount));
         }
     );
     res.json(results);
@@ -135,11 +145,14 @@ export const getPopularManga = async (req: Request, res: Response) => {
     const threshold = getThreshold(period);
     const limit = parseInt(req.query.limit as string) || 14;
     const userId = (req as any).user?.id || (req as any).session?.userId;
+    const { hideNsfw } = await getUserSettings(userId);
 
-    const cacheKey = `home:popularManga:${userId ?? 'anon'}:${period}:${limit}`;
+    const cacheKey = `home:popularManga:${userId ?? 'anon'}:${hideNsfw}:${period}:${limit}`;
+    const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
     const results = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.global },
         async () => {
+            const baseConditions = nsfwConditions.length ? and(...nsfwConditions) : undefined;
             const query = db.select({
                 ...getTableColumns(series),
                 views: threshold
@@ -162,12 +175,12 @@ export const getPopularManga = async (req: Request, res: Response) => {
 
             if (threshold) {
                 query.innerJoin(schema.mangaViews, eq(series.id, schema.mangaViews.seriesId))
-                    .where(gte(schema.mangaViews.viewedAt, threshold))
+                    .where(baseConditions ? and(gte(schema.mangaViews.viewedAt, threshold), baseConditions) : gte(schema.mangaViews.viewedAt, threshold))
                     .groupBy(series.id, schema.mangaViewStats.totalViews)
                     .having(sql`count(${schema.mangaViews.id}) > 0`)
                     .orderBy(desc(sql`count(${schema.mangaViews.id})`));
             } else {
-                query.where(gt(schema.mangaViewStats.totalViews, 0))
+                query.where(baseConditions ? and(gt(schema.mangaViewStats.totalViews, 0), baseConditions) : gt(schema.mangaViewStats.totalViews, 0))
                     .orderBy(desc(schema.mangaViewStats.totalViews));
             }
             return await query.limit(limit);
@@ -181,12 +194,16 @@ export const getHighScores = async (req: Request, res: Response) => {
     const type = (req.query.type as string)?.toLowerCase() || 'all';
     const limit = parseInt(req.query.limit as string) || 14;
     const userId = (req as any).user?.id || (req as any).session?.userId;
+    const { hideNsfw } = await getUserSettings(userId);
 
-    const cacheKey = `home:highScores:${userId ?? 'anon'}:${type}:${limit}`;
+    const cacheKey = `home:highScores:${userId ?? 'anon'}:${hideNsfw}:${type}:${limit}`;
+    const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
     const data = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.global },
-        async () =>
-            db
+        async () => {
+            const typeCondition = type && type !== 'all' ? eq(series.type, type) : undefined;
+            const whereClause = [typeCondition, ...nsfwConditions].filter(Boolean);
+            return db
                 .select({
                     ...getTableColumns(series),
                     views: schema.mangaViewStats.totalViews,
@@ -204,9 +221,10 @@ export const getHighScores = async (req: Request, res: Response) => {
                 })
                 .from(series)
                 .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
-                .where(type && type !== 'all' ? eq(series.type, type) : undefined)
+                .where(whereClause.length ? and(...(whereClause as any)) : undefined)
                 .orderBy(desc(series.weightedScore))
-                .limit(limit)
+                .limit(limit);
+        }
     );
     res.json(data);
 };
@@ -217,8 +235,10 @@ export const getMostFollowed = async (req: Request, res: Response) => {
     const threshold = getThreshold(period);
     const limit = parseInt(req.query.limit as string) || 14;
     const userId = (req as any).user?.id || (req as any).session?.userId;
+    const { hideNsfw } = await getUserSettings(userId);
 
-    const cacheKey = `home:mostFollowed:${userId ?? 'anon'}:${period}:${limit}`;
+    const cacheKey = `home:mostFollowed:${userId ?? 'anon'}:${hideNsfw}:${period}:${limit}`;
+    const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
     const data = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.global },
         async () => {
@@ -234,7 +254,7 @@ export const getMostFollowed = async (req: Request, res: Response) => {
                 .limit(limit)
                 .as('fc');
 
-            return db
+            const base = db
                 .select({
                     ...getTableColumns(series),
                     followerCount: followerCounts.count,
@@ -253,8 +273,9 @@ export const getMostFollowed = async (req: Request, res: Response) => {
                 })
                 .from(series)
                 .innerJoin(followerCounts, eq(series.id, followerCounts.seriesId))
-                .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
-                .orderBy(desc(followerCounts.count));
+                .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId));
+            const withWhere = nsfwConditions.length ? base.where(and(...nsfwConditions)) : base;
+            return withWhere.orderBy(desc(followerCounts.count));
         }
     );
     res.json(data);
@@ -265,8 +286,10 @@ export const getRecentChaptersFromUserList = async (req: Request, res: Response)
     if (!userId) return res.json([]);
 
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 30);
+    const { hideNsfw } = await getUserSettings(userId);
 
-    const cacheKey = `home:recentChaptersFromList:${userId}:${limit}`;
+    const cacheKey = `home:recentChaptersFromList:${userId}:${hideNsfw}:${limit}`;
+    const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
     const formatted = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.userSpecific },
         async () => {
@@ -298,6 +321,9 @@ export const getRecentChaptersFromUserList = async (req: Request, res: Response)
 
             const chapterIds = rows.map((r) => r.chapter_id);
 
+            const whereClause = nsfwConditions.length
+                ? and(inArray(chapters.id, chapterIds), ...nsfwConditions)
+                : inArray(chapters.id, chapterIds);
             const results = await db
                 .select({
                     chapter: getTableColumns(chapters),
@@ -314,7 +340,7 @@ export const getRecentChaptersFromUserList = async (req: Request, res: Response)
                 .from(chapters)
                 .innerJoin(series, eq(series.id, chapters.seriesId))
                 .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
-                .where(inArray(chapters.id, chapterIds))
+                .where(whereClause)
                 .orderBy(desc(chapters.createdAt));
 
             return results.map((row) => ({
