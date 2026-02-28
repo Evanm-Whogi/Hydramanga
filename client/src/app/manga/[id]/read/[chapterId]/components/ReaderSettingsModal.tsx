@@ -93,6 +93,30 @@ export default function ReaderSettingsModal({
             </p>
           </div>
 
+          {/* Sticky Header */}
+          <div>
+            <label className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-primary">Sticky Header</span>
+              <button
+                onClick={() => handleChange('stickyHeader', !settings.stickyHeader)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  settings.stickyHeader ? 'bg-accent' : 'bg-muted/30'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    settings.stickyHeader ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </label>
+            <p className="text-xs text-muted/70 mt-1">
+              {settings.stickyHeader
+                ? 'Header stays visible while scrolling'
+                : 'Header slides away when scrolling down (default)'}
+            </p>
+          </div>
+
           {/* Tap Zones */}
           <div>
             <label className="flex items-center justify-between">
@@ -114,6 +138,25 @@ export default function ReaderSettingsModal({
               {settings.tapZones
                 ? 'Click left/right sides to navigate, center to toggle controls'
                 : 'Tap zones disabled'}
+            </p>
+          </div>
+
+          {/* Vertical padding between images */}
+          <div>
+            <label className="block text-sm font-semibold text-primary mb-2">
+              Vertical padding between images: {settings.imageGap}px
+            </label>
+            <input
+              type="range"
+              min="0"
+              max="48"
+              step="2"
+              value={settings.imageGap}
+              onChange={(e) => handleChange('imageGap', parseInt(e.target.value, 10))}
+              className="w-full h-2 bg-muted/30 rounded-lg appearance-none cursor-pointer accent-accent"
+            />
+            <p className="text-xs text-muted/70 mt-1">
+              Space between page images (0 = no gap)
             </p>
           </div>
 

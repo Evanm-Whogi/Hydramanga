@@ -53,13 +53,13 @@ export default function Hero({ mangaData }: any) {
             </div>
             <div className="container mx-auto text-primary pt-[6vh] min-h-[55vh] overflow-hidden">
                 <div className="flex flex-col group/carousel relative">
-                    {/* Carousel Left Navigation */}
-                    <button onClick={() => emblaApi?.scrollPrev()}
-                        className="absolute left-0 top-0 bottom-0 z-10 w-12 flex items-center justify-center opacity-0 group-hover/carousel:opacity-100 transition-opacity duration-300">
-                        <div className="p-2 rounded-full bg-foreground/90 text-white shadow-lg cursor-pointer hover:bg-accent ml-3">
+                    {/* Carousel Left Navigation: only the circle is clickable */}
+                    <div className="absolute left-0 top-0 bottom-0 z-10 w-12 flex items-center justify-center opacity-0 group-hover/carousel:opacity-100 transition-opacity duration-300 pointer-events-none">
+                        <button type="button" onClick={() => emblaApi?.scrollPrev()}
+                            className="pointer-events-auto p-2 rounded-full bg-foreground/90 text-white shadow-lg cursor-pointer hover:bg-accent ml-3">
                             <ChevronLeft size={24} />
-                        </div>
-                    </button>
+                        </button>
+                    </div>
                     {/* Carousel Content */}
                     <div className="overflow-hidden w-full min-w-0" ref={emblaRef}>
                         <div className="flex">
@@ -112,13 +112,13 @@ export default function Hero({ mangaData }: any) {
                             ))}
                         </div>
                     </div>
-                    {/* Carousel Right Navigation */}
-                    <button onClick={() => emblaApi?.scrollNext()}
-                        className="absolute right-0 top-0 bottom-0 z-10 w-12 flex items-center justify-center opacity-0 group-hover/carousel:opacity-100 transition-opacity duration-300">
-                        <div className="p-2 rounded-full bg-foreground/90 text-white shadow-lg cursor-pointer hover:bg-accent mr-3">
+                    {/* Carousel Right Navigation: only the circle is clickable */}
+                    <div className="absolute right-0 top-0 bottom-0 z-10 w-12 flex items-center justify-center opacity-0 group-hover/carousel:opacity-100 transition-opacity duration-300 pointer-events-none">
+                        <button type="button" onClick={() => emblaApi?.scrollNext()}
+                            className="pointer-events-auto p-2 rounded-full bg-foreground/90 text-white shadow-lg cursor-pointer hover:bg-accent mr-3">
                             <ChevronRight size={24} />
-                        </div>
-                    </button>
+                        </button>
+                    </div>
                 </div>
                 {/* Carousel Indicators */}
                 <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 z-20">

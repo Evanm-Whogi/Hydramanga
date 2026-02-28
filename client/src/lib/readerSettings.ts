@@ -13,18 +13,22 @@ export interface ReaderSettings {
   readingMode: ReadingMode;
   tapZones: boolean;
   readerPadding: number; // -1.00 to 1.00
+  imageGap: number; // vertical padding between images in px (0-48)
   autoScroll: AutoScrollSpeed;
   progressIndicator: ProgressIndicatorPosition;
   continuousMode: boolean;
+  stickyHeader: boolean;
 }
 
 const DEFAULT_SETTINGS: ReaderSettings = {
   readingMode: 'default',
   tapZones: true,
   readerPadding: 0,
+  imageGap: 0,
   autoScroll: 'off',
   progressIndicator: 'right',
   continuousMode: true,
+  stickyHeader: false,
 };
 
 const STORAGE_KEY = 'manga-reader-settings';
@@ -51,6 +55,7 @@ export function loadReaderSettings(): ReaderSettings {
       ...parsed,
       // Ensure values are within valid ranges
       readerPadding: Math.max(-1, Math.min(1, parsed.readerPadding ?? DEFAULT_SETTINGS.readerPadding)),
+      imageGap: Math.max(0, Math.min(48, parsed.imageGap ?? DEFAULT_SETTINGS.imageGap)),
     };
   } catch (error) {
     console.error('Failed to load reader settings:', error);

@@ -14,6 +14,15 @@ import { cacheService } from '@/services/cacheService';
 import axios from 'axios';
 import { getCollectionsList } from '@/services/collectionsService';
 
+// Normalize curly/smart quotes to ASCII so search matches titles regardless of apostrophe type
+function normalizeApostrophes(s: string): string {
+    return s
+        .replace(/\u2018/g, "'")   // LEFT SINGLE QUOTATION MARK '
+        .replace(/\u2019/g, "'")   // RIGHT SINGLE QUOTATION MARK '
+        .replace(/\u201C/g, '"')   // LEFT DOUBLE QUOTATION MARK "
+        .replace(/\u201D/g, '"');  // RIGHT DOUBLE QUOTATION MARK "
+}
+
 // Helper function to enrich manga data with view stats
 async function enrichWithViewStats(mangaList: any[]) {
     if (mangaList.length === 0) return [];
@@ -89,7 +98,7 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         };
 
         const cacheKey = `manga:search:${userId || 'anon'}:${hideNsfw}:${normalizeQueryForCache(req.query)}`;
-        const cacheTtlSeconds = 5 * 60;
+        const cacheTtlSeconds = 5 * 60; // 5 minutes
 
         const conditions: any = [];
 
@@ -98,13 +107,15 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
             return (Array.isArray(param) ? param : String(param).split(',')).map(v => v.trim()).filter(Boolean);
         };
 
-        // 1. Filter Logic
+        // 1. Filter Logic (normalize apostrophes so ' vs ' doesn't break search)
         if (search) {
-            const pattern = `%${String(search).trim()}%`;
+            const normalizedSearch = normalizeApostrophes(String(search).trim());
+            const pattern = `%${normalizedSearch}%`;
+            // Compare against normalized title fields so DB-stored curly quotes match user's straight quotes
             conditions.push(or(
-                ilike(schema.series.title, pattern), 
-                ilike(schema.series.romanizedTitle, pattern), 
-                ilike(schema.series.nativeTitle, pattern)
+                sql`REPLACE(REPLACE(COALESCE(${schema.series.title}, ''), CHR(8217), ''''), CHR(8216), '''') ILIKE ${pattern}`,
+                sql`REPLACE(REPLACE(COALESCE(${schema.series.romanizedTitle}, ''), CHR(8217), ''''), CHR(8216), '''') ILIKE ${pattern}`,
+                sql`REPLACE(REPLACE(COALESCE(${schema.series.nativeTitle}, ''), CHR(8217), ''''), CHR(8216), '''') ILIKE ${pattern}`
             ));
         }
 
@@ -536,23 +547,23 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
         // Generate image URLs based on pageCount
         const pageCount = chapter.pageCount || 0;
         const images: string[] = [];
-        const formatPageNumber = (page: number, scraperId?: string | null) => {
-            const padLength = scraperId === 'mangataro' || scraperId === 'toonily' ? 3 : 2;
-            return page.toString().padStart(padLength, '0');
+        const formatPageNumber = (page: number) => {
+            return page.toString().padStart(2, '0');
         };
         
         for (let i = 1; i <= pageCount; i++) {
-            const pageNumber = formatPageNumber(i, chapter.scraperId);
+            const pageNumber = formatPageNumber(i);
             const imageUrl = `${baseUrl}/${chapter.storagePrefix}/${pageNumber}.webp`;
             images.push(imageUrl);
         }
 
+        // Single-page series: every chapter has at most 1 page (1 or 0/legacy)
         const isSinglePageSeries = allChapters.length > 0
-            && allChapters.every((ch) => (ch.pageCount || 0) === 1);
+            && allChapters.every((ch) => ((ch.pageCount ?? 0) <= 1));
 
         const mergedPages = isSinglePageSeries
             ? allChapters.map((ch) => {
-                const pageNumber = formatPageNumber(1, ch.scraperId);
+                const pageNumber = formatPageNumber(1);
                 const imageUrl = `${baseUrl}/${ch.storagePrefix}/${pageNumber}.webp`;
                 return {
                     chapterId: ch.id,

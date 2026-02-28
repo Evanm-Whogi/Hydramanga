@@ -1,6 +1,6 @@
 import { db } from '@/db';
 import { series, chapters } from '@/db/schema';
-import { desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { cacheService } from '@/services/cacheService';
 import { queueService } from '@/services/queueService';
@@ -149,7 +149,8 @@ class MangaOrchestratorService {
       const trending = await this.getTopTrending(100);
       const trendingIds = trending.map(t => t.id);
       
-      // Find all series with at least one chapter that aren't in top trending
+      // Find all series with at least one chapter that aren't in top trending; skip completed manga
+      const notCompleted = or(isNull(series.status), ne(series.status, 'completed'));
       let results: Array<{ id: number; title: string | null; cover: unknown }>;
       
       if (trendingIds.length > 0) {
@@ -157,12 +158,13 @@ class MangaOrchestratorService {
           .selectDistinct({ id: series.id, title: series.title, cover: series.cover })
           .from(series)
           .innerJoin(chapters, eq(chapters.seriesId, series.id))
-          .where(sql`NOT ${inArray(series.id, trendingIds)}`);
+          .where(and(sql`NOT ${inArray(series.id, trendingIds)}`, notCompleted));
       } else {
         results = await db
           .selectDistinct({ id: series.id, title: series.title, cover: series.cover })
           .from(series)
-          .innerJoin(chapters, eq(chapters.seriesId, series.id));
+          .innerJoin(chapters, eq(chapters.seriesId, series.id))
+          .where(notCompleted);
       }
 
       // Filter out results with null titles
