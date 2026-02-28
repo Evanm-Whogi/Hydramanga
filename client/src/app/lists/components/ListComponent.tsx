@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, rectIntersection } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useDroppable } from '@dnd-kit/core';
@@ -13,6 +13,7 @@ import FiltersPanel from '@/components/FiltersPanel';
 import { FILTER_OPTIONS } from '@/constants/filters';
 import { UserList } from '@/services/listService';
 import { toast } from 'react-toastify';
+import { getSettings } from '@/services/userService';
 
 interface ListComponentProps {
   lists: {
@@ -46,8 +47,12 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedYears, setSelectedYears] = useState<string[]>([]);
   const [selectedSort, setSelectedSort] = useState('weightedScore');
-  const [nsfw, setNsfw] = useState('true');
+  const [hideNsfw, setHideNsfw] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
+  useEffect(() => {
+    getSettings().then((s) => setHideNsfw(s.hideNsfw)).catch(() => setHideNsfw(false));
+  }, []);
 
   const yearMatches = useCallback((year: number | undefined, filters: string[]): boolean => {
     if (!filters || filters.length === 0 || filters.includes('timeless')) return true;
@@ -79,7 +84,7 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
       const typeMatch = selectedTypes.length === 0 || (m?.type && selectedTypes.map((t) => t.toLowerCase()).includes(String(m.type).toLowerCase()));
       const statusMatch = selectedStatuses.length === 0 || (m?.status && selectedStatuses.includes(m.status));
       const yearMatch = yearMatches(m?.year, selectedYears);
-      const nsfwMatch = nsfw === 'true' || m?.contentRating === 'safe' || m?.contentRating === 'suggestive';
+      const nsfwMatch = !hideNsfw || (m?.contentRating !== 'erotica' && m?.contentRating !== 'pornographic' && !['hentai', 'lolicon', 'shotacon', 'erotica', 'smut'].some((g) => Array.isArray(m?.genres) && m.genres.some((x: string) => String(x).toLowerCase().includes(g))));
 
       return titleMatch && genreMatch && typeMatch && statusMatch && yearMatch && nsfwMatch;
     });
@@ -102,7 +107,7 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
     });
 
     return sorted;
-  }, [search, selectedGenres, selectedTypes, selectedStatuses, selectedYears, selectedSort, nsfw, yearMatches]);
+  }, [search, selectedGenres, selectedTypes, selectedStatuses, selectedYears, selectedSort, hideNsfw, yearMatches]);
 
   const filteredLists = useMemo(() => {
     const result: Record<string, any[]> = {};
@@ -196,7 +201,6 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
             onStatusesChange={setSelectedStatuses}
             onYearsChange={setSelectedYears}
             onSortChange={setSelectedSort}
-            onNsfwChange={setNsfw}
           />
         </div>
         <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>

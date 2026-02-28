@@ -1,0 +1,25 @@
+import { Request, Response } from 'express';
+import { getUserSettings, updateUserSettings } from '@/services/userSettingsService';
+
+export async function getSettings(req: Request, res: Response) {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+    const settings = await getUserSettings(userId);
+    return res.json(settings);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to get settings' });
+  }
+}
+
+export async function patchSettings(req: Request, res: Response) {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+    const { hideNsfw } = req.body || {};
+    const settings = await updateUserSettings(userId, { hideNsfw });
+    return res.json(settings);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to update settings' });
+  }
+}

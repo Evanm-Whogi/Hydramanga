@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { DEFAULT_FILTERS } from '@/constants/filters';
 import PageHeader from '@/components/PageHeader';
 import CatalogFilters from './CatalogFilters';
 import MangaList from './MangaList';
 import { getAllTags } from '@/services/mangaService';
+import { getSettings } from '@/services/userService';
+import { Shield } from 'lucide-react';
 
 interface Filters {
   search: string;
@@ -16,7 +19,6 @@ interface Filters {
   status: string;
   years: string[];
   sort: string;
-  nsfw: string;
 }
 
 interface CatalogContentProps {
@@ -32,7 +34,6 @@ function buildSearchParams(f: Filters): URLSearchParams {
   if (f.status) params.set('status', Array.isArray(f.status) ? f.status.join(',') : f.status);
   if (f.years?.length) params.set('years', f.years.join(','));
   if (f.sort && f.sort !== DEFAULT_FILTERS.sort) params.set('sort', f.sort);
-  if (f.nsfw && f.nsfw !== DEFAULT_FILTERS.nsfw) params.set('nsfw', f.nsfw);
   return params;
 }
 
@@ -50,7 +51,6 @@ export default function CatalogContent({ initialFilters }: CatalogContentProps) 
     status: '',
     years: [],
     sort: DEFAULT_FILTERS.sort,
-    nsfw: DEFAULT_FILTERS.nsfw,
   });
 
   const [filters, setFilters] = useState<Filters>(() => ({
@@ -61,9 +61,9 @@ export default function CatalogContent({ initialFilters }: CatalogContentProps) 
     status: searchParams.get('status') || '',
     years: searchParams.get('years')?.split(',').filter(Boolean) || DEFAULT_FILTERS.years,
     sort: searchParams.get('sort') || DEFAULT_FILTERS.sort,
-    nsfw: searchParams.get('nsfw') || DEFAULT_FILTERS.nsfw,
   }));
   const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [hideNsfw, setHideNsfw] = useState<boolean | null>(null);
 
   filtersRef.current = filters;
 
@@ -115,9 +115,25 @@ export default function CatalogContent({ initialFilters }: CatalogContentProps) 
     };
   }, []);
 
+  useEffect(() => {
+    getSettings().then((s) => setHideNsfw(s.hideNsfw)).catch(() => setHideNsfw(false));
+  }, []);
+
   return (
     <>
-      <PageHeader title="Discover" description="Discover your next favorite: Manga" />
+      <PageHeader
+        title="Discover"
+        description="Discover your next favorite: Manga"
+        notice={hideNsfw === true ? (
+          <div className="flex items-center gap-2 text-sm text-primary pt-2">
+            <Shield className="size-4 shrink-0 text-accent" aria-hidden />
+            <span>NSFW content is hidden.</span>
+            <Link href="/profile?tab=settings" className="font-medium text-accent hover:underline underline-offset-2">
+              Change in Settings
+            </Link>
+          </div>
+        ) : undefined}
+      />
       <CatalogFilters filters={filters} onFilterChange={updateFilters} params={filters} availableTags={availableTags} />
       <MangaList filters={filters} />
     </>

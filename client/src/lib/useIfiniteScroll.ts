@@ -58,7 +58,6 @@ export function useInfiniteScroll(filters: any) {
               statuses: filters.statuses,
               years: filters.years,
               sort: filters.sort,
-              nsfw: filters.nsfw,
             });
             lastTrackedSearch.current = filters.search;
           }
@@ -102,8 +101,7 @@ export function useInfiniteScroll(filters: any) {
     filters.type, 
     filters.status, 
     filters.years?.sort().join(','), 
-    filters.sort, 
-    filters.nsfw
+    filters.sort,
   ]);
 
   return { items, loading, hasMore, meta, fetchData };

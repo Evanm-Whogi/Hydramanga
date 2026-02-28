@@ -55,10 +55,7 @@ export const DEFAULT_FILTERS = {
   statuses: [] as string[],
   years: [] as string[],
   sort: "weightedScore",
-  nsfw: "true"
 } as const;
-
-export const DEFAULT_NSFW_VALUE = "true";
 export const SORT_DEFAULT = "weightedScore";
 
 export const WARNING_GENRES = ["Hentai", "Adult", "Doujinshi", "Lolicon", "Shotacon", "Erotica", "Smut"] as const;

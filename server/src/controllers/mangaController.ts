@@ -7,7 +7,8 @@ import fs from 'fs-extra';
 import logger from '@/services/loggerService';
 import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import { metricsService } from '@/services/metricsService';
-import { shouldFilterManga, getBlockedGenres } from '@/config/contentFilter';
+import { shouldFilterManga, getBlockedGenres, getNsfwFilterConditions } from '@/config/contentFilter';
+import { getUserSettings } from '@/services/userSettingsService';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import { cacheService } from '@/services/cacheService';
 import axios from 'axios';
@@ -66,15 +67,16 @@ async function enrichWithLatestChapter(mangaList: any[]) {
 // Search manga with filters, sorting, and pagination (Infinite Scroll)
 export async function searchManga(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
-        const { genres, tags, type, status, search, years, nsfw, sort = "weightedScore", order = "desc", cursor, limit = "40" } = req.query;
+        const { genres, tags, type, status, search, years, sort = "weightedScore", order = "desc", cursor, limit = "40" } = req.query;
         const pageSize = Math.min(Number(limit), 40);
         const isAsc = String(order).toLowerCase() === 'asc';
         const userId = (req as any).user?.id || (req as any).session?.userId;
+        const { hideNsfw } = await getUserSettings(userId);
         const NEW_INTERVAL = '3 days';
 
         const normalizeQueryForCache = (query: Request['query']) => {
             const entries = Object.entries(query)
-                .filter(([, value]) => value !== undefined)
+                .filter(([key, value]) => key !== 'nsfw' && value !== undefined)
                 .map(([key, value]) => {
                     if (Array.isArray(value)) {
                         return [key, value.map(v => String(v)).sort()];
@@ -86,7 +88,7 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
             return JSON.stringify(entries);
         };
 
-        const cacheKey = `manga:search:${userId || 'anon'}:${normalizeQueryForCache(req.query)}`;
+        const cacheKey = `manga:search:${userId || 'anon'}:${hideNsfw}:${normalizeQueryForCache(req.query)}`;
         const cacheTtlSeconds = 5 * 60;
 
         const conditions: any = [];
@@ -136,13 +138,9 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
             conditions.push(or(...yearConditions));
         }
 
-        // Content Restrictions
-        if (nsfw === 'false') {
-            conditions.push(and(ne(schema.series.contentRating, 'erotica'), ne(schema.series.contentRating, 'pornographic')));
-        }
-        getBlockedGenres().forEach(bg => {
-            conditions.push(sql`NOT (${schema.series.genres} @> ${JSON.stringify([bg])}::jsonb)`);
-        });
+        // Content Restrictions: user preference "Hide NSFW" and optional server-wide block
+        const serverBlocksNsfw = getBlockedGenres().length > 0;
+        conditions.push(...getNsfwFilterConditions(hideNsfw || serverBlocksNsfw, schema.series));
         conditions.push(or(ne(schema.series.state, 'merged'), isNull(schema.series.state)));
 
         // 2. Sorting & Pagination Setup

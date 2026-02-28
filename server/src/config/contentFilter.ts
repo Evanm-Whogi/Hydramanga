@@ -1,16 +1,20 @@
+import { sql, SQL } from 'drizzle-orm';
+
 /**
  * Content Filter Configuration
- * Handles NSFW and adult content filtering based on environment settings
+ * Handles NSFW and adult content filtering based on environment settings and user preference
  */
 
-// Default blocked genres if not specified in env
-const DEFAULT_BLOCKED_GENRES = [
+// Genres that are considered NSFW when user has "hide NSFW" enabled (global setting)
+export const NSFW_BLOCKED_GENRES = [
   'hentai',
   'lolicon',
   'shotacon',
-  'erotica',
   'smut',
-];
+] as const;
+
+// Default blocked genres if not specified in env (server-wide ALLOW_NSFW_CONTENT)
+const DEFAULT_BLOCKED_GENRES = [...NSFW_BLOCKED_GENRES];
 
 /**
  * Get list of blocked genres based on ALLOW_NSFW_CONTENT setting
@@ -78,5 +82,22 @@ export function filterBlockedManga<T extends { genres?: string[] | null }>(
  */
 export function getBlockedGenresForSQL(): string[] {
   return getBlockedGenres();
+}
+
+/**
+ * Returns Drizzle SQL conditions to hide NSFW content when user preference hideNsfw is true.
+ * Filters out: contentRating in ('erotica','pornographic') and genres containing any of NSFW_BLOCKED_GENRES (case-insensitive).
+ * Use with and(...conditions) in queries. When hideNsfw is false, returns [] (no filter).
+ */
+export function getNsfwFilterConditions(hideNsfw: boolean, seriesTable: { contentRating: any; genres: any; id: any }): SQL[] {
+  if (!hideNsfw) return [];
+  const genreList = NSFW_BLOCKED_GENRES.map((g) => `'${g}'`).join(',');
+  return [
+    sql`(${seriesTable.contentRating} IS NULL OR ${seriesTable.contentRating} NOT IN ('pornographic'))`,
+    sql`(${seriesTable.genres} IS NULL OR NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements_text(${seriesTable.genres}) AS g
+      WHERE lower(trim(g)) IN (${sql.raw(genreList)})
+    ))`,
+  ];
 }
 

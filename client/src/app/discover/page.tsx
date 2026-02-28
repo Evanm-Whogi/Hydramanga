@@ -20,7 +20,6 @@ function CatalogInner() {
     sort: 'weightedScore',
     type: '',
     status: '',
-    nsfw: 'true'
   };
 
   return <CatalogContent initialFilters={initialFilters} />;

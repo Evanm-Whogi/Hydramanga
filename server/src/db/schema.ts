@@ -330,6 +330,15 @@ export const userChapterProgress = pgTable('user_chapter_progress', {
   isReadIdx: index('idx_user_chapter_progress_is_read').on(t.isRead),
 }));
 
+// User Settings (e.g. content preferences)
+export const userSettings = pgTable('user_settings', {
+  userId: text('user_id').primaryKey().references(() => user.id, { onDelete: 'cascade' }),
+  hideNsfw: boolean('hide_nsfw').notNull().default(false),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  userIdIdx: index('idx_user_settings_user_id').on(t.userId),
+}));
+
 // Invite Codes
 export const inviteCodes = pgTable('invite_codes', {
   id: text('id').primaryKey(),
