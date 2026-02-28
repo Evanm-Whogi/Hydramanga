@@ -3,6 +3,13 @@ import { schema } from '@/db/index';
 import { eq } from 'drizzle-orm';
 
 const DEFAULT_HIDE_NSFW = false;
+const SETTINGS_CACHE_TTL_MS = 60_000; // 1 minute
+
+interface CachedSettings {
+  settings: UserSettings;
+  expiresAt: number;
+}
+const settingsCache = new Map<string, CachedSettings>();
 
 export interface UserSettings {
   hideNsfw: boolean;
@@ -10,18 +17,25 @@ export interface UserSettings {
 
 export async function getUserSettings(userId: string | null | undefined): Promise<UserSettings> {
   if (!userId) return { hideNsfw: DEFAULT_HIDE_NSFW };
-  
+
+  const now = Date.now();
+  const cached = settingsCache.get(userId);
+  if (cached && cached.expiresAt > now) return cached.settings;
+
   const row = await db
     .select()
     .from(schema.userSettings)
     .where(eq(schema.userSettings.userId, userId))
     .limit(1);
-  if (!row.length) {
-    return { hideNsfw: DEFAULT_HIDE_NSFW };
-  }
-  return {
-    hideNsfw: row[0].hideNsfw,
-  };
+  const settings: UserSettings =
+    row.length === 0
+      ? { hideNsfw: DEFAULT_HIDE_NSFW }
+      : { hideNsfw: row[0].hideNsfw };
+  settingsCache.set(userId, {
+    settings,
+    expiresAt: now + SETTINGS_CACHE_TTL_MS,
+  });
+  return settings;
 }
 
 export async function updateUserSettings(userId: string, updates: Partial<UserSettings>): Promise<UserSettings> {
@@ -45,5 +59,6 @@ export async function updateUserSettings(userId: string, updates: Partial<UserSe
     });
   }
 
+  settingsCache.delete(userId);
   return { hideNsfw };
 }
