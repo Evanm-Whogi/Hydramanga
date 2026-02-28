@@ -600,12 +600,16 @@ export async function triggerMangaScan(req: Request, res: Response, next: NextFu
         if (!manga) {
             return res.status(404).json({ error: 'Manga not found' });
         }
-        
+        const mangaTitle = (manga.title || '').trim();
+        if (!mangaTitle) {
+            return res.status(400).json({ error: 'Manga has no title; cannot scan. Add a title in admin first.' });
+        }
+
         // Check if manga is already being scanned or downloaded via manga_import_progress
         const progress = await mangaProgressService.getProgress(mangaId);
         
         if (progress && (progress.status === 'scanning' || progress.status === 'downloading')) {
-            logger.info(`Manga ${manga.title} (${mangaId}) is already ${progress.status}, skipping duplicate scan`, { service: 'mangaController' });
+            logger.info(`Manga ${mangaTitle} (${mangaId}) is already ${progress.status}, skipping duplicate scan`, { service: 'mangaController' });
             return res.status(200).json({ 
                 message: 'Scan already in progress', 
                 seriesId: mangaId,
@@ -614,7 +618,7 @@ export async function triggerMangaScan(req: Request, res: Response, next: NextFu
         }
         
         // Trigger the on-demand scan
-        await mangaOrchestratorService.enqueueOnDemand(mangaId, manga.title || 'Unknown');
+        await mangaOrchestratorService.enqueueOnDemand(mangaId, mangaTitle);
         
         return res.status(200).json({ message: 'Scan queued', seriesId: mangaId });
     } catch (error) {

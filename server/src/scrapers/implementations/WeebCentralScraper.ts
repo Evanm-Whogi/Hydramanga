@@ -210,11 +210,13 @@ export class WeebCentralScraper implements IChapterScraper {
             const showAllBtnSelector = 'button[hx-get*="full-chapter-list"]';
             const btn = await page.$(showAllBtnSelector);
             if (btn) {
+                // Wait for HTMX response (button stays in DOM; only #chapter-list content is replaced)
+                const responsePromise = page.waitForResponse(
+                    (resp: any) => resp.url().includes('full-chapter-list') && resp.status() === 200,
+                    { timeout: 15000 }
+                );
                 await btn.click();
-                await page.waitForSelector(showAllBtnSelector, {
-                    state: 'detached',
-                    timeout: 15000,
-                });
+                await responsePromise;
             }
 
             // Extract chapter list

@@ -11,6 +11,7 @@ import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
 import { useUser } from '@/providers/UserProvider';
 import { showImportProgressToast, updateImportProgressToast, dismissImportProgressToast } from '@/components/ImportProgressToast';
 import AdminMangaEditModal from './AdminMangaEditModal';
+import ReportMangaModal from './ReportMangaModal';
 import { WARNING_GENRES, WARNING_RATINGS } from '@/constants/filters';
 
 // Memoized Header to prevent blur/filter recalculations on state changes
@@ -136,6 +137,7 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
   const [initialProgressReceived, setInitialProgressReceived] = useState(false);
   const [localChapters, setLocalChapters] = useState(manga.chapters || []);
   const [adminModalOpen, setAdminModalOpen] = useState(false);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
   const mangaId = Number(manga.id);
   const { user } = useUser();
   const isAdmin = user?.role === 'admin';
@@ -434,6 +436,13 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
                 <div className="flex justify-between text-muted">
                   Score <span>{Math.floor(manga.weightedScore)}</span>
                 </div>
+                <div className="flex justify-between text-muted">
+                  <div className="w-full">
+                    <button type="button" onClick={() => setReportModalOpen(true)} className="px-4 py-2 bg-background text-primary rounded-lg w-full text-sm hover:bg-background/50 hover:cursor-pointer disabled:opacity-50">
+                      Report Issue
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -486,6 +495,13 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
         </div>
       </div>
 
+      {reportModalOpen && (
+        <ReportMangaModal
+          mangaId={mangaId}
+          mangaTitle={manga.title}
+          onClose={() => setReportModalOpen(false)}
+        />
+      )}
       {isAdmin && adminModalOpen && (
         <AdminMangaEditModal
           mangaId={mangaId}
