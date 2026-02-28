@@ -83,7 +83,7 @@ function FiltersPanel({
         </button>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-6 justify-between items-center gap-3 md:gap-6">
-        <MultiDropdown label="All genres" options={FILTER_OPTIONS.genres as any} onChange={onGenresChange} initialValue={initialGenres} size="w-full" />
+        <MultiDropdown label="All genres" options={FILTER_OPTIONS.genres as any} onChange={onGenresChange} initialValue={initialGenres} size="w-full" showSearch searchPlaceholder="Search genres..." sortAlphabetically />
         <TagDropdown label="All tags" options={tagOptions} onChange={onTagsChange} initialValue={initialTags} size="w-full" />
         <SingleDropdown options={FILTER_OPTIONS.sort as any} onChange={onSortChange} initialValue={initialSort} size="w-full" />
         <MultiDropdown label="All formats" options={FILTER_OPTIONS.types as any} onChange={onTypesChange} initialValue={initialTypes} size="w-full" />

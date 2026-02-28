@@ -22,7 +22,7 @@ export default function DropdownContainer({ title, size, selectedLabel, children
                 <span className="truncate">{selectedLabel}</span>
                 <ChevronDown className={`size-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : 'rotate-0'}`} />
             </button>
-            {isOpen && <div className="absolute left-0 z-20 mt-1 w-full min-w-0 max-w-[calc(100vw-2rem)] rounded-md bg-foreground border border-borders shadow-lg max-h-60 overflow-y-auto p-1">{children(setIsOpen)}</div>}
+            {isOpen && <div className="absolute left-0 z-20 mt-1 w-full min-w-0 max-w-[calc(100vw-2rem)] rounded-md bg-foreground border border-borders shadow-lg max-h-60 overflow-y-auto overflow-x-hidden p-1">{children(setIsOpen)}</div>}
         </div>
     );
 }

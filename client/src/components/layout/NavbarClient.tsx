@@ -77,7 +77,7 @@ export default function NavbarClient() {
     return (
         <>
             <nav id="header" className={`fixed top-0 left-0 w-full z-50 transition-all duration-300 border-b ${isScrolled ? 'bg-foreground border-borders shadow-lg' : 'bg-foreground/5 backdrop-blur-md border-white/10'}`}>
-                <div className="flex container items-center h-18 pt-2 mx-auto px-5 lg:px-0 justify-between min-w-0">
+                <div className="flex container items-center h-18 pt-2 mx-auto px-5 lg:px-8 justify-between min-w-0">
                     {/* Left Section */}
                     <div className="flex items-center gap-8 h-full">
                         <Link href="/" className="z-50 flex items-center h-full w-55.5">

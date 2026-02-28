@@ -39,8 +39,7 @@
 @utility container {
   margin-inline: auto;
   width: 100%;
-  box-sizing: border-box;
-  padding-inline: 1rem;
+  padding-inline: 1.5rem;
 
   @variant sm {
     max-width: 80rem;
@@ -53,9 +52,11 @@
   }
   @variant xl {
     max-width: 100rem;
+    padding-inline: 2rem;
   }
   @variant 2xl {
     max-width: 132rem;
+    padding-inline: 2.5rem;
   }
 }
 

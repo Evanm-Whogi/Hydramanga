@@ -43,7 +43,7 @@ export default function Hero({ mangaData }: any) {
     }, [emblaApi]);
 
     return (
-        <section id="hero" className="pt-25 relative overflow-hidden mb-15 md:mb-15 xl:mb-0">
+        <section id="hero" className="pt-25 relative overflow-hidden pb-15 xl:mb-0">
             <div className="absolute inset-0 -z-50 min-h-[55vh] overflow-hidden">
                 <div className="absolute inset-0 bg-cover bg-center scale-100" style={{ backgroundImage: `url(${selectedManga?.cover?.raw.url || "/notFound.png"})`}}/>
                 <div className="absolute inset-0 bg-linear-to-r from-background via-background/95 to-background/60" />

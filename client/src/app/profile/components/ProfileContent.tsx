@@ -42,7 +42,7 @@ export default function ProfileContent() {
     <>
       <div className="h-82 z-10 absolute lg:relative overflow-hidden before:content-[''] before:absolute before:inset-0 before:-z-10 before:bg-(image:--manga-cover) before:bg-cover before:bg-center before:brightness-[0.7] before:blur-[6px] before:scale-110"
         style={{ '--manga-cover': `url(${user?.image})` } as React.CSSProperties}></div>
-      <div className="container mx-auto pt-5 px-4 md:px-0 mb-5 md:mb-0">
+      <div className="container mx-auto pt-5 px-4 xl:px-0 mb-5 md:mb-0">
         <div className="flex flex-col lg:flex-row lg:place-content-center">
           <div className="relative mt-25 md:mt-0 md:-top-35 flex flex-col w-full lg:w-79.75 z-25 items-center lg:items-start">
             <div className="w-48 lg:w-full aspect-square overflow-hidden rounded-md border-4 border-background shadow-lg">

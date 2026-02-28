@@ -324,7 +324,7 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
   return (
     <>
       <MangaHeader cover={manga?.cover?.x350?.x3 || manga?.cover?.raw?.url || "/notFound.png"} />
-      <div className="container mx-auto pt-5 px-4 md:px-0 mt-25 md:mt-0">
+      <div className="container mx-auto pt-5 px-4 xl:px-0 mt-25 md:mt-0">
         <div className="flex flex-col lg:flex-row gap-6 lg:place-content-evenly mb-5">
           {/* Main Content */}
           <div className="flex flex-col space-y-3 w-full lg:w-2/3 mb-5">

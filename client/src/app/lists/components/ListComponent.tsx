@@ -219,7 +219,7 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
                             {draggingMangaId && (
                               <div className={`absolute -inset-4 border-2 border-dashed border-muted/30 rounded-lg pointer-events-none z-0 transition-colors ${isOver ? 'bg-foreground' : 'bg-foreground/20'}`} />
                             )}
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-4 md:gap-6 relative z-10">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4 md:gap-6 relative z-10">
                               {listItems.map((manga: any) => (
                                 <DraggableMangaCard key={manga.id} manga={manga} />
                               ))}

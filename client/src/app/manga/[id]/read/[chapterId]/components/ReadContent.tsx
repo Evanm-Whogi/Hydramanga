@@ -158,7 +158,8 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const lastActiveChapterRef = useRef<number | null>(null);
   const hasTrackedContinuousRef = useRef(false);
   const wasMergedModeRef = useRef(false);
-  
+  const mobileChapterListRef = useRef<HTMLDivElement | null>(null);
+
   // Reading time tracking
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const elapsedSecondsRef = useRef(0);
@@ -759,13 +760,28 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     };
   }, [sidebarCollapsed]);
 
-  // Scroll to active chapter in sidebar
+  // Scroll to active chapter in desktop sidebar
   useEffect(() => {
     if (!loading && allChapters.length > 0) {
       const activeBtn = document.getElementById(`chapter-${chapterId}`);
       if (activeBtn) activeBtn.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
   }, [loading, chapterId, allChapters]);
+
+  // Scroll to active chapter in mobile sidebar when it opens
+  useEffect(() => {
+    if (!sidebarOpen || !chapterId || allChapters.length === 0) return;
+    const scrollToActive = () => {
+      const container = mobileChapterListRef.current;
+      if (!container) return;
+      const el = container.querySelector<HTMLElement>(`[data-chapter-id="${chapterId}"]`);
+      if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    };
+    const t = requestAnimationFrame(() => {
+      requestAnimationFrame(scrollToActive);
+    });
+    return () => cancelAnimationFrame(t);
+  }, [sidebarOpen, chapterId, allChapters.length]);
 
   // Strip page parameter from URL when in continuous mode
   useEffect(() => {
@@ -1033,10 +1049,10 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
                 <X className="size-6" />
               </button>
             </div>
-            <div className="chapter-list-scroll flex-1 overflow-y-auto p-4">
+            <div ref={mobileChapterListRef} className="chapter-list-scroll flex-1 overflow-y-auto p-4">
               <div className="grid-list grid grid-cols-1 gap-2">
                 {allChapters.map((ch) => (
-                  <button key={ch.id} onClick={() => {
+                  <button key={ch.id} data-chapter-id={ch.id} onClick={() => {
                     navigateToChapter(ch);
                     setSidebarOpen(false);
                   }} disabled={isNavigating} className={`p-2 text-sm border cursor-pointer rounded text-primary disabled:cursor-not-allowed disabled:opacity-50 ${
