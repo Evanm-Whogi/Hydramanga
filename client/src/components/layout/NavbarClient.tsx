@@ -82,7 +82,7 @@ export default function NavbarClient() {
                     <div className="flex items-center gap-8 h-full">
                         <Link href="/" className="z-50 flex items-center h-full w-55.5">
                             <Image
-                                src={themeMode === 'theme-light' ? "/bannerLight.png" : "/bannerDark.png"}
+                                src={'/logoIcon.png'}
                                 width={222}
                                 height={128}
                                 alt="Logo"
@@ -90,6 +90,7 @@ export default function NavbarClient() {
                                 className="object-contain"
                                 style={{ height: '100%', width: 'auto' }}
                             />
+                            <h1 className="text-2xl font-bold text-primary flex">Manga <span className="text-accent">Scrolls</span></h1>
                         </Link>
                         <nav className="hidden xl:flex items-center space-x-6 text-md text-muted ml-6">
                             {user ? (

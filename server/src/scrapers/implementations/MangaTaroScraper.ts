@@ -569,7 +569,7 @@ export class MangaTaroScraper implements IChapterScraper {
         const downloadImage = async (imageUrl: string, i: number) => {
             const filePath = path.join(
                 dir,
-                `${(i + 1).toString().padStart(3, '0')}.webp`
+                `${(i + 1).toString().padStart(2, '0')}.webp`
             );
 
             let lastError: any;

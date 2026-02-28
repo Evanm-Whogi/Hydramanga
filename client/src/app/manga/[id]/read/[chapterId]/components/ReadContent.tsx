@@ -229,8 +229,11 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       paddingLeft: paddingValue,
       paddingRight: paddingValue,
       backgroundColor: 'transparent',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: `${settings.imageGap}px`,
     };
-  }, [paddingValue]);
+  }, [paddingValue, settings.imageGap]);
 
   // Get image styles
   const getImageStyle = useMemo((): React.CSSProperties => {
@@ -721,7 +724,10 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       const mobileHeader = mobileHeaderRef.current;
       const currentScrollY = window.scrollY;
 
-      if (currentScrollY < 50) {
+      if (settings.stickyHeader) {
+        mainNav.style.transform = 'translateY(0)';
+        if (mobileHeader) mobileHeader.style.transform = 'translateY(0)';
+      } else if (currentScrollY < 50) {
         mainNav.style.transform = 'translateY(0)';
         if (mobileHeader) {
           mobileHeader.style.transform = 'translateY(0)';
@@ -744,6 +750,11 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     };
 
     applyNavOffset();
+    if (settings.stickyHeader) {
+      mainNav.style.transform = 'translateY(0)';
+      const mobileHeader = mobileHeaderRef.current;
+      if (mobileHeader) mobileHeader.style.transform = 'translateY(0)';
+    }
     window.addEventListener('scroll', handleScroll, { passive: true });
     window.addEventListener('resize', applyNavOffset);
 
@@ -758,7 +769,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       const mobileHeader = mobileHeaderRef.current;
       if (mobileHeader) mobileHeader.style.transform = 'translateY(0)';
     };
-  }, [sidebarCollapsed]);
+  }, [sidebarCollapsed, settings.stickyHeader]);
 
   // Scroll to active chapter in desktop sidebar
   useEffect(() => {

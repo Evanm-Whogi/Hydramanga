@@ -24,12 +24,16 @@ export default function CarouselSection({ title, children, controls, loading }: 
 
             {/* Carousel Wrapper */}
             <div className="relative">
-                <button onClick={() => emblaApi?.scrollPrev()}
-                    className="absolute left-0 top-0 bottom-0 z-10 w-12 flex items-center justify-center opacity-0 group-hover/carousel:opacity-100 transition-opacity duration-300">
-                    <div className="p-2 rounded-full bg-foreground/90 text-white shadow-lg cursor-pointer hover:bg-accent ml-3">
+                {/* Left nav: only the circle is clickable so cards underneath can be clicked */}
+                <div className="absolute left-0 top-0 bottom-0 z-10 w-12 flex items-center justify-center opacity-0 group-hover/carousel:opacity-100 transition-opacity duration-300 pointer-events-none">
+                    <button
+                        type="button"
+                        onClick={() => emblaApi?.scrollPrev()}
+                        className="pointer-events-auto p-2 rounded-full bg-foreground/90 text-white shadow-lg cursor-pointer hover:bg-accent ml-3"
+                    >
                         <ChevronLeft size={24} />
-                    </div>
-                </button>
+                    </button>
+                </div>
 
                 {/* The Viewport */}
                 <div className="overflow-hidden w-full px-1 min-w-0" ref={emblaRef}>
@@ -38,13 +42,16 @@ export default function CarouselSection({ title, children, controls, loading }: 
                     </div>
                 </div>
 
-                {/* Right Button Overlay */}
-                <button onClick={() => emblaApi?.scrollNext()}
-                    className="absolute right-0 top-0 bottom-0 z-10 w-12 flex items-center justify-center opacity-0 group-hover/carousel:opacity-100 transition-opacity duration-300">
-                    <div className="p-2 rounded-full bg-foreground/90 text-white shadow-lg cursor-pointer hover:bg-accent mr-3">
+                {/* Right nav: only the circle is clickable so cards underneath can be clicked */}
+                <div className="absolute right-0 top-0 bottom-0 z-10 w-12 flex items-center justify-center opacity-0 group-hover/carousel:opacity-100 transition-opacity duration-300 pointer-events-none">
+                    <button
+                        type="button"
+                        onClick={() => emblaApi?.scrollNext()}
+                        className="pointer-events-auto p-2 rounded-full bg-foreground/90 text-white shadow-lg cursor-pointer hover:bg-accent mr-3"
+                    >
                         <ChevronRight size={24} />
-                    </div>
-                </button>
+                    </button>
+                </div>
             </div>
         </section>
     );
