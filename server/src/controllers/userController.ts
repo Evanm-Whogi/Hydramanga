@@ -8,7 +8,7 @@ import logger from '@/services/loggerService';
 
 export const uploadProfilePicture = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     
@@ -75,7 +75,7 @@ export const uploadProfilePicture = async (req: Request, res: Response) => {
 
 export const deleteProfilePicture = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     
 

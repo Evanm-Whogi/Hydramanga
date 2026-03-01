@@ -252,9 +252,6 @@ export async function markChapterAsUnread(req: Request, res: Response, next: Nex
 }
 
 /**
- * Delete reading progress for a manga
- */
-/**
  * Delete user's reading progress for a specific manga
  * @route DELETE /analytics/progress/manga/:id
  */
@@ -284,11 +281,7 @@ export async function deleteProgress(req: Request, res: Response, next: NextFunc
  * Returns overall stats and per-manga reading time breakdown
  * @route GET /analytics/stats
  */
-export async function getMyStats(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<Response | void> {
+export async function getMyStats(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
   try {
     const userId = req.user?.id;
 
@@ -475,13 +468,13 @@ export async function deleteViewHistory(
 export async function clearAllViewHistory(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
   try {
     const userId = req.user?.id;
-    if (!userId) return res.status(401).json({error: 'Unauthorized: User ID not found',});
+    if (!userId) return res.status(401).json({ error: "Unauthorized: User ID not found" });
     
     await metricsService.clearAllViewHistory(userId);
 
-    return res.json({status: 200, message: 'All view history cleared successfully'});
+    return res.json({ status: 200, message: "All view history cleared successfully" });
   } catch (error) {
-    logger.error(`Failed to clear all view history: ${error}`,{ service: 'analyticsController' });
+    logger.error(`Failed to clear all view history: ${error}`, { service: "analyticsController" });
     return next(error);
   }
 }

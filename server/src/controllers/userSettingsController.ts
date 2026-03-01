@@ -3,7 +3,7 @@ import { getUserSettings, updateUserSettings } from '@/services/userSettingsServ
 
 export async function getSettings(req: Request, res: Response) {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     if (!userId) return res.status(401).json({ message: 'Unauthorized' });
     const settings = await getUserSettings(userId);
     return res.json(settings);
@@ -14,7 +14,7 @@ export async function getSettings(req: Request, res: Response) {
 
 export async function patchSettings(req: Request, res: Response) {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     if (!userId) return res.status(401).json({ message: 'Unauthorized' });
     const { hideNsfw } = req.body || {};
     const settings = await updateUserSettings(userId, { hideNsfw });
