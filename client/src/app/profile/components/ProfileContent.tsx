@@ -9,12 +9,105 @@ import { toast } from 'react-toastify';
 import { useUser } from "@/providers/UserProvider";
 import { updateUser } from "@/lib/auth";
 import { uploadProfilePicture, deleteProfilePicture } from "@/services/userService";
+import { getUserStats } from "@/services/mangaService";
+import type { UserXp } from "@/types/stats";
+
 
 const VIEWS: { [key: string]: React.FC<{ user: any; isOwner: boolean }> } = {
   overview: Overview,
   settings: Settings,
   invites: Invites,
 };
+
+const tabButtonClass = (active: boolean) =>
+  `${active ? "bg-foreground text-primary border border-borders" : "bg-foreground text-muted"} hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-base lg:text-lg cursor-pointer transition-colors`;
+
+function LevelCard() {
+  const [xp, setXp] = useState<UserXp | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchStats = async () => {
+      try {
+        const data = await getUserStats();
+        if (!isMounted) return;
+        const xpData = (data as { stats?: { xp?: UserXp } })?.stats?.xp;
+        if (xpData) setXp(xpData);
+      } catch (error) {
+        console.error("Failed to load user XP stats", error);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+    fetchStats();
+    return () => { isMounted = false; };
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <div className="h-5 w-24 bg-background rounded animate-pulse" />
+        <div className="h-4 w-32 bg-background rounded animate-pulse" />
+        <div className="h-3 w-full bg-background rounded-full overflow-hidden">
+          <div className="h-full w-1/3 bg-accent animate-pulse" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!xp) {
+    return (
+      <div className="space-y-2">
+        <h3 className="text-lg font-semibold text-primary">Level</h3>
+        <p className="text-sm text-muted">Start reading, commenting, and reviewing to earn XP and level up.</p>
+      </div>
+    );
+  }
+
+  const isMaxLevel = xp.xpForNextLevel === 0 || xp.xpToNextLevel === 0;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-primary">Level {xp.level}</h3>
+          <p className="text-sm text-muted">{xp.levelName}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-muted uppercase tracking-wide">Total XP</p>
+          <p className="text-base font-semibold text-primary">{xp.totalXp.toLocaleString()}</p>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <div className="flex items-center justify-between text-xs text-muted">
+          <span>{isMaxLevel ? "Max level reached" : "Level progress"}</span>
+          {!isMaxLevel && (
+            <span>{Math.round(xp.progressToNextLevel)}%</span>
+          )}
+        </div>
+        <div className="h-2 w-full rounded-full bg-background overflow-hidden">
+          <div
+            className="h-full rounded-full bg-linear-to-r from-accent to-primary transition-all"
+            style={{ width: `${isMaxLevel ? 100 : xp.progressToNextLevel}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between text-xs text-muted mt-1">
+        {isMaxLevel ? (
+          <span>You’ve reached the highest level.</span>
+        ) : (
+          <>
+            <span>XP this level: {xp.currentLevelXp} / {xp.xpForNextLevel}</span>
+            <span>XP to next level: {xp.xpToNextLevel}</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function ProfileContent() {
   const searchParams = useSearchParams();
@@ -107,7 +200,7 @@ export default function ProfileContent() {
         style={{ '--manga-cover': `url(${user?.image})` } as React.CSSProperties}></div>
       <div className="container mx-auto pt-5 px-4 xl:px-0 mb-5 md:mb-0">
         <div className="flex flex-col lg:flex-row lg:place-content-center">
-          <div className="relative mt-25 md:mt-0 md:-top-35 flex flex-col w-full lg:w-79.75 z-25 items-center lg:items-start">
+          <div className="relative mt-25 md:mt-0 md:-top-35 flex flex-col w-full lg:w-80 z-25 items-center lg:items-start">
             <button
               type="button"
               onClick={openAvatarModal}
@@ -136,6 +229,11 @@ export default function ProfileContent() {
                 </div>
               </div>
             </div>
+
+            <div className="bg-foreground rounded-md p-5 w-full mt-5">
+              <LevelCard />
+            </div>
+
           </div>
           <div className="flex flex-col space-y-2 w-full lg:w-2/3 lg:ml-5 mt-5 lg:mt-0">
             <div className="flex flex-wrap gap-3">

@@ -25,6 +25,80 @@ interface ProgressUpdate {
 
 class UserProgressService {
   /**
+   * Calculate the user's level information from total XP.
+   * Levels use cumulative XP thresholds so progression feels increasingly difficult.
+   */
+  private calculateLevel(totalXp: number) {
+    // Cumulative XP required to REACH each level (index = level - 1)
+    const levelThresholds = [
+      0,    // Level 1
+      500,  // Level 2
+      1500, // Level 3
+      3000, // Level 4
+      5000, // Level 5
+      8000, // Level 6
+      12000, // Level 7
+      17000, // Level 8
+      23000, // Level 9
+      30000, // Level 10
+    ];
+
+    const levelNames = [
+      'Rookie Reader',
+      'Page Turner',
+      'Bookworm',
+      'Story Seeker',
+      'Manga Enthusiast',
+      'Panel Prodigy',
+      'Chapter Champion',
+      'Volume Virtuoso',
+      'Library Legend',
+      'Manga Master',
+    ];
+
+    // Default to max level if XP exceeds all thresholds
+    let level = 1;
+    for (let i = 0; i < levelThresholds.length; i++) {
+      if (totalXp >= levelThresholds[i]) {
+        level = i + 1;
+      } else {
+        break;
+      }
+    }
+
+    const maxLevel = levelThresholds.length;
+
+    if (level >= maxLevel && totalXp >= levelThresholds[maxLevel - 1]) {
+      return {
+        level: maxLevel,
+        levelName: levelNames[maxLevel - 1],
+        currentLevelXp: totalXp - levelThresholds[maxLevel - 1],
+        xpForNextLevel: 0,
+        xpToNextLevel: 0,
+        progressToNextLevel: 100,
+      };
+    }
+
+    const currentLevelIndex = level - 1;
+    const nextLevelIndex = currentLevelIndex + 1;
+    const currentLevelXpBase = levelThresholds[currentLevelIndex];
+    const nextLevelXpBase = levelThresholds[nextLevelIndex];
+    const xpForNextLevel = nextLevelXpBase - currentLevelXpBase;
+    const currentLevelXp = totalXp - currentLevelXpBase;
+    const xpToNextLevel = Math.max(nextLevelXpBase - totalXp, 0);
+    const progressToNextLevel =
+      xpForNextLevel > 0 ? Math.min(100, Math.max(0, (currentLevelXp / xpForNextLevel) * 100)) : 0;
+
+    return {
+      level,
+      levelName: levelNames[currentLevelIndex],
+      currentLevelXp,
+      xpForNextLevel,
+      xpToNextLevel,
+      progressToNextLevel,
+    };
+  }
+  /**
    * Update user's reading progress for a manga series
    * @param progressData - Progress tracking data
    */
@@ -469,6 +543,94 @@ class UserProgressService {
         .from(schema.userReadingProgress)
         .where(eq(schema.userReadingProgress.userId, userId));
 
+      // Count how many series the user has saved in their lists
+      const seriesSavedResult = await db
+        .select({
+          seriesSaved: sql<number>`COUNT(*)`.as('series_saved'),
+        })
+        .from(schema.userSeriesList)
+        .where(eq(schema.userSeriesList.userId, userId));
+
+      const seriesSaved = seriesSavedResult[0]?.seriesSaved || 0;
+
+      // Compute longest reading streak (consecutive days with at least one manga view)
+      const readingDays = await db
+        .select({
+          day: sql<Date>`DATE_TRUNC('day', ${schema.mangaViews.viewedAt})::date`,
+        })
+        .from(schema.mangaViews)
+        .where(eq(schema.mangaViews.userId, userId))
+        .groupBy(sql`DATE_TRUNC('day', ${schema.mangaViews.viewedAt})::date`)
+        .orderBy(asc(sql`DATE_TRUNC('day', ${schema.mangaViews.viewedAt})::date`));
+
+      let longestStreak = 0;
+      let currentStreak = 0;
+      let previousDayNumber: number | null = null;
+
+      for (const row of readingDays) {
+        const dayDate = new Date(row.day as unknown as string);
+        const dayNumber = Math.floor(dayDate.getTime() / (1000 * 60 * 60 * 24));
+
+        if (previousDayNumber === null) {
+          currentStreak = 1;
+        } else if (dayNumber === previousDayNumber + 1) {
+          currentStreak += 1;
+        } else if (dayNumber === previousDayNumber) {
+          // Same day (shouldn't happen due to GROUP BY, but keep safe)
+          continue;
+        } else {
+          currentStreak = 1;
+        }
+
+        if (currentStreak > longestStreak) {
+          longestStreak = currentStreak;
+        }
+
+        previousDayNumber = dayNumber;
+      }
+
+      // Count XP-related actions
+      const [commentCountRow] = await db
+        .select({
+          count: sql<number>`COUNT(*)`.as('count'),
+        })
+        .from(schema.comments)
+        .where(eq(schema.comments.userId, userId));
+
+      const [reviewCountRow] = await db
+        .select({
+          count: sql<number>`COUNT(*)`.as('count'),
+        })
+        .from(schema.reviews)
+        .where(eq(schema.reviews.userId, userId));
+
+      const [viewCountRow] = await db
+        .select({
+          count: sql<number>`COUNT(*)`.as('count'),
+        })
+        .from(schema.mangaViews)
+        .where(eq(schema.mangaViews.userId, userId));
+
+      const [listCountRow] = await db
+        .select({
+          count: sql<number>`COUNT(*)`.as('count'),
+        })
+        .from(schema.userSeriesList)
+        .where(eq(schema.userSeriesList.userId, userId));
+
+      const commentCount = Number(commentCountRow?.count || 0);
+      const reviewCount = Number(reviewCountRow?.count || 0);
+      const viewCount = Number(viewCountRow?.count || 0);
+      const listCount = Number(listCountRow?.count || 0);
+
+      const xpFromComments = commentCount * 50;
+      const xpFromReviews = reviewCount * 75;
+      const xpFromViews = viewCount * 5;
+      const xpFromListAdds = listCount * 10;
+
+      const totalXp = xpFromComments + xpFromReviews + xpFromViews + xpFromListAdds;
+      const levelInfo = this.calculateLevel(totalXp);
+
       // Aggregate reading time per manga (series) and join series table for metadata
       const readingTimes = await db
         .select({
@@ -494,6 +656,30 @@ class UserProgressService {
           totalPagesRead: 0,
         }),
         readingTimes: readingTimes || [],
+        seriesSaved,
+        streak: longestStreak,
+        xp: {
+          totalXp,
+          ...levelInfo,
+          breakdown: {
+            comments: {
+              count: commentCount,
+              xp: xpFromComments,
+            },
+            reviews: {
+              count: reviewCount,
+              xp: xpFromReviews,
+            },
+            views: {
+              count: viewCount,
+              xp: xpFromViews,
+            },
+            listAdds: {
+              count: listCount,
+              xp: xpFromListAdds,
+            },
+          },
+        },
       };
 
       logger.debug(

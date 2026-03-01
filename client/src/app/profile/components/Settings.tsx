@@ -8,29 +8,28 @@ import { useRouter } from "next/navigation";
 import { trackAuthEvent } from "@/lib/analytics";
 
 export default function Settings({ user }: { user: any }) {
-    const router = useRouter();
-    const { data: activeSession } = useSession();
-    const [name, setName] = useState(user.name);
-    const [email, setEmail] = useState(user.email);
+  const router = useRouter();
+  const { data: activeSession } = useSession();
+  const [name, setName] = useState(user.name ?? "");
+  const [email, setEmail] = useState(user.email ?? "");
     const [oldPassword, setOldPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [sessions, setSessions] = useState<any[]>([]);
     const [hideNsfw, setHideNsfw] = useState(false);
     const [settingsLoading, setSettingsLoading] = useState(false);
 
-    // Fetch user settings (NSFW preference)
-    const fetchSettings = async () => {
-        try {
-            const s = await getSettings();
-            setHideNsfw(s.hideNsfw);
-        } catch {
-            setHideNsfw(false);
-        }
-    };
+  const fetchSettings = async () => {
+    try {
+      const s = await getSettings();
+      setHideNsfw(s.hideNsfw);
+    } catch {
+      setHideNsfw(false);
+    }
+  };
 
-    useEffect(() => {
-        fetchSettings();
-    }, []);
+  useEffect(() => {
+    fetchSettings();
+  }, []);
 
     const handleNsfwToggle = async () => {
         const newValue = !hideNsfw;
@@ -47,65 +46,60 @@ export default function Settings({ user }: { user: any }) {
         }
     };
 
-    // Fetch Sessions
-    const fetchSessions = async () => {
-        const { data } = await listSessions();
-        if (data) setSessions(data);
-    };
+  const fetchSessions = async () => {
+    const { data } = await listSessions();
+    if (data) setSessions(data);
+  };
 
-    useEffect(() => {
-        fetchSessions();
-    }, []);
-    const handleRevokeSession = async (token: string) => {
-        try {
-            const { error } = await revokeSession({ token });
-            if (error) throw new Error(error.message);
-            toast.success("Session revoked");
-            fetchSessions();
-        } catch (err: any) {
-            toast.error(err.message);
-        }
-    };
-    // Update profile info
-    const handleUpdateInfo = async () => {
-        try {
-            if (name !== user.name) {
-                const { error } = await updateUser({ name });
-                if (error) throw new Error(error.message);
-                router.refresh();
-            }
+  useEffect(() => {
+    fetchSessions();
+  }, []);
+  const handleRevokeSession = async (token: string) => {
+    try {
+      const { error } = await revokeSession({ token });
+      if (error) throw new Error(error.message);
+      toast.success("Session revoked");
+      fetchSessions();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to revoke session");
+    }
+  };
+  const handleUpdateInfo = async () => {
+    try {
+      const nameChanged = name !== (user.name ?? "");
+      const emailChanged = email !== (user.email ?? "");
 
-            if (email !== user.email) {
-                const { error } = await changeEmail({ newEmail: email });
-                if (error) throw new Error(error.message);
-                toast.success("Information updated. Please check your new email to verify the change.");
-                router.refresh();
-            } else if (name !== user.name) {
-                toast.success("Profile updated successfully!");
-                router.refresh();
-            }
-        } catch (err: any) {
-            toast.error(err.message);
-        }
-    };
+      if (nameChanged) {
+        const { error } = await updateUser({ name });
+        if (error) throw new Error(error.message);
+      }
+      if (emailChanged) {
+        const { error } = await changeEmail({ newEmail: email });
+        if (error) throw new Error(error.message);
+        toast.success("Please check your new email to verify the change.");
+      } else if (nameChanged) {
+        toast.success("Profile updated successfully!");
+      }
+      if (nameChanged || emailChanged) router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update profile");
+    }
+  };
 
-    // Send Email Verification
-    const handleResendVerification = async () => {
-        try {
-            const { error } = await sendVerificationEmail({
-                email,
-                callbackURL: window.location.origin + "/profile?verified=true",
-            });
+  const handleResendVerification = async () => {
+    try {
+      const { error } = await sendVerificationEmail({
+        email,
+        callbackURL: `${window.location.origin}/profile?verified=true`,
+      });
+      if (error) throw new Error(error.message);
+      toast.success("Verification email resent! Please check your inbox.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to resend verification");
+    }
+  };
 
-            if (error) throw new Error(error.message);
-            toast.success("Verification email resent! Please check your inbox.");
-        } catch (err: any) {
-            toast.error(err.message);
-        }
-    };
-
-    // Change Password
-    const handleChangePassword = async () => {
+  const handleChangePassword = async () => {
         const { error } = await changePassword({
             newPassword,
             currentPassword: oldPassword,
@@ -119,7 +113,7 @@ export default function Settings({ user }: { user: any }) {
             await signOut({
                 fetchOptions: {
                     onSuccess: () => {
-                        trackAuthEvent('logout', user?.id, user?.email, user?.name);
+                        trackAuthEvent("logout", user?.id ?? undefined, user?.email ?? undefined, user?.name ?? undefined);
                         router.push('/');
                         router.refresh();
                         toast('See you next time.', { type: 'info' });
@@ -137,8 +131,8 @@ export default function Settings({ user }: { user: any }) {
                     <p className="text-sm text-gray-400">Update your basic profile information such as username and email address.</p>
                     <div className="flex flex-col pt-5 grow">
                         <div className="flex flex-col space-y-3 grow">
-                            <InputField label="Username" placeholder={user.name} value={name} onChange={(e: any) => setName(e.target.value)} />
-                            <InputField label="Email" placeholder={user.email} value={email} onChange={(e: any) => setEmail(e.target.value)} />
+                            <InputField label="Username" placeholder={user.name ?? undefined} value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} />
+                            <InputField label="Email" placeholder={user.email ?? undefined} value={email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)} />
                             <p className="text-sm text-muted">To change your profile picture, click your avatar on the profile page.</p>
                         </div>
                         <button
@@ -190,7 +184,7 @@ export default function Settings({ user }: { user: any }) {
                 </div>
                 <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md space-y-3">
                     <h1 className="text-xl font-bold">Danger Zone</h1>
-                        <p className="text-sm text-gray-400 mb-4">Be careful with these actions. They cannot be undone.</p>
+                        <p className="text-sm text-muted mb-4">Be careful with these actions. They cannot be undone.</p>
                         <div className="flex items-center justify-between gap-4">
                             <button onClick={handleResendVerification} className="bg-background hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-full">
                                 Resend Email Verification
