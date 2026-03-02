@@ -71,7 +71,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           </ErrorTracker>
         </PostHogProvider>
         <ToastContainer
-          position="top-right"
+          position="bottom-right"
           autoClose={5000}
           hideProgressBar={false}
           newestOnTop={false}

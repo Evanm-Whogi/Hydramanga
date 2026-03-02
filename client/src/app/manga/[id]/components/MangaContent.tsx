@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, memo, useTransition, Fragment, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { getMangaAnalytics, triggerMangaScan } from '@/services/mangaService';
 import {  formatToRating, formatTimeAgo } from '@/lib/utils';
 import Link from 'next/link';
@@ -141,6 +142,7 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
   const mangaId = Number(manga.id);
   const { user } = useUser();
   const isAdmin = user?.role === 'admin';
+  const router = useRouter();
 
   // Reset progress tracking state when manga changes
   useEffect(() => {
@@ -506,12 +508,17 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
         <AdminMangaEditModal
           mangaId={mangaId}
           mangaTitle={manga.title}
+          manga={manga}
           secondaryTitles={manga.secondaryTitles}
+          chapters={localChapters.map((ch: any) => ({ id: ch.id, chapterNumber: ch.chapterNumber, title: ch.title }))}
           currentScraperId={progress?.scraperId}
           currentScraperUrl={progress?.scraperUrl}
+          isScanActive={progress?.status === "scanning" || progress?.status === "downloading"}
           onClose={() => setAdminModalOpen(false)}
           onSourceSet={() => {}}
           onVariantAdded={() => {}}
+          onChaptersDeleted={() => router.refresh()}
+          onMetadataUpdated={() => router.refresh()}
         />
       )}
     </>

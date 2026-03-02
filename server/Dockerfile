@@ -17,6 +17,7 @@ ENV NODE_ENV=production
 
 # Install Playwright system dependencies
 RUN npx -y playwright@latest install-deps
+RUN npx -y playwright@latest install chromium
 
 # Install cloudflared for tunnel
 RUN curl -L --fail --output /usr/local/bin/cloudflared \
