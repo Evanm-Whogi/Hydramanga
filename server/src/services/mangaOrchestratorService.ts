@@ -143,6 +143,93 @@ class MangaOrchestratorService {
     logger.info(`Queued rescan for series ${seriesId} (${manga.title})`, { service: 'mangaOrchestratorService' });
   }
 
+  // Get scan status: progress status + whether a job is queued
+  async getScanStatus(seriesId: number): Promise<{ scanStatus: string; isQueued: boolean }> {
+    const progress = await mangaProgressService.getProgress(seriesId);
+    if (progress && (progress.status === 'scanning' || progress.status === 'downloading')) {
+      return { scanStatus: progress.status, isQueued: false };
+    }
+    if (progress && (progress.status === 'completed' || progress.status === 'failed')) {
+      return { scanStatus: progress.status, isQueued: false };
+    }
+    const scanQueue = queueService.getQueue('mangaChapterImportQueue');
+    const possibleScanJobIds = [`rescan-${seriesId}`, `ondemand-${seriesId}`, `trending-${seriesId}`, `monitored-${seriesId}`];
+    for (const jobId of possibleScanJobIds) {
+      try {
+        const job = await scanQueue.getJob(jobId);
+        if (job) {
+          const state = await job.getState();
+          if (state === 'waiting' || state === 'delayed' || state === 'active') {
+            return { scanStatus: state === 'active' ? 'scanning' : 'queued', isQueued: state !== 'active' };
+          }
+        }
+      } catch {
+        // Job not found, try next
+      }
+    }
+    return { scanStatus: 'idle', isQueued: false };
+  }
+
+  // Cancel active scan for a series: remove scan job and chapter download jobs from queues
+  async cancelScan(seriesId: number): Promise<{ scanJobRemoved: boolean; chapterJobsRemoved: number }> {
+    const scanQueue = queueService.getQueue('mangaChapterImportQueue');
+    const downloadQueue = queueService.getQueue('mangaChapterDownloadQueue');
+    const possibleScanJobIds = [`rescan-${seriesId}`, `ondemand-${seriesId}`, `trending-${seriesId}`, `monitored-${seriesId}`];
+
+    let scanJobRemoved = false;
+    for (const jobId of possibleScanJobIds) {
+      try {
+        const job = await scanQueue.getJob(jobId);
+        if (job) {
+          const state = await job.getState();
+          if (state === 'waiting' || state === 'delayed') {
+            await job.remove();
+            scanJobRemoved = true;
+            logger.info(`Removed scan job ${jobId} from queue`, { service: 'mangaOrchestratorService' });
+            break;
+          }
+          if (state === 'active') {
+            await job.remove();
+            scanJobRemoved = true;
+            logger.info(`Removed active scan job ${jobId} from queue`, { service: 'mangaOrchestratorService' });
+            break;
+          }
+        }
+      } catch (err) {
+        logger.debug(`No scan job ${jobId} or already removed: ${(err as Error).message}`, { service: 'mangaOrchestratorService' });
+      }
+    }
+
+    let chapterJobsRemoved = 0;
+    try {
+      // Chapter download jobs use priority, so they live in 'prioritized' not 'waiting'. Include all relevant states.
+      const [waitingJobs, prioritizedJobs, activeJobs] = await Promise.all([
+        downloadQueue.getJobs(['waiting'], 0, 500, true),
+        downloadQueue.getJobs(['prioritized'], 0, 500, true),
+        downloadQueue.getJobs(['active'], 0, 500, true),
+      ]);
+      const allJobs = [...waitingJobs, ...prioritizedJobs, ...activeJobs];
+      const seriesIdNum = Number(seriesId);
+      for (const job of allJobs) {
+        if (Number(job?.data?.seriesId) === seriesIdNum) {
+          try {
+            await job.remove();
+            chapterJobsRemoved++;
+          } catch (err) {
+            logger.warn(`Failed to remove chapter job ${job.id}: ${(err as Error).message}`, { service: 'mangaOrchestratorService' });
+          }
+        }
+      }
+      if (chapterJobsRemoved > 0) {
+        logger.info(`Removed ${chapterJobsRemoved} chapter download jobs for series ${seriesId}`, { service: 'mangaOrchestratorService' });
+      }
+    } catch (err) {
+      logger.warn(`Failed to get/remove chapter jobs: ${(err as Error).message}`, { service: 'mangaOrchestratorService' });
+    }
+
+    return { scanJobRemoved, chapterJobsRemoved };
+  }
+
   // Rescan all non-trending manga that have chapters (auto-monitored)
   async enqueueMonitoredRescans() {
     try {

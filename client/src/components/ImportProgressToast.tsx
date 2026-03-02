@@ -33,7 +33,7 @@ function ImportProgressToastContent({ progress, mangaTitle }: { progress: MangaI
       case 'failed':
         return 'bg-red-500';
       default:
-        return 'bg-gray-500';
+        return 'bg-accent';
     }
   };
 
@@ -42,7 +42,7 @@ function ImportProgressToastContent({ progress, mangaTitle }: { progress: MangaI
       <div className="flex items-start justify-between gap-2 overflow-hidden">
         <div className="flex-1 min-w-0 overflow-hidden">
           <div className="font-semibold text-sm truncate">{mangaTitle}</div>
-          <div className="text-xs text-gray-300 mt-1 line-clamp-2">{getStatusText()}</div>
+          <div className="text-xs text-muted mt-1 line-clamp-2">{getStatusText()}</div>
         </div>
         {status === 'downloading' && (
           <div className="text-sm font-bold text-white shrink-0 ml-2">{percentage}%</div>
@@ -50,7 +50,7 @@ function ImportProgressToastContent({ progress, mangaTitle }: { progress: MangaI
       </div>
       
       {status === 'downloading' && totalChapters > 0 && (
-        <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+        <div className="w-full bg-foreground rounded-full h-2 overflow-hidden">
           <div
             className={`h-full ${getProgressColor()} transition-all duration-300 ease-out`}
             style={{ width: `${percentage}%` }}
@@ -59,8 +59,8 @@ function ImportProgressToastContent({ progress, mangaTitle }: { progress: MangaI
       )}
       
       {status === 'scanning' && (
-        <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
-          <div className="h-full bg-blue-500 animate-pulse w-full" />
+        <div className="w-full bg-foreground rounded-full h-2 overflow-hidden">
+          <div className="h-full bg-accent animate-pulse w-full" />
         </div>
       )}
     </div>
@@ -108,7 +108,7 @@ export function showImportProgressToast(
       closeButton: false,
       draggable: false,
       type: 'info',
-      position: 'top-right',
+      position: 'bottom-right',
     }
   );
 }

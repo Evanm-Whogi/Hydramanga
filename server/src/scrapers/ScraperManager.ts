@@ -618,30 +618,37 @@ export class ScraperManager {
      */
     async searchAllSources(mangaName: string, options?: SearchOptions, limitPerSource = 10): Promise<Array<{ scraperId: string; scraperName: string; results: MangaSearchResult[] }>> {
         const enabledScrapers = this.getEnabledScrapers();
-        const out: Array<{ scraperId: string; scraperName: string; results: MangaSearchResult[] }> = [];
 
-        await Promise.all(
-            enabledScrapers.map(async (scraper) => {
+        const settled = await Promise.allSettled(
+            enabledScrapers.map(async (scraper): Promise<{ scraperId: string; scraperName: string; results: MangaSearchResult[] }> => {
                 const meta = scraper.getMetadata();
                 try {
                     const canHandle = await scraper.canHandle(mangaName, options?.seriesId);
                     if (!canHandle) {
-                        out.push({ scraperId: meta.id, scraperName: meta.name, results: [] });
-                        return;
+                        return { scraperId: meta.id, scraperName: meta.name, results: [] };
                     }
                     const results = await scraper.search(mangaName, options, limitPerSource);
-                    out.push({ scraperId: meta.id, scraperName: meta.name, results: results || [] });
+                    return { scraperId: meta.id, scraperName: meta.name, results: results || [] };
                 } catch (err) {
                     logger.warn(
                         `Scraper ${meta.name} search failed: ${err instanceof Error ? err.message : err}`,
                         { service: 'scraperManager' }
                     );
-                    out.push({ scraperId: meta.id, scraperName: meta.name, results: [] });
+                    return { scraperId: meta.id, scraperName: meta.name, results: [] };
                 }
             })
         );
 
-        return out;
+        return settled.map((result) => {
+            if (result.status === 'fulfilled') return result.value;
+            const scraper = enabledScrapers[settled.indexOf(result)];
+            const meta = scraper?.getMetadata();
+            return {
+                scraperId: meta?.id ?? 'unknown',
+                scraperName: meta?.name ?? 'Unknown',
+                results: [] as MangaSearchResult[],
+            };
+        });
     }
 
     /**

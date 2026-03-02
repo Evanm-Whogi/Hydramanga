@@ -168,6 +168,7 @@ class MangaProgressService {
         logger.debug(`Database updated for series ${seriesId}: status=${newStatus}, totalChapters=0`, { service: 'mangaProgressService' });
 
         // Update Redis
+        const mergedScraperId = scraperId ?? progress.scraperId ?? null;
         const updatedProgress: MangaProgress = {
           ...progress,
           totalChapters: 0,
@@ -176,6 +177,7 @@ class MangaProgressService {
           percentage: 100,
           updatedAt: new Date(),
           completedAt: new Date(),
+          scraperId: mergedScraperId,
         };
 
         await this.getRedis().setex(
@@ -211,12 +213,14 @@ class MangaProgressService {
         .where(eq(mangaImportProgress.seriesId, seriesId));
 
       // Update Redis
+      const mergedScraperId = scraperId ?? progress.scraperId ?? null;
       const updatedProgress: MangaProgress = {
         ...progress,
         totalChapters,
         status: newStatus,
         percentage: 0,
         updatedAt: new Date(),
+        scraperId: mergedScraperId,
       };
 
       await this.getRedis().setex(
@@ -558,13 +562,53 @@ class MangaProgressService {
     }
   }
 
-  // Cleanup old progress data
+  // Cleanup old progress data (Redis only)
   async cleanupProgress(seriesId: number): Promise<void> {
     try {
       await this.getRedis().del(`${PROGRESS_CHANNEL_PREFIX}${seriesId}`);
       logger.info(`Cleaned up progress data for series ${seriesId}`, { service: 'mangaProgressService' });
     } catch (error) {
       logger.error(`Failed to cleanup progress for series ${seriesId}: ${error}`, { service: 'mangaProgressService' });
+    }
+  }
+
+  // Cancel scan: mark as failed in DB and remove from Redis
+  async cancelAndCleanup(seriesId: number): Promise<void> {
+    try {
+      await db.update(mangaImportProgress)
+        .set({
+          status: 'failed',
+          errorMessage: 'Cancelled by admin',
+          updatedAt: new Date(),
+          completedAt: new Date(),
+        })
+        .where(eq(mangaImportProgress.seriesId, seriesId));
+      await this.cleanupProgress(seriesId);
+      logger.info(`Cancelled and cleaned up progress for series ${seriesId}`, { service: 'mangaProgressService' });
+    } catch (error) {
+      logger.error(`Failed to cancel progress for series ${seriesId}: ${error}`, { service: 'mangaProgressService' });
+      throw error;
+    }
+  }
+
+  /**
+   * Clear the scraper source for a series (admin). Next scan will re-search instead of using saved URL.
+   */
+  async clearScraperMatch(seriesId: number): Promise<void> {
+    try {
+      await db
+        .update(mangaImportProgress)
+        .set({
+          scraperId: null,
+          scraperUrl: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(mangaImportProgress.seriesId, seriesId));
+      await this.cleanupProgress(seriesId);
+      logger.info(`Cleared scraper match for series ${seriesId}`, { service: 'mangaProgressService' });
+    } catch (error) {
+      logger.error(`Failed to clear scraper match for series ${seriesId}: ${error}`, { service: 'mangaProgressService' });
+      throw error;
     }
   }
 

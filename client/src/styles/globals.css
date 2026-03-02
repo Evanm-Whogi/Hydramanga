@@ -2,6 +2,10 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+:root {
+  --toastify-icon-color-info: var(--color-accent);
+}
+
 @theme {
   --color-accent: #9370DB;
   --color-primary: white;
