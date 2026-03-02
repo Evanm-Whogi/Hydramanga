@@ -152,6 +152,19 @@ export class ToonilyScraper implements IChapterScraper {
         },
     });
 
+    /**
+     * Normalize a title/search string so minor punctuation/connector differences
+     * (e.g. ":" vs "-" or multiple spaces) don't affect matching.
+     */
+    private static normalizeForSearch(value?: string): string {
+        if (!value) return '';
+        return value
+            .replace(/[-_.]+/g, ' ')                // treat dashes/underscores/dots as spaces
+            .replace(/[^\p{L}\p{N}\s]/gu, '')       // drop other punctuation (unicode-aware)
+            .replace(/\s+/g, ' ')                   // collapse multiple spaces
+            .trim();
+    }
+
     getMetadata(): ScraperMetadata {
         return { ...this.metadata };
     }
@@ -219,12 +232,18 @@ export class ToonilyScraper implements IChapterScraper {
         const page = await context.newPage();
 
         try {
-            const variants = [
+            const baseVariants = [
                 mangaName,
                 options?.romanizedTitle,
                 options?.nativeTitle,
                 ...(options?.secondaryTitles || []),
             ].filter((v): v is string => !!v && v.length > 0);
+
+            const normalizedExtras = baseVariants
+                .map((v) => ToonilyScraper.normalizeForSearch(v))
+                .filter((v) => v && !baseVariants.includes(v));
+
+            const variants = [...baseVariants, ...normalizedExtras];
 
             logger.info(
                 `[Toonily] Trying ${variants.length} search variant(s)`,

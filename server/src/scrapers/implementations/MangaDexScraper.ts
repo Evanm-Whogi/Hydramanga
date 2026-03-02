@@ -84,6 +84,19 @@ export class MangaDexScraper implements IChapterScraper {
     });
 
     /**
+     * Normalize a title/search string so minor punctuation/connector differences
+     * (e.g. ":" vs "-" or multiple spaces) don't affect matching.
+     */
+    private static normalizeForSearch(value?: string): string {
+        if (!value) return '';
+        return value
+            .replace(/[-_.]+/g, ' ')                // treat dashes/underscores/dots as spaces
+            .replace(/[^\p{L}\p{N}\s]/gu, '')       // drop other punctuation (unicode-aware)
+            .replace(/\s+/g, ' ')                   // collapse multiple spaces
+            .trim();
+    }
+
+    /**
      * Sleep for specified milliseconds
      */
     private static async sleep(ms: number): Promise<void> {
@@ -184,13 +197,20 @@ export class MangaDexScraper implements IChapterScraper {
         mangaName: string,
         options?: SearchOptions
     ): Promise<MangaSearchResult | undefined> {
-        // Generate search variants
-        const searchVariants = [
+        // Generate search variants (raw + normalized forms)
+        const baseVariants = [
             mangaName,
             options?.romanizedTitle,
             options?.nativeTitle,
             ...(options?.secondaryTitles || []),
-        ].filter((v): v is string => !!v && v.trim().length > 0);
+        ]
+            .filter((v): v is string => !!v && v.trim().length > 0);
+
+        const normalizedExtras = baseVariants
+            .map((v) => MangaDexScraper.normalizeForSearch(v))
+            .filter((v) => v && !baseVariants.includes(v));
+
+        const searchVariants = [...baseVariants, ...normalizedExtras];
 
         logger.info(
             `[MangaDex] Trying ${searchVariants.length} search variants`,
