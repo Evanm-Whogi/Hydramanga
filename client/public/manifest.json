@@ -1,0 +1,30 @@
+{
+	"name": "MangaScrolls",
+	"short_name": "MangaScrolls",
+	"description": "Your ultimate destination for manga. Discover, read, and share thousands of titles from your favorite genres.",
+	"start_url": "/",
+	"display": "standalone",
+	"background_color": "#161819",
+	"theme_color": "#161819",
+	"orientation": "portrait",
+	"scope": "/",
+	"lang": "en",
+	"icons": [
+        {
+			"src": "/pwa/android/launchericon-144x144.png",
+			"sizes": "144x144",
+			"type": "image/png"
+		},
+		{
+			"src": "/pwa/android/launchericon-192x192.png",
+			"sizes": "192x192",
+			"type": "image/png"
+		},
+		{
+			"src": "/pwa/android/launchericon-512x512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+            "purpose": "maskable" 
+		}
+	]
+}
