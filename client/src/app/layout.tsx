@@ -45,6 +45,21 @@ export async function generateMetadata(): Promise<Metadata> {
       images: [`${siteConfig.url}/logo.png`],
     },
     authors: [{ name: "Whogi" }],
+    appleWebApp: {
+      capable: true,
+      title: siteConfig.name,
+      statusBarStyle: "black-translucent",
+    },
+    icons: {
+      icon: '/favicon.ico',
+      shortcut: '/favicon.ico',
+      apple: [
+        { url: '/pwa/ios/180.png', sizes: '180x180', type: 'image/png' },
+        { url: '/pwa/ios/152.png', sizes: '152x152', type: 'image/png' },
+        { url: '/pwa/ios/120.png', sizes: '120x120', type: 'image/png' },
+      ],
+    },
+    manifest: '/manifest.json',
   };
 }
 
