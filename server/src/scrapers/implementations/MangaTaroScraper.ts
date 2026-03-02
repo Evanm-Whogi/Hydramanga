@@ -176,6 +176,19 @@ export class MangaTaroScraper implements IChapterScraper {
         },
     });
 
+    /**
+     * Normalize a title/search string so minor punctuation/connector differences
+     * (e.g. ":" vs "-" or multiple spaces) don't affect matching.
+     */
+    private static normalizeForSearch(value?: string): string {
+        if (!value) return '';
+        return value
+            .replace(/[-_.]+/g, ' ')                // treat dashes/underscores/dots as spaces
+            .replace(/[^\p{L}\p{N}\s]/gu, '')       // drop other punctuation (unicode-aware)
+            .replace(/\s+/g, ' ')                   // collapse multiple spaces
+            .trim();
+    }
+
     getMetadata(): ScraperMetadata {
         return { ...this.metadata };
     }
@@ -236,13 +249,19 @@ export class MangaTaroScraper implements IChapterScraper {
         options?: SearchOptions
     ): Promise<MangaSearchResult | undefined> {
         try {
-            // Prepare search variants
-            const variants = [
+            // Prepare search variants (raw + normalized forms)
+            const baseVariants = [
                 mangaName,
                 options?.romanizedTitle,
                 options?.nativeTitle,
                 ...(options?.secondaryTitles || []),
             ].filter((v): v is string => !!v && v.length > 0);
+
+            const normalizedExtras = baseVariants
+                .map((v) => MangaTaroScraper.normalizeForSearch(v))
+                .filter((v) => v && !baseVariants.includes(v));
+
+            const variants = [...baseVariants, ...normalizedExtras];
 
             logger.info(
                 `[MangaTaro] Trying ${variants.length} search variants`,

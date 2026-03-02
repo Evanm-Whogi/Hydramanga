@@ -170,9 +170,24 @@ export class WeebCentralSearcher {
      * @returns Score from 0-100
      */
     private static scoreMatch(element: Element, searchTerm: string): number {
-        const titleText = element.querySelector('div.line-clamp-2')?.textContent?.trim().toLowerCase() || '';
+        const rawTitle = element.querySelector('div.line-clamp-2')?.textContent ?? '';
+        const titleText = rawTitle.trim().toLowerCase();
         const urlHref = element.getAttribute('href')?.toLowerCase() || '';
         const searchLower = searchTerm.toLowerCase().trim();
+
+        // Normalized forms – strip punctuation / connectors so
+        // "Boruto: Naruto Next Generations" and
+        // "Boruto - Naruto Next Generations" compare as equal.
+        const normalizedTitle = normalizeQuery(rawTitle).toLowerCase();
+        const normalizedSearch = normalizeQuery(searchTerm).toLowerCase();
+
+        const escapeRegex = (value: string) =>
+            value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+        // 0. Exact match on normalized forms (punctuation-insensitive)
+        if (normalizedTitle && normalizedSearch && normalizedTitle === normalizedSearch) {
+            return SCORE_TIERS.EXACT_MATCH;
+        }
 
         // 1. Exact match - title exactly matches search
         if (titleText === searchLower) {
@@ -180,17 +195,23 @@ export class WeebCentralSearcher {
         }
 
         // 2. Word boundary match - search term matches as complete word(s)
-        // e.g., search "demon slayer" matches "Demon Slayer" but not "My Demon Slaying"
+        // Check both raw and normalized text so small punctuation differences
+        // like ":" vs "-" still count as strong matches.
         const wordBoundaryPattern = new RegExp(
-            `\\b${searchLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`
+            `\\b${escapeRegex(searchLower)}\\b`
         );
-        if (wordBoundaryPattern.test(titleText)) {
+        const normalizedBoundaryPattern = normalizedSearch
+            ? new RegExp(`\\b${escapeRegex(normalizedSearch)}\\b`)
+            : null;
+        if (wordBoundaryPattern.test(titleText) || (normalizedBoundaryPattern && normalizedBoundaryPattern.test(normalizedTitle))) {
             return SCORE_TIERS.WORD_BOUNDARY;
         }
 
         // 3. URL slug match - URL contains search term as slug
-        // e.g., "/series/demon-slayer" matches "demon slayer"
-        const searchSlug = searchLower.replace(/\s+/g, '-');
+        // Use normalized search so "Boruto: Naruto…" slug-matches
+        // "boruto-naruto-next-generations".
+        const slugSource = normalizedSearch || searchLower;
+        const searchSlug = slugSource.replace(/\s+/g, '-');
         if (urlHref.includes(`/${searchSlug}`) || urlHref.endsWith(searchSlug)) {
             return SCORE_TIERS.URL_SLUG_MATCH;
         }
