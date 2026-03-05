@@ -39,7 +39,7 @@ initializeScrapers();
 const app: Express = express();
 
 app.use(morgan(':method :url :status :response-time ms - :res[content-length] \n', {
-    skip: (req, res) => req.originalUrl.startsWith('/admin/queues') // Skip logging for Bull Board routes
+    skip: (req, res) => req.originalUrl.startsWith('/admin/queues') || req.originalUrl.includes('/admin/heartbeat') || req.originalUrl.includes('/socket.io') // Skip logging for Bull Board, heartbeat, and Socket.IO endpoints
 }));
 app.use(cors({ origin: ['https://manga.chit.sh'], credentials: true }));
 app.set('trust proxy', 1);
