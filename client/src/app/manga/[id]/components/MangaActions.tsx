@@ -1,11 +1,13 @@
 "use client";
 import { useState } from "react";
-import { BookOpen, MessageCircleMore, ImagesIcon, StarIcon } from 'lucide-react';
+import { BookOpen, MessageCircleMore, ImagesIcon, StarIcon } from "lucide-react";
 import Chapters from "./Chapters";
 import Comments from "./Comments";
 import Gallery from "./Gallery";
 import Reviews from "./Reviews";
-import ListDropdown from "./ListDropdown"
+import ListDropdown from "./ListDropdown";
+
+type MangaActionsPage = "chapters" | "comments" | "reviews" | "gallery";
 
 interface MangaActionsProps {
     manga: any;
@@ -14,10 +16,11 @@ interface MangaActionsProps {
     gallery: any[];
     initialListName: string | null;
     importProgress: any;
+    chaptersMaxHeight?: number | null;
 }
 
-export default function ListContainer({ manga, chapters, comments, gallery, initialListName, importProgress }: MangaActionsProps) {
-    const [page, setPage] = useState("chapters");
+export default function MangaActions({ manga, chapters, comments, gallery, initialListName, importProgress, chaptersMaxHeight }: MangaActionsProps) {
+    const [page, setPage] = useState<MangaActionsPage>("chapters");
 
     return (
         <>
@@ -46,7 +49,7 @@ export default function ListContainer({ manga, chapters, comments, gallery, init
         </div>
 
         <div className="flex flex-col pt-2 gap-2">
-            {page === "chapters" && <Chapters manga={{ ...manga, chapters }} progress={importProgress} />}
+            {page === "chapters" && <Chapters manga={{ ...manga, chapters }} progress={importProgress} maxHeight={chaptersMaxHeight} />}
             {page === "comments" && <Comments manga={manga} comments={comments} />}
             {page === "reviews" && <Reviews seriesId={manga.id} />}
             {page === "gallery" && <Gallery gallery={gallery} mangaTitle={manga.title} />}

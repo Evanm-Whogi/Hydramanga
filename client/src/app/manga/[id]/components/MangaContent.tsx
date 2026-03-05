@@ -6,7 +6,7 @@ import {  formatToRating, formatTimeAgo } from '@/lib/utils';
 import Link from 'next/link';
 import MangaActions from './MangaActions';
 import RecommendedManga from './RecommendedManga';
-import { Eye, Bookmark, UserCheck, TriangleAlert, Star, Pencil } from 'lucide-react';
+import { Eye, Bookmark, UserCheck, TriangleAlert, Star, Pencil, ShareIcon } from 'lucide-react';
 import { useMangaViewTracking } from '@/hooks/useViewTracking';
 import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
 import { useUser } from '@/providers/UserProvider';
@@ -14,6 +14,7 @@ import { showImportProgressToast, updateImportProgressToast, dismissImportProgre
 import AdminMangaEditModal from './AdminMangaEditModal';
 import ReportMangaModal from './ReportMangaModal';
 import { WARNING_GENRES, WARNING_RATINGS } from '@/constants/filters';
+import { toast } from 'react-toastify';
 
 // Memoized Header to prevent blur/filter recalculations on state changes
 const MangaHeader = memo(({ cover }: { cover: string }) => {
@@ -139,10 +140,72 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
   const [localChapters, setLocalChapters] = useState(manga.chapters || []);
   const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [sidebarHeight, setSidebarHeight] = useState<number | null>(null);
+  const [isLg, setIsLg] = useState(false);
+  const [chaptersMaxHeight, setChaptersMaxHeight] = useState<number | null>(null);
   const mangaId = Number(manga.id);
   const { user } = useUser();
   const isAdmin = user?.role === 'admin';
   const router = useRouter();
+
+  // Track sidebar height (lg only, when side-by-side)
+  useEffect(() => {
+    const sidebar = document.getElementById("sidebar");
+    if (!sidebar) return;
+    const mql = window.matchMedia("(min-width: 1024px)");
+    const update = () => {
+      if (mql.matches) setSidebarHeight(sidebar.getBoundingClientRect().height);
+      else setSidebarHeight(null);
+    };
+    setIsLg(mql.matches);
+    const onResize = () => {
+      setIsLg(mql.matches);
+      if (mql.matches) setSidebarHeight(sidebar.getBoundingClientRect().height);
+      else setSidebarHeight(null);
+    };
+    const observer = new ResizeObserver((entries) => {
+      if (mql.matches && entries[0]) setSidebarHeight(entries[0].contentRect.height);
+    });
+    observer.observe(sidebar);
+    mql.addEventListener("change", onResize);
+    update();
+    return () => {
+      observer.disconnect();
+      mql.removeEventListener("change", onResize);
+    };
+  }, []);
+
+  // Compute chapters list max height so its bottom aligns with the sidebar bottom.
+  // Uses getBoundingClientRect() so margin, padding, and sidebar -top offset are all accounted for.
+  useEffect(() => {
+    if (!isLg || sidebarHeight == null) {
+      setChaptersMaxHeight(null);
+      return;
+    }
+    const sidebar = document.getElementById("sidebar");
+    const chaptersScroll = document.getElementById("chapters-scroll");
+    if (!sidebar || !chaptersScroll) return;
+
+    const compute = () => {
+      const sidebarRect = sidebar.getBoundingClientRect();
+      const chaptersRect = chaptersScroll.getBoundingClientRect();
+      // Align bottom of chapters list with bottom of sidebar (handles -top-35, gaps, etc.)
+      const available = sidebarRect.bottom - chaptersRect.top;
+      setChaptersMaxHeight(Math.max(0, available));
+    };
+
+    compute();
+
+    const resizeObserver = new ResizeObserver(compute);
+    resizeObserver.observe(sidebar);
+    resizeObserver.observe(chaptersScroll);
+    window.addEventListener("resize", compute);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", compute);
+    };
+  }, [isLg, sidebarHeight]);
 
   // Reset progress tracking state when manga changes
   useEffect(() => {
@@ -303,6 +366,12 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
       })
     : null;
 
+    const handleShareClick = (id: number, title: string) => {
+      const url = `${window.location.origin}/manga/${id}`;
+      navigator.clipboard.writeText(url);
+      toast.success('Manga URL copied to clipboard');
+    };
+
     const containsAdultContent =
       WARNING_GENRES.some((genre) => manga.genres?.includes(genre)) ||
       WARNING_RATINGS.some((rating) => manga.contentRating?.toLowerCase() === rating);
@@ -329,9 +398,10 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
     <>
       <MangaHeader cover={manga?.cover?.x350?.x3 || manga?.cover?.raw?.url || "/notFound.png"} />
       <div className="container mx-auto pt-5 px-4 xl:px-0 mt-25 md:mt-0">
-        <div className="flex flex-col lg:flex-row gap-6 lg:place-content-evenly mb-5">
+        <div className="flex flex-col lg:flex-row gap-6 lg:place-content-evenly mb-5 lg:items-start">
           {/* Main Content */}
           <div className="flex flex-col space-y-3 w-full lg:w-2/3 mb-5">
+            <div className={`space-y-3 flex flex-col ${isLg && sidebarHeight != null ? "shrink-0" : ""}`}>
               {containsAdultContent && containsAdultWarning}
             <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
               {manga.title} 
@@ -398,6 +468,7 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
             >
               {showDetails ? 'Hide Details' : 'Show Details...'}
             </button>
+            </div>
 
             <MangaActions 
               manga={manga} 
@@ -406,11 +477,12 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
               gallery={gallery}
               initialListName={initialListName} 
               importProgress={progress} 
+              chaptersMaxHeight={chaptersMaxHeight}
             />
           </div>
 
           {/* Sidebar */}
-          <div className="flex flex-col w-full lg:w-79.75 lg:relative lg:-top-35 lg:z-25 gap-4">
+          <div id="sidebar" className="flex flex-col w-full lg:w-79.75 lg:relative lg:-top-35 lg:z-25 gap-4">
             {/* Cover Image */}
             <div className="w-full md:max-w-xs lg:max-w-none mx-auto lg:mx-0 overflow-hidden rounded-md border-4 border-background shadow-lg">
               <img src={manga.cover?.raw?.url || "/notFound.png"} alt="manga" className="w-full h-auto object-cover" />
@@ -439,9 +511,12 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
                   Score <span>{Math.floor(manga.weightedScore)}</span>
                 </div>
                 <div className="flex justify-between text-muted">
-                  <div className="w-full">
+                  <div className="w-full flex gap-2">
                     <button type="button" onClick={() => setReportModalOpen(true)} className="px-4 py-2 bg-background text-primary rounded-lg w-full text-sm hover:bg-background/50 hover:cursor-pointer disabled:opacity-50">
                       Report Issue
+                    </button>
+                    <button onClick={() => handleShareClick(manga.id, manga.title)} type="button" className="flex items-center justify-center gap-2 px-4 py-2 bg-background text-primary rounded-lg w-full text-sm hover:bg-background/50 hover:cursor-pointer disabled:opacity-50">
+                      <ShareIcon className="size-4" /> Share
                     </button>
                   </div>
                 </div>
