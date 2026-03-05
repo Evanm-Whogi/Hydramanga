@@ -8,8 +8,6 @@ import { toast } from "react-toastify";
 import { trackBookmarkAction } from "@/lib/analytics";
 import Link from "next/link";
 
-const CHAPTERS_PER_PAGE = 24;
-
 type FilterOption = "all" | "unread" | "read" | "bookmarked";
 type SortOption = "chapterNumber" | "uploadDate" | "name";
 
@@ -52,11 +50,16 @@ function useClickOutside(ref: React.RefObject<HTMLElement | null>, handler: () =
     }, [ref, handler]);
 }
 
-export default function Chapters({ manga, progress }: { manga: any; progress?: any }) {
-    const [showAll, setShowAll] = useState(false);
+interface ChaptersProps {
+    manga: any;
+    progress?: any;
+    maxHeight?: number | null;
+}
+
+export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) {
     const [searchQuery, setSearchQuery] = useState("");
     const [sortBy, setSortBy] = useState<SortOption>("chapterNumber");
-    const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+    const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
     const [filter, setFilter] = useState<FilterOption>("all");
     const [filterOpen, setFilterOpen] = useState(false);
     const [sortOpen, setSortOpen] = useState(false);
@@ -158,10 +161,8 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
     }, [rawChapters, filter, searchQuery, sortBy, sortOrder, chapterProgress, bookmarks]);
 
     const visibleChapters = useMemo(() => {
-        return showAll ? chapters : chapters.slice(0, CHAPTERS_PER_PAGE);
-    }, [chapters, showAll]);
-
-    const hasMore = !showAll && chapters.length > CHAPTERS_PER_PAGE;
+        return chapters
+    }, [chapters]);
 
     useEffect(() => { fetchProgress(); }, [fetchProgress]);
     useEffect(() => { fetchBookmarks(); }, [fetchBookmarks]);
@@ -367,123 +368,134 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
     return (
         <>
         <div className="space-y-4">
-            <div className="grid gap-4 mt-4">
-                {progress?.status === "scanning" ? (
-                    <div className="p-8 text-center bg-foreground rounded-lg">
-                        <p className="text-lg text-muted mb-2">Scanning for chapters...</p>
-                        <p className="text-sm text-muted/70">Please wait</p>
+            {/* Search and Filter */}
+            <div className="flex flex-row flex-wrap place-content-between items-center gap-2 mb-4">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                    <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted" />
+                    <input
+                        type="search"
+                        placeholder="Search chapters..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 bg-foreground border border-transparent rounded-md text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent"
+                    />
+                </div>
+                <div className="flex flex-row flex-wrap gap-2 items-center">
+                    <button
+                        type="button"
+                        onClick={() => (selectModeEnabled ? exitSelectMode() : setSelectModeEnabled(true))}
+                        className={`px-4 py-2 rounded-md cursor-pointer transition-colors ${selectModeEnabled ? "bg-accent hover:bg-accent/80 text-white" : "bg-foreground hover:bg-foreground/50"}`}
+                    >
+                        {selectModeEnabled ? "Done" : "Select Mode"}
+                    </button>
+                    <div ref={filterRef} className="relative shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => { setFilterOpen((o) => !o); setSortOpen(false); }}
+                            className="flex items-center gap-2 px-4 py-2 bg-foreground hover:bg-foreground/50 rounded-md cursor-pointer"
+                        >
+                            Filter: {FILTER_OPTIONS.find((o) => o.value === filter)?.label ?? "All"}
+                            <ChevronDownIcon className={`size-4 transition-transform ${filterOpen ? "rotate-180" : ""}`} />
+                        </button>
+                        {filterOpen && (
+                            <div className="absolute top-full left-0 mt-1 min-w-[140px] bg-foreground rounded-md shadow-xl z-50 border border-white/10 overflow-hidden">
+                                {FILTER_OPTIONS.map((opt) => (
+                                    <button
+                                        key={opt.value}
+                                        type="button"
+                                        onClick={() => { setFilter(opt.value); setFilterOpen(false); }}
+                                        className={`block w-full px-4 py-2 text-left hover:bg-white/10 ${filter === opt.value ? "bg-white/5 text-accent" : ""}`}
+                                    >
+                                        {opt.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
-                ) : progress?.status === "downloading" && rawChapters.length === 0 ? (
-                    <div className="p-8 text-center bg-foreground rounded-lg">
-                        <p className="text-lg text-muted mb-2">Downloading chapters...</p>
-                        <p className="text-sm text-muted/70">Please wait</p>
-                    </div>
-                ) : rawChapters.length === 0 ? (
-                    <div className="p-8 text-center bg-foreground rounded-lg">
-                        <p className="text-lg text-muted mb-2">Chapters not found</p>
-                        <p className="text-sm text-muted/70">No Scrapers Available</p>
-                    </div>
-                ) : (
-                    <>
-                    <div className="flex flex-row flex-wrap place-content-between items-center gap-2 mb-4">
-                        <div className="relative flex-1 min-w-[200px] max-w-sm">
-                            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted" />
-                            <input
-                                type="search"
-                                placeholder="Search chapters..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-9 pr-3 py-2 bg-foreground border border-transparent rounded-md text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent"
-                            />
-                        </div>
-                        <div className="flex flex-row flex-wrap gap-2 items-center">
-                            <button
-                                type="button"
-                                onClick={() => (selectModeEnabled ? exitSelectMode() : setSelectModeEnabled(true))}
-                                className={`px-4 py-2 rounded-md cursor-pointer transition-colors ${selectModeEnabled ? "bg-accent hover:bg-accent/80 text-white" : "bg-foreground hover:bg-foreground/50"}`}
-                            >
-                                {selectModeEnabled ? "Done" : "Select Mode"}
-                            </button>
-                            <div ref={filterRef} className="relative shrink-0">
+                    <div ref={sortRef} className="relative shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => { setSortOpen((o) => !o); setFilterOpen(false); }}
+                            className="flex items-center gap-2 px-4 py-2 bg-foreground hover:bg-foreground/50 rounded-md cursor-pointer"
+                        >
+                            {SORT_OPTIONS.find((o) => o.value === sortBy)?.label ?? "Sort"}
+                            <ChevronDownIcon className={`size-4 transition-transform ${sortOpen ? "rotate-180" : ""}`} />
+                        </button>
+                        {sortOpen && (
+                            <div className="absolute top-full right-0 mt-1 min-w-[180px] bg-foreground rounded-md shadow-xl z-50 border border-white/10 overflow-hidden">
+                                {SORT_OPTIONS.map((opt) => (
+                                    <button
+                                        key={opt.value}
+                                        type="button"
+                                        onClick={() => { setSortBy(opt.value); setSortOpen(false); }}
+                                        className={`block w-full px-4 py-2 text-left hover:bg-white/10 ${sortBy === opt.value ? "bg-white/5 text-accent" : ""}`}
+                                    >
+                                        {opt.label}
+                                    </button>
+                                ))}
+                                <div className="h-px bg-white/10" />
                                 <button
                                     type="button"
-                                    onClick={() => { setFilterOpen((o) => !o); setSortOpen(false); }}
-                                    className="flex items-center gap-2 px-4 py-2 bg-foreground hover:bg-foreground/50 rounded-md cursor-pointer"
+                                    onClick={() => { setSortOrder((o) => (o === "asc" ? "desc" : "asc")); setSortOpen(false); }}
+                                    className="block w-full px-4 py-2 text-left hover:bg-white/10 text-sm text-muted"
                                 >
-                                    Filter: {FILTER_OPTIONS.find((o) => o.value === filter)?.label ?? "All"}
-                                    <ChevronDownIcon className={`size-4 transition-transform ${filterOpen ? "rotate-180" : ""}`} />
+                                    Order: {sortOrder === "asc" ? "Ascending" : "Descending"}
                                 </button>
-                                {filterOpen && (
-                                    <div className="absolute top-full left-0 mt-1 min-w-[140px] bg-foreground rounded-md shadow-xl z-50 border border-white/10 overflow-hidden">
-                                        {FILTER_OPTIONS.map((opt) => (
-                                            <button
-                                                key={opt.value}
-                                                type="button"
-                                                onClick={() => { setFilter(opt.value); setFilterOpen(false); }}
-                                                className={`block w-full px-4 py-2 text-left hover:bg-white/10 ${filter === opt.value ? "bg-white/5 text-accent" : ""}`}
-                                            >
-                                                {opt.label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
                             </div>
-                            <div ref={sortRef} className="relative shrink-0">
-                                <button
-                                    type="button"
-                                    onClick={() => { setSortOpen((o) => !o); setFilterOpen(false); }}
-                                    className="flex items-center gap-2 px-4 py-2 bg-foreground hover:bg-foreground/50 rounded-md cursor-pointer"
-                                >
-                                    {SORT_OPTIONS.find((o) => o.value === sortBy)?.label ?? "Sort"}
-                                    <ChevronDownIcon className={`size-4 transition-transform ${sortOpen ? "rotate-180" : ""}`} />
-                                </button>
-                                {sortOpen && (
-                                    <div className="absolute top-full right-0 mt-1 min-w-[180px] bg-foreground rounded-md shadow-xl z-50 border border-white/10 overflow-hidden">
-                                        {SORT_OPTIONS.map((opt) => (
-                                            <button
-                                                key={opt.value}
-                                                type="button"
-                                                onClick={() => { setSortBy(opt.value); setSortOpen(false); }}
-                                                className={`block w-full px-4 py-2 text-left hover:bg-white/10 ${sortBy === opt.value ? "bg-white/5 text-accent" : ""}`}
-                                            >
-                                                {opt.label}
-                                            </button>
-                                        ))}
-                                        <div className="h-px bg-white/10" />
-                                        <button
-                                            type="button"
-                                            onClick={() => { setSortOrder((o) => (o === "asc" ? "desc" : "asc")); setSortOpen(false); }}
-                                            className="block w-full px-4 py-2 text-left hover:bg-white/10 text-sm text-muted"
-                                        >
-                                            Order: {sortOrder === "asc" ? "Ascending" : "Descending"}
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                        )}
                     </div>
-                    {selectModeEnabled && (
-                        <div className="flex flex-wrap items-center gap-2 mb-4 p-3 bg-foreground/80 rounded-md border border-white/10">
-                            <button type="button" onClick={selectAllVisible} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm">Select all</button>
-                            {selectedIds.size > 0 && (
-                                <>
-                                    <button type="button" onClick={handleBulkMarkAsRead} disabled={bulkOperating} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm disabled:opacity-50">Mark as Read</button>
-                                    <button type="button" onClick={handleBulkMarkAsUnread} disabled={bulkOperating} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm disabled:opacity-50">Mark Unread</button>
-                                    <button type="button" onClick={handleBulkBookmark} disabled={bulkOperating} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm disabled:opacity-50">Bookmark</button>
-                                    <button type="button" onClick={handleBulkRemoveBookmark} disabled={bulkOperating} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm disabled:opacity-50">Remove Bookmark</button>
-                                    <button type="button" onClick={clearSelection} className="px-3 py-1.5 rounded bg-background/50 hover:bg-background/80 text-sm text-muted">Clear</button>
-                                    <span className="text-sm text-muted shrink-0">{selectedIds.size} selected</span>
-                                </>
-                            )}
-                        </div>
+                </div>
+            </div>
+            {progress?.status === "scanning" ? (
+                <div className="p-8 text-center bg-foreground rounded-lg">
+                    <p className="text-lg text-muted mb-2">Scanning for chapters...</p>
+                    <p className="text-sm text-muted/70">Please wait</p>
+                </div>
+            ) : progress?.status === "downloading" && rawChapters.length === 0 ? (
+                <div className="p-8 text-center bg-foreground rounded-lg">
+                    <p className="text-lg text-muted mb-2">Downloading chapters...</p>
+                    <p className="text-sm text-muted/70">Please wait</p>
+                </div>
+            ) : rawChapters.length === 0 ? (
+                <div className="p-8 text-center bg-foreground rounded-lg">
+                    <p className="text-lg text-muted mb-2">Chapters not found</p>
+                    <p className="text-sm text-muted/70">No Scrapers Available</p>
+                </div>
+            ) : visibleChapters.length === 0 ? (
+                <div className="p-8 text-center bg-foreground rounded-lg">
+                    <p className="text-lg text-muted">No chapters match your search</p>
+                </div>
+            ) : (
+                <>
+                </>
+            )}
+
+            {selectModeEnabled && (
+                <div className="flex flex-wrap items-center gap-2 mb-4 p-3 bg-foreground/80 rounded-md border border-white/10">
+                    <button type="button" onClick={selectAllVisible} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm">Select all</button>
+                    {selectedIds.size > 0 && (
+                        <>
+                            <button type="button" onClick={handleBulkMarkAsRead} disabled={bulkOperating} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm disabled:opacity-50">Mark as Read</button>
+                            <button type="button" onClick={handleBulkMarkAsUnread} disabled={bulkOperating} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm disabled:opacity-50">Mark Unread</button>
+                            <button type="button" onClick={handleBulkBookmark} disabled={bulkOperating} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm disabled:opacity-50">Bookmark</button>
+                            <button type="button" onClick={handleBulkRemoveBookmark} disabled={bulkOperating} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm disabled:opacity-50">Remove Bookmark</button>
+                            <button type="button" onClick={clearSelection} className="px-3 py-1.5 rounded bg-background/50 hover:bg-background/80 text-sm text-muted">Clear</button>
+                            <span className="text-sm text-muted shrink-0">{selectedIds.size} selected</span>
+                        </>
                     )}
-                    {visibleChapters.length === 0 ? (
-                        <div className="p-8 text-center bg-foreground rounded-lg">
-                            <p className="text-lg text-muted">No chapters match your search</p>
-                        </div>
-                    ) : (
-                    <>
-                    {visibleChapters.map((chapter: any, index: number) => {
+                </div>
+            )}
+
+
+
+            {/* Chapters list*/}
+            <div
+                id="chapters-scroll"
+                className={maxHeight ? "mt-4 overflow-y-auto" : "mt-4 max-h-[1200px] overflow-y-auto"}
+                style={maxHeight ? { maxHeight } : undefined}
+            >
+                <div className="grid gap-3">
+                {visibleChapters.map((chapter: any, index: number) => {
                     const progress = chapterProgress[chapter.id];
                     const progressPercentage = progress?.percentageCompleted || 0;
                     const lastPageNumber = progress?.lastPageNumber || 0;
@@ -496,89 +508,79 @@ export default function Chapters({ manga, progress }: { manga: any; progress?: a
                     const isSelected = selectedIds.has(chapter.id);
 
                     return (
-                    <div
-                        key={chapter.id}
-                        role={selectModeEnabled ? "button" : undefined}
-                        tabIndex={selectModeEnabled ? 0 : undefined}
-                        onClick={(e) => {
-                            if (selectModeEnabled) {
-                                e.preventDefault();
-                                handleRowClick(e, chapter.id, index);
-                            }
-                        }}
-                        onKeyDown={selectModeEnabled ? (e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                handleRowClick(e as unknown as React.MouseEvent, chapter.id, index);
-                            }
-                        } : undefined}
-                        className={`p-3 w-full rounded-md transition-colors flex gap-3 items-center ${selectModeEnabled ? "cursor-pointer select-none" : ""} ${selectModeEnabled && isSelected ? "bg-accent/50" : "bg-foreground hover:bg-foreground/50"} ${isFullyRead && !selectModeEnabled ? "opacity-50" : ""}`}
-                    >
-                        <Link
-                            href={href}
-                            className="flex-1 min-w-0"
+                        <div
+                            key={chapter.id}
+                            role={selectModeEnabled ? "button" : undefined}
+                            tabIndex={selectModeEnabled ? 0 : undefined}
                             onClick={(e) => {
-                                if (selectModeEnabled) e.preventDefault();
+                                if (selectModeEnabled) {
+                                    e.preventDefault();
+                                    handleRowClick(e, chapter.id, index);
+                                }
                             }}
+                            onKeyDown={selectModeEnabled ? (e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    handleRowClick(e as unknown as React.MouseEvent, chapter.id, index);
+                                }
+                            } : undefined}
+                            className={`p-3 w-full rounded-md transition-colors flex gap-3 items-center ${selectModeEnabled ? "cursor-pointer select-none" : ""} ${selectModeEnabled && isSelected ? "bg-accent/50" : "bg-foreground hover:bg-foreground/50"} ${isFullyRead && !selectModeEnabled ? "opacity-50" : ""}`}
                         >
-                        <div className="flex justify-between items-center">
-                            <div className="flex-1 min-w-0">
-                                <div className={`flex items-center gap-2`}>
-                                    <h1 className={`text-xl line-clamp-2 ${isFullyRead ? 'text-muted' : ''}`}>{chapter.title}</h1>
-                                    {isFullyRead && <CheckIcon className={`inline-block size-5 text-green-500 shrink-0`} />}
-                                    {isBookmarked && (
-                                        <span title={bookmarks[chapter.id]?.note || 'Bookmarked'}>
-                                            <BookmarkIcon className={`inline-block size-5 text-accent fill-accent shrink-0`} />
-                                        </span>
+                            <Link
+                                href={href}
+                                className="flex-1 min-w-0"
+                                onClick={(e) => {
+                                    if (selectModeEnabled) e.preventDefault();
+                                }}
+                            >
+                            <div className="flex justify-between items-center">
+                                <div className="flex-1 min-w-0">
+                                    <div className={`flex items-center gap-2`}>
+                                        <h1 className={`text-xl line-clamp-2 ${isFullyRead ? 'text-muted' : ''}`}>{chapter.title}</h1>
+                                        {isFullyRead && <CheckIcon className={`inline-block size-5 text-green-500 shrink-0`} />}
+                                        {isBookmarked && (
+                                            <span title={bookmarks[chapter.id]?.note || 'Bookmarked'}>
+                                                <BookmarkIcon className={`inline-block size-5 text-accent fill-accent shrink-0`} />
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 md:gap-4 text-sm text-muted">
+                                        <h2 className="items-center"><ClockIcon className="inline-block mr-1 size-3 mb-0.5" />{formatTimeAgo(chapter.updatedAt)}</h2>
+                                        <h2>{chapter.pageCount} Pages</h2>
+                                        <h2>{chapter.viewStats?.totalViews ?? 0} Views</h2>
+                                        <h2 className="hidden md:flex">ID: {chapter?.scraperId?.slice(0,3)}</h2>
+                                    </div>
+
+                                    {/* Read Progress bar - only show if user has started reading and not finished */}
+                                    {hasProgress && (
+                                        <div className="mt-2 space-y-1">
+                                            <div className="w-full bg-background rounded-full h-2 overflow-hidden">
+                                                <div 
+                                                    className="h-full bg-accent transition-all duration-300" 
+                                                    style={{ width: `${Math.min(progressPercentage, 100)}%` }}
+                                                />
+                                            </div>
+                                            <p className="text-xs text-muted">
+                                                {isFullyRead ? 'Completed' : `Page ${lastPageNumber} of ${totalPages}`}
+                                            </p>
+                                        </div>
                                     )}
                                 </div>
-                                <div className="flex flex-wrap gap-2 md:gap-4 text-sm text-muted">
-                                    <h2 className="items-center"><ClockIcon className="inline-block mr-1 size-3 mb-0.5" />{formatTimeAgo(chapter.updatedAt)}</h2>
-                                    <h2>{chapter.pageCount} Pages</h2>
-                                    <h2>{chapter.viewStats?.totalViews ?? 0} Views</h2>
-                                    <h2 className="hidden md:flex">ID: {chapter?.scraperId?.slice(0,3)}</h2>
+                                <div className="ml-4 shrink-0 flex flex-col gap-2">
+                                    <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); isFullyRead ? handleMarkAsUnread(e, chapter.id) : handleMarkAsRead(e, chapter.id); }} disabled={isOperating} className="hover:cursor-pointer px-4 py-2 bg-background hover:bg-background/50 rounded-lg text-xs whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50">
+                                        {isFullyRead ? "Mark Unread" : "Mark as Read"}
+                                    </button>
+                                    <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); isBookmarked ? handleRemoveBookmark(e, chapter.id) : handleBookmarkClick(e, chapter.id); }} disabled={isOperating} className="px-4 py-2 bg-background hover:bg-background/50 rounded-lg text-xs whitespace-nowrap hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
+                                        {isBookmarked ? "Remove Bookmark" : "Bookmark"}
+                                    </button>
                                 </div>
-
-                                {/* Read Progress bar - only show if user has started reading and not finished */}
-                                {hasProgress && (
-                                    <div className="mt-2 space-y-1">
-                                        <div className="w-full bg-background rounded-full h-2 overflow-hidden">
-                                            <div 
-                                                className="h-full bg-accent transition-all duration-300" 
-                                                style={{ width: `${Math.min(progressPercentage, 100)}%` }}
-                                            />
-                                        </div>
-                                        <p className="text-xs text-muted">
-                                            {isFullyRead ? 'Completed' : `Page ${lastPageNumber} of ${totalPages}`}
-                                        </p>
-                                    </div>
-                                )}
                             </div>
-                            <div className="ml-4 shrink-0 flex flex-col gap-2">
-                                <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); isFullyRead ? handleMarkAsUnread(e, chapter.id) : handleMarkAsRead(e, chapter.id); }} disabled={isOperating} className="hover:cursor-pointer px-4 py-2 bg-background hover:bg-background/50 rounded-lg text-xs whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50">
-                                    {isFullyRead ? "Mark Unread" : "Mark as Read"}
-                                </button>
-                                <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); isBookmarked ? handleRemoveBookmark(e, chapter.id) : handleBookmarkClick(e, chapter.id); }} disabled={isOperating} className="px-4 py-2 bg-background hover:bg-background/50 rounded-lg text-xs whitespace-nowrap hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
-                                    {isBookmarked ? "Remove Bookmark" : "Bookmark"}
-                                </button>
-                            </div>
+                            </Link>
                         </div>
-                        </Link>
-                    </div>
-                    );
+                    )
                 })}
-                    </>
-                    )}
-                    </>
-                )}
-            </div>
-            
-            {hasMore && (
-                <div className="flex justify-center pt-4">
-                    <button onClick={() => setShowAll(true)} className="hover:cursor-pointer px-6 py-2 bg-accent text-white rounded-lg hover:bg-accent/80 transition-colors font-semibold">Show All ({chapters.length} chapters)
-                    </button>
                 </div>
-            )}
+            </div>
         </div>
 
         <BookmarkModal
