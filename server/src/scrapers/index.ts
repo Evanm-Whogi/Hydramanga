@@ -16,6 +16,8 @@ import { NHentaiScraper } from './implementations/nHentaiScraper';
 import { MangaDexScraper } from './implementations/MangaDexScraper';
 import { MangaTaroScraper } from './implementations/MangaTaroScraper';
 import { ToonilyScraper } from './implementations/ToonilyScraper';
+import { AtsuMoeScraper } from './implementations/AtsuMoeScraper';
+import { AsuraComicScraper } from './implementations/AsuraComicScraper';
 import logger from '@/services/loggerService';
 
 /**
@@ -28,6 +30,14 @@ export function initializeScrapers(): void {
     // Register WeebCentral scraper
     const weebCentralScraper = new WeebCentralScraper();
     scraperManager.registerScraper(weebCentralScraper);
+
+    // Register AtsuMoe scraper
+    const atsuMoeScraper = new AtsuMoeScraper();
+    scraperManager.registerScraper(atsuMoeScraper);
+
+    // Register AsuraComic scraper
+    const asuraComicScraper = new AsuraComicScraper();
+    scraperManager.registerScraper(asuraComicScraper);
 
     // Register MangaTaro scraper
     const mangaTaroScraper = new MangaTaroScraper();

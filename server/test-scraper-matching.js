@@ -23,6 +23,8 @@ const { NHentaiScraper } = require('@/scrapers/implementations/nHentaiScraper');
 const { MangaDexScraper } = require('@/scrapers/implementations/MangaDexScraper');
 const { MangaTaroScraper } = require('@/scrapers/implementations/MangaTaroScraper');
 const { ToonilyScraper } = require('@/scrapers/implementations/ToonilyScraper');
+const { AtsuMoeScraper } = require('@/scrapers/implementations/AtsuMoeScraper');
+const { AsuraComicScraper } = require('@/scrapers/implementations/AsuraComicScraper');
 const logger = require('@/services/loggerService').default;
 const dotenv = require('dotenv');
 dotenv.config();
@@ -119,11 +121,13 @@ async function testScraperMatching(mangaId) {
 
 
         const scraperPriorities = [
-            { name: 'WeebCentral', priority: process.env.WEEB_CENTRAL_PRIORITY || 1 },
-            { name: 'MangaTaro', priority: process.env.MANGATARO_PRIORITY || 2 },
-            { name: 'Toonily', priority: process.env.TOONILY_PRIORITY || 3 },
-            { name: 'MangaDex', priority: process.env.MANGADEX_PRIORITY || 4 },
-            { name: 'nHentai', priority: process.env.NHENTAI_PRIORITY || 5 },
+            { name: 'WeebCentral', priority: Number(process.env.WEEB_CENTRAL_PRIORITY) || 1 },
+            { name: 'AtsuMoe', priority: Number(process.env.ATSU_MOE_PRIORITY) || 2 },
+            { name: 'AsuraComic', priority: Number(process.env.ASURA_COMIC_PRIORITY) || 2 },
+            { name: 'MangaTaro', priority: Number(process.env.MANGATARO_PRIORITY) || 2 },
+            { name: 'Toonily', priority: Number(process.env.TOONILY_PRIORITY) || 5 },
+            { name: 'MangaDex', priority: Number(process.env.MANGADEX_PRIORITY) || 4 },
+            { name: 'nHentai', priority: Number(process.env.NHENTAI_PRIORITY) || 3 },
         ];
 
         console.log(`Scraper Priorities:`);
@@ -173,6 +177,43 @@ async function testScraperMatching(mangaId) {
             });
         }
 
+        // Test AtsuMoe
+        try {
+            console.log(`\n🔍 Testing AtsuMoe...`);
+            const scraper = new AtsuMoeScraper();
+            const result = await scraper.findBestMatch(m.title, {
+                nativeTitle: m.nativeTitle,
+                romanizedTitle: m.romanizedTitle,
+                secondaryTitles,
+            });
+            
+            if (result) {
+                console.log(`   ✅ FOUND: "${result.title}"`);
+                console.log(`      URL: ${result.href}`);
+                console.log(`      Score: ${result.score}`);
+                results.push({
+                    scraper: 'AtsuMoe',
+                    found: true,
+                    title: result.title,
+                    url: result.href,
+                    score: result.score
+                });
+            } else {
+                console.log(`   ❌ NOT FOUND`);
+                results.push({
+                    scraper: 'AtsuMoe',
+                    found: false
+                });
+            }
+        } catch (err) {
+            console.log(`   ❌ ERROR: ${err.message}`);
+            results.push({
+                scraper: 'AtsuMoe',
+                found: false,
+                error: err.message
+            });
+        }
+
         // Test MangaTaro
         try {
             console.log(`\n🔍 Testing MangaTaro...`);
@@ -209,6 +250,7 @@ async function testScraperMatching(mangaId) {
                 error: err.message
             });
         }
+
         // Test Toonily
         try {
             console.log(`\n🔍 Testing Toonily...`);
@@ -284,6 +326,42 @@ async function testScraperMatching(mangaId) {
         }
 
         // Test MangaDex
+        // Test AsuraComic
+        try {
+            console.log(`\n🔍 Testing AsuraComic...`);
+            const scraper = new AsuraComicScraper();
+            const result = await scraper.findBestMatch(m.title, {
+                nativeTitle: m.nativeTitle,
+                romanizedTitle: m.romanizedTitle,
+                secondaryTitles,
+            });
+            
+            if (result) {
+                console.log(`   ✅ FOUND: "${result.title}"`);
+                console.log(`      URL: ${result.href}`);
+                console.log(`      Score: ${result.score}`);
+                results.push({
+                    scraper: 'AsuraComic',
+                    found: true,
+                    title: result.title,
+                    url: result.href,
+                    score: result.score
+                });
+            } else {
+                console.log(`   ❌ NOT FOUND`);
+                results.push({
+                    scraper: 'AsuraComic',
+                    found: false
+                });
+            }
+        } catch (err) {
+            console.log(`   ❌ ERROR: ${err.message}`);
+            results.push({
+                scraper: 'AsuraComic',
+                found: false,
+                error: err.message
+            });
+        }
         try {
             console.log(`\n🔍 Testing MangaDex...`);
             const scraper = new MangaDexScraper();
@@ -340,13 +418,15 @@ async function testScraperMatching(mangaId) {
             // Sort by score (highest first), then by priority (if tied)
             const priorities = {
                 'WeebCentral': 1,
+                'AtsuMoe': 2,
+                'AsuraComic': 2,
                 'MangaTaro': 2,
-                'Toonily': 3,
+                'Toonily': 5,
                 'MangaDex': 4,
-                'nHentai': 5
+                'nHentai': 3
             };
             
-            const mainSources = ['WeebCentral', 'MangaTaro', 'Toonily', 'MangaDex'];
+            const mainSources = ['WeebCentral', 'AtsuMoe', 'AsuraComic', 'MangaTaro', 'Toonily', 'MangaDex'];
             
             // Match ScraperManager's NEW sorting logic with exact match bonus and nHentai deprioritization
             foundResults.sort((a, b) => {

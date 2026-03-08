@@ -20,7 +20,7 @@ export default function AnnouncementsView({announcements}: {announcements: Annou
   const isAdmin = user?.role === "admin";
 
   return (
-    <div className="container mx-auto text-primary flex flex-col pt-[6vh] min-h-[65vh] overflow-hidden">
+    <div className="container mx-auto text-primary flex flex-col pt-[6vh] min-h-[65vh] overflow-hidden pb-20">
       <div className="flex flex-col space-y-4">
         {isAdmin && <AnnouncementForm />}
         {announcements.length === 0 && (

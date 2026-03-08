@@ -8,10 +8,29 @@ RUN npm ci
 COPY . .
 RUN npm run build && npm run db:generate
 
+# Cached Playwright browsers (only re-downloads when PLAYWRIGHT_VERSION changes)
+# Uses BuildKit cache mount so repeat builds reuse the download (no 30min wait)
+FROM node:20-bookworm AS playwright-browsers
+ENV PLAYWRIGHT_BROWSERS_PATH=/pw-browsers
+ENV PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000
+ENV DEBIAN_FRONTEND=noninteractive
+ARG PLAYWRIGHT_VERSION=1.57.0
+RUN npx -y playwright@${PLAYWRIGHT_VERSION} install-deps
+RUN --mount=type=cache,target=/var/cache/pw-browsers \
+    mkdir -p /pw-browsers && \
+    (cp -a /var/cache/pw-browsers/. /pw-browsers 2>/dev/null || true) && \
+    npx -y playwright@${PLAYWRIGHT_VERSION} install chromium && \
+    cp -a /pw-browsers/. /var/cache/pw-browsers
+
 # Worker runtime: Playwright deps only, no cloudflared, no migrations
 FROM node:20-bookworm AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ENV PLAYWRIGHT_BROWSERS_PATH=/pw-browsers
+
+# Longer timeouts for Playwright browser download (large binaries)
+ENV PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN npx -y playwright@latest install-deps
 
@@ -24,7 +43,7 @@ COPY --from=base /app/src/db/schema.ts ./src/db/schema.ts
 COPY --from=base /app/src/db/migrations ./src/db/migrations
 COPY --from=base /app/src/templates ./dist/templates
 
-# Install Chromium browser (install-deps above only installs system libs; the binary is required for scrapers)
-RUN npx playwright install chromium
+# Use cached Chromium from dedicated stage (no download on rebuild unless PLAYWRIGHT_VERSION changes)
+COPY --from=playwright-browsers /pw-browsers /pw-browsers
 
 CMD ["node", "-r", "tsconfig-paths/register", "dist/worker.js"]

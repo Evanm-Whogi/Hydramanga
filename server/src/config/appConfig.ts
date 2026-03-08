@@ -78,6 +78,21 @@ export interface ScraperConfig {
         priority: number; // 1 = highest priority
         enabled: boolean;
     };
+    asuraComic: {
+        baseUrl: string;
+        userAgent: string;
+        timeout: number; // milliseconds
+        priority: number; // 1 = highest priority
+        enabled: boolean;
+    };
+    atsuMoe: {
+        apiUrl: string;
+        baseUrl: string;
+        userAgent: string;
+        timeout: number; // milliseconds
+        priority: number; // 1 = highest priority
+        enabled: boolean;
+    };
     nHentai: {
         userAgent: string;
         timeout: number; // milliseconds
@@ -280,6 +295,21 @@ export class AppConfigService {
                     maxSearchVariants: parseEnvNumber('WEEB_CENTRAL_MAX_VARIANTS', 4),
                     priority: parseEnvNumber('WEEB_CENTRAL_PRIORITY', 1), // 1 = highest priority
                     enabled: parseEnvBoolean('WEEB_CENTRAL_ENABLED', true),
+                },
+                asuraComic: {
+                    baseUrl: 'https://asuracomic.net',
+                    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    timeout: parseEnvNumber('ASURA_COMIC_TIMEOUT', 30000), // 30 seconds
+                    priority: parseEnvNumber('ASURA_COMIC_PRIORITY', 2), // 2 = second priority tier
+                    enabled: parseEnvBoolean('ASURA_COMIC_ENABLED', true),
+                },
+                atsuMoe: {
+                    apiUrl: 'https://atsu.moe/collections/manga/documents/search',
+                    baseUrl: 'https://atsu.moe',
+                    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    timeout: parseEnvNumber('ATSU_MOE_TIMEOUT', 30000), // 30 seconds
+                    priority: parseEnvNumber('ATSU_MOE_PRIORITY', 2), // 2 = second priority
+                    enabled: parseEnvBoolean('ATSU_MOE_ENABLED', true),
                 },
                 nHentai: {
                     userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
