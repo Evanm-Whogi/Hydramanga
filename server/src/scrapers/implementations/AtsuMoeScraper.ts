@@ -58,6 +58,22 @@ interface AtsuMoeSearchResponse {
     hits: AtsuMoeHit[];
 }
 
+/** allChapters API response (https://atsu.moe/api/manga/allChapters?mangaId=...) */
+interface AtsuMoeChapterItem {
+    id: string;
+    scanlationMangaId: string;
+    title: string;
+    number: number;
+    createdAt: number;
+    index: number;
+    pageCount: number;
+    progress: unknown;
+}
+
+interface AtsuMoeAllChaptersResponse {
+    chapters: AtsuMoeChapterItem[];
+}
+
 /**
  * Sanitize folder/file names
  */
@@ -68,6 +84,13 @@ const safeName = (val: string): string => {
         .toLowerCase();
     return cleaned || 'chapter';
 };
+
+/** Manga page URL with ?filter=all so the full chapter list is shown (and stored for rescans). */
+function mangaListUrl(pathOrUrl: string): string {
+    const u = new URL(pathOrUrl, SITE_BASE);
+    u.searchParams.set('filter', 'all');
+    return u.href;
+}
 
 /**
  * Calculate title similarity (0-100)
@@ -288,7 +311,7 @@ export class AtsuMoeScraper implements IChapterScraper {
                             '';
                         const score = title ? calculateTitleSimilarity(title, variant) : 0;
                         return {
-                            href: `${SITE_BASE}/manga/${doc.id}`,
+                            href: mangaListUrl(`${SITE_BASE}/manga/${doc.id}`),
                             title,
                             score,
                         };
@@ -338,7 +361,7 @@ export class AtsuMoeScraper implements IChapterScraper {
                         '';
                     const score = title ? calculateTitleSimilarity(title, q) : 0;
                     return {
-                        href: `${SITE_BASE}/manga/${doc.id}`,
+                        href: mangaListUrl(`${SITE_BASE}/manga/${doc.id}`),
                         title,
                         score,
                     };
@@ -366,125 +389,91 @@ export class AtsuMoeScraper implements IChapterScraper {
         coverUrl?: string,
         mangaPageUrl?: string,
     ): AsyncGenerator<ScrapedChapter, void, undefined> {
-        const browser = await AtsuMoeScraper.getBrowser();
-        const context = await browser.newContext({
-            userAgent: appConfig.scraper.atsuMoe.userAgent,
-        });
-        const page = await context.newPage();
+        let pageUrl: string;
 
-        try {
-            let pageUrl: string;
-
-            if (mangaPageUrl) {
-                pageUrl = mangaPageUrl;
-                logger.info(
-                    `[AtsuMoe] Using saved URL for "${mangaName}"`,
-                    { service: 'atsuMoeScraper' }
-                );
-            } else {
-                const bestMatch = await this.findBestMatch(mangaName, {
-                    seriesId,
-                    romanizedTitle,
-                    nativeTitle,
-                    secondaryTitles,
-                    coverUrl,
-                });
-
-                if (!bestMatch) {
-                    const error = `Could not find manga link for "${mangaName}"`;
-                    logger.error(
-                        `[AtsuMoe] ${error}`,
-                        { service: 'atsuMoeScraper' }
-                    );
-                    throw new Error(error);
-                }
-
-                pageUrl = bestMatch.href;
-                logger.info(
-                    `[AtsuMoe] Found series page: ${bestMatch.href} (${bestMatch.title})`,
-                    { service: 'atsuMoeScraper' }
-                );
-            }
-
-            await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-            // Click "Show all chapters" button if present
-            try {
-                const button = await page.$('button:has-text("Show all chapters")');
-                if (button) {
-                    logger.debug(
-                        '[AtsuMoe] Clicking "Show all chapters" button',
-                        { service: 'atsuMoeScraper' }
-                    );
-                    await button.click();
-                    // Allow the list to expand and stabilize
-                    await page.waitForTimeout(1500);
-                }
-            } catch (err) {
-                logger.warn(
-                    `[AtsuMoe] Failed to click "Show all chapters" button: ${err}`,
-                    { service: 'atsuMoeScraper' }
-                );
-            }
-
-            // Extract chapter list
-            const chapterRows = await page.evaluate((siteBase: string) => {
-                const anchors = Array.from(
-                    document.querySelectorAll<HTMLAnchorElement>('a[href^="/read/"]')
-                );
-
-                const resolveUrl = (href: string) => {
-                    if (!href) return '';
-                    if (href.startsWith('http')) return href;
-                    try {
-                        return new URL(href, siteBase).href;
-                    } catch {
-                        return '';
-                    }
-                };
-
-                return anchors
-                    .map(anchor => {
-                        const href = anchor.getAttribute('href') || '';
-                        const url = resolveUrl(href);
-                        const titleElement = anchor.querySelector<HTMLElement>(
-                            'div.min-w-0.flex-1.truncate'
-                        );
-                        const titleText = titleElement?.textContent?.trim() || anchor.textContent?.trim() || '';
-                        return { url, title: titleText };
-                    })
-                    .filter(ch => ch.url && ch.title)
-                    .reverse(); // Oldest first
-            }, SITE_BASE);
-
+        if (mangaPageUrl) {
+            pageUrl = mangaPageUrl;
             logger.info(
-                `[AtsuMoe] Found ${chapterRows.length} chapters`,
+                `[AtsuMoe] Using saved URL for "${mangaName}"`,
                 { service: 'atsuMoeScraper' }
             );
+        } else {
+            const bestMatch = await this.findBestMatch(mangaName, {
+                seriesId,
+                romanizedTitle,
+                nativeTitle,
+                secondaryTitles,
+                coverUrl,
+            });
 
-            for (const chap of chapterRows) {
-                const parsed = ChapterNumberParser.parse(chap.title);
-
-                if (await checkExists(parsed.number)) {
-                    logger.debug(
-                        `[AtsuMoe] Skipping chapter ${parsed.number} - already exists`,
-                        { service: 'atsuMoeScraper' }
-                    );
-                    continue;
-                }
-
-                yield {
-                    url: chap.url,
-                    title: parsed.title,
-                    number: parsed.number,
-                    isSpecial: parsed.isSpecial,
-                    specialType: parsed.specialType,
-                };
+            if (!bestMatch) {
+                const error = `Could not find manga link for "${mangaName}"`;
+                logger.error(
+                    `[AtsuMoe] ${error}`,
+                    { service: 'atsuMoeScraper' }
+                );
+                throw new Error(error);
             }
-        } finally {
-            await page.close().catch(() => {});
-            await context.close().catch(() => {});
-            await AtsuMoeScraper.releaseBrowser(browser);
+
+            pageUrl = bestMatch.href;
+            logger.info(
+                `[AtsuMoe] Found series page: ${bestMatch.href} (${bestMatch.title})`,
+                { service: 'atsuMoeScraper' }
+            );
+        }
+
+        const mangaId = (() => {
+            const pathname = new URL(pageUrl, SITE_BASE).pathname;
+            const segments = pathname.split('/').filter(Boolean);
+            const mangaIdx = segments.indexOf('manga');
+            if (mangaIdx >= 0 && mangaIdx < segments.length - 1) {
+                return segments[mangaIdx + 1];
+            }
+            return segments[segments.length - 1] || '';
+        })();
+
+        if (!mangaId) {
+            throw new Error(`Could not extract mangaId from URL: ${pageUrl}`);
+        }
+
+        const apiUrl = `${SITE_BASE}/api/manga/allChapters?mangaId=${encodeURIComponent(mangaId)}`;
+        const response = await AtsuMoeScraper.axiosInstance.get<AtsuMoeAllChaptersResponse>(apiUrl);
+        const data = response.data;
+
+        if (!data?.chapters || !Array.isArray(data.chapters)) {
+            throw new Error(`Invalid allChapters response for mangaId=${mangaId}`);
+        }
+
+        const chapterRows = [...data.chapters]
+            .reverse()
+            .map((ch) => ({
+                url: `${SITE_BASE}/read/${mangaId}/${ch.id}`,
+                title: ch.title || `Chapter ${ch.number}`,
+            }));
+
+        logger.info(
+            `[AtsuMoe] Found ${chapterRows.length} chapters (API)`,
+            { service: 'atsuMoeScraper' }
+        );
+
+        for (const chap of chapterRows) {
+            const parsed = ChapterNumberParser.parse(chap.title);
+
+            if (await checkExists(parsed.number)) {
+                logger.debug(
+                    `[AtsuMoe] Skipping chapter ${parsed.number} - already exists`,
+                    { service: 'atsuMoeScraper' }
+                );
+                continue;
+            }
+
+            yield {
+                url: chap.url,
+                title: parsed.title,
+                number: parsed.number,
+                isSpecial: parsed.isSpecial,
+                specialType: parsed.specialType,
+            };
         }
     }
 
@@ -508,7 +497,7 @@ export class AtsuMoeScraper implements IChapterScraper {
             );
 
             await page.goto(url, {
-                waitUntil: 'domcontentloaded',
+                waitUntil: 'load',
                 timeout: 45000,
             });
 
@@ -518,6 +507,7 @@ export class AtsuMoeScraper implements IChapterScraper {
                     timeout: 15000,
                     state: 'attached',
                 });
+                await page.waitForLoadState('domcontentloaded').catch(() => {});
                 await page.waitForTimeout(1000);
             } catch (err) {
                 logger.warn(
@@ -526,25 +516,45 @@ export class AtsuMoeScraper implements IChapterScraper {
                 );
             }
 
-            const imageUrls = await page.evaluate((siteBase: string) => {
-                const container = document.querySelector<HTMLElement>('#reader-scroll-inner');
-                if (!container) return [] as string[];
+            const extractImageUrls = (): Promise<string[]> =>
+                page.evaluate((siteBase: string) => {
+                    const container = document.querySelector<HTMLElement>('#reader-scroll-inner');
+                    if (!container) return [] as string[];
 
-                const resolveUrl = (src: string) => {
-                    if (!src) return '';
-                    if (src.startsWith('http')) return src;
-                    try {
-                        return new URL(src, siteBase).href;
-                    } catch {
-                        return '';
-                    }
-                };
+                    const resolveUrl = (src: string) => {
+                        if (!src) return '';
+                        if (src.startsWith('http')) return src;
+                        try {
+                            return new URL(src, siteBase).href;
+                        } catch {
+                            return '';
+                        }
+                    };
 
-                return Array.from(container.querySelectorAll<HTMLImageElement>('img'))
-                    .map(img => img.getAttribute('src') || '')
-                    .map(src => resolveUrl(src))
-                    .filter((src): src is string => !!src);
-            }, SITE_BASE);
+                    return Array.from(container.querySelectorAll<HTMLImageElement>('img'))
+                        .map(img => img.getAttribute('src') || '')
+                        .map(src => resolveUrl(src))
+                        .filter((src): src is string => !!src);
+                }, SITE_BASE);
+
+            let imageUrls: string[];
+            try {
+                imageUrls = await extractImageUrls();
+            } catch (err: any) {
+                const msg = err?.message || String(err);
+                if (msg.includes('Execution context was destroyed') || msg.includes('Target closed')) {
+                    logger.warn(
+                        '[AtsuMoe] Reader context lost, re-navigating and retrying image extraction',
+                        { service: 'atsuMoeScraper' }
+                    );
+                    await page.goto(url, { waitUntil: 'load', timeout: 45000 });
+                    await page.waitForSelector('#reader-scroll-inner img', { timeout: 15000, state: 'attached' }).catch(() => {});
+                    await page.waitForTimeout(500);
+                    imageUrls = await extractImageUrls();
+                } else {
+                    throw err;
+                }
+            }
 
             logger.info(
                 `[AtsuMoe] Found ${imageUrls.length} images for chapter ${chapterNumber}`,

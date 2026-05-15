@@ -21,15 +21,15 @@ async function main() {
     queueService.getQueue('mangaChapterDownloadQueue');
     queueService.getQueue('emailQueue');
 
-    initializeScrapers();
+    // initializeScrapers();
 
-    try {
-        await mangaRecoveryService.recoverIncompleteDownloads();
-    } catch (error) {
-        logger.error(`Failed to run recovery service: ${error}`, { service: 'worker' });
-    }
+    // try {
+    //     await mangaRecoveryService.recoverIncompleteDownloads();
+    // } catch (error) {
+    //     logger.error(`Failed to run recovery service: ${error}`, { service: 'worker' });
+    // }
 
-    initCronJobs();
+    // initCronJobs();
     logger.info('Worker started: queues, scrapers, cron, and recovery initialized', { service: 'worker' });
 }
 

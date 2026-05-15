@@ -120,7 +120,7 @@ export class NHentaiScraper implements IChapterScraper {
         mangaName: string,
         options?: SearchOptions
     ): Promise<MangaSearchResult | undefined> {
-        // Generate search variants (raw + normalized forms)
+        // Generate search variants; cap count to avoid 2m+ runs
         const baseVariants = [
             mangaName,
             options?.romanizedTitle,
@@ -132,10 +132,12 @@ export class NHentaiScraper implements IChapterScraper {
             .map((v) => NHentaiScraper.normalizeForSearch(v))
             .filter((v) => v && !baseVariants.includes(v));
 
-        const searchVariants = [...baseVariants, ...normalizedExtras];
+        const allVariants = [...baseVariants, ...normalizedExtras];
+        const maxVariants = 6;
+        const searchVariants = allVariants.slice(0, maxVariants);
 
         logger.info(
-            `[nHentai] Trying ${searchVariants.length} search variants`,
+            `[nHentai] Trying ${searchVariants.length} search variants (parallel)`,
             { service: 'nHentaiScraper' }
         );
 
@@ -143,82 +145,69 @@ export class NHentaiScraper implements IChapterScraper {
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         });
-        const page = await context.newPage();
+        const page1 = await context.newPage();
+        const page2 = await context.newPage();
+
+        const selectorTimeout = 4000;
+        const extractGalleries = async (page: any) => {
+            return page.evaluate(() => {
+                return Array.from(document.querySelectorAll('div.gallery a.cover'))
+                    .map((galleryDiv: Element) => {
+                        const href = (galleryDiv as HTMLAnchorElement).href;
+                        const match = href.match(/\/g\/(\d+)\//);
+                        if (!match) return null;
+                        const galleryId = match[1];
+                        const caption = galleryDiv.querySelector('div.caption')?.textContent?.trim();
+                        const title = caption || `Gallery ${galleryId}`;
+                        return { href: `https://nhentai.net/g/${galleryId}/`, title, galleryId };
+                    })
+                    .filter((r: unknown): r is { href: string; title: string; galleryId: string } => r !== null);
+            });
+        };
+
+        const runSearch = async (page: any, variant: string) => {
+            const searchUrl = `https://nhentai.net/search/?q=${encodeURIComponent(variant)}`;
+            await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+            await page.waitForSelector('.gallery', { timeout: selectorTimeout }).catch(() => {});
+            return extractGalleries(page);
+        };
 
         try {
-            // Try each search variant
-            for (const variant of searchVariants) {
-                logger.info(
-                    `[nHentai] Searching for "${variant}"`,
-                    { service: 'nHentaiScraper' }
-                );
+            for (let i = 0; i < searchVariants.length; i += 2) {
+                const v0 = searchVariants[i];
+                const v1 = searchVariants[i + 1];
 
-                const searchUrl = `https://nhentai.net/search/?q=${encodeURIComponent(variant)}`;
-                await page.goto(searchUrl, {
-                    waitUntil: 'domcontentloaded',
-                    timeout: 30000,
-                });
+                const [results0, results1] = await Promise.all([
+                    runSearch(page1, v0),
+                    v1 ? runSearch(page2, v1) : Promise.resolve([]),
+                ]);
 
-                await page.waitForSelector('.gallery', { timeout: 8000 }).catch(() => {});
-
-                // Extract all gallery results and score them
-                const results = await page.evaluate(() => {
-                    return Array.from(document.querySelectorAll('div.gallery a.cover'))
-                        .map(galleryDiv => {
-                            const href = (galleryDiv as HTMLAnchorElement).href;
-                            const match = href.match(/\/g\/(\d+)\//);
-                            if (!match) return null;
-
-                            const galleryId = match[1];
-                            const caption = galleryDiv.querySelector('div.caption')?.textContent?.trim();
-                            const title = caption || `Gallery ${galleryId}`;
-
-                            return {
-                                href: `https://nhentai.net/g/${galleryId}/`,
-                                title,
-                                galleryId,
-                            };
-                        })
-                        .filter((r): r is any => r !== null);
-                });
-
-                if (results.length === 0) {
-                    logger.debug(
-                        `[nHentai] No galleries for variant "${variant}", trying next`,
-                        { service: 'nHentaiScraper' }
-                    );
-                    continue;
+                const candidates: Array<{ href: string; title: string; score: number }> = [];
+                if (results0.length > 0) {
+                    const scored = results0
+                        .map((r: { href: string; title: string; score: number }) => ({ ...r, score: this.scoreMatch(r.title, v0) }))
+                        .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
+                    if (scored[0].score > 0) candidates.push(scored[0]);
+                }
+                if (results1.length > 0) {
+                    const scored = results1
+                        .map((r: { href: string; title: string; score: number }) => ({ ...r, score: this.scoreMatch(r.title, v1!) }))
+                        .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
+                    if (scored[0].score > 0) candidates.push(scored[0]);
                 }
 
-                // Score results based on title match
-                const scored = results.map((result: { href: string; title: string; galleryId: string }) => {
-                    const score = this.scoreMatch(result.title, variant);
-                    return { ...result, score };
-                }).sort((a: { score: number }, b: { score: number }) => b.score - a.score);
-
-                const bestMatch = scored[0];
-                if (bestMatch.score > 0) {
+                if (candidates.length > 0) {
+                    const best = candidates.sort((a, b) => b.score - a.score)[0];
                     logger.info(
-                        `[nHentai] Found ${results.length} galleries with variant "${variant}". Best match: "${bestMatch.title}" (score: ${bestMatch.score})`,
+                        `[nHentai] Found match: "${best.title}" (score: ${best.score})`,
                         { service: 'nHentaiScraper' }
                     );
-
-                    return {
-                        href: bestMatch.href,
-                        title: bestMatch.title,
-                        score: bestMatch.score,
-                    };
+                    return { href: best.href, title: best.title, score: best.score };
                 }
-
-                logger.debug(
-                    `[nHentai] No good matches for variant "${variant}", trying next`,
-                    { service: 'nHentaiScraper' }
-                );
             }
 
-            // No matches found after trying all variants
             logger.warn(
-                `[nHentai] Could not find manga link for "${mangaName}". Variants: ${searchVariants.join(', ')}`,
+                `[nHentai] Could not find manga link for "${mangaName}"`,
                 { service: 'nHentaiScraper' }
             );
             return undefined;
@@ -229,7 +218,8 @@ export class NHentaiScraper implements IChapterScraper {
             );
             return undefined;
         } finally {
-            await page.close().catch(() => {});
+            await page1.close().catch(() => {});
+            await page2.close().catch(() => {});
             await context.close().catch(() => {});
             await NHentaiScraper.releaseBrowser(browser);
         }
@@ -247,8 +237,8 @@ export class NHentaiScraper implements IChapterScraper {
 
         try {
             const searchUrl = `https://nhentai.net/search/?q=${encodeURIComponent(q)}`;
-            await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            await page.waitForSelector('.gallery', { timeout: 8000 }).catch(() => {});
+            await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+            await page.waitForSelector('.gallery', { timeout: 4000 }).catch(() => {});
 
             const results = await page.evaluate(() => {
                 return Array.from(document.querySelectorAll('div.gallery a.cover'))
