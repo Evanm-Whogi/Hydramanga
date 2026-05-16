@@ -165,7 +165,16 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         if (cursor) {
             const [cursorVal, cursorId] = String(cursor).split('|');
             const operator = isAsc ? sql`>` : sql`<`;
-            const typedVal = (sortKey === 'totalChapters' || typeof columns[sortKey] === 'number') ? Number(cursorVal) : cursorVal;
+            const isTimestampSort = sortKey === 'lastUpdatedAt';
+
+            let typedVal: any;
+            if (isTimestampSort) {
+                const parsed = new Date(cursorVal);
+                typedVal = isNaN(parsed.getTime()) ? cursorVal : parsed;
+            } else {
+                typedVal = (sortKey === 'totalChapters' || typeof columns[sortKey] === 'number') ? Number(cursorVal) : cursorVal;
+            }
+
             conditions.push(sql`(${effectiveSort}, ${schema.series.id}) ${operator} (${typedVal}, ${Number(cursorId)})`);
         }
 
@@ -241,7 +250,15 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                 let nextCursor = null;
                 if (hasNextPage) {
                     const last = items[items.length - 1];
-                    const val = last[sortKey as keyof typeof last] ?? 0;
+                    let val: any = last[sortKey as keyof typeof last] ?? 0;
+
+                    if (val instanceof Date) {
+                        val = val.toISOString();
+                    } else if (typeof val === 'string') {
+                        const parsed = Date.parse(val);
+                        if (!isNaN(parsed)) val = new Date(parsed).toISOString();
+                    }
+
                     nextCursor = `${val}|${last.id}`;
                 }
 

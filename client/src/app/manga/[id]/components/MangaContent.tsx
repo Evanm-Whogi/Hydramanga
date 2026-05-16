@@ -293,20 +293,22 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
   useEffect(() => {
     // Only trigger scan if no chapters exist
     // The backend will check manga_import_progress to prevent duplicate scans
-    if ((manga.chapters?.length || 0) === 0) {
-      setWasActiveOnLoad(true);
-      showImportProgressToast(mangaId, manga.title);
-      triggerMangaScan(mangaId)
-        .then((response) => {
-          // Backend returns status if already scanning/downloading
-          if (response?.status) {
-            console.log(`Manga ${mangaId} is already ${response.status}`);
-          }
-        })
-        .catch((err) => {
-          console.error('Failed to trigger manga scan:', err);
-        });
-    }
+
+    //! Disabled auto scan trigger, instead relying on admin importing the manga manually.
+    // if ((manga.chapters?.length || 0) === 0) {
+    //   setWasActiveOnLoad(true);
+    //   showImportProgressToast(mangaId, manga.title);
+    //     triggerMangaScan(mangaId)
+    //       .then((response) => {
+    //         // Backend returns status if already scanning/downloading
+    //         if (response?.status) {
+    //           console.log(`Manga ${mangaId} is already ${response.status}`);
+    //         }
+    //       })
+    //       .catch((err) => {
+    //         console.error('Failed to trigger manga scan:', err);
+    //       });
+    // }
     
     let isMounted = true;
     

@@ -459,7 +459,7 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
             ) : rawChapters.length === 0 ? (
                 <div className="p-8 text-center bg-foreground rounded-lg">
                     <p className="text-lg text-muted mb-2">Chapters not found</p>
-                    <p className="text-sm text-muted/70">No Scrapers Available</p>
+                    <p className="text-sm text-muted/70">Manga not imported, you can request it by clicking <Link href="/request-manga" className="text-accent hover:underline">Here</Link></p>
                 </div>
             ) : visibleChapters.length === 0 ? (
                 <div className="p-8 text-center bg-foreground rounded-lg">
