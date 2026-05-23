@@ -1,0 +1,33 @@
+import { Request, Response, NextFunction } from 'express';
+import { adminMangaListService } from '@/services/adminMangaListService';
+import logger from '@/services/loggerService';
+
+export async function listAdminManga(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const rawPage = Number(req.query.page ?? 1);
+    const rawLimit = Number(req.query.limit ?? 20);
+    const page = Number.isFinite(rawPage) ? Math.max(1, Math.floor(rawPage)) : 1;
+    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.floor(rawLimit), 1), 100) : 20;
+    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const sort =
+      req.query.sort === 'title' || req.query.sort === 'chapters' || req.query.sort === 'updated'
+        ? req.query.sort
+        : 'updated';
+    const order = req.query.order === 'asc' ? 'asc' : 'desc';
+
+    const result = await adminMangaListService.listManga({
+      page,
+      limit,
+      search,
+      status: status === 'all' ? undefined : status,
+      sort,
+      order,
+    });
+
+    return res.json({ status: 200, ...result });
+  } catch (error) {
+    logger.error(`Failed to list admin manga: ${error}`, { service: 'adminMangaListController' });
+    return next(error);
+  }
+}

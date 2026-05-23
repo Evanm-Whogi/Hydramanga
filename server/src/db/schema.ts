@@ -391,6 +391,25 @@ export const mangaImportProgress = pgTable('manga_import_progress', {
   scraperIdIdx: index('idx_manga_import_progress_scraper_id').on(t.scraperId).where(sql`${t.scraperId} IS NOT NULL`),
 }));
 
+export const importRequestStatusEnum = pgEnum('import_request_status', ['pending', 'in_progress', 'completed', 'rejected']);
+
+export const importRequests = pgTable('import_requests', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  seriesId: integer('series_id').references(() => series.id, { onDelete: 'set null' }),
+  requestedTitle: text('requested_title').notNull(),
+  requestedUrl: text('requested_url'),
+  notes: text('notes'),
+  adminNotes: text('admin_notes'),
+  status: importRequestStatusEnum('status').notNull().default('pending'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  statusIdx: index('idx_import_requests_status').on(t.status),
+  userIdIdx: index('idx_import_requests_user_id').on(t.userId),
+  createdAtIdx: index('idx_import_requests_created_at').on(t.createdAt.desc()),
+}));
+
 // User Reading Time Table (per user, per series, per chapter)
 export const userReadingTime = pgTable('user_reading_time', {
   userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),

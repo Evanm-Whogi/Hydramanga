@@ -95,6 +95,14 @@ export const auth = betterAuth({
     databaseHooks: {
         user: {
             create: {
+                before: async (user: any) => {
+                    return {
+                        data: {
+                            ...user,
+                            role: 'user',
+                        },
+                    };
+                },
                 after: async (user: any) => {
                     await discordService.notifyUserSignup(user.name || 'Unknown', user.id);
 

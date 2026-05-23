@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { HouseIcon, BookOpenIcon, DicesIcon, LibraryBig, SearchIcon, BellIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, UserPlusIcon } from 'lucide-react';
+import { HouseIcon, BookOpenIcon, DicesIcon, LibraryBig, SearchIcon, BellIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, UserPlusIcon, CirclePlusIcon, ShieldIcon } from 'lucide-react';
 import NavItem from './NavItem';
 import { authClient } from '@/lib/auth';
 import { useRouter, usePathname } from 'next/navigation';
@@ -110,6 +110,7 @@ export default function NavbarClient() {
                         <div className="hidden xl:flex items-center gap-3">
                             {user ? (
                                 <>
+                                    <Link href="/request" className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><CirclePlusIcon className="size-4" /> Request</Link>
                                     <div onClick={toggleRandomManga} className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><DicesIcon className="size-4" />Random</div>
                                     <a href="https://discord.gg/Key667vf6j" className="size-11" ><img src="/oauthIcons/discord.webp" alt="discord" /></a>
                                     <Link href="/discover" className="bg-background hover:bg-background/50 p-3 rounded-full"><SearchIcon className="size-5 hover:cursor-pointer" /></Link>
@@ -128,6 +129,11 @@ export default function NavbarClient() {
                                                 <Link href="/profile?tab=overview" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><UserIcon className="size-4" /> My Profile</Link>
                                                 <Link href="/lists" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><ListIcon className="size-4" /> My Lists</Link>
                                                 <Link href="/profile?tab=invites" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><UserPlusIcon className="size-4" /> Invites</Link>
+                                                
+                                                {user?.role === "admin" && (
+                                                    <Link href="/admin" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><ShieldIcon className="size-4" /> Admin</Link>
+                                                )}
+                                                
                                                 <hr className="my-1 border-borders" />
                                                 <div className="flex place-content-between w-fit">
                                                     <Link href="/profile?tab=settings" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><SettingsIcon className="size-4" /> Settings</Link>
@@ -191,6 +197,9 @@ export default function NavbarClient() {
                                         </Link>
                                         <Link href="/profile?tab=settings" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/profile' ? 'text-primary' : 'text-muted'}`}>
                                             <SettingsIcon className="size-4" /> Settings
+                                        </Link>
+                                        <Link href="/request" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/request' ? 'text-primary' : 'text-muted'}`}>
+                                            <CirclePlusIcon className="size-4" /> Request
                                         </Link>
                                         <button onClick={openThemeModal} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 text-left">
                                             <PaletteIcon className="size-4" /> Theme

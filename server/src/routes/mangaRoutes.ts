@@ -1,6 +1,7 @@
 import express, { RequestHandler } from 'express';
 import { searchManga, getOne, getPages, getAllLists, triggerMangaScan, trackMangaViewEndpoint, trackChapterViewEndpoint, getRecommendedManga, getGallery, getCollections, randomManga, getMangaTags }  from '@/controllers/mangaController';
 import { addBookmark, removeBookmark, getSeriesBookmarks, getBookmark } from '@/controllers/bookmarkController';
+import { requireRole } from '@/middlewares/requireRole';
 
 const router = express.Router();
 
@@ -19,7 +20,7 @@ router.get('/lists', getAllLists as RequestHandler);
 router.get('/:id/gallery', getGallery as RequestHandler);
 
 // Trigger on-demand scan
-router.post('/:id/scan', triggerMangaScan as RequestHandler);
+router.post('/:id/scan', requireRole('admin'), triggerMangaScan as RequestHandler);
 
 // Client-side view tracking
 router.post('/:id/track-view', trackMangaViewEndpoint as RequestHandler);

@@ -1,5 +1,5 @@
 import { db, schema } from '@/db/index';
-import { eq, and, sql, asc } from 'drizzle-orm';
+import { eq, and, sql, asc, inArray, isNotNull, count } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { cacheService } from '@/services/cacheService';
 
@@ -803,6 +803,66 @@ class UserProgressService {
       );
       throw error;
     }
+  }
+
+  /**
+   * Lightweight XP summaries for multiple users (admin user list).
+   */
+  async getUserXpSummaries(userIds: string[]): Promise<Record<string, { totalXp: number; level: number; levelName: string }>> {
+    if (userIds.length === 0) return {};
+
+    const toMap = (rows: { userId: string | null; count: number | string | bigint }[]) => {
+      const map = new Map<string, number>();
+      for (const row of rows) {
+        if (row.userId) map.set(row.userId, Number(row.count));
+      }
+      return map;
+    };
+
+    const [commentRows, reviewRows, viewRows, listRows] = await Promise.all([
+      db
+        .select({ userId: schema.comments.userId, count: count() })
+        .from(schema.comments)
+        .where(inArray(schema.comments.userId, userIds))
+        .groupBy(schema.comments.userId),
+      db
+        .select({ userId: schema.reviews.userId, count: count() })
+        .from(schema.reviews)
+        .where(inArray(schema.reviews.userId, userIds))
+        .groupBy(schema.reviews.userId),
+      db
+        .select({ userId: schema.mangaViews.userId, count: count() })
+        .from(schema.mangaViews)
+        .where(and(inArray(schema.mangaViews.userId, userIds), isNotNull(schema.mangaViews.userId)))
+        .groupBy(schema.mangaViews.userId),
+      db
+        .select({ userId: schema.userSeriesList.userId, count: count() })
+        .from(schema.userSeriesList)
+        .where(inArray(schema.userSeriesList.userId, userIds))
+        .groupBy(schema.userSeriesList.userId),
+    ]);
+
+    const comments = toMap(commentRows);
+    const reviews = toMap(reviewRows);
+    const views = toMap(viewRows);
+    const lists = toMap(listRows);
+
+    const result: Record<string, { totalXp: number; level: number; levelName: string }> = {};
+    for (const userId of userIds) {
+      const totalXp =
+        (comments.get(userId) ?? 0) * 50 +
+        (reviews.get(userId) ?? 0) * 75 +
+        (views.get(userId) ?? 0) * 5 +
+        (lists.get(userId) ?? 0) * 10;
+      const levelInfo = this.calculateLevel(totalXp);
+      result[userId] = {
+        totalXp,
+        level: levelInfo.level,
+        levelName: levelInfo.levelName,
+      };
+    }
+
+    return result;
   }
 }
 export const userProgressService = new UserProgressService();

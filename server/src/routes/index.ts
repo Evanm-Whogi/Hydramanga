@@ -15,6 +15,7 @@ import pageRoutes from '@/routes/pageRoutes';
 import listRoutes from '@/routes/listRoutes';
 import contactRoutes from '@/routes/contactRoutes';
 import userRoutes from '@/routes/userRoutes';
+import importRequestRoutes from '@/routes/importRequestRoutes';
 
 module.exports = (app: Express) => {
 
@@ -47,6 +48,9 @@ module.exports = (app: Express) => {
 
     // Page Aggregator Routes
     app.use('/', pageRoutes); 
+
+    // Import requests (user)
+    app.use('/import-requests', authMiddleware, importRequestRoutes);
 
     // Admin Routes
     app.use('/admin', authMiddleware, adminRoutes);

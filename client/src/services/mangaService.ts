@@ -12,6 +12,15 @@ export const fetchOne = cache(async (id: any): Promise<any> => {
     return await apiGet(`/manga/${id}`);
 });
 
+export async function fetchMangaById(id: number): Promise<{ manga: { id: number; title: string | null; cover?: unknown } }> {
+    return await apiGet(`/manga/${id}`);
+}
+
+export async function searchMangaByTitle(search: string,limit = 8): Promise<{ items: Array<{ id: number; title: string | null; cover?: unknown }> }> {
+    const params = new URLSearchParams({ search: search.trim(), limit: String(limit) });
+    return await apiGet(`/manga/search?${params}`);
+}
+
 // Trigger on-demand chapter scan for a manga
 export async function triggerMangaScan(mangaId: number): Promise<any> {
     try {

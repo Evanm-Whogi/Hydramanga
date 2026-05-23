@@ -40,7 +40,7 @@ export default  function Footer() {
                     <hr className="border border-borders w-full" />
                     <div className="flex flex-col md:flex-row space-y-3 md:space-y-0 py-5 items-center justify-between w-full text-sm">
                         <span className="">© 2026 {process.env.NEXT_PUBLIC_NAME}, LLC. All rights reserved.<p className="font-bold">Made by <a href="https://chit.sh/" className="text-accent font-bold underline">Whogi</a></p></span>
-                        <span className="flex flex-col md:flex-row gap-2">Site Version: A-2.00</span>
+                        <span className="flex flex-col md:flex-row gap-2">Site Version: A-3.00</span>
                     </div>
                 </div>
             </div>

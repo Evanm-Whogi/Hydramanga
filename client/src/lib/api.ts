@@ -70,11 +70,17 @@ const handleBackendError = async (error: any) => {
     throw error;
 };
 
-const clientFetch = async (url: string, options: RequestInit) => {
+const clientFetch = async (url: string, options: RequestInit & { timeoutMs?: number } = {}) => {
+    const { timeoutMs = 30000, ...fetchOptions } = options;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
     const res = await fetch(`${getClientApiBase()}${url}` , {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        ...options,
+        signal: controller.signal,
+        ...fetchOptions,
     });
 
     const data = await res.json().catch(() => ({}));
@@ -82,6 +88,14 @@ const clientFetch = async (url: string, options: RequestInit) => {
         throw new Error(data?.message || 'Request failed');
     }
     return data;
+    } catch (error: unknown) {
+        if (error instanceof Error && error.name === 'AbortError') {
+            throw new Error('Request timed out');
+        }
+        throw error;
+    } finally {
+        clearTimeout(timeoutId);
+    }
 };
 
 export const apiPost = async (url: string, data?: any) => {
@@ -103,9 +117,9 @@ export const apiPost = async (url: string, data?: any) => {
     }
 };
 
-export const apiGet = async (url: string) => {
+export const apiGet = async (url: string, options?: { timeoutMs?: number }) => {
     if (typeof window !== 'undefined') {
-        return clientFetch(url, { method: 'GET' });
+        return clientFetch(url, { method: 'GET', timeoutMs: options?.timeoutMs });
     }
 
     try {

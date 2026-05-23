@@ -1,5 +1,6 @@
 import axios from 'axios';
 import logger from '@/services/loggerService';
+import { user } from '@/db/schema';
 
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
@@ -155,7 +156,20 @@ const discordService = {
             description: `A new user has signed up: **${username}** (ID: ${userId})`,
             color: 0x1abc9c,
         }));
-    }
+    },
+
+    async notifyImportRequest(userName: string, requestedTitle: string, requestedUrl: string | null, notes: string | null, seriesId: number | null) {
+        await this.sendEmbed(createEmbed({
+            title: '📦 Import Request',
+            description: `A new import request has been submitted: **[${requestedTitle}](${process.env.PUBLIC_APP_URL}/manga/${seriesId})** (ID: ${seriesId})`,
+            fields: [
+                { name: 'Requested URL', value: requestedUrl || 'N/A', inline: true },
+                { name: 'User Notes', value: notes || 'N/A', inline: true },
+                { name: 'User', value: userName || 'N/A', inline: true },
+            ],
+            color: 0x3498db,
+        }));
+    },
 };
 
 export { discordService };
