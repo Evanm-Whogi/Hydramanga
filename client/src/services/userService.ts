@@ -2,16 +2,23 @@ import { apiPostFormData, apiDelete, apiGet, apiPatch } from '@/lib/api';
 
 export interface UserSettings {
   hideNsfw: boolean;
+  isProfilePublic: boolean;
 }
 
 export async function getSettings(): Promise<UserSettings> {
   const data = await apiGet('/users/settings');
-  return { hideNsfw: data?.hideNsfw ?? false };
+  return {
+    hideNsfw: data?.hideNsfw ?? false,
+    isProfilePublic: data?.isProfilePublic ?? true,
+  };
 }
 
 export async function updateSettings(updates: Partial<UserSettings>): Promise<UserSettings> {
   const data = await apiPatch('/users/settings', updates);
-  return { hideNsfw: data?.hideNsfw ?? false };
+  return {
+    hideNsfw: data?.hideNsfw ?? false,
+    isProfilePublic: data?.isProfilePublic ?? true,
+  };
 }
 
 export async function uploadProfilePicture(file: File): Promise<any> {

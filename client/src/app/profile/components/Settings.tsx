@@ -16,14 +16,17 @@ export default function Settings({ user }: { user: any }) {
     const [newPassword, setNewPassword] = useState("");
     const [sessions, setSessions] = useState<any[]>([]);
     const [hideNsfw, setHideNsfw] = useState(false);
+    const [isProfilePublic, setIsProfilePublic] = useState(true);
     const [settingsLoading, setSettingsLoading] = useState(false);
 
   const fetchSettings = async () => {
     try {
       const s = await getSettings();
       setHideNsfw(s.hideNsfw);
+      setIsProfilePublic(s.isProfilePublic);
     } catch {
       setHideNsfw(false);
+      setIsProfilePublic(true);
     }
   };
 
@@ -38,6 +41,21 @@ export default function Settings({ user }: { user: any }) {
             await updateSettings({ hideNsfw: newValue });
             setHideNsfw(newValue);
             toast.success(newValue ? "NSFW content hidden" : "NSFW content visible");
+            router.refresh();
+        } catch {
+            toast.error("Failed to update setting");
+        } finally {
+            setSettingsLoading(false);
+        }
+    };
+
+    const handleProfilePublicToggle = async () => {
+        const newValue = !isProfilePublic;
+        setSettingsLoading(true);
+        try {
+            await updateSettings({ isProfilePublic: newValue });
+            setIsProfilePublic(newValue);
+            toast.success(newValue ? "Profile is now public" : "Profile is now private");
             router.refresh();
         } catch {
             toast.error("Failed to update setting");
@@ -179,6 +197,22 @@ export default function Settings({ user }: { user: any }) {
                             className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 ${hideNsfw ? 'bg-accent' : 'bg-foreground'}`}
                         >
                             <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${hideNsfw ? 'translate-x-5' : 'translate-x-1'}`} />
+                        </button>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 mt-6 pt-6 border-t border-borders">
+                        <div>
+                            <p className="font-medium text-primary">Public profile</p>
+                            <p className="text-sm text-muted">When on, other members can view your reading stats and karma on your profile page.</p>
+                        </div>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={isProfilePublic}
+                            disabled={settingsLoading}
+                            onClick={handleProfilePublicToggle}
+                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 ${isProfilePublic ? 'bg-accent' : 'bg-foreground'}`}
+                        >
+                            <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${isProfilePublic ? 'translate-x-5' : 'translate-x-1'}`} />
                         </button>
                     </div>
                 </div>

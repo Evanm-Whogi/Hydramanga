@@ -1,10 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeRaw from "rehype-raw";
-import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import MarkdownBlock from "./MarkdownBlock";
 import {
   Bold,
   Italic,
@@ -18,12 +15,8 @@ import {
   ListOrdered,
   Eye,
   EyeOff,
+  EyeClosed,
 } from "lucide-react";
-
-const sanitizeSchema = {
-  ...defaultSchema,
-  tagNames: [...(defaultSchema.tagNames || []), "u"],
-};
 
 type ToolbarAction =
   | "bold"
@@ -35,7 +28,8 @@ type ToolbarAction =
   | "h2"
   | "h3"
   | "ul"
-  | "ol";
+  | "ol"
+  | "spoiler";
 
 function wrapSelection(
   text: string,
@@ -103,10 +97,11 @@ function ToolButton({
 export default function MarkdownEditor({
   value,
   onChange,
-  placeholder = "Markdown supported: **bold**, *italic*, `code`, lists...",
+  placeholder = "Markdown supported: **bold**, *italic*, `code`, ||spoiler||, lists...",
   rows = 4,
   showPreviewToggle = false,
   minHeight = "min-h-[100px]",
+  maxLength,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -114,6 +109,7 @@ export default function MarkdownEditor({
   rows?: number;
   showPreviewToggle?: boolean;
   minHeight?: string;
+  maxLength?: number;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [preview, setPreview] = useState(false);
@@ -155,6 +151,9 @@ export default function MarkdownEditor({
       case "ol":
         next = blockWrap(value, start, end, "1. ");
         break;
+      case "spoiler":
+        next = wrapSelection(value, start, end, "||", "||", "spoiler text");
+        break;
       default:
         return;
     }
@@ -177,6 +176,7 @@ export default function MarkdownEditor({
           <ToolButton onClick={() => insert("h3")} title="Heading 3" icon={<Heading3 className="size-4" />} />
           <ToolButton onClick={() => insert("ul")} title="Bullet list" icon={<List className="size-4" />} />
           <ToolButton onClick={() => insert("ol")} title="Numbered list" icon={<ListOrdered className="size-4" />} />
+          <ToolButton onClick={() => insert("spoiler")} title="Spoiler ||text||" icon={<EyeClosed className="size-4" />} />
         </div>
         {showPreviewToggle && (
           <button
@@ -193,12 +193,7 @@ export default function MarkdownEditor({
         <div
           className={`rounded-lg border border-borders bg-background p-4 text-primary prose prose-invert prose-sm max-w-none dark:prose-invert prose-pre:bg-foreground prose-pre:border prose-pre:border-borders prose-pre:rounded-lg prose-pre:overflow-x-auto prose-code:bg-foreground/80 prose-code:px-1 prose-code:rounded prose-code:before:content-none prose-code:after:content-none ${minHeight}`}
         >
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
-          >
-            {value || "*No content yet*"}
-          </ReactMarkdown>
+          <MarkdownBlock content={value || "*No content yet*"} />
         </div>
       ) : (
         <textarea
@@ -207,6 +202,7 @@ export default function MarkdownEditor({
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           rows={rows}
+          maxLength={maxLength}
           className={`w-full rounded-lg border border-borders bg-background px-3 py-2 text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent resize-y ${minHeight}`}
         />
       )}

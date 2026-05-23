@@ -9,6 +9,9 @@ import { auth } from '@/utils/auth';
 import http from 'http';
 import { Server } from 'socket.io';
 import { setupProgressSocket } from '@/sockets/progressSocket';
+import { setupChatSocket } from '@/sockets/chatSocket';
+import { karmaService } from '@/services/karmaService';
+import { readingActivityService } from '@/services/readingActivityService';
 import * as Sentry from "@sentry/node";
 import { initSentry } from "@/sentry";
 dotenv.config();
@@ -77,6 +80,9 @@ const io = new Server(server, {
 
 // Setup WebSocket namespaces
 setupProgressSocket(io);
+setupChatSocket(io);
+
+void karmaService.ensureBackfilled().then(() => readingActivityService.ensureBackfilled());
 
 logger.info('Socket.IO server initialized with transports: websocket, polling', { service: 'server' });
 

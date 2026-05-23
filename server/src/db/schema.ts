@@ -9,6 +9,7 @@ export const user = pgTable("user", {
   bio: text("bio"),
   emailVerified: boolean("emailVerified").notNull(),
   image: text("image").default('/default-avatar.jpg'),
+  karmaTotal: integer("karma_total").notNull().default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
@@ -338,10 +339,109 @@ export const userChapterProgress = pgTable('user_chapter_progress', {
 export const userSettings = pgTable('user_settings', {
   userId: text('user_id').primaryKey().references(() => user.id, { onDelete: 'cascade' }),
   hideNsfw: boolean('hide_nsfw').notNull().default(false),
+  isProfilePublic: boolean('is_profile_public').notNull().default(true),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   userIdIdx: index('idx_user_settings_user_id').on(t.userId),
 }));
+
+// Karma ledger
+export const karmaTransactions = pgTable('karma_transactions', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  action: text('action').notNull(),
+  amount: integer('amount').notNull(),
+  sourceType: text('source_type'),
+  sourceId: text('source_id'),
+  idempotencyKey: text('idempotency_key').notNull().unique(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  userIdIdx: index('idx_karma_transactions_user_id').on(t.userId),
+  createdAtIdx: index('idx_karma_transactions_created_at').on(t.createdAt.desc()),
+}));
+
+// Daily reading activity for streaks
+export const userReadingDays = pgTable('user_reading_days', {
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  activityDate: timestamp('activity_date', { mode: 'date' }).notNull(),
+  source: text('source').notNull().default('chapter_read'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.activityDate] }),
+  userIdIdx: index('idx_user_reading_days_user_id').on(t.userId),
+}));
+
+// Community board
+export const boardPosts = pgTable('board_posts', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  title: varchar('title', { length: 255 }).notNull(),
+  content: text('content').notNull(),
+  isPinned: boolean('is_pinned').notNull().default(false),
+  isLocked: boolean('is_locked').notNull().default(false),
+  isDeleted: boolean('is_deleted').notNull().default(false),
+  deletedBy: text('deleted_by').references(() => user.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  createdAtIdx: index('idx_board_posts_created_at').on(t.createdAt.desc()),
+  userIdIdx: index('idx_board_posts_user_id').on(t.userId),
+}));
+
+export const boardReplies = pgTable('board_replies', {
+  id: serial('id').primaryKey(),
+  postId: integer('post_id').notNull().references(() => boardPosts.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  parentId: integer('parent_id').references((): any => boardReplies.id, { onDelete: 'cascade' }),
+  content: text('content').notNull(),
+  isDeleted: boolean('is_deleted').notNull().default(false),
+  deletedBy: text('deleted_by').references(() => user.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  postIdIdx: index('idx_board_replies_post_id').on(t.postId),
+}));
+
+export const boardPostVotes = pgTable('board_post_votes', {
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  postId: integer('post_id').notNull().references(() => boardPosts.id, { onDelete: 'cascade' }),
+  type: text('type').notNull().default('like'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.postId] }),
+  postIdIdx: index('idx_board_post_votes_post_id').on(t.postId),
+}));
+
+export const boardReplyVotes = pgTable('board_reply_votes', {
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  replyId: integer('reply_id').notNull().references(() => boardReplies.id, { onDelete: 'cascade' }),
+  type: text('type').notNull().default('like'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.replyId] }),
+  replyIdIdx: index('idx_board_reply_votes_reply_id').on(t.replyId),
+}));
+
+// Site-wide chat
+export const chatMessages = pgTable('chat_messages', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  content: text('content').notNull(),
+  isDeleted: boolean('is_deleted').notNull().default(false),
+  deletedBy: text('deleted_by').references(() => user.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  createdAtIdx: index('idx_chat_messages_created_at').on(t.createdAt.desc()),
+  userIdIdx: index('idx_chat_messages_user_id').on(t.userId),
+}));
+
+export const userModeration = pgTable('user_moderation', {
+  userId: text('user_id').primaryKey().references(() => user.id, { onDelete: 'cascade' }),
+  isChatMuted: boolean('is_chat_muted').notNull().default(false),
+  mutedUntil: timestamp('muted_until', { withTimezone: true }),
+  mutedReason: text('muted_reason'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 // Invite Codes
 export const inviteCodes = pgTable('invite_codes', {
@@ -548,4 +648,34 @@ export const seriesRelations = relations(series, ({ many }) => ({
   chapters: many(chapters),
   comments: many(comments),
   reviews: many(reviews),
+}));
+
+export const boardPostsRelations = relations(boardPosts, ({ one, many }) => ({
+  author: one(user, { fields: [boardPosts.userId], references: [user.id] }),
+  votes: many(boardPostVotes),
+  replies: many(boardReplies),
+}));
+
+export const boardRepliesRelations = relations(boardReplies, ({ one, many }) => ({
+  author: one(user, { fields: [boardReplies.userId], references: [user.id] }),
+  post: one(boardPosts, { fields: [boardReplies.postId], references: [boardPosts.id] }),
+  votes: many(boardReplyVotes),
+}));
+
+export const boardPostVotesRelations = relations(boardPostVotes, ({ one }) => ({
+  post: one(boardPosts, { fields: [boardPostVotes.postId], references: [boardPosts.id] }),
+  user: one(user, { fields: [boardPostVotes.userId], references: [user.id] }),
+}));
+
+export const boardReplyVotesRelations = relations(boardReplyVotes, ({ one }) => ({
+  reply: one(boardReplies, { fields: [boardReplyVotes.replyId], references: [boardReplies.id] }),
+  user: one(user, { fields: [boardReplyVotes.userId], references: [user.id] }),
+}));
+
+export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
+  author: one(user, { fields: [chatMessages.userId], references: [user.id] }),
+}));
+
+export const karmaTransactionsRelations = relations(karmaTransactions, ({ one }) => ({
+  user: one(user, { fields: [karmaTransactions.userId], references: [user.id] }),
 }));

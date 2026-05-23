@@ -1,5 +1,5 @@
 
-import { apiPost, apiGet, apiDelete } from '@/lib/api';
+import { apiPost, apiGet, apiDelete, apiPut } from '@/lib/api';
 
 export async function fetchComments(seriesId: number): Promise<any> {
     return await apiGet(`/comments?seriesId=${seriesId}`);
@@ -14,6 +14,12 @@ export async function postComment({ seriesId, content, parentId, isSpoiler }: { 
 export async function voteComment(commentId: number, type: 'like' | 'dislike'): Promise<any> {
     const data = await apiPost('/comments/vote', { commentId, type });
     if (!data) throw new Error('Failed to vote on comment');
+    return data;
+}
+
+export async function updateComment(commentId: number, content: string): Promise<any> {
+    const data = await apiPut(`/comments/${commentId}`, { content });
+    if (!data) throw new Error('Failed to update comment');
     return data;
 }
 

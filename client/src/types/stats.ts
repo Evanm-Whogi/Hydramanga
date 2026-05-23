@@ -9,26 +9,24 @@ export interface MangaReadingTime {
   };
 }
 
-export interface UserXpBreakdownItem {
-  count: number;
-  xp: number;
-}
-
-export interface UserXp {
-  totalXp: number;
+export interface UserKarma {
+  totalKarma: number;
   level: number;
   levelName: string;
-  currentLevelXp: number;
-  xpForNextLevel: number;
-  xpToNextLevel: number;
+  currentLevelKarma: number;
+  karmaForNextLevel: number;
+  karmaToNextLevel: number;
   progressToNextLevel: number;
-  breakdown?: {
-    comments: UserXpBreakdownItem;
-    reviews: UserXpBreakdownItem;
-    views: UserXpBreakdownItem;
-    listAdds: UserXpBreakdownItem;
-  };
+  breakdown?: Record<string, number>;
 }
+
+/** @deprecated Use UserKarma */
+export type UserXp = UserKarma & {
+  totalXp?: number;
+  currentLevelXp?: number;
+  xpForNextLevel?: number;
+  xpToNextLevel?: number;
+};
 
 export interface UserStats {
   totalSeriesReading: number;
@@ -37,7 +35,10 @@ export interface UserStats {
   readingTimes: MangaReadingTime[];
   seriesSaved: number;
   streak: number;
-  xp: UserXp;
+  currentStreak?: number;
+  karma: UserKarma;
+  /** @deprecated Use karma */
+  xp?: UserKarma;
 }
 
 export interface UserStatsResponse {

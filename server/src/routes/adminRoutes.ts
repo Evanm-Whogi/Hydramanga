@@ -43,8 +43,8 @@ router.post('/manga/:id/rescan', requireRole('admin'), adminTriggerRescan as Req
 router.post('/manga/:id/cancel-scan', requireRole('admin'), adminCancelScan as RequestHandler);
 router.delete('/manga/:id/chapters', requireRole('admin'), adminDeleteChapters as RequestHandler);
 
-// Health check
-router.get('/heartbeat', requireRole('admin'), (req, res) => {
+// Health check (public)
+router.get('/heartbeat', (req, res) => {
     res.json({ status: 200, message: 'Service is healthy' });
 });
 

@@ -168,7 +168,7 @@ export default function UsersClient() {
                         <span className="text-xs text-muted">{user.xp.levelName}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-primary">{user.xp.totalXp.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-primary">{user.xp.totalXp.toLocaleString()} karma</td>
                     <td className="px-4 py-3 text-muted whitespace-nowrap">
                       {formatDate(user.createdAt)}
                     </td>

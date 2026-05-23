@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { db, schema } from '@/db/index';
 import { eq, and, avg, count } from 'drizzle-orm';
+import { karmaService } from '@/services/karmaService';
+import { enrichAuthors } from '@/lib/enrichAuthors';
+import { isAdminRole } from '@/lib/authHelpers';
 
 export async function fetchReviews(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const seriesId = parseInt(req.query.seriesId as string, 10);
@@ -22,7 +25,8 @@ export async function fetchReviews(req: Request, res: Response, next: NextFuncti
             ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10
             : null;
 
-        return res.status(200).json({ reviews, avgRating, total: reviews.length });
+        const enriched = await enrichAuthors(reviews);
+        return res.status(200).json({ reviews: enriched, avgRating, total: enriched.length });
     } catch (error) {
         return next(error);
     }
@@ -51,6 +55,14 @@ export async function createReview(req: Request, res: Response, next: NextFuncti
             userId,
             seriesId,
         }).returning();
+
+        await karmaService.award({
+            userId,
+            action: 'review',
+            sourceType: 'review',
+            sourceId: String(review.id),
+            idempotencyKey: `review:${review.id}`,
+        });
 
         return res.status(201).json({ review });
     } catch (error) {
@@ -90,11 +102,23 @@ export async function deleteReview(req: Request, res: Response, next: NextFuncti
 
     try {
         const existing = await db.query.reviews.findFirst({
-            where: (r, { eq, and }) => and(eq(r.id, reviewId), eq(r.userId, userId)),
+            where: (r, { eq }) => eq(r.id, reviewId),
         });
-        if (!existing) return res.status(403).json({ message: 'Review not found or not yours' });
+        if (!existing) return res.status(404).json({ message: 'Review not found' });
+        if (!isAdminRole(req.user.role) && existing.userId !== userId) {
+            return res.status(403).json({ message: 'Review not found or not yours' });
+        }
 
         await db.delete(schema.reviews).where(eq(schema.reviews.id, reviewId));
+
+        await karmaService.reverse({
+            userId: existing.userId,
+            action: 'review',
+            sourceType: 'review',
+            sourceId: String(reviewId),
+            originalIdempotencyKey: `review:${reviewId}`,
+        });
+
         return res.status(200).json({ message: 'Review deleted' });
     } catch (error) {
         return next(error);

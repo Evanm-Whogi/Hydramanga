@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { createAnnouncement } from "@/services/announcementService";
 import { toast } from "react-toastify";
 import { Send } from "lucide-react";
-import MarkdownEditor from "@/components/markdown/MarkdownEditor";
+import ContentComposer from "@/components/content/ContentComposer";
+import { requireTrimmed } from "@/lib/requireContent";
 
 export default function AnnouncementForm() {
   const router = useRouter();
@@ -15,12 +16,8 @@ export default function AnnouncementForm() {
   const [isPublished, setIsPublished] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) {
-      toast.error("Title is required");
-      return;
-    }
+  const handleSubmit = async () => {
+    if (!requireTrimmed(title, "Please enter a title.")) return;
     setSubmitting(true);
     try {
       await createAnnouncement({
@@ -34,7 +31,7 @@ export default function AnnouncementForm() {
       setContent("");
       setIsPublished(false);
       router.refresh();
-    } catch (err) {
+    } catch {
       toast.error("Failed to create announcement.");
     } finally {
       setSubmitting(false);
@@ -42,70 +39,52 @@ export default function AnnouncementForm() {
   };
 
   return (
-    <div className="bg-foreground p-6 rounded-lg border border-borders mb-6">
-      <h2 className="text-xl font-semibold text-primary mb-4">New announcement (admin)</h2>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label htmlFor="ann-title" className="block text-sm font-medium text-muted mb-1">
-            Title
-          </label>
-          <input
-            id="ann-title"
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Announcement title"
-            className="w-full rounded-lg border border-borders bg-background px-3 py-2 text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent"
-            maxLength={255}
-          />
-        </div>
-
-        <div>
-          <div className="mb-1">
-            <label className="block text-sm font-medium text-muted">Content (Markdown)</label>
+    <div className="mb-6">
+      <ContentComposer
+        heading="New announcement (admin)"
+        title={title}
+        onTitleChange={setTitle}
+        titlePlaceholder="Announcement title"
+        titleId="ann-title"
+        titleMaxLength={255}
+        value={content}
+        onChange={setContent}
+        placeholder="Write your announcement…"
+        rows={8}
+        showPreviewToggle
+        minHeight="min-h-[160px]"
+        middle={
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isPublished}
+                onChange={(e) => setIsPublished(e.target.checked)}
+                className="rounded border-borders text-accent focus:ring-accent"
+              />
+              <span className="text-sm text-muted">Publish immediately</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted">Type</span>
+              <select
+                value={type}
+                onChange={(e) => setType(e.target.value as "info" | "warning")}
+                className="rounded-lg border border-borders bg-background px-3 py-1.5 text-primary text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+              >
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+              </select>
+            </div>
           </div>
-          <MarkdownEditor
-            value={content}
-            onChange={setContent}
-            placeholder="Write your announcement. Use the toolbar for **bold**, *italic*, underline, `code`, headings, and lists."
-            rows={8}
-            showPreviewToggle={true}
-            minHeight="min-h-[160px]"
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isPublished}
-              onChange={(e) => setIsPublished(e.target.checked)}
-              className="rounded border-borders text-accent focus:ring-accent"
-            />
-            <span className="text-sm text-muted">Publish immediately</span>
-          </label>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted">Type</span>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as "info" | "warning")}
-              className="rounded-lg border border-borders bg-background px-3 py-1.5 text-primary text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-            >
-              <option value="info">Info</option>
-              <option value="warning">Warning</option>
-            </select>
-          </div>
-        </div>
-
-        <button
-          type="submit"
-          disabled={submitting}
-          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-        >
-          <Send className="size-4" />
-          {submitting ? "Posting…" : "Post announcement"}
-        </button>
-      </form>
+        }
+        onSubmit={handleSubmit}
+        submitLabel="Post announcement"
+        submitting={submitting}
+        disabled={submitting}
+        submitIcon={<Send className="size-4" />}
+        layout="card"
+        className="p-4"
+      />
     </div>
   );
 }

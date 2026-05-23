@@ -83,7 +83,7 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
                 <span className="px-2">·</span>
                 {user.xp.levelName}
                 <span className="px-2">·</span>
-                {user.xp.totalXp.toLocaleString()} XP
+                {user.xp.totalXp.toLocaleString()} karma
               </p>
               <p className="text-xs">ID: {user.id}</p>
             </div>

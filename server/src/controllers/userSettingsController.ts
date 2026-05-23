@@ -16,8 +16,8 @@ export async function patchSettings(req: Request, res: Response) {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ message: 'Unauthorized' });
-    const { hideNsfw } = req.body || {};
-    const settings = await updateUserSettings(userId, { hideNsfw });
+    const { hideNsfw, isProfilePublic } = req.body || {};
+    const settings = await updateUserSettings(userId, { hideNsfw, isProfilePublic });
     return res.json(settings);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update settings' });

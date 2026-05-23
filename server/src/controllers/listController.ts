@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { db } from '../db';
 import * as schema from '../db/schema';
 import { eq, and, sql, inArray } from 'drizzle-orm';
+import { karmaService } from '@/services/karmaService';
 
 // Helper function to create default lists for a user
 export async function ensureDefaultLists(userId: string) {
@@ -348,7 +349,13 @@ export async function addToList(req: Request, res: Response, next: NextFunction)
             });
         }
 
-        // Add or update the entry
+        const existingEntry = await db.query.userSeriesList.findFirst({
+            where: and(
+                eq(schema.userSeriesList.userId, userId),
+                eq(schema.userSeriesList.seriesId, seriesId)
+            ),
+        });
+
         const [result] = await db.insert(schema.userSeriesList)
             .values({
                 userId,
@@ -364,6 +371,16 @@ export async function addToList(req: Request, res: Response, next: NextFunction)
                 },
             })
             .returning();
+
+        if (!existingEntry) {
+            await karmaService.award({
+                userId,
+                action: 'list_add',
+                sourceType: 'list',
+                sourceId: String(seriesId),
+                idempotencyKey: `list_add:${userId}:${seriesId}`,
+            });
+        }
 
         return res.json({ 
             success: true, 

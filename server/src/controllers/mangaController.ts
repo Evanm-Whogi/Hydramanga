@@ -13,6 +13,7 @@ import { mangaProgressService } from '@/services/mangaProgressService';
 import { cacheService } from '@/services/cacheService';
 import axios from 'axios';
 import { getCollectionsList } from '@/services/collectionsService';
+import { enrichCommentsWithKarma } from '@/lib/enrichAuthors';
 
 // Normalize curly/smart quotes to ASCII so search matches titles regardless of apostrophe type
 function normalizeApostrophes(s: string): string {
@@ -419,6 +420,7 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
                         id: true,
                         name: true,
                         image: true,
+                        role: true,
                     },
                 },
                 votes: true,
@@ -429,6 +431,7 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
                                 id: true,
                                 name: true,
                                 image: true,
+                                role: true,
                             },
                         },
                         votes: true,
@@ -506,6 +509,10 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
                 });
             });
         }
+    }
+
+    if (manga.comments?.length) {
+        manga.comments = await enrichCommentsWithKarma(manga.comments);
     }
 
     return res.json({

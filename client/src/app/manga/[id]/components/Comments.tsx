@@ -1,211 +1,245 @@
 "use client";
 
-import { ThumbsUp, ThumbsDown, MessageSquare, ChevronDown, ChevronUp } from "lucide-react";
-import { formatTimeAgo } from "@/lib/utils";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { postComment, voteComment, deleteComment } from "@/services/commentService";
+import { postComment, voteComment, updateComment, deleteComment } from "@/services/commentService";
 import { toast } from "react-toastify";
 import { useUser } from "@/providers/UserProvider";
 import { trackCommentAction } from "@/lib/analytics";
-import MarkdownView from "@/components/markdown/MarkdownView";
-import MarkdownEditor from "@/components/markdown/MarkdownEditor";
+import ContentComposer from "@/components/content/ContentComposer";
+import SocialPostCard from "@/components/social/SocialPostCard";
+import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
+import { requireTrimmed } from "@/lib/requireContent";
+import { isAdminUser } from "@/lib/contentMenu";
 
-function VoteBar({ votes, itemId, userId, onVote }: { votes: any[]; itemId: number; userId?: string; onVote: (id: number, type: "like" | "dislike") => void }) {
-    const myVote = votes?.find((v: any) => v.userId === userId)?.type;
-    const likes = votes?.filter((v: any) => v.type === "like").length ?? 0;
-    const dislikes = votes?.filter((v: any) => v.type === "dislike").length ?? 0;
-    return (
-        <div className="flex items-center gap-3">
-            <button onClick={() => onVote(itemId, "like")} className={`inline-flex items-center gap-1 text-sm hover:cursor-pointer transition-colors ${myVote === "like" ? "text-green-400" : "text-muted hover:text-green-400"}`}>
-                <ThumbsUp className="size-4" /> {likes}
-            </button>
-            <button onClick={() => onVote(itemId, "dislike")} className={`inline-flex items-center gap-1 text-sm hover:cursor-pointer transition-colors ${myVote === "dislike" ? "text-red-400" : "text-muted hover:text-red-400"}`}>
-                <ThumbsDown className="size-4" /> {dislikes}
-            </button>
-        </div>
-    );
+function CommentOverflowMenu({
+  id,
+  authorId,
+  userId,
+  isAdmin,
+  menuOpenId,
+  setMenuOpenId,
+  onEdit,
+  onDelete,
+  nested,
+}: {
+  id: number;
+  authorId?: string;
+  userId?: string;
+  isAdmin: boolean;
+  menuOpenId: number | null;
+  setMenuOpenId: (id: number | null) => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  nested?: boolean;
+}) {
+  const isOwner = authorId === userId;
+  if (!isOwner && !isAdmin) return null;
+
+  return (
+    <ContentOverflowMenu
+      open={menuOpenId === id}
+      onOpenChange={(open) => setMenuOpenId(open ? id : null)}
+      iconClassName={nested ? "size-4" : "size-5"}
+      isOwner={isOwner}
+      isAdmin={isAdmin}
+      onEdit={isOwner ? onEdit : undefined}
+      onDelete={isOwner ? onDelete : undefined}
+      adminItems={
+        isAdmin && !isOwner
+          ? [{ label: "Delete", variant: "danger", onClick: onDelete }]
+          : []
+      }
+    />
+  );
 }
 
 export default function Comments({ manga, comments }: { manga: any; comments: any[] }) {
-    const [text, setText] = useState("");
-    const [replyText, setReplyText] = useState("");
-    const [replyingTo, setReplyingTo] = useState<number | null>(null);
-    const [expandedComments, setExpandedComments] = useState<number[]>([]);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const router = useRouter();
-    const { user } = useUser();
+  const [text, setText] = useState("");
+  const [replyText, setReplyText] = useState("");
+  const [replyingTo, setReplyingTo] = useState<number | null>(null);
+  const [expandedComments, setExpandedComments] = useState<number[]>([]);
+  const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editText, setEditText] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const router = useRouter();
+  const { user } = useUser();
+  const isAdmin = isAdminUser(user?.role);
 
-    const toggleExpand = (id: number) =>
-        setExpandedComments((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const handleSubmit = async (content: string, parentId: number | null = null) => {
+    if (isSubmitting) return;
+    if (!requireTrimmed(content, parentId ? "Please write a reply." : "Please write a comment.")) return;
+    setIsSubmitting(true);
+    try {
+      const result = await postComment({ seriesId: manga.id, content, parentId, isSpoiler: false });
+      trackCommentAction("posted", result?.comment?.id?.toString(), manga.id.toString(), manga.title, content);
+      setText("");
+      setReplyText("");
+      setReplyingTo(null);
+      if (parentId) setExpandedComments((prev) => [...prev, parentId]);
+      toast.success(parentId ? "Reply posted" : "Comment posted");
+      router.refresh();
+    } catch {
+      toast.error("Failed to post.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-    const handleSubmit = async (content: string, parentId: number | null = null) => {
-        if (!content.trim() || isSubmitting) return;
-        setIsSubmitting(true);
-        try {
-            const result = await postComment({ seriesId: manga.id, content, parentId, isSpoiler: false });
-            trackCommentAction("posted", result?.comment?.id?.toString(), manga.id.toString(), manga.title, content);
-            setText("");
-            setReplyText("");
-            setReplyingTo(null);
-            if (parentId) setExpandedComments((prev) => [...prev, parentId]);
-            router.refresh();
-        } catch {
-            toast.error("Failed to post.");
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
+  const handleUpdate = async (commentId: number) => {
+    if (!requireTrimmed(editText, "Please write a comment.")) return;
+    try {
+      await updateComment(commentId, editText);
+      setEditingId(null);
+      toast.success("Comment updated");
+      router.refresh();
+    } catch {
+      toast.error("Failed to update.");
+    }
+  };
 
-    const handleVote = async (commentId: number, type: "like" | "dislike") => {
-        try {
-            await voteComment(commentId, type);
-            router.refresh();
-        } catch {
-            toast.error("Failed to vote.");
-        }
-    };
+  const handleVote = async (commentId: number, type: "like" | "dislike") => {
+    try {
+      await voteComment(commentId, type);
+      router.refresh();
+    } catch {
+      toast.error("Failed to vote.");
+    }
+  };
 
-    const handleDelete = async (commentId: number, commentText: string) => {
-        try {
-            await deleteComment(commentId);
-            trackCommentAction("deleted", commentId.toString(), manga.id.toString(), manga.title, commentText);
-            router.refresh();
-        } catch {
-            toast.error("Failed to delete.");
-        }
-    };
+  const handleDelete = async (commentId: number, commentText: string) => {
+    try {
+      await deleteComment(commentId);
+      trackCommentAction("deleted", commentId.toString(), manga.id.toString(), manga.title, commentText);
+      router.refresh();
+    } catch {
+      toast.error("Failed to delete.");
+    }
+  };
+
+  const startEdit = (comment: { id: number; content: string }) => {
+    setEditingId(comment.id);
+    setEditText(comment.content);
+  };
+
+  const renderCommentBody = (comment: any, nested = false) => {
+    if (editingId === comment.id) {
+      return (
+        <div className={`rounded-lg p-4 border border-borders space-y-2 ${nested ? "bg-background" : "bg-foreground"}`}>
+          <ContentComposer
+            value={editText}
+            onChange={setEditText}
+            placeholder="Edit comment…"
+            rows={nested ? 3 : 5}
+            minHeight={nested ? "min-h-[80px]" : "min-h-[100px]"}
+            onSubmit={() => void handleUpdate(comment.id)}
+            submitLabel="Save"
+            layout="embedded"
+            onCancel={() => setEditingId(null)}
+          />
+        </div>
+      );
+    }
 
     return (
-        <>
-            <div className="flex flex-col w-full bg-foreground p-5 rounded-md mb-5">
-                <h1 className="text-2xl font-bold mb-3">Leave a Comment</h1>
-                <MarkdownEditor
-                    value={text}
-                    onChange={setText}
-                    placeholder="Write your comment... Markdown supported: **bold**, *italic*, `code`, lists."
-                    rows={5}
-                    minHeight="min-h-[100px]"
-                />
-                <div className="flex justify-end mt-2">
-                    <button
-                        onClick={() => handleSubmit(text)}
-                        disabled={isSubmitting}
-                        className="bg-background text-primary px-4 py-2 mt-4 rounded-md hover:bg-background/50 hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Submit
-                    </button>
-                </div>
-            </div>
-
-            <div className="flex flex-col gap-4">
-                {comments &&
-                    comments.map((comment) => (
-                        <div key={comment.id} className="flex flex-col gap-2">
-                            <div className="relative flex flex-col p-5 bg-foreground hover:bg-foreground/50 rounded-md">
-                                <div className="flex items-center mb-3">
-                                    <img src={comment.author.image || "/default-avatar.jpg"} alt="Avatar" width={48} height={48} className="rounded-full" />
-                                    <div className="ml-3">
-                                        <h2 className={`text-lg font-semibold ${comment.author.role === "Admin" ? "text-teal-600" : ""}`}>{comment.author.name}</h2>
-                                        <span className="text-xs text-muted">{formatTimeAgo(comment.createdAt)}</span>
-                                    </div>
-                                </div>
-                                <div className="text-muted mb-3">
-                                    <MarkdownView content={comment.content} />
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <div className="flex items-center gap-4">
-                                        <button
-                                            onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)}
-                                            className="text-sm text-muted hover:underline inline-flex items-center gap-1 hover:cursor-pointer"
-                                        >
-                                            <MessageSquare className="size-4" /> Reply
-                                        </button>
-                                        <VoteBar votes={comment.votes} itemId={comment.id} userId={user?.id} onVote={handleVote} />
-                                        {comment.replies?.length > 0 && (
-                                            <button
-                                                onClick={() => toggleExpand(comment.id)}
-                                                className="text-sm text-primary hover:underline inline-flex items-center gap-1 hover:cursor-pointer font-medium"
-                                            >
-                                                {expandedComments.includes(comment.id) ? (
-                                                    <>
-                                                        <ChevronUp className="size-4" /> Hide Replies
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <ChevronDown className="size-4" /> Show Replies ({comment.replies.length})
-                                                    </>
-                                                )}
-                                            </button>
-                                        )}
-                                    </div>
-                                    {comment.author.id === user?.id && (
-                                        <button
-                                            onClick={() => handleDelete(comment.id, comment.content)}
-                                            className="text-primary absolute bottom-0 right-0 p-2 px-2 py-1 bg-background m-2 hover:cursor-pointer text-sm"
-                                        >
-                                            Delete
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-
-                            {replyingTo === comment.id && (
-                                <div className="ml-10 flex flex-col gap-2 p-4 bg-foreground rounded-md border border-foreground">
-                                    <MarkdownEditor
-                                        value={replyText}
-                                        onChange={setReplyText}
-                                        placeholder="Write a reply..."
-                                        rows={3}
-                                        minHeight="min-h-[80px]"
-                                    />
-                                    <div className="flex justify-end gap-2 mt-2">
-                                        <button onClick={() => setReplyingTo(null)} className="text-sm text-muted bg-background hover:bg-background/50 px-3 py-2 rounded-md cursor-pointer">
-                                            Cancel
-                                        </button>
-                                        <button
-                                            onClick={() => handleSubmit(replyText, comment.id)}
-                                            disabled={isSubmitting}
-                                            className="bg-background text-primary hover:bg-background/50 px-3 py-2 rounded-md text-sm hover:cursor-pointer"
-                                        >
-                                            Post Reply
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-
-                            {expandedComments.includes(comment.id) && comment.replies?.length > 0 && (
-                                <div className="ml-10 flex flex-col gap-3 border-l-2 border-foreground/30 pl-4 mt-1">
-                                    {comment.replies.map((reply: any) => (
-                                        <div key={reply.id} className="relative flex flex-col p-4 bg-foreground rounded-md">
-                                            <div className="flex items-center mb-2">
-                                                <img src={reply.author.image || "/default-avatar.jpg"} alt="Avatar" width={32} height={32} className="rounded-full" />
-                                                <div className="ml-2">
-                                                    <h4 className={`text-sm font-semibold ${reply.author.role === "Admin" ? "text-teal-600" : ""}`}>{reply.author.name}</h4>
-                                                    <span className="text-xs text-muted">{formatTimeAgo(reply.createdAt)}</span>
-                                                </div>
-                                            </div>
-                                            <div className="text-sm text-muted mb-2">
-                                                <MarkdownView content={reply.content} />
-                                            </div>
-                                            <div className="flex justify-between items-center">
-                                                <VoteBar votes={reply.votes} itemId={reply.id} userId={user?.id} onVote={handleVote} />
-                                                {reply.author.id === user?.id && (
-                                                    <button
-                                                        onClick={() => handleDelete(reply.id, reply.content)}
-                                                        className="text-primary text-xs px-2 py-1 bg-background rounded-md hover:bg-background/60 hover:cursor-pointer"
-                                                    >
-                                                        Delete
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    ))}
-            </div>
-        </>
+      <SocialPostCard
+        variant={nested ? "nested" : "root"}
+        author={comment.author}
+        createdAt={comment.createdAt}
+        content={comment.content}
+        votes={comment.votes}
+        itemId={comment.id}
+        userId={user?.id}
+        onVote={handleVote}
+        onReply={nested ? undefined : () => setReplyingTo(replyingTo === comment.id ? null : comment.id)}
+        replyActive={!nested && replyingTo === comment.id}
+        repliesToggle={
+          !nested && (comment.replies?.length ?? 0) > 0
+            ? {
+                count: comment.replies.length,
+                expanded: expandedComments.includes(comment.id),
+                onClick: () =>
+                  setExpandedComments((prev) =>
+                    prev.includes(comment.id) ? prev.filter((id) => id !== comment.id) : [...prev, comment.id]
+                  ),
+              }
+            : undefined
+        }
+        overflowMenu={
+          <CommentOverflowMenu
+            id={comment.id}
+            authorId={comment.author?.id}
+            userId={user?.id}
+            isAdmin={isAdmin}
+            menuOpenId={menuOpenId}
+            setMenuOpenId={setMenuOpenId}
+            onEdit={() => startEdit(comment)}
+            onDelete={() => void handleDelete(comment.id, comment.content)}
+            nested={nested}
+          />
+        }
+      />
     );
+  };
+
+  return (
+    <>
+      <ContentComposer
+        heading="Leave a Comment"
+        value={text}
+        onChange={setText}
+        placeholder="Write your comment…"
+        rows={5}
+        minHeight="min-h-[100px]"
+        onSubmit={() => handleSubmit(text)}
+        submitLabel="Post comment"
+        submitting={isSubmitting}
+        disabled={isSubmitting}
+        layout="card"
+        className="mb-5"
+      />
+
+      <div className="flex flex-col gap-4">
+        {comments?.map((comment) => {
+          const repliesExpanded = expandedComments.includes(comment.id);
+          const replyCount = comment.replies?.length ?? 0;
+
+          return (
+            <div key={comment.id} className="flex flex-col gap-2">
+              {renderCommentBody(comment)}
+
+              {replyingTo === comment.id && (
+                <ContentComposer
+                  value={replyText}
+                  onChange={setReplyText}
+                  placeholder="Write a reply…"
+                  rows={3}
+                  minHeight="min-h-[80px]"
+                  onSubmit={() => handleSubmit(replyText, comment.id)}
+                  submitLabel="Post reply"
+                  submitting={isSubmitting}
+                  disabled={isSubmitting}
+                  layout="reply"
+                  onCancel={() => {
+                    setReplyingTo(null);
+                    setReplyText("");
+                  }}
+                />
+              )}
+
+              {repliesExpanded && replyCount > 0 && (
+                <div className="space-y-3 pt-1 border-t border-borders">
+                  {comment.replies.map((reply: any) => (
+                    <div key={reply.id}>{renderCommentBody(reply, true)}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
 }

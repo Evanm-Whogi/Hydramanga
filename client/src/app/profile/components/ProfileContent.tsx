@@ -10,7 +10,7 @@ import { useUser } from "@/providers/UserProvider";
 import { updateUser } from "@/lib/auth";
 import { uploadProfilePicture, deleteProfilePicture } from "@/services/userService";
 import { getUserStats } from "@/services/mangaService";
-import type { UserXp } from "@/types/stats";
+import type { UserKarma } from "@/types/stats";
 
 
 const VIEWS: { [key: string]: React.FC<{ user: any; isOwner: boolean }> } = {
@@ -23,7 +23,7 @@ const tabButtonClass = (active: boolean) =>
   `${active ? "bg-foreground text-primary border border-borders" : "bg-foreground text-muted"} hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-base lg:text-lg cursor-pointer transition-colors`;
 
 function LevelCard() {
-  const [xp, setXp] = useState<UserXp | null>(null);
+  const [karma, setKarma] = useState<UserKarma | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,10 +32,10 @@ function LevelCard() {
       try {
         const data = await getUserStats();
         if (!isMounted) return;
-        const xpData = (data as { stats?: { xp?: UserXp } })?.stats?.xp;
-        if (xpData) setXp(xpData);
+        const karmaData = (data as { stats?: { karma?: UserKarma } })?.stats?.karma;
+        if (karmaData) setKarma(karmaData);
       } catch (error) {
-        console.error("Failed to load user XP stats", error);
+        console.error("Failed to load user karma stats", error);
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -56,27 +56,27 @@ function LevelCard() {
     );
   }
 
-  if (!xp) {
+  if (!karma) {
     return (
       <div className="space-y-2">
         <h3 className="text-lg font-semibold text-primary">Level</h3>
-        <p className="text-sm text-muted">Start reading, commenting, and reviewing to earn XP and level up.</p>
+        <p className="text-sm text-muted">Start reading, commenting, and reviewing to earn karma and level up.</p>
       </div>
     );
   }
 
-  const isMaxLevel = xp.xpForNextLevel === 0 || xp.xpToNextLevel === 0;
+  const isMaxLevel = karma.karmaForNextLevel === 0 || karma.karmaToNextLevel === 0;
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-primary">Level {xp.level}</h3>
-          <p className="text-sm text-muted">{xp.levelName}</p>
+          <h3 className="text-lg font-semibold text-primary">Level {karma.level}</h3>
+          <p className="text-sm text-muted">{karma.levelName}</p>
         </div>
         <div className="text-right">
-          <p className="text-xs text-muted uppercase tracking-wide">Total XP</p>
-          <p className="text-base font-semibold text-primary">{xp.totalXp.toLocaleString()}</p>
+          <p className="text-xs text-muted uppercase tracking-wide">Total Karma</p>
+          <p className="text-base font-semibold text-primary">{karma.totalKarma.toLocaleString()}</p>
         </div>
       </div>
 
@@ -84,13 +84,13 @@ function LevelCard() {
         <div className="flex items-center justify-between text-xs text-muted">
           <span>{isMaxLevel ? "Max level reached" : "Level progress"}</span>
           {!isMaxLevel && (
-            <span>{Math.round(xp.progressToNextLevel)}%</span>
+            <span>{Math.round(karma.progressToNextLevel)}%</span>
           )}
         </div>
         <div className="h-2 w-full rounded-full bg-background overflow-hidden">
           <div
             className="h-full rounded-full bg-linear-to-r from-accent to-primary transition-all"
-            style={{ width: `${isMaxLevel ? 100 : xp.progressToNextLevel}%` }}
+            style={{ width: `${isMaxLevel ? 100 : karma.progressToNextLevel}%` }}
           />
         </div>
       </div>
@@ -100,8 +100,8 @@ function LevelCard() {
           <span>You’ve reached the highest level.</span>
         ) : (
           <>
-            <span>XP this level: {xp.currentLevelXp} / {xp.xpForNextLevel}</span>
-            <span>XP to next level: {xp.xpToNextLevel}</span>
+            <span>Karma this level: {karma.currentLevelKarma} / {karma.karmaForNextLevel}</span>
+            <span>Karma to next level: {karma.karmaToNextLevel}</span>
           </>
         )}
       </div>

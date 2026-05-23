@@ -2,6 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import { db, schema } from '@/db/index';
 import { eq, and } from 'drizzle-orm';
 import dotenv from 'dotenv';
+import { karmaService } from '@/services/karmaService';
+import { enrichCommentsWithKarma } from '@/lib/enrichAuthors';
+import { isAdminRole } from '@/lib/authHelpers';
 dotenv.config();
 
 // Fetch top-level comments with replies and votes for a manga series
@@ -31,7 +34,8 @@ export async function fetchComments(req: Request, res: Response, next: NextFunct
             orderBy: (comments, { desc }) => [desc(comments.createdAt)],
         });
 
-        return res.status(200).json({ comments: mangaComments });
+        const enriched = await enrichCommentsWithKarma(mangaComments);
+        return res.status(200).json({ comments: enriched });
     } catch (error) {
         return next(error);
     }
@@ -53,6 +57,14 @@ export async function createComment(req: Request, res: Response, next: NextFunct
             parentId: parentId || null,
             isSpoiler: isSpoiler || false,
         }).returning();
+
+        await karmaService.award({
+            userId,
+            action: 'comment',
+            sourceType: 'comment',
+            sourceId: String(newComment[0].id),
+            idempotencyKey: `comment:${newComment[0].id}`,
+        });
 
         return res.status(201).json({ comment: newComment[0] });
     } catch (error) {
@@ -113,23 +125,57 @@ export async function voteComment(req: Request, res: Response, next: NextFunctio
     }
 }
 
+export async function updateComment(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+    const commentId = parseInt(req.params.commentId, 10);
+    const { content } = req.body;
+    const userId = req.user.id;
+
+    if (!content?.trim()) return res.status(400).json({ message: 'Content is required' });
+
+    try {
+        const comment = await db.query.comments.findFirst({
+            where: (comments, { eq }) => eq(comments.id, commentId),
+        });
+
+        if (!comment) return res.status(404).json({ message: 'Comment not found' });
+        if (comment.userId !== userId) return res.status(403).json({ message: 'You do not have permission to edit this comment' });
+
+        const [updated] = await db
+            .update(schema.comments)
+            .set({ content: content.trim(), updatedAt: new Date() })
+            .where(eq(schema.comments.id, commentId))
+            .returning();
+
+        return res.status(200).json({ comment: updated });
+    } catch (error) {
+        return next(error);
+    }
+}
+
 export async function deleteComment(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const commentId = parseInt(req.params.commentId, 10);
     const userId = req.user.id;
+    const admin = isAdminRole(req.user.role);
 
     try {
-        // Verify that the comment belongs to the user
         const comment = await db.query.comments.findFirst({
-            where: (comments, { eq }) => and(
-                eq(comments.id, commentId),
-                eq(comments.userId, userId)
-            )
+            where: (comments, { eq }) => eq(comments.id, commentId),
         });
 
-        if (!comment) return res.status(403).json({ message: 'You do not have permission to delete this comment' });
+        if (!comment) return res.status(404).json({ message: 'Comment not found' });
+        if (!admin && comment.userId !== userId) {
+            return res.status(403).json({ message: 'You do not have permission to delete this comment' });
+        }
         
-        // Delete the comment
         await db.delete(schema.comments).where(eq(schema.comments.id, commentId));
+
+        await karmaService.reverse({
+            userId: comment.userId,
+            action: 'comment',
+            sourceType: 'comment',
+            sourceId: String(commentId),
+            originalIdempotencyKey: `comment:${commentId}`,
+        });
 
         return res.status(200).json({ message: 'Comment deleted successfully' });
     } catch (error) {

@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { HouseIcon, BookOpenIcon, DicesIcon, LibraryBig, SearchIcon, BellIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, UserPlusIcon, CirclePlusIcon, ShieldIcon } from 'lucide-react';
+import { HouseIcon, BookOpenIcon, DicesIcon, LibraryBig, SearchIcon, BellIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, UserPlusIcon, CirclePlusIcon, ShieldIcon, TrophyIcon, MessagesSquareIcon, MessageCircleIcon } from 'lucide-react';
 import NavItem from './NavItem';
 import { authClient } from '@/lib/auth';
 import { useRouter, usePathname } from 'next/navigation';
@@ -99,6 +99,9 @@ export default function NavbarClient() {
                                     <NavItem href='/discover' icon={<BookOpenIcon className="size-4 inline" />} label='Discover' />
                                     <NavItem href='/collections' icon={<LibraryBig className="size-4 inline" />} label='Collections' />
                                     <NavItem href='/lists' icon={<BookTextIcon className="size-4 inline" />} label='My Lists' />
+                                    <NavItem href='/leaderboard' icon={<TrophyIcon className="size-4 inline" />} label='Leaderboard' />
+                                    <NavItem href='/board' icon={<MessagesSquareIcon className="size-4 inline" />} label='Board' />
+                                    <NavItem href='/chat' icon={<MessageCircleIcon className="size-4 inline" />} label='Chat' />
                                     <NavItem href='/history' icon={<ChartBarDecreasingIcon className="size-4 inline" />} label='History' />
                                 </>
                             ) : (<></>)}
@@ -189,6 +192,15 @@ export default function NavbarClient() {
                                         <Link href="/history" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/history' ? 'text-primary' : 'text-muted'}`}>
                                             <ChartBarDecreasingIcon className="size-4" /> History
                                         </Link>
+                                        <Link href="/leaderboard" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/leaderboard' ? 'text-primary' : 'text-muted'}`}>
+                                            <TrophyIcon className="size-4" /> Leaderboard
+                                        </Link>
+                                        <Link href="/board" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/board' ? 'text-primary' : 'text-muted'}`}>
+                                            <MessagesSquareIcon className="size-4" /> Board
+                                        </Link>
+                                        <Link href="/chat" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/chat' ? 'text-primary' : 'text-muted'}`}>
+                                            <MessageCircleIcon className="size-4" /> Chat
+                                        </Link>
                                         <Link href="/announcements" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/announcements' ? 'text-primary' : 'text-muted'}`}>
                                             <BellIcon className="size-4" /> Announcements
                                         </Link>
@@ -204,6 +216,9 @@ export default function NavbarClient() {
                                         <button onClick={openThemeModal} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 text-left">
                                             <PaletteIcon className="size-4" /> Theme
                                         </button>
+                                        {user?.role === "admin" && (
+                                            <Link href="/admin" className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/admin' ? 'text-primary' : 'text-muted'}"><ShieldIcon className="size-4" /> Admin</Link>
+                                        )}
                                         <button onClick={async () => { setIsOpen(false); await handleSignOut(); }} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm text-red-500 hover:bg-red-500/20">
                                             <LogOutIcon className="size-4" /> Sign Out
                                         </button>

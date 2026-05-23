@@ -2,6 +2,9 @@ import { db, schema } from '@/db/index';
 import { eq, and, sql, asc, inArray, isNotNull, count } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { cacheService } from '@/services/cacheService';
+import { karmaService } from '@/services/karmaService';
+import { readingActivityService } from '@/services/readingActivityService';
+import { READING_TIME_DAY_THRESHOLD_SECONDS } from '@/config/karmaConfig';
 
 // Cache constants
 const CACHE_TTL = {
@@ -24,80 +27,6 @@ interface ProgressUpdate {
 }
 
 class UserProgressService {
-  /**
-   * Calculate the user's level information from total XP.
-   * Levels use cumulative XP thresholds so progression feels increasingly difficult.
-   */
-  private calculateLevel(totalXp: number) {
-    // Cumulative XP required to REACH each level (index = level - 1)
-    const levelThresholds = [
-      0,    // Level 1
-      500,  // Level 2
-      1500, // Level 3
-      3000, // Level 4
-      5000, // Level 5
-      8000, // Level 6
-      12000, // Level 7
-      17000, // Level 8
-      23000, // Level 9
-      30000, // Level 10
-    ];
-
-    const levelNames = [
-      'Rookie Reader',
-      'Page Turner',
-      'Bookworm',
-      'Story Seeker',
-      'Manga Enthusiast',
-      'Panel Prodigy',
-      'Chapter Champion',
-      'Volume Virtuoso',
-      'Library Legend',
-      'Manga Master',
-    ];
-
-    // Default to max level if XP exceeds all thresholds
-    let level = 1;
-    for (let i = 0; i < levelThresholds.length; i++) {
-      if (totalXp >= levelThresholds[i]) {
-        level = i + 1;
-      } else {
-        break;
-      }
-    }
-
-    const maxLevel = levelThresholds.length;
-
-    if (level >= maxLevel && totalXp >= levelThresholds[maxLevel - 1]) {
-      return {
-        level: maxLevel,
-        levelName: levelNames[maxLevel - 1],
-        currentLevelXp: totalXp - levelThresholds[maxLevel - 1],
-        xpForNextLevel: 0,
-        xpToNextLevel: 0,
-        progressToNextLevel: 100,
-      };
-    }
-
-    const currentLevelIndex = level - 1;
-    const nextLevelIndex = currentLevelIndex + 1;
-    const currentLevelXpBase = levelThresholds[currentLevelIndex];
-    const nextLevelXpBase = levelThresholds[nextLevelIndex];
-    const xpForNextLevel = nextLevelXpBase - currentLevelXpBase;
-    const currentLevelXp = totalXp - currentLevelXpBase;
-    const xpToNextLevel = Math.max(nextLevelXpBase - totalXp, 0);
-    const progressToNextLevel =
-      xpForNextLevel > 0 ? Math.min(100, Math.max(0, (currentLevelXp / xpForNextLevel) * 100)) : 0;
-
-    return {
-      level,
-      levelName: levelNames[currentLevelIndex],
-      currentLevelXp,
-      xpForNextLevel,
-      xpToNextLevel,
-      progressToNextLevel,
-    };
-  }
   /**
    * Update user's reading progress for a manga series
    * @param progressData - Progress tracking data
@@ -159,6 +88,14 @@ class UserProgressService {
       if (isChapterComplete) {
         logger.info(`Chapter completed: userId=${userId}, seriesId=${seriesId}, chapterId=${chapterId}`, {
           service: 'userProgressService',
+        });
+        await readingActivityService.recordReadingDay(userId, 'chapter_read');
+        await karmaService.award({
+          userId,
+          action: 'chapter_read',
+          sourceType: 'chapter',
+          sourceId: String(chapterId),
+          idempotencyKey: `chapter_read:${userId}:${chapterId}`,
         });
       }
 
@@ -553,83 +490,9 @@ class UserProgressService {
 
       const seriesSaved = seriesSavedResult[0]?.seriesSaved || 0;
 
-      // Compute longest reading streak (consecutive days with at least one manga view)
-      const readingDays = await db
-        .select({
-          day: sql<Date>`DATE_TRUNC('day', ${schema.mangaViews.viewedAt})::date`,
-        })
-        .from(schema.mangaViews)
-        .where(eq(schema.mangaViews.userId, userId))
-        .groupBy(sql`DATE_TRUNC('day', ${schema.mangaViews.viewedAt})::date`)
-        .orderBy(asc(sql`DATE_TRUNC('day', ${schema.mangaViews.viewedAt})::date`));
-
-      let longestStreak = 0;
-      let currentStreak = 0;
-      let previousDayNumber: number | null = null;
-
-      for (const row of readingDays) {
-        const dayDate = new Date(row.day as unknown as string);
-        const dayNumber = Math.floor(dayDate.getTime() / (1000 * 60 * 60 * 24));
-
-        if (previousDayNumber === null) {
-          currentStreak = 1;
-        } else if (dayNumber === previousDayNumber + 1) {
-          currentStreak += 1;
-        } else if (dayNumber === previousDayNumber) {
-          // Same day (shouldn't happen due to GROUP BY, but keep safe)
-          continue;
-        } else {
-          currentStreak = 1;
-        }
-
-        if (currentStreak > longestStreak) {
-          longestStreak = currentStreak;
-        }
-
-        previousDayNumber = dayNumber;
-      }
-
-      // Count XP-related actions
-      const [commentCountRow] = await db
-        .select({
-          count: sql<number>`COUNT(*)`.as('count'),
-        })
-        .from(schema.comments)
-        .where(eq(schema.comments.userId, userId));
-
-      const [reviewCountRow] = await db
-        .select({
-          count: sql<number>`COUNT(*)`.as('count'),
-        })
-        .from(schema.reviews)
-        .where(eq(schema.reviews.userId, userId));
-
-      const [viewCountRow] = await db
-        .select({
-          count: sql<number>`COUNT(*)`.as('count'),
-        })
-        .from(schema.mangaViews)
-        .where(eq(schema.mangaViews.userId, userId));
-
-      const [listCountRow] = await db
-        .select({
-          count: sql<number>`COUNT(*)`.as('count'),
-        })
-        .from(schema.userSeriesList)
-        .where(eq(schema.userSeriesList.userId, userId));
-
-      const commentCount = Number(commentCountRow?.count || 0);
-      const reviewCount = Number(reviewCountRow?.count || 0);
-      const viewCount = Number(viewCountRow?.count || 0);
-      const listCount = Number(listCountRow?.count || 0);
-
-      const xpFromComments = commentCount * 50;
-      const xpFromReviews = reviewCount * 75;
-      const xpFromViews = viewCount * 5;
-      const xpFromListAdds = listCount * 10;
-
-      const totalXp = xpFromComments + xpFromReviews + xpFromViews + xpFromListAdds;
-      const levelInfo = this.calculateLevel(totalXp);
+      const streakStats = await readingActivityService.getStreakStats(userId);
+      await karmaService.ensureBackfilled();
+      const karma = await karmaService.getKarmaSummary(userId);
 
       // Aggregate reading time per manga (series) and join series table for metadata
       const readingTimes = await db
@@ -657,28 +520,17 @@ class UserProgressService {
         }),
         readingTimes: readingTimes || [],
         seriesSaved,
-        streak: longestStreak,
-        xp: {
-          totalXp,
-          ...levelInfo,
-          breakdown: {
-            comments: {
-              count: commentCount,
-              xp: xpFromComments,
-            },
-            reviews: {
-              count: reviewCount,
-              xp: xpFromReviews,
-            },
-            views: {
-              count: viewCount,
-              xp: xpFromViews,
-            },
-            listAdds: {
-              count: listCount,
-              xp: xpFromListAdds,
-            },
-          },
+        streak: streakStats.longestStreak,
+        currentStreak: streakStats.currentStreak,
+        karma: {
+          totalKarma: karma.totalKarma,
+          level: karma.level,
+          levelName: karma.levelName,
+          currentLevelKarma: karma.currentLevelKarma,
+          karmaForNextLevel: karma.karmaForNextLevel,
+          karmaToNextLevel: karma.karmaToNextLevel,
+          progressToNextLevel: karma.progressToNextLevel,
+          breakdown: karma.breakdown,
         },
       };
 
@@ -756,6 +608,15 @@ class UserProgressService {
           },
         });
 
+      const row = await db.query.userReadingTime.findFirst({
+        where: (t, { and, eq }) =>
+          and(eq(t.userId, userId), eq(t.seriesId, seriesId), eq(t.chapterId, chapterId)),
+      });
+      const totalSeconds = row?.seconds ?? 0;
+      if (totalSeconds >= READING_TIME_DAY_THRESHOLD_SECONDS) {
+        await readingActivityService.recordReadingDay(userId, 'reading_time');
+      }
+
       logger.debug(
         `Recorded reading time: userId=${userId}, seriesId=${seriesId}, chapterId=${chapterId}, seconds=${seconds}`,
         { service: 'userProgressService' }
@@ -805,63 +666,19 @@ class UserProgressService {
     }
   }
 
-  /**
-   * Lightweight XP summaries for multiple users (admin user list).
-   */
-  async getUserXpSummaries(userIds: string[]): Promise<Record<string, { totalXp: number; level: number; levelName: string }>> {
-    if (userIds.length === 0) return {};
+  /** Lightweight karma summaries for multiple users (admin user list, leaderboards). */
+  async getUserKarmaSummaries(userIds: string[]) {
+    await karmaService.ensureBackfilled();
+    return karmaService.getKarmaSummaries(userIds);
+  }
 
-    const toMap = (rows: { userId: string | null; count: number | string | bigint }[]) => {
-      const map = new Map<string, number>();
-      for (const row of rows) {
-        if (row.userId) map.set(row.userId, Number(row.count));
-      }
-      return map;
-    };
-
-    const [commentRows, reviewRows, viewRows, listRows] = await Promise.all([
-      db
-        .select({ userId: schema.comments.userId, count: count() })
-        .from(schema.comments)
-        .where(inArray(schema.comments.userId, userIds))
-        .groupBy(schema.comments.userId),
-      db
-        .select({ userId: schema.reviews.userId, count: count() })
-        .from(schema.reviews)
-        .where(inArray(schema.reviews.userId, userIds))
-        .groupBy(schema.reviews.userId),
-      db
-        .select({ userId: schema.mangaViews.userId, count: count() })
-        .from(schema.mangaViews)
-        .where(and(inArray(schema.mangaViews.userId, userIds), isNotNull(schema.mangaViews.userId)))
-        .groupBy(schema.mangaViews.userId),
-      db
-        .select({ userId: schema.userSeriesList.userId, count: count() })
-        .from(schema.userSeriesList)
-        .where(inArray(schema.userSeriesList.userId, userIds))
-        .groupBy(schema.userSeriesList.userId),
-    ]);
-
-    const comments = toMap(commentRows);
-    const reviews = toMap(reviewRows);
-    const views = toMap(viewRows);
-    const lists = toMap(listRows);
-
+  /** @deprecated Use getUserKarmaSummaries */
+  async getUserXpSummaries(userIds: string[]) {
+    const karmaMap = await this.getUserKarmaSummaries(userIds);
     const result: Record<string, { totalXp: number; level: number; levelName: string }> = {};
-    for (const userId of userIds) {
-      const totalXp =
-        (comments.get(userId) ?? 0) * 50 +
-        (reviews.get(userId) ?? 0) * 75 +
-        (views.get(userId) ?? 0) * 5 +
-        (lists.get(userId) ?? 0) * 10;
-      const levelInfo = this.calculateLevel(totalXp);
-      result[userId] = {
-        totalXp,
-        level: levelInfo.level,
-        levelName: levelInfo.levelName,
-      };
+    for (const [id, k] of Object.entries(karmaMap)) {
+      result[id] = { totalXp: k.totalKarma, level: k.level, levelName: k.levelName };
     }
-
     return result;
   }
 }

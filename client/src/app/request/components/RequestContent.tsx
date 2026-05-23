@@ -185,8 +185,8 @@ function RequestForm() {
   };
 
   return (
-    <div className="flex flex-row gap-8 mx-auto">
-      <div className="bg-foreground p-5 rounded-lg border border-borders w-1/2">
+    <div className="flex flex-col md:flex-row gap-8 mx-auto">
+      <div className="bg-foreground p-5 rounded-lg border border-borders w-full md:w-1/2">
         <p className="text-sm text-muted mb-4">
           Tell us which manga you want imported. Include a source URL if you have one (MAL, AniList, etc.).
           Optionally link an existing page on this site by searching its title.
@@ -286,7 +286,7 @@ function RequestForm() {
         </form>
       </div>
 
-      <div className="bg-foreground p-5 rounded-lg border border-borders w-1/2">
+      <div className="bg-foreground p-5 rounded-lg border border-borders w-full md:w-1/2">
         <h2 className="text-lg font-bold text-primary mb-3">Your requests</h2>
         {loadingRequests ? (
           <p className="text-sm text-muted">Loading…</p>

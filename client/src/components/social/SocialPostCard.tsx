@@ -1,0 +1,115 @@
+"use client";
+
+import type { ReactNode } from "react";
+import Image from "next/image";
+import MarkdownView from "@/components/markdown/MarkdownView";
+import AuthorByline, { type SocialAuthor } from "./AuthorByline";
+import SocialActionBar from "./SocialActionBar";
+
+export default function SocialPostCard({
+  author,
+  createdAt,
+  content,
+  title,
+  titlePrefix,
+  headerRight,
+  variant = "root",
+  votes,
+  itemId,
+  userId,
+  onVote,
+  onReply,
+  replyActive,
+  replyDisabled,
+  repliesToggle,
+  overflowMenu,
+  actionBarClassName,
+  children,
+  className = "",
+}: {
+  author?: SocialAuthor & { image?: string | null };
+  createdAt?: string;
+  content: string;
+  title?: string;
+  titlePrefix?: ReactNode;
+  headerRight?: ReactNode;
+  variant?: "root" | "nested";
+  votes?: { userId: string; type: string }[];
+  itemId: number;
+  userId?: string;
+  onVote?: (id: number, type: "like" | "dislike") => void;
+  onReply?: () => void;
+  replyActive?: boolean;
+  replyDisabled?: boolean;
+  repliesToggle?: { count: number; expanded: boolean; onClick: () => void };
+  overflowMenu?: ReactNode;
+  actionBarClassName?: string;
+  children?: ReactNode;
+  className?: string;
+}) {
+  const isNested = variant === "nested";
+  const shell = isNested
+    ? "bg-background rounded-lg p-3"
+    : "bg-foreground rounded-lg p-4 border border-borders";
+  const avatarSize = isNested ? 32 : 40;
+  const topRight = overflowMenu || headerRight;
+  const showTopRightAbsolute = topRight && !title;
+
+  const body = (
+    <div className="prose prose-invert max-w-none text-primary">
+      <MarkdownView content={content} />
+    </div>
+  );
+
+  return (
+    <div className={`${shell} relative ${className}`}>
+      {showTopRightAbsolute && (
+        <div className={`absolute ${isNested ? "top-3 right-3" : "top-4 right-4"} flex items-center gap-2 z-10`}>
+          {headerRight}
+          {overflowMenu}
+        </div>
+      )}
+
+      {title && (
+        <div className="flex justify-between items-start gap-3 mb-4">
+          <div className="flex items-center gap-1 min-w-0 flex-1">
+            {titlePrefix}
+            <h2 className="text-2xl font-bold text-primary leading-tight">{title}</h2>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {headerRight}
+            {overflowMenu}
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        <Image
+          src={author?.image || "/default-avatar.jpg"}
+          alt=""
+          width={avatarSize}
+          height={avatarSize}
+          className={`rounded-full object-cover shrink-0 ${isNested ? "size-8" : "size-10"}`}
+        />
+        <div className={`min-w-0 flex-1 ${showTopRightAbsolute ? (isNested ? "pr-14" : "pr-24") : ""}`}>
+          <AuthorByline author={author} createdAt={createdAt} />
+          <div className={title ? "mt-1" : "mt-2"}>{body}</div>
+        </div>
+      </div>
+
+      <SocialActionBar
+        className={actionBarClassName ?? "mt-3"}
+        votes={votes}
+        itemId={itemId}
+        userId={userId}
+        onVote={onVote}
+        onReply={onReply}
+        replyActive={replyActive}
+        replyDisabled={replyDisabled}
+        repliesToggle={repliesToggle}
+      />
+
+      {children}
+    </div>
+  );
+}

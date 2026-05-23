@@ -8,7 +8,7 @@ export function requireRole(role: string) : RequireRoleMiddleware {
     return function(req: Request, res: Response, next: NextFunction) {
         const user = req.user as any;
 
-        if (user.role !== role) {
+        if (!user || user.role !== role) {
             return res.status(403).json({ message: `Forbidden: ${role} Role Required` });
         }
 
