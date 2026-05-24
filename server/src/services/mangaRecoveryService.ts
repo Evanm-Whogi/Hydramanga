@@ -11,6 +11,7 @@ import { mangaImportProgress, chapters, series } from '@/db/schema';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { queueService } from '@/services/queueService';
 import { mangaProgressService } from '@/services/mangaProgressService';
+import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import logger from '@/services/loggerService';
 
 class MangaRecoveryService {
@@ -106,6 +107,30 @@ class MangaRecoveryService {
 
     // Case 2: Stuck in scanning state (no total yet, or old stale scan)
     if (status === 'scanning') {
+      // Admin source-select used to insert status=scanning with no job — do not auto-scan on recovery.
+      if (totalChapters === 0 && actualCount === 0 && progress.scraperUrl) {
+        const { scanStatus, isQueued } = await mangaOrchestratorService.getScanStatus(seriesId);
+        if (scanStatus !== 'scanning' && scanStatus !== 'queued' && !isQueued) {
+          await db
+            .update(mangaImportProgress)
+            .set({
+              status: 'completed',
+              totalChapters: 0,
+              downloadedChapters: 0,
+              errorMessage: null,
+              completedAt: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(mangaImportProgress.seriesId, seriesId));
+          await mangaProgressService.cleanupProgress(seriesId);
+          logger.info(
+            `[RECOVERY] Manga ${seriesId} had false scanning state (source only), reset to source_set`,
+            { service: 'mangaRecoveryService' }
+          );
+          return;
+        }
+      }
+
       logger.info(
         `[RECOVERY] Manga ${seriesId} stuck in scanning state, re-queuing scan`,
         { service: 'mangaRecoveryService' }

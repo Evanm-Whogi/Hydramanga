@@ -1,13 +1,14 @@
 "use client"
 import { Star, Eye, BookmarkCheck } from "lucide-react";
 import Link from "next/link";
+import { mangaPath } from "@/lib/paths";
 import { formatToRating } from "@/lib/utils";
 import { memo } from "react";
 
 function MangaCard({ manga }: { manga?: any }) {
     return (
         <>
-        <Link href={`manga/${manga.id}`} className="flex flex-col w-full h-fit group">
+        <Link href={mangaPath(manga.id)} className="flex flex-col w-full h-fit group">
             <div className="relative aspect-2/3 w-full overflow-hidden rounded-2xl">
                 <img src={`${manga?.cover?.raw.url || '/notFound.png'}`} alt={manga.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                 { manga.isNew && (

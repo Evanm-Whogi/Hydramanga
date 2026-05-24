@@ -8,6 +8,7 @@ import { getChatMessages, postChatMessage, updateChatMessage, deleteChatMessage,
 import { useChatSocket, type ChatPresenceUser } from "@/hooks/useChatSocket";
 import { useUser } from "@/providers/UserProvider";
 import { requireTrimmed } from "@/lib/requireContent";
+import { useSubmitRateLimit } from "@/hooks/useSubmitRateLimit";
 import ContentComposer from "@/components/content/ContentComposer";
 import AuthorByline from "@/components/social/AuthorByline";
 import MarkdownView from "@/components/markdown/MarkdownView";
@@ -44,6 +45,7 @@ export default function ChatClient() {
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const isAdmin = isAdminUser(user?.role);
+  const {isRateLimited: isSendRateLimited, applyRateLimitFromError: applySendRateLimit, rateLimitSecondsLeft: sendRateLimitSecondsLeft} = useSubmitRateLimit();
 
   const loadMessages = useCallback(() => {
     getChatMessages(80)
@@ -95,6 +97,7 @@ export default function ChatClient() {
   useChatSocket(onSocketEvent);
 
   const handleSend = async () => {
+    if (isSendRateLimited) return;
     if (!requireTrimmed(text, "Please enter a message.")) return;
     stickToBottomRef.current = true;
     try {
@@ -105,7 +108,9 @@ export default function ChatClient() {
         return [...prev, message];
       });
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to send");
+      if (!applySendRateLimit(err)) {
+        toast.error(err instanceof Error ? err.message : "Failed to send");
+      }
     }
   };
 
@@ -153,7 +158,7 @@ export default function ChatClient() {
   const sortedOnline = [...onlineUsers].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <div className="container mx-auto px-4 xl:px-0 py-8 w-2/3">
+    <div className="container mx-auto px-4 xl:px-0 py-8 w-full md:w-2/3">
       <div className="flex flex-col lg:flex-row gap-4 items-stretch">
         <div className="flex-1 min-w-0 flex flex-col bg-foreground rounded-lg border border-borders h-[70vh] min-h-[420px]">
           <div
@@ -179,6 +184,7 @@ export default function ChatClient() {
                         rows={2}
                         minHeight="min-h-[72px]"
                         maxLength={2000}
+                        onEnterSubmit
                         onSubmit={() => void handleUpdate(msg.id)}
                         submitLabel="Save"
                         layout="embedded"
@@ -239,14 +245,21 @@ export default function ChatClient() {
             <ContentComposer
               value={text}
               onChange={setText}
-              placeholder="Write a message…"
+              placeholder="Write a message… (Enter to send, Shift+Enter for newline)"
               variant="markdown"
               rows={2}
               minHeight="min-h-[72px]"
               maxLength={2000}
+              onEnterSubmit
               onSubmit={handleSend}
               submitLabel="Send"
               layout="embedded"
+              rateLimited={isSendRateLimited}
+              rateLimitHint={
+                isSendRateLimited
+                  ? `Please wait ${sendRateLimitSecondsLeft}s before sending another message.`
+                  : undefined
+              }
             />
           </div>
         </div>

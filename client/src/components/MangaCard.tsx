@@ -1,15 +1,39 @@
 "use client"
 import { Star, Eye, BookmarkCheck } from "lucide-react";
 import Link from "next/link";
+import { mangaPath } from "@/lib/paths";
 import { formatToRating } from "@/lib/utils";
-import { memo } from "react";
+import { memo, type MouseEvent } from "react";
 
-function MangaCard({ manga }: { manga?: any }) {
+function MangaCard({ manga, onNavigate }: { manga?: any; onNavigate?: () => void }) {
+    const shouldHandleNavigate = (e: MouseEvent<HTMLAnchorElement>) =>
+        e.button === 0 &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.shiftKey &&
+        !e.altKey &&
+        !e.defaultPrevented;
+
+    const handlePointerDown = (e: MouseEvent<HTMLAnchorElement>) => {
+        if (shouldHandleNavigate(e)) onNavigate?.();
+    };
+
+    const handleClick = (e: MouseEvent<HTMLAnchorElement>) => {
+        if (!shouldHandleNavigate(e)) return;
+        onNavigate?.();
+    };
+
     return (
         <>
-        <Link href={`manga/${manga.id}`} className="flex flex-col w-full h-fit group">
+        <Link
+            href={mangaPath(manga.id)}
+            prefetch={false}
+            className="flex flex-col w-full h-fit group"
+            onPointerDown={handlePointerDown}
+            onClick={handleClick}
+        >
             <div className="relative aspect-2/3 w-full overflow-hidden rounded-2xl">
-                <img src={`${manga?.cover?.raw.url || '/notFound.png'}`} alt={manga.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                <img src={`${manga?.cover?.raw.url || '/notFound.png'}`} alt={manga.title} draggable={false} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                 { manga.isNew && (
                     <div className="absolute top-2 right-2 z-5" title="Newly Added">
                         <span className="bg-accent/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-bold shadow-lg">

@@ -1,6 +1,7 @@
 "use client";
 import { BookOpen } from "lucide-react";
 import Link from "next/link";
+import { mangaReadPath } from "@/lib/paths";
 import { formatToRating } from "@/lib/utils";
 import { memo } from "react";
 import { formatTimeAgo } from '@/lib/utils';
@@ -10,7 +11,7 @@ function RecentChapterFromListCard({ item }: { item?: { chapter: any; series: an
     const { series, chapter } = item;
 
     return (
-        <Link href={`manga/${series.id}/read/${chapter.id}`} className="flex flex-col w-full h-fit group">
+        <Link href={mangaReadPath(series.id, chapter.id)} className="flex flex-col w-full h-fit group">
             <div className="relative aspect-2/3 w-full overflow-hidden rounded-2xl">
                 <img src={series?.cover?.raw?.url || "/notFound.png"}alt={series.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"/>
                 {item.series.isNew && (

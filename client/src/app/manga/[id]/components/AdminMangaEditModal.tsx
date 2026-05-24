@@ -150,7 +150,7 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
     setSettingSource(scraperId);
     try {
       await adminSetSource(mangaId, scraperId, scraperUrl);
-      toast.success("Source set. Next scan will use this source.");
+      toast.success("Source saved. Click Trigger rescan when you are ready to import chapters.");
       await fetchSource();
       onSourceSet?.();
     } catch (e) {
@@ -163,7 +163,11 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
   const handleRescan = async () => {
     setRescanning(true);
     try {
-      await adminTriggerRescan(mangaId);
+      const res = await adminTriggerRescan(mangaId);
+      if (res.queued === false) {
+        toast.warning(res.message || "Rescan could not be queued. Cancel any stuck scan and try again.");
+        return;
+      }
       toast.success("Rescan queued. New chapters will be checked.");
       await fetchSource();
     } catch (e) {
@@ -330,11 +334,12 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
                 <span className={
                   source?.scanStatus === "scanning" || source?.scanStatus === "downloading" ? "text-amber-500" :
                   source?.scanStatus === "queued" ? "text-blue-400" :
+                  source?.scanStatus === "source_set" ? "text-sky-400" :
                   source?.scanStatus === "failed" ? "text-red-400" :
                   source?.scanStatus === "completed" ? "text-green-400" :
                   "text-muted"
                 }>
-                  {source?.scanStatus ?? "idle"}
+                  {source?.scanStatus === "source_set" ? "source set (ready to scan)" : (source?.scanStatus ?? "idle")}
                 </span>
                 {source?.isQueued && " (queued)"}
               </p>

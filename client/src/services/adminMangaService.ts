@@ -29,7 +29,7 @@ export async function adminAddSecondaryTitle(mangaId: number, payload: { title: 
 }
 
 /** Admin: trigger a rescan (check for new chapters). Use instead of POST /manga/:id/scan for manga that already has chapters. */
-export async function adminTriggerRescan(mangaId: number): Promise<{ success: boolean; seriesId: number; message: string }> {
+export async function adminTriggerRescan(mangaId: number): Promise<{success: boolean; seriesId: number; message: string; queued?: boolean; reason?: string;}> {
   return apiPost(`/admin/manga/${mangaId}/rescan`);
 }
 

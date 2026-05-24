@@ -10,6 +10,7 @@ import ContentComposer from "@/components/content/ContentComposer";
 import SocialPostCard from "@/components/social/SocialPostCard";
 import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
 import { requireTrimmed } from "@/lib/requireContent";
+import { useSubmitRateLimit } from "@/hooks/useSubmitRateLimit";
 import { isAdminUser } from "@/lib/contentMenu";
 
 function CommentOverflowMenu({
@@ -66,9 +67,14 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
   const router = useRouter();
   const { user } = useUser();
   const isAdmin = isAdminUser(user?.role);
+  const {isRateLimited: isCommentRateLimited, applyRateLimitFromError: applyCommentRateLimit, rateLimitSecondsLeft: commentRateLimitSecondsLeft} = useSubmitRateLimit();
+
+  const commentRateHint = isCommentRateLimited
+    ? `Please wait ${commentRateLimitSecondsLeft}s before commenting again.`
+    : undefined;
 
   const handleSubmit = async (content: string, parentId: number | null = null) => {
-    if (isSubmitting) return;
+    if (isSubmitting || isCommentRateLimited) return;
     if (!requireTrimmed(content, parentId ? "Please write a reply." : "Please write a comment.")) return;
     setIsSubmitting(true);
     try {
@@ -80,8 +86,8 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
       if (parentId) setExpandedComments((prev) => [...prev, parentId]);
       toast.success(parentId ? "Reply posted" : "Comment posted");
       router.refresh();
-    } catch {
-      toast.error("Failed to post.");
+    } catch (err: unknown) {
+      if (!applyCommentRateLimit(err)) toast.error("Failed to post.");
     } finally {
       setIsSubmitting(false);
     }
@@ -196,6 +202,8 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
         submitLabel="Post comment"
         submitting={isSubmitting}
         disabled={isSubmitting}
+        rateLimited={isCommentRateLimited}
+        rateLimitHint={commentRateHint}
         layout="card"
         className="mb-5"
       />
@@ -220,6 +228,8 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
                   submitLabel="Post reply"
                   submitting={isSubmitting}
                   disabled={isSubmitting}
+                  rateLimited={isCommentRateLimited}
+                  rateLimitHint={commentRateHint}
                   layout="reply"
                   onCancel={() => {
                     setReplyingTo(null);

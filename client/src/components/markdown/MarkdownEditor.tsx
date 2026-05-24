@@ -102,6 +102,8 @@ export default function MarkdownEditor({
   showPreviewToggle = false,
   minHeight = "min-h-[100px]",
   maxLength,
+  onEnterSubmit = false,
+  onSubmit,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -110,6 +112,9 @@ export default function MarkdownEditor({
   showPreviewToggle?: boolean;
   minHeight?: string;
   maxLength?: number;
+  /** Enter submits; Shift+Enter inserts a newline. */
+  onEnterSubmit?: boolean;
+  onSubmit?: () => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [preview, setPreview] = useState(false);
@@ -200,6 +205,12 @@ export default function MarkdownEditor({
           ref={textareaRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (onEnterSubmit && e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              onSubmit?.();
+            }
+          }}
           placeholder={placeholder}
           rows={rows}
           maxLength={maxLength}

@@ -10,17 +10,23 @@ import ContentComposer from "@/components/content/ContentComposer";
 import SocialPostCard from "@/components/social/SocialPostCard";
 import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
 import { requireTrimmed } from "@/lib/requireContent";
+import { useSubmitRateLimit } from "@/hooks/useSubmitRateLimit";
 import { isAdminUser } from "@/lib/contentMenu";
 
-function RatingPicker({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+function RatingPicker({value, onChange, disabled = false}: {
+    value: number;
+    onChange: (v: number) => void;
+    disabled?: boolean;
+}) {
     return (
         <div className="flex items-center gap-1 flex-wrap">
             {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
                 <button
                     key={n}
                     type="button"
+                    disabled={disabled}
                     onClick={() => onChange(n)}
-                    className={`w-8 h-8 rounded-md text-sm font-bold transition-colors hover:cursor-pointer ${value === n ? "bg-primary text-black" : "bg-background text-muted hover:bg-foreground/30 hover:text-white"}`}
+                    className={`w-8 h-8 rounded-md text-sm font-bold transition-colors hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${value === n ? "bg-primary text-black" : "bg-background text-muted hover:bg-foreground/30 hover:text-white"}`}
                 >
                     {n}
                 </button>
@@ -29,13 +35,17 @@ function RatingPicker({ value, onChange }: { value: number; onChange: (v: number
     );
 }
 
-function RatingField({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+function RatingField({value, onChange, disabled = false}: {
+    value: number;
+    onChange: (v: number) => void;
+    disabled?: boolean;
+}) {
     return (
         <div>
             <p className="text-sm text-muted mb-2">
                 Your Rating <span className="text-red-400">*</span>
             </p>
-            <RatingPicker value={value} onChange={onChange} />
+            <RatingPicker value={value} onChange={onChange} disabled={disabled} />
         </div>
     );
 }
@@ -84,8 +94,13 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
 
     const myReview = reviews.find((r) => r.author?.id === user?.id);
     const isAdmin = isAdminUser(user?.role);
+    const {isRateLimited: isReviewRateLimited, applyRateLimitFromError: applyReviewRateLimit, rateLimitSecondsLeft: reviewRateLimitSecondsLeft} = useSubmitRateLimit();
+    const reviewRateHint = isReviewRateLimited
+        ? `Please wait ${reviewRateLimitSecondsLeft}s before submitting another review.`
+        : undefined;
 
     const handleSubmit = async () => {
+        if (isReviewRateLimited) return;
         if (!requireTrimmed(text, "Please write your review.")) return;
         if (rating === 0) {
             toast.warning("Please select a rating (1–10).");
@@ -98,8 +113,10 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
             setRating(0);
             toast.success("Review posted");
             await loadReviews();
-        } catch (e: any) {
-            toast.error(e?.message ?? "Failed to post review.");
+        } catch (e: unknown) {
+            if (!applyReviewRateLimit(e)) {
+                toast.error(e instanceof Error ? e.message : "Failed to post review.");
+            }
         } finally {
             setSubmitting(false);
         }
@@ -179,7 +196,7 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
             {user && !myReview && (
                 <ContentComposer
                     heading="Write a Review"
-                    top={<RatingField value={rating} onChange={setRating} />}
+                    top={<RatingField value={rating} onChange={setRating} disabled={isReviewRateLimited} />}
                     value={text}
                     onChange={setText}
                     placeholder="Share your thoughts…"
@@ -189,6 +206,8 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
                     submitLabel="Post review"
                     submitting={submitting}
                     disabled={submitting}
+                    rateLimited={isReviewRateLimited}
+                    rateLimitHint={reviewRateHint}
                     layout="card"
                 />
             )}

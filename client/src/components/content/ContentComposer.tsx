@@ -92,6 +92,10 @@ type ContentComposerProps = {
 
   asForm?: boolean;
   formOnSubmit?: (e: FormEvent) => void;
+
+  /** Shown when rate-limited (submit and Enter are blocked). */
+  rateLimited?: boolean;
+  rateLimitHint?: string;
 };
 
 function shellClass(layout: ContentComposerProps["layout"], className: string) {
@@ -135,10 +139,17 @@ export default function ContentComposer({
   className = "",
   asForm = false,
   formOnSubmit,
+  rateLimited = false,
+  rateLimitHint,
 }: ContentComposerProps) {
+  const isSubmitBlocked = disabled || submitting || rateLimited;
+
   const handleSubmit = () => {
+    if (isSubmitBlocked) return;
     void onSubmit();
   };
+
+  const enterSubmitEnabled = onEnterSubmit && !isSubmitBlocked;
 
   const isBar = layout === "bar";
 
@@ -152,6 +163,8 @@ export default function ContentComposer({
         minHeight={minHeight}
         showPreviewToggle={showPreviewToggle}
         maxLength={maxLength}
+        onEnterSubmit={enterSubmitEnabled}
+        onSubmit={enterSubmitEnabled ? handleSubmit : undefined}
       />
     ) : (
       <input
@@ -159,7 +172,7 @@ export default function ContentComposer({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
-          if (onEnterSubmit && e.key === "Enter" && !e.shiftKey) {
+          if (enterSubmitEnabled && e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             handleSubmit();
           }
@@ -175,15 +188,18 @@ export default function ContentComposer({
       <ComposerPrimaryButton
         type={asForm ? "submit" : "button"}
         onClick={asForm ? undefined : handleSubmit}
-        disabled={disabled || submitting}
+        disabled={isSubmitBlocked}
       >
         {submitIcon}
-        {submitting ? "Posting…" : submitLabel}
+        {submitting ? "Posting…" : rateLimited ? "Rate limited" : submitLabel}
       </ComposerPrimaryButton>
       {onCancel && (
         <ComposerSecondaryButton type="button" onClick={onCancel}>
           {cancelLabel}
         </ComposerSecondaryButton>
+      )}
+      {rateLimited && rateLimitHint && (
+        <p className="text-xs text-amber-400/90 w-full">{rateLimitHint}</p>
       )}
     </div>
   );
@@ -221,6 +237,7 @@ export default function ContentComposer({
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (isSubmitBlocked) return;
           if (formOnSubmit) formOnSubmit(e);
           else handleSubmit();
         }}

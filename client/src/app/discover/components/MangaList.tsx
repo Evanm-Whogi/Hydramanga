@@ -15,9 +15,10 @@ interface MangaListProps {
     status: string;
     years: string[];
   };
+  onMangaNavigate?: () => void;
 }
 
-export default function MangaList({ filters }: MangaListProps) {
+export default function MangaList({ filters, onMangaNavigate }: MangaListProps) {
     const { items, loading, hasMore, meta, fetchData } = useInfiniteScroll(filters);
     const observer = useRef<IntersectionObserver | null>(null);
     const [showButton, setShowButton] = useState(false);
@@ -66,9 +67,9 @@ export default function MangaList({ filters }: MangaListProps) {
                         return (
                             <div key={item.id} ref={isLastElement ? lastElementRef : null}>
                                 {displayMode === 'grid' ? (
-                                    <MangaCard manga={item} />
+                                    <MangaCard manga={item} onNavigate={onMangaNavigate} />
                                 ) : (
-                                    <MangaCardList manga={item} />
+                                    <MangaCardList manga={item} onNavigate={onMangaNavigate} />
                                 )}
                             </div>
                         )

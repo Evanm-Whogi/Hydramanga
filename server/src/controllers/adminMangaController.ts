@@ -157,8 +157,17 @@ export async function adminTriggerRescan(req: Request, res: Response, next: Next
         const id = parseInt(req.params.id, 10);
         if (isNaN(id) || id <= 0) return res.status(400).json({ error: 'Invalid manga ID' });
         
-        await mangaOrchestratorService.enqueueSingleRescan(id);
-        return res.json({ success: true, seriesId: id, message: 'Rescan queued' });
+        const result = await mangaOrchestratorService.enqueueSingleRescan(id);
+        if (!result.queued) {
+            const message =
+                result.reason === 'already_active'
+                    ? 'Scan already in progress'
+                    : result.reason === 'series_not_found'
+                      ? 'Manga not found'
+                      : 'Rescan could not be queued';
+            return res.status(409).json({ success: false, seriesId: id, queued: false, message, reason: result.reason });
+        }
+        return res.json({ success: true, seriesId: id, queued: true, message: 'Rescan queued' });
     } catch (error) {
         logger.error(`Admin trigger rescan failed: ${(error as Error).message}`, { service: 'adminMangaController' });
         return next(error);

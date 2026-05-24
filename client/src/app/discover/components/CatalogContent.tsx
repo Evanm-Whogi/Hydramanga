@@ -2,8 +2,9 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { useSearchParams, useRouter, usePathname } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { DEFAULT_FILTERS } from '@/constants/filters';
+import {blockDiscoverUrlSync, replaceDiscoverUrl, unblockDiscoverUrlSync} from '@/lib/discoverUrlSync';
 import PageHeader from '@/components/PageHeader';
 import CatalogFilters from './CatalogFilters';
 import MangaList from './MangaList';
@@ -37,10 +38,20 @@ function buildSearchParams(f: Filters): URLSearchParams {
   return params;
 }
 
-export default function CatalogContent({ initialFilters }: CatalogContentProps) {
+function filtersFromSearchParams(searchParams: URLSearchParams): Filters {
+  return {
+    search: searchParams.get('search') || DEFAULT_FILTERS.search,
+    genres: searchParams.get('genres')?.split(',').filter(Boolean) || DEFAULT_FILTERS.genres,
+    tags: searchParams.get('tags')?.split(',').filter(Boolean) || DEFAULT_FILTERS.tags,
+    type: searchParams.get('type') || '',
+    status: searchParams.get('status') || '',
+    years: searchParams.get('years')?.split(',').filter(Boolean) || DEFAULT_FILTERS.years,
+    sort: searchParams.get('sort') || DEFAULT_FILTERS.sort,
+  };
+}
+
+export default function CatalogContent({ initialFilters: _initialFilters }: CatalogContentProps) {
   const searchParams = useSearchParams()!;
-  const router = useRouter();
-  const pathname = usePathname();
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const pendingFiltersRef = useRef<Partial<Filters>>({});
   const filtersRef = useRef<Filters>({
@@ -53,43 +64,58 @@ export default function CatalogContent({ initialFilters }: CatalogContentProps) 
     sort: DEFAULT_FILTERS.sort,
   });
 
-  const [filters, setFilters] = useState<Filters>(() => ({
-    search: searchParams.get('search') || DEFAULT_FILTERS.search,
-    genres: searchParams.get('genres')?.split(',').filter(Boolean) || DEFAULT_FILTERS.genres,
-    tags: searchParams.get('tags')?.split(',').filter(Boolean) || DEFAULT_FILTERS.tags,
-    type: searchParams.get('type') || '',
-    status: searchParams.get('status') || '',
-    years: searchParams.get('years')?.split(',').filter(Boolean) || DEFAULT_FILTERS.years,
-    sort: searchParams.get('sort') || DEFAULT_FILTERS.sort,
-  }));
+  const [filters, setFilters] = useState<Filters>(() =>
+    filtersFromSearchParams(searchParams)
+  );
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [hideNsfw, setHideNsfw] = useState<boolean | null>(null);
 
   filtersRef.current = filters;
 
+  const clearUrlSyncTimer = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+  }, []);
+
+  const beginMangaNavigation = useCallback(() => {
+    blockDiscoverUrlSync();
+    clearUrlSyncTimer();
+    pendingFiltersRef.current = {};
+  }, [clearUrlSyncTimer]);
+
   const updateFilters = useCallback((newFilters: Partial<Filters>) => {
     pendingFiltersRef.current = { ...pendingFiltersRef.current, ...newFilters };
 
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
+    clearUrlSyncTimer();
 
     debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
       const next = { ...pendingFiltersRef.current };
       pendingFiltersRef.current = {};
       const merged = { ...filtersRef.current, ...next };
       setFilters(merged);
       const qs = buildSearchParams(merged).toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      replaceDiscoverUrl(qs ? `/discover?${qs}` : '/discover');
     }, 300);
-  }, [pathname, router]);
+  }, [clearUrlSyncTimer]);
 
   useEffect(() => {
+    unblockDiscoverUrlSync();
     return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
+      clearUrlSyncTimer();
+      unblockDiscoverUrlSync();
     };
+  }, [clearUrlSyncTimer]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      if (window.location.pathname !== '/discover') return;
+      setFilters(filtersFromSearchParams(new URLSearchParams(window.location.search)));
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
   useEffect(() => {
@@ -135,7 +161,7 @@ export default function CatalogContent({ initialFilters }: CatalogContentProps) 
         ) : undefined}
       />
       <CatalogFilters filters={filters} onFilterChange={updateFilters} params={filters} availableTags={availableTags} />
-      <MangaList filters={filters} />
+      <MangaList filters={filters} onMangaNavigate={beginMangaNavigation} />
     </>
   );
 }

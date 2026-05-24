@@ -9,6 +9,7 @@ import ContentComposer from "@/components/content/ContentComposer";
 import SocialPostCard from "@/components/social/SocialPostCard";
 import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
 import { requireTrimmed } from "@/lib/requireContent";
+import { useSubmitRateLimit } from "@/hooks/useSubmitRateLimit";
 import { boardPostAdminItems, isAdminUser } from "@/lib/contentMenu";
 
 export default function BoardClient() {
@@ -22,6 +23,8 @@ export default function BoardClient() {
   const [refreshVersions, setRefreshVersions] = useState<Record<number, number>>({});
 
   const isAdmin = isAdminUser(user?.role);
+  const {isRateLimited: isPostRateLimited, applyRateLimitFromError: applyPostRateLimit, rateLimitSecondsLeft: postRateLimitSecondsLeft} = useSubmitRateLimit();
+  const {isRateLimited: isReplyRateLimited, applyRateLimitFromError: applyReplyRateLimit, rateLimitSecondsLeft: replyRateLimitSecondsLeft} = useSubmitRateLimit();
 
   const bumpPostRefresh = (postId: number) => {
     setRefreshVersions((prev) => ({ ...prev, [postId]: (prev[postId] ?? 0) + 1 }));
@@ -39,6 +42,7 @@ export default function BoardClient() {
   }, []);
 
   const handleCreate = async () => {
+    if (isPostRateLimited) return;
     if (!requireTrimmed(title, "Please enter a title.")) return;
     if (!requireTrimmed(content, "Please write your post.")) return;
     try {
@@ -47,12 +51,13 @@ export default function BoardClient() {
       setContent("");
       loadPosts();
       toast.success("Post created");
-    } catch {
-      toast.error("Failed to create post");
+    } catch (err: unknown) {
+      if (!applyPostRateLimit(err)) toast.error("Failed to create post");
     }
   };
 
   const handleReply = async (postId: number) => {
+    if (isReplyRateLimited) return;
     const replyText = replyTextByPostId[postId] ?? "";
     if (!requireTrimmed(replyText, "Please write a reply.")) return;
     try {
@@ -60,8 +65,8 @@ export default function BoardClient() {
       setReplyTextByPostId((prev) => ({ ...prev, [postId]: "" }));
       bumpPostRefresh(postId);
       toast.success("Reply posted");
-    } catch {
-      toast.error("Failed to reply");
+    } catch (err: unknown) {
+      if (!applyReplyRateLimit(err)) toast.error("Failed to reply");
     }
   };
 
@@ -89,6 +94,12 @@ export default function BoardClient() {
         onSubmit={handleCreate}
         submitLabel="Post"
         layout="card"
+        rateLimited={isPostRateLimited}
+        rateLimitHint={
+          isPostRateLimited
+            ? `Please wait ${postRateLimitSecondsLeft}s before posting again.`
+            : undefined
+        }
       />
 
       <div className="space-y-4">
@@ -124,6 +135,8 @@ export default function BoardClient() {
               setReplyText={(value) =>
                 setReplyTextByPostId((prev) => ({ ...prev, [post.id]: value }))
               }
+              isReplyRateLimited={isReplyRateLimited}
+              replyRateLimitSecondsLeft={replyRateLimitSecondsLeft}
               onPostUpdated={() => {
                 loadPosts();
                 bumpPostRefresh(post.id);
@@ -136,7 +149,7 @@ export default function BoardClient() {
   );
 }
 
-function BoardPostCard({post, refreshVersion, userId, isAdmin, menuOpenKey, setMenuOpenKey, onAdmin, onVotePost, onVoteReply, onReply, replyText, setReplyText, onPostUpdated}: {post: any, refreshVersion: number, userId?: string, isAdmin: boolean, menuOpenKey: string | null, setMenuOpenKey: (key: string | null) => void, onAdmin: (postId: number, updates: Record<string, boolean>) => Promise<void>, onVotePost: (postId: number, type: "like" | "dislike") => Promise<void>, onVoteReply: (postId: number, replyId: number, type: "like" | "dislike") => Promise<void>, onReply: (postId: number) => Promise<void>, replyText: string, setReplyText: (value: string) => void, onPostUpdated: () => void}) {
+function BoardPostCard({post, refreshVersion, userId, isAdmin, menuOpenKey, setMenuOpenKey, onAdmin, onVotePost, onVoteReply, onReply, replyText, setReplyText, onPostUpdated, isReplyRateLimited, replyRateLimitSecondsLeft}: {post: any, refreshVersion: number, userId?: string, isAdmin: boolean, menuOpenKey: string | null, setMenuOpenKey: (key: string | null) => void, onAdmin: (postId: number, updates: Record<string, boolean>) => Promise<void>, onVotePost: (postId: number, type: "like" | "dislike") => Promise<void>, onVoteReply: (postId: number, replyId: number, type: "like" | "dislike") => Promise<void>, onReply: (postId: number) => Promise<void>, replyText: string, setReplyText: (value: string) => void, onPostUpdated: () => void, isReplyRateLimited: boolean, replyRateLimitSecondsLeft: number}) {
   const [detail, setDetail] = useState<{ post: any; replies: any[] } | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(true);
   const [replyOpen, setReplyOpen] = useState(false);
@@ -323,6 +336,12 @@ function BoardPostCard({post, refreshVersion, userId, isAdmin, menuOpenKey, setM
           onSubmit={handleSubmitReply}
           submitLabel="Post reply"
           layout="reply"
+          rateLimited={isReplyRateLimited}
+          rateLimitHint={
+            isReplyRateLimited
+              ? `Please wait ${replyRateLimitSecondsLeft}s before replying again.`
+              : undefined
+          }
           onCancel={() => {
             setReplyOpen(false);
             setReplyText("");

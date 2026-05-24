@@ -1,11 +1,24 @@
 import { SearchIcon } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export default function SearchBar({ onChange, size, initialValue }: { onChange: (val: string) => void, size?: string, initialValue?: string }) {
     const [query, setQuery] = useState(initialValue || '');
+    const lastEmittedRef = useRef(initialValue || '');
+    const skipMountEmitRef = useRef(true);
 
     useEffect(() => {
-        const timer = setTimeout(() => { onChange(query) }, 500);
+        // Avoid firing onChange on mount — that schedules router.replace on discover and can cancel navigation.
+        if (skipMountEmitRef.current) {
+            skipMountEmitRef.current = false;
+            lastEmittedRef.current = query;
+            return;
+        }
+        if (query === lastEmittedRef.current) return;
+
+        const timer = setTimeout(() => {
+            lastEmittedRef.current = query;
+            onChange(query);
+        }, 500);
         return () => clearTimeout(timer);
     }, [query, onChange]);
 

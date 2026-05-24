@@ -5,7 +5,7 @@ import logger from '@/services/loggerService';
 import { cacheService } from '@/services/cacheService';
 import { queueService } from '@/services/queueService';
 import { discordService } from '@/services/discordService';
-import { mangaProgressService } from '@/services/mangaProgressService';
+import { mangaProgressService, isSourceOnlyProgress } from '@/services/mangaProgressService';
 
 // Constants
 const TRENDING_CACHE_KEY = 'trending:top100';
@@ -117,7 +117,7 @@ class MangaOrchestratorService {
   }
 
   // Enqueue a single rescan for one series (admin or manual). Always enqueues a chapter-scan job to check for new chapters.
-  async enqueueSingleRescan(seriesId: number) {
+  async enqueueSingleRescan(seriesId: number): Promise<{ queued: boolean; reason?: string }> {
     const [manga] = await db
       .select({ title: series.title, romanizedTitle: series.romanizedTitle, cover: series.cover })
       .from(series)
@@ -125,12 +125,12 @@ class MangaOrchestratorService {
       .limit(1);
     if (!manga?.title) {
       logger.warn(`enqueueSingleRescan: series ${seriesId} not found`, { service: 'mangaOrchestratorService' });
-      return;
+      return { queued: false, reason: 'series_not_found' };
     }
     const progress = await mangaProgressService.getProgress(seriesId);
     if (progress && (progress.status === 'scanning' || progress.status === 'downloading')) {
       logger.info(`Series ${seriesId} is already ${progress.status}, skipping rescan`, { service: 'mangaOrchestratorService' });
-      return;
+      return { queued: false, reason: 'already_active' };
     }
     const coverUrl = manga.cover ? (manga.cover as any)?.x350?.x1 || (manga.cover as any)?.x250?.x1 || (manga.cover as any)?.raw?.url : undefined;
     await queueService.addJob('mangaChapterImportQueue', `Rescan ${manga.title}`, {
@@ -141,6 +141,7 @@ class MangaOrchestratorService {
       coverUrl,
     }, { jobId: `rescan-${seriesId}`, attempts: 2 });
     logger.info(`Queued rescan for series ${seriesId} (${manga.title})`, { service: 'mangaOrchestratorService' });
+    return { queued: true };
   }
 
   // Get scan status: progress status + whether a job is queued
@@ -148,6 +149,9 @@ class MangaOrchestratorService {
     const progress = await mangaProgressService.getProgress(seriesId);
     if (progress && (progress.status === 'scanning' || progress.status === 'downloading')) {
       return { scanStatus: progress.status, isQueued: false };
+    }
+    if (progress && isSourceOnlyProgress(progress)) {
+      return { scanStatus: 'source_set', isQueued: false };
     }
     if (progress && (progress.status === 'completed' || progress.status === 'failed')) {
       return { scanStatus: progress.status, isQueued: false };

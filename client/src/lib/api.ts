@@ -1,5 +1,6 @@
 import axios, { InternalAxiosRequestConfig } from 'axios';
 import { getServerApiBase, getClientApiBase } from './env';
+import { RateLimitError, parseRetryAfterMs } from './rateLimit';
 
 let serverInstance: ReturnType<typeof axios.create> | null = null;
 
@@ -85,6 +86,12 @@ const clientFetch = async (url: string, options: RequestInit & { timeoutMs?: num
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
+        if (res.status === 429) {
+            throw new RateLimitError(
+                data?.message || 'Too many requests. Please wait before trying again.',
+                parseRetryAfterMs(res, data)
+            );
+        }
         throw new Error(data?.message || 'Request failed');
     }
     return data;

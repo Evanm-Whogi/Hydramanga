@@ -10,6 +10,16 @@ const PROGRESS_TTL = 3600; // 1 hour in seconds
 
 export type ProgressStatus = 'scanning' | 'downloading' | 'completed' | 'failed';
 
+/** Progress row created when admin saves a source but has not started a scan yet. */
+export function isSourceOnlyProgress(progress: {status: string; totalChapters: number; downloadedChapters: number; scraperId?: string | null; scraperUrl?: string | null;}): boolean {
+  return (
+    progress.status === 'completed' &&
+    progress.totalChapters === 0 &&
+    progress.downloadedChapters === 0 &&
+    !!(progress.scraperId || progress.scraperUrl)
+  );
+}
+
 export interface MangaProgress {
   seriesId: number;
   totalChapters: number;
@@ -625,24 +635,33 @@ class MangaProgressService {
         .limit(1);
 
       if (existing) {
+        const fixFalseScanning =
+          existing.status === 'scanning' &&
+          existing.totalChapters === 0 &&
+          existing.downloadedChapters === 0;
         await db
           .update(mangaImportProgress)
           .set({
             scraperId,
             scraperUrl,
             updatedAt: new Date(),
+            ...(fixFalseScanning
+              ? { status: 'completed' as const, completedAt: null, errorMessage: null }
+              : {}),
           })
           .where(eq(mangaImportProgress.seriesId, seriesId));
       } else {
+        // Source saved only — do not mark as scanning (that blocks rescan and triggers recovery).
         await db.insert(mangaImportProgress).values({
           seriesId,
           totalChapters: 0,
           downloadedChapters: 0,
-          status: 'scanning',
+          status: 'completed',
           scraperId,
           scraperUrl,
           startedAt: new Date(),
           updatedAt: new Date(),
+          completedAt: null,
         });
       }
 
