@@ -8,7 +8,7 @@ type Session = typeof authClient.$Infer.Session;
 
 interface UserContextType {
   user: Session["user"] | null;
-  session: Session | null;
+  session: Session["session"] | null;
   isPending: boolean;
 }
 
@@ -40,10 +40,10 @@ export function UserProvider({
 
   return (
     <UserContext.Provider 
-      value={{ 
-        user: currentSession?.user ?? null, 
-        session: currentSession ?? null,
-        isPending: isPending && !initialSession, 
+      value={{
+        user: currentSession?.user ?? null,
+        session: currentSession?.session ?? null,
+        isPending: isPending && !initialSession,
       }}
     >
       {children}

@@ -10,6 +10,7 @@ export async function listAdminUsers(req: Request, res: Response, next: NextFunc
     const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.floor(rawLimit), 1), 100) : 20;
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
     const role = typeof req.query.role === 'string' ? req.query.role : undefined;
+    const status = req.query.status === 'active' || req.query.status === 'banned' ? req.query.status : 'all';
     const sort =
       req.query.sort === 'name' || req.query.sort === 'email' || req.query.sort === 'createdAt'
         ? req.query.sort
@@ -21,6 +22,7 @@ export async function listAdminUsers(req: Request, res: Response, next: NextFunc
       limit,
       search,
       role: role === 'all' ? undefined : role,
+      status,
       sort,
       order,
     });

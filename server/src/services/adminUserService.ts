@@ -1,6 +1,7 @@
 import { db, schema } from '@/db/index';
-import { eq, or, ilike, desc, asc, count, and, ne, SQL } from 'drizzle-orm';
+import { eq, or, ilike, desc, asc, count, and, ne, SQL, gt, lt, isNull, isNotNull } from 'drizzle-orm';
 import { userProgressService } from '@/services/userProgressService';
+import { isUserBanned } from '@/lib/banHelpers';
 
 const VALID_ROLES = ['user', 'admin'] as const;
 type UserRole = (typeof VALID_ROLES)[number];
@@ -10,6 +11,7 @@ export interface AdminUserListParams {
   limit: number;
   search?: string;
   role?: string;
+  status?: 'all' | 'active' | 'banned';
   sort?: 'createdAt' | 'name' | 'email';
   order?: 'asc' | 'desc';
 }
@@ -22,6 +24,10 @@ export interface AdminUserRow {
   image: string | null;
   bio: string | null;
   emailVerified: boolean;
+  banned: boolean;
+  banReason: string | null;
+  banExpires: Date | null;
+  isBanned: boolean;
   createdAt: Date;
   xp: {
     totalXp: number;
@@ -30,9 +36,50 @@ export interface AdminUserRow {
   };
 }
 
+const userSelectFields = {
+  id: schema.user.id,
+  name: schema.user.name,
+  email: schema.user.email,
+  role: schema.user.role,
+  image: schema.user.image,
+  bio: schema.user.bio,
+  emailVerified: schema.user.emailVerified,
+  banned: schema.user.banned,
+  banReason: schema.user.banReason,
+  banExpires: schema.user.banExpires,
+  createdAt: schema.user.createdAt,
+};
+
+function toAdminUserRow(
+  row: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    image: string | null;
+    bio: string | null;
+    emailVerified: boolean;
+    banned: boolean | null;
+    banReason: string | null;
+    banExpires: Date | null;
+    createdAt: Date;
+  },
+  xp: AdminUserRow['xp']
+): AdminUserRow {
+  const banned = Boolean(row.banned);
+  return {
+    ...row,
+    banned,
+    banReason: row.banReason,
+    banExpires: row.banExpires,
+    isBanned: isUserBanned({ banned, banExpires: row.banExpires }),
+    xp,
+  };
+}
+
 class AdminUserService {
   async listUsers(params: AdminUserListParams) {
-    const { page, limit, search, role, sort = 'createdAt', order = 'desc' } = params;
+    const { page, limit, search, role, status = 'all', sort = 'createdAt', order = 'desc' } = params;
     const offset = (page - 1) * limit;
 
     const filters: SQL[] = [];
@@ -42,6 +89,21 @@ class AdminUserService {
     }
     if (role && VALID_ROLES.includes(role as UserRole)) {
       filters.push(eq(schema.user.role, role));
+    }
+    if (status === 'banned') {
+      filters.push(eq(schema.user.banned, true));
+      filters.push(or(isNull(schema.user.banExpires), gt(schema.user.banExpires, new Date()))!);
+    } else if (status === 'active') {
+      filters.push(
+        or(
+          eq(schema.user.banned, false),
+          and(
+            eq(schema.user.banned, true),
+            isNotNull(schema.user.banExpires),
+            lt(schema.user.banExpires, new Date())
+          )
+        )!
+      );
     }
 
     const whereClause = filters.length > 0 ? and(...filters) : undefined;
@@ -56,16 +118,7 @@ class AdminUserService {
 
     const [rows, totalResult] = await Promise.all([
       db
-        .select({
-          id: schema.user.id,
-          name: schema.user.name,
-          email: schema.user.email,
-          role: schema.user.role,
-          image: schema.user.image,
-          bio: schema.user.bio,
-          emailVerified: schema.user.emailVerified,
-          createdAt: schema.user.createdAt,
-        })
+        .select(userSelectFields)
         .from(schema.user)
         .where(whereClause)
         .orderBy(orderBy)
@@ -77,10 +130,9 @@ class AdminUserService {
     const total = Number(totalResult[0]?.total ?? 0);
     const xpMap = await userProgressService.getUserXpSummaries(rows.map((r) => r.id));
 
-    const users: AdminUserRow[] = rows.map((row) => ({
-      ...row,
-      xp: xpMap[row.id] ?? { totalXp: 0, level: 1, levelName: 'Rookie Reader' },
-    }));
+    const users: AdminUserRow[] = rows.map((row) =>
+      toAdminUserRow(row, xpMap[row.id] ?? { totalXp: 0, level: 1, levelName: 'Rookie Reader' })
+    );
 
     return {
       users,
@@ -96,14 +148,7 @@ class AdminUserService {
   async getUserById(userId: string) {
     const [row] = await db
       .select({
-        id: schema.user.id,
-        name: schema.user.name,
-        email: schema.user.email,
-        role: schema.user.role,
-        image: schema.user.image,
-        bio: schema.user.bio,
-        emailVerified: schema.user.emailVerified,
-        createdAt: schema.user.createdAt,
+        ...userSelectFields,
         updatedAt: schema.user.updatedAt,
       })
       .from(schema.user)
@@ -118,6 +163,13 @@ class AdminUserService {
       ...row,
       stats,
     };
+  }
+
+  async getUserForAdmin(userId: string): Promise<AdminUserRow | null> {
+    const [row] = await db.select(userSelectFields).from(schema.user).where(eq(schema.user.id, userId)).limit(1);
+    if (!row) return null;
+    const xpMap = await userProgressService.getUserXpSummaries([userId]);
+    return toAdminUserRow(row, xpMap[userId] ?? { totalXp: 0, level: 1, levelName: 'Rookie Reader' });
   }
 
   async countAdmins(): Promise<number> {
@@ -235,24 +287,12 @@ class AdminUserService {
       .update(schema.user)
       .set(patch)
       .where(eq(schema.user.id, userId))
-      .returning({
-        id: schema.user.id,
-        name: schema.user.name,
-        email: schema.user.email,
-        role: schema.user.role,
-        image: schema.user.image,
-        bio: schema.user.bio,
-        emailVerified: schema.user.emailVerified,
-        createdAt: schema.user.createdAt,
-      });
+      .returning(userSelectFields);
 
     const xpMap = await userProgressService.getUserXpSummaries([userId]);
 
     return {
-      user: {
-        ...updated,
-        xp: xpMap[userId] ?? { totalXp: 0, level: 1, levelName: 'Rookie Reader' },
-      },
+      user: toAdminUserRow(updated, xpMap[userId] ?? { totalXp: 0, level: 1, levelName: 'Rookie Reader' }),
     };
   }
 }

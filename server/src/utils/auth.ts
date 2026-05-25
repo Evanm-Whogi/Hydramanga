@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { admin } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db, schema } from "@/db/index";
 import { emailService } from "@/services/emailService";
@@ -47,7 +48,27 @@ export const auth = betterAuth({
         maxPasswordLength: 32,
         requireEmailVerification: false,
         autoSignIn: true,
+        revokeSessionsOnPasswordReset: true,
+        sendResetPassword: async ({ user, token }) => {
+            const callbackURL = encodeURIComponent(`${PUBLIC_APP_URL}/reset-password`);
+            const resetLink = `${PUBLIC_APP_URL}/api/auth/reset-password/${token}?callbackURL=${callbackURL}`;
+            await emailService.sendEmail(user.email, "resetPassword", "Reset your password", {
+                username: user.name,
+                resetLink,
+                appName: process.env.PUBLIC_NAME || "Mang",
+                year: new Date().getFullYear(),
+            });
+        },
     },
+    plugins: [
+        admin({
+            defaultRole: "user",
+            adminRoles: ["admin"],
+            impersonationSessionDuration: 60 * 60,
+            bannedUserMessage:
+                "Your account has been suspended. Contact support if you believe this is an error.",
+        }),
+    ],
     account: {
         accountLinking: {
             enabled: true,
@@ -71,6 +92,18 @@ export const auth = betterAuth({
             },
             bio: {
                 type: "string",
+                required: false,
+            },
+            banned: {
+                type: "boolean",
+                required: false,
+            },
+            banReason: {
+                type: "string",
+                required: false,
+            },
+            banExpires: {
+                type: "date",
                 required: false,
             },
         },

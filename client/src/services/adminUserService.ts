@@ -1,4 +1,4 @@
-import { apiGet, apiPatch } from '@/lib/api';
+import { apiGet, apiPatch, apiPost } from '@/lib/api';
 
 export interface AdminUserXp {
   totalXp: number;
@@ -14,6 +14,10 @@ export interface AdminUser {
   image: string | null;
   bio: string | null;
   emailVerified: boolean;
+  banned: boolean;
+  banReason: string | null;
+  banExpires: string | null;
+  isBanned: boolean;
   createdAt: string;
   xp: AdminUserXp;
 }
@@ -33,6 +37,7 @@ export interface ListAdminUsersParams {
   limit?: number;
   search?: string;
   role?: 'all' | 'user' | 'admin';
+  status?: 'all' | 'active' | 'banned';
 }
 
 export async function listAdminUsers(params: ListAdminUsersParams = {}): Promise<AdminUsersListResponse> {
@@ -41,6 +46,7 @@ export async function listAdminUsers(params: ListAdminUsersParams = {}): Promise
   if (params.limit) query.set('limit', String(params.limit));
   if (params.search?.trim()) query.set('search', params.search.trim());
   if (params.role && params.role !== 'all') query.set('role', params.role);
+  if (params.status && params.status !== 'all') query.set('status', params.status);
 
   const qs = query.toString();
   const data = await apiGet(`/admin/users${qs ? `?${qs}` : ''}`);
@@ -61,5 +67,28 @@ export interface AdminUserUpdatePayload {
 
 export async function updateAdminUser(userId: string, updates: AdminUserUpdatePayload): Promise<AdminUser> {
   const data = await apiPatch(`/admin/users/${userId}`, updates);
+  return (data as { user: AdminUser }).user;
+}
+
+export async function sendAdminUserVerificationEmail(userId: string): Promise<void> {
+  await apiPost(`/admin/users/${userId}/send-verification`);
+}
+
+export async function sendAdminUserPasswordReset(userId: string): Promise<void> {
+  await apiPost(`/admin/users/${userId}/send-password-reset`);
+}
+
+export interface BanAdminUserPayload {
+  banReason?: string;
+  banExpiresIn?: number;
+}
+
+export async function banAdminUser(userId: string, payload: BanAdminUserPayload = {}): Promise<AdminUser> {
+  const data = await apiPost(`/admin/users/${userId}/ban`, payload);
+  return (data as { user: AdminUser }).user;
+}
+
+export async function unbanAdminUser(userId: string): Promise<AdminUser> {
+  const data = await apiPost(`/admin/users/${userId}/unban`);
   return (data as { user: AdminUser }).user;
 }

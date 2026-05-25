@@ -1,10 +1,12 @@
-import { rateLimit, type Options } from 'express-rate-limit';
+import { ipKeyGenerator, rateLimit, type Options } from 'express-rate-limit';
 import type { Request } from 'express';
 import logger from '@/services/loggerService';
 
 function userKey(req: Request): string {
   const userId = (req as Request & { user?: { id: string } }).user?.id;
-  return userId ? `user:${userId}` : `ip:${req.ip ?? 'unknown'}`;
+  if (userId) return `user:${userId}`;
+  const ip = req.ip;
+  return ip ? `ip:${ipKeyGenerator(ip)}` : 'ip:unknown';
 }
 
 function createUserActionLimiter(message: string, windowMs: number, max: number) {

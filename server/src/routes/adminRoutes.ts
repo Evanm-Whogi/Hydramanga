@@ -4,6 +4,8 @@ import { adminScraperSearch, adminSetSource, adminAddSecondaryTitle, adminTrigge
 import { listAdminManga } from '@/controllers/adminMangaListController';
 import { getAdminOverviewStats, getAdminTimeseries } from '@/controllers/adminStatsController';
 import { listAdminUsers, getAdminUser, patchAdminUser } from '@/controllers/adminUserController';
+import {sendAdminUserVerification, sendAdminUserPasswordReset} from '@/controllers/adminUserActionsController';
+import { banAdminUser, unbanAdminUser } from '@/controllers/adminUserBanController';
 import { listAdminImportRequests, patchAdminImportRequest } from '@/controllers/importRequestController';
 import { listAdminQueues, listAdminQueueJobs } from '@/controllers/adminQueueController';
 import { requireRole } from '@/middlewares/requireRole';
@@ -18,6 +20,10 @@ router.get('/stats/timeseries', requireRole('admin'), getAdminTimeseries as Requ
 router.get('/users', requireRole('admin'), listAdminUsers as RequestHandler);
 router.get('/users/:id', requireRole('admin'), getAdminUser as RequestHandler);
 router.patch('/users/:id', requireRole('admin'), patchAdminUser as RequestHandler);
+router.post('/users/:id/send-verification', requireRole('admin'), sendAdminUserVerification as RequestHandler);
+router.post('/users/:id/send-password-reset', requireRole('admin'), sendAdminUserPasswordReset as RequestHandler);
+router.post('/users/:id/ban', requireRole('admin'), banAdminUser as RequestHandler);
+router.post('/users/:id/unban', requireRole('admin'), unbanAdminUser as RequestHandler);
 
 router.get('/manga', requireRole('admin'), listAdminManga as RequestHandler);
 

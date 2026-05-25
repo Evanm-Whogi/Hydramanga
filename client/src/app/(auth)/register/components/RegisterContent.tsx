@@ -67,9 +67,7 @@ export default function RegisterContent() {
         email,
         password,
         name,
-        callbackURL: "/dashboard",
-        role: "user",
-        bio: "",
+        callbackURL: "/home",
       });
       
       if (error) {

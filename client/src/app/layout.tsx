@@ -10,6 +10,9 @@ import { cookies } from 'next/headers';
 
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
+import WelcomeModalGate from "@/components/WelcomeModalGate";
+import ImpersonationBanner from "@/components/ImpersonationBanner";
+import BannedSessionGuard from "@/components/BannedSessionGuard";
 
 export async function generateMetadata(): Promise<Metadata> {
   const siteConfig = {
@@ -76,11 +79,14 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           <ErrorTracker>
             <PageTrackingProvider>
               <UserProvider initialSession={session}>
+                <ImpersonationBanner />
+                <BannedSessionGuard />
                 <Navbar />
                 <main className="flex-1">
                   {children}
                 </main>
                 <Footer />
+                <WelcomeModalGate />
               </UserProvider>
             </PageTrackingProvider>
           </ErrorTracker>
