@@ -8,6 +8,7 @@ import { trackAuthEvent } from "@/lib/analytics";
 import { getUserDisplayName, isEmailIdentifier } from "@/lib/userDisplay";
 import { consumeAuthRedirectMessage } from "@/lib/authSession";
 import InputField from '@/components/InputField';
+import OAuthButtons from "@/components/auth/OAuthButtons";
 import MasonryGrid from "@/components/MasonryGrid";
 
 const DEFAULT_BAN_MESSAGE =
@@ -27,8 +28,19 @@ export default function LoginContent() {
       toast.error(stored, { autoClose: 10000 });
       return;
     }
-    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("banned")) {
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("banned")) {
       toast.error(DEFAULT_BAN_MESSAGE, { autoClose: 10000 });
+      window.history.replaceState({}, "", "/login");
+      return;
+    }
+
+    const oauthError = params.get("error");
+    if (oauthError) {
+      const description = params.get("error_description");
+      toast.error(description || oauthError.replace(/_/g, " "), { autoClose: 10000 });
       window.history.replaceState({}, "", "/login");
     }
   }, []);
@@ -167,16 +179,12 @@ export default function LoginContent() {
                 <button onClick={handleLogin} disabled={loading} className="p-3 mt-2 bg-foreground text-primary hover:bg-foreground/50 hover:cursor-pointer rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
                   {loading ? "Logging in..." : "Login"}
                 </button>
+                <OAuthButtons disabled={loading} />
               </>
             )}
 
             {!showForgotPassword && (
               <>
-                <div className="relative mt-5">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-foreground" />
-                  </div>
-                </div>
                 <span className="text-center pt-5">
                   Don't have an account?{" "}
                   <Link href="/register" className="text-accent hover:text-accent/50">Sign up for free</Link>

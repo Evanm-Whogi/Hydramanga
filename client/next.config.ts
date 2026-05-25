@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || 'http://localhost:4000';
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ['mangadev.chit.sh'],
   async rewrites() {
     return [
       {
@@ -12,6 +13,11 @@ const nextConfig: NextConfig = {
       {
         source: '/api/_analytics/:path*',
         destination: 'https://us.i.posthog.com/:path*',
+      },
+      // OAuth provider redirects land here; proxy to Better Auth on the backend
+      {
+        source: '/auth/callback/:path*',
+        destination: `${BACKEND_INTERNAL_URL}/auth/callback/:path*`,
       },
       {
         source: '/api/:path*',

@@ -7,6 +7,7 @@ import { signUp } from "@/lib/auth";
 import { trackAuthEvent } from "@/lib/analytics";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import InputField from '@/components/InputField';
+import OAuthButtons from "@/components/auth/OAuthButtons";
 import MasonryGrid from "@/components/MasonryGrid";
 
 export default function RegisterContent() {
@@ -80,6 +81,7 @@ export default function RegisterContent() {
             <button onClick={handleRegister} disabled={isRegistering} className="p-3 mt-5 bg-foreground text-primary hover:bg-foreground/50 hover:cursor-pointer rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
               {isRegistering ? "Creating account..." : "Create Account"}
             </button>
+            <OAuthButtons disabled={isRegistering} />
             <span className="text-center pt-5">
               Already have an account?{" "}
               <Link href="/login" className="text-accent hover:text-accent/50">Log in</Link>

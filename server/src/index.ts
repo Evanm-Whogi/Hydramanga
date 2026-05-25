@@ -40,7 +40,8 @@ const app: Express = express();
 app.use(morgan(':method :url :status :response-time ms - :res[content-length] \n', {
     skip: (req, res) => req.originalUrl.includes('/admin/heartbeat') || req.originalUrl.includes('/socket.io')
 }));
-app.use(cors({ origin: ['https://manga.chit.sh'], credentials: true }));
+const corsOrigins = ['https://manga.chit.sh', process.env.PUBLIC_APP_URL].filter(Boolean) as string[];
+app.use(cors({ origin: corsOrigins, credentials: true }));
 app.set('trust proxy', 1);
 
 // Auth Routes
@@ -70,7 +71,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   path: '/socket.io/',
   cors: {
-    origin: ['https://manga.chit.sh'],
+    origin: corsOrigins,
     methods: ["GET", "POST"],
     credentials: true
   },

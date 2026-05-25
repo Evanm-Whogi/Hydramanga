@@ -178,7 +178,7 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={onClose}>
-      <div className="bg-foreground border border-borders rounded-lg shadow-xl  max-h-[90vh] overflow-y-auto"  onClick={(e) => e.stopPropagation()}>
+      <div className="bg-foreground border border-borders rounded-lg shadow-xl max-h-[90vh] overflow-y-auto"  onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-borders sticky top-0 bg-foreground z-10">
           <h2 className="text-lg font-semibold text-primary">Edit user</h2>
           <button
@@ -267,8 +267,8 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
           </div>
           
           {/* Moderation */}
-          <div className="flex flex-row gap-6">
-            <div className={`rounded-lg border p-3 space-y-3 w-1/2 ${userBanned  ? "border-red-500/40 bg-red-500/10" : "border-borders bg-background/30"}`}>
+          <div className="flex flex-col md:flex-row gap-6">
+            <div className={`rounded-lg border p-3 space-y-3 w-full md:w-1/2 ${userBanned  ? "border-red-500/40 bg-red-500/10" : "border-borders bg-background/30"}`}>
               <h3 className="text-sm font-semibold text-primary inline-flex items-center gap-2">
                 {userBanned ? (
                   <>
@@ -355,7 +355,7 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
             </div>
 
 
-            <div className="rounded-lg border border-borders p-3 space-y-2 bg-background/30 w-1/2">
+            <div className="rounded-lg border border-borders p-3 space-y-2 bg-background/30 w-full md:w-1/2">
               <h3 className="text-sm font-semibold text-primary">Account actions</h3>
               <p className="text-xs text-muted">Emails are sent to the address on file ({user.email}), not unsaved edits.</p>
               <div className="flex flex-col flex-wrap gap-2 ">

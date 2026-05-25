@@ -7,8 +7,8 @@ import { discordService } from "@/services/discordService";
 import { eq, sql } from "drizzle-orm";
 
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'http://localhost:3000';
-const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || `${PUBLIC_APP_URL}/api/auth/callback/google`;
-const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || `${PUBLIC_APP_URL}/api/auth/callback/discord`;
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || `${PUBLIC_APP_URL}/auth/callback/google`;
+const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || `${PUBLIC_APP_URL}/auth/callback/discord`;
  
 export const auth = betterAuth({
     // Public site URL (frontend) used for links and redirects
@@ -26,7 +26,7 @@ export const auth = betterAuth({
         }
     },
     secret: process.env.BETTER_AUTH_SECRET,
-    trustedOrigins: [PUBLIC_APP_URL],
+    trustedOrigins: [PUBLIC_APP_URL, 'http://localhost:3000'],
     database: drizzleAdapter(db, {
         provider: "pg",
     }),
