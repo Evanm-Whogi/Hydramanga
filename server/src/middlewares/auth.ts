@@ -81,7 +81,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
         Sentry.setUser({
             id: session.user.id,
             email: session.user.email,
-            username: session.user.name,
+            username: (session.user as { username?: string }).username || session.user.name,
             ip_address: userIP,
         });
 

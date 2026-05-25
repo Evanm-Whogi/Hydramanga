@@ -6,11 +6,12 @@ import { getSettings, updateSettings } from "@/services/userService";
 import { toast } from "react-toastify";
 import { useRouter } from "next/navigation";
 import { trackAuthEvent } from "@/lib/analytics";
+import { getUserDisplayName } from "@/lib/userDisplay";
 
 export default function Settings({ user }: { user: any }) {
   const router = useRouter();
   const { data: activeSession } = useSession();
-  const [name, setName] = useState(user.name ?? "");
+  const [username, setUsername] = useState(user.username ?? user.name ?? "");
   const [email, setEmail] = useState(user.email ?? "");
     const [oldPassword, setOldPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
@@ -84,21 +85,21 @@ export default function Settings({ user }: { user: any }) {
   };
   const handleUpdateInfo = async () => {
     try {
-      const nameChanged = name !== (user.name ?? "");
+      const usernameChanged = username !== (user.username ?? user.name ?? "");
       const emailChanged = email !== (user.email ?? "");
 
-      if (nameChanged) {
-        const { error } = await updateUser({ name });
+      if (usernameChanged) {
+        const { error } = await updateUser({ username: username.trim() });
         if (error) throw new Error(error.message);
       }
       if (emailChanged) {
         const { error } = await changeEmail({ newEmail: email });
         if (error) throw new Error(error.message);
         toast.success("Please check your new email to verify the change.");
-      } else if (nameChanged) {
+      } else if (usernameChanged) {
         toast.success("Profile updated successfully!");
       }
-      if (nameChanged || emailChanged) router.refresh();
+      if (usernameChanged || emailChanged) router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update profile");
     }
@@ -131,7 +132,7 @@ export default function Settings({ user }: { user: any }) {
             await signOut({
                 fetchOptions: {
                     onSuccess: () => {
-                        trackAuthEvent("logout", user?.id ?? undefined, user?.email ?? undefined, user?.name ?? undefined);
+                        trackAuthEvent("logout", user?.id ?? undefined, user?.email ?? undefined, getUserDisplayName(user));
                         router.push('/');
                         router.refresh();
                         toast('See you next time.', { type: 'info' });
@@ -149,7 +150,7 @@ export default function Settings({ user }: { user: any }) {
                     <p className="text-sm text-gray-400">Update your basic profile information such as username and email address.</p>
                     <div className="flex flex-col pt-5 grow">
                         <div className="flex flex-col space-y-3 grow">
-                            <InputField label="Username" placeholder={user.name ?? undefined} value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} />
+                            <InputField label="Username" placeholder={getUserDisplayName(user)} value={username} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUsername(e.target.value)} />
                             <InputField label="Email" placeholder={user.email ?? undefined} value={email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)} />
                             <p className="text-sm text-muted">To change your profile picture, click your avatar on the profile page.</p>
                         </div>

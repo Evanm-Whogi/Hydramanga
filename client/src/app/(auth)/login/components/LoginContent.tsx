@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { signIn, requestPasswordReset } from "@/lib/auth";
 import { trackAuthEvent } from "@/lib/analytics";
+import { getUserDisplayName, isEmailIdentifier } from "@/lib/userDisplay";
 import { consumeAuthRedirectMessage } from "@/lib/authSession";
 import InputField from '@/components/InputField';
 import MasonryGrid from "@/components/MasonryGrid";
@@ -13,7 +14,7 @@ const DEFAULT_BAN_MESSAGE =
   "Your account has been suspended. Contact support if you believe this is an error.";
 
 export default function LoginContent() {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -37,7 +38,10 @@ export default function LoginContent() {
     setLoading(true);
 
     try {
-      const result = await signIn.email({ email, password });
+      const trimmed = identifier.trim();
+      const result = isEmailIdentifier(trimmed)
+        ? await signIn.email({ email: trimmed, password })
+        : await signIn.username({ username: trimmed, password });
       if (result.error) {
         const msg = result.error.message || "Authentication failed";
         const isBanned =
@@ -49,7 +53,12 @@ export default function LoginContent() {
         return;
       }
 
-      trackAuthEvent('login', result.data?.user?.id, result.data?.user?.email, result.data?.user?.name);
+      trackAuthEvent(
+        'login',
+        result.data?.user?.id,
+        result.data?.user?.email,
+        getUserDisplayName(result.data?.user)
+      );
       toast(`Welcome Back!`, { type: "success" });
       
       window.location.href = "/home";
@@ -60,9 +69,9 @@ export default function LoginContent() {
   };
 
   const handleForgotPassword = async () => {
-    const targetEmail = resetEmail.trim() || email.trim();
+    const targetEmail = resetEmail.trim() || (isEmailIdentifier(identifier) ? identifier.trim() : "");
     if (!targetEmail) {
-      toast.error("Enter your email address");
+      toast.error("Enter your account email address");
       return;
     }
     if (resetLoading) return;
@@ -116,7 +125,7 @@ export default function LoginContent() {
                 <InputField
                   label="Email address"
                   placeholder="Email"
-                  value={resetEmail || email}
+                  value={resetEmail || (isEmailIdentifier(identifier) ? identifier : "")}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setResetEmail(e.target.value)}
                   onKeyPress={handleKeyPress}
                   disabled={resetLoading}
@@ -140,14 +149,14 @@ export default function LoginContent() {
             ) : (
               <>
                 <div className="flex flex-col space-y-3 mt-5 w-full">
-                  <InputField label="Email address" placeholder="Email" value={email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)} onKeyPress={handleKeyPress} disabled={loading} />
+                  <InputField label="Username or email" placeholder="Username or email" value={identifier} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setIdentifier(e.target.value)} onKeyPress={handleKeyPress} disabled={loading} />
                   <InputField label="Your Password" placeholder="Password" type="password" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} onKeyPress={handleKeyPress} disabled={loading} />
                 </div>
                 <div className="flex justify-end">
                   <button
                     type="button"
                     onClick={() => {
-                      setResetEmail(email);
+                      setResetEmail(isEmailIdentifier(identifier) ? identifier : "");
                       setShowForgotPassword(true);
                     }}
                     className="text-sm text-accent hover:text-accent/70 transition-colors hover:cursor-pointer"

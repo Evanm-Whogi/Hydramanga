@@ -5,17 +5,18 @@ import Link from "next/link";
 import { toast } from "react-toastify";
 import { signUp } from "@/lib/auth";
 import { trackAuthEvent } from "@/lib/analytics";
+import { getUserDisplayName } from "@/lib/userDisplay";
 import InputField from '@/components/InputField';
 import MasonryGrid from "@/components/MasonryGrid";
 
 export default function RegisterContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [isRegistering, setIsRegistering] = useState(false);
 
   const handleRegister = async () => {
-    if (!name.trim() || !email.trim() || !password.trim()) {
+    if (!username.trim() || !email.trim() || !password.trim()) {
       return toast.error("Please fill in all fields");
     }
 
@@ -23,10 +24,12 @@ export default function RegisterContent() {
     setIsRegistering(true);
 
     try {
+      const trimmedUsername = username.trim();
       const { data, error } = await signUp.email({
-        email,
+        email: email.trim(),
         password,
-        name,
+        username: trimmedUsername,
+        name: trimmedUsername,
         callbackURL: "/home",
       });
 
@@ -36,9 +39,14 @@ export default function RegisterContent() {
         return;
       }
 
-      trackAuthEvent('register', data.user?.id, data.user?.email, data.user?.name);
+      trackAuthEvent(
+        'register',
+        data.user?.id,
+        data.user?.email,
+        getUserDisplayName(data.user)
+      );
 
-      toast.success(`Welcome ${data.user.name}! Your account has been created.`);
+      toast.success(`Welcome ${getUserDisplayName(data.user)}! Your account has been created.`);
 
       window.location.href = "/home";
     } catch (error: any) {
@@ -65,7 +73,7 @@ export default function RegisterContent() {
             <h1 className="text-4xl font-bold text-center">{process.env.NEXT_PUBLIC_NAME}</h1>
             <h2 className="text-muted text-center">Your one stop spot for endless Manga.</h2>
             <div className="flex flex-col space-y-3 mt-5">
-              <InputField label="Full Name" placeholder="Your Name" value={name} onChange={(e: any) => setName(e.target.value)} onKeyPress={handleKeyPress} disabled={isRegistering} />
+              <InputField label="Username" placeholder="Username" value={username} onChange={(e: any) => setUsername(e.target.value)} onKeyPress={handleKeyPress} disabled={isRegistering} />
               <InputField label="Email" placeholder="Email" value={email} onChange={(e: any) => setEmail(e.target.value)} onKeyPress={handleKeyPress} disabled={isRegistering} />
               <InputField label="Password" placeholder="Password" type="password" value={password} onChange={(e: any) => setPassword(e.target.value)} onKeyPress={handleKeyPress} disabled={isRegistering} />
             </div>

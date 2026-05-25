@@ -1,7 +1,7 @@
 // lib/auth.ts
 import { createAuthClient } from "better-auth/react";
 import { nextCookies } from "better-auth/next-js";
-import { inferAdditionalFields, adminClient } from "better-auth/client/plugins";
+import { inferAdditionalFields, adminClient, usernameClient } from "better-auth/client/plugins";
 import { getBackendInternalUrl } from "./env";
 
 
@@ -13,6 +13,7 @@ export const authClient = createAuthClient({
     basePath: "/auth",
     plugins: [
         nextCookies(),
+        usernameClient(),
         adminClient(),
         inferAdditionalFields({
             user: {
@@ -37,6 +38,7 @@ export const authClient = createAuthClient({
 export const {
     signIn,
     signUp,
+    isUsernameAvailable,
     useSession,
     signOut,
     updateUser,

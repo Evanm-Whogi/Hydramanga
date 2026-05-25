@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { admin } from "better-auth/plugins";
+import { admin, username } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db, schema } from "@/db/index";
 import { emailService } from "@/services/emailService";
@@ -53,7 +53,7 @@ export const auth = betterAuth({
             const callbackURL = encodeURIComponent(`${PUBLIC_APP_URL}/reset-password`);
             const resetLink = `${PUBLIC_APP_URL}/api/auth/reset-password/${token}?callbackURL=${callbackURL}`;
             await emailService.sendEmail(user.email, "resetPassword", "Reset your password", {
-                username: user.name,
+                username: (user as { username?: string }).username || user.name,
                 resetLink,
                 appName: process.env.PUBLIC_NAME || "Mang",
                 year: new Date().getFullYear(),
@@ -61,6 +61,10 @@ export const auth = betterAuth({
         },
     },
     plugins: [
+        username({
+            minUsernameLength: 3,
+            maxUsernameLength: 30,
+        }),
         admin({
             defaultRole: "user",
             adminRoles: ["admin"],
@@ -119,7 +123,7 @@ export const auth = betterAuth({
         expirationMinutes: 60 * 24, // 24 hours
         sendVerificationEmail: async ({ user, url, token }, request) => {
             await emailService.sendEmail(user.email, "verifyEmail", "Verify your email address", { 
-                username: user.name,
+                username: (user as { username?: string }).username || user.name,
                 verificationLink: url,
                 customUrl: `${PUBLIC_APP_URL}/api/auth/verify-email?token=${token}&callbackURL=${encodeURIComponent(`${PUBLIC_APP_URL}/profile?verified=true`)}`
             });
@@ -128,16 +132,65 @@ export const auth = betterAuth({
     databaseHooks: {
         user: {
             create: {
-                before: async (user: any) => {
-                    return {
-                        data: {
-                            ...user,
-                            role: 'user',
-                        },
-                    };
+                before: async (user: any, context) => {
+                    const path = context?.path as string | undefined;
+                    let nextUser = { ...user, role: 'user' as const };
+
+                    if (path === '/sign-up/email') {
+                        const rawUsername =
+                            typeof nextUser.username === 'string' ? nextUser.username.trim() : '';
+                        if (!rawUsername) {
+                            throw new Error('Username is required');
+                        }
+                        const display =
+                            typeof nextUser.displayUsername === 'string' && nextUser.displayUsername.trim()
+                                ? nextUser.displayUsername.trim()
+                                : rawUsername;
+                        nextUser = {
+                            ...nextUser,
+                            displayUsername: display,
+                            name: display,
+                        };
+                    } else if (!nextUser.username && typeof nextUser.email === 'string') {
+                        const base = nextUser.email
+                            .split('@')[0]
+                            .replace(/[^a-zA-Z0-9_.]/g, '_')
+                            .slice(0, 20) || 'user';
+                        let candidate = base.toLowerCase();
+                        let suffix = 0;
+                        while (
+                            (
+                                await db
+                                    .select({ id: schema.user.id })
+                                    .from(schema.user)
+                                    .where(eq(schema.user.username, candidate))
+                                    .limit(1)
+                            ).length > 0
+                        ) {
+                            suffix += 1;
+                            candidate = `${base.toLowerCase()}${suffix}`;
+                        }
+                        nextUser = {
+                            ...nextUser,
+                            username: candidate,
+                            displayUsername: nextUser.displayUsername || base,
+                            name: nextUser.name || nextUser.displayUsername || base,
+                        };
+                    } else if (nextUser.username) {
+                        const display =
+                            nextUser.displayUsername ||
+                            nextUser.name ||
+                            nextUser.username;
+                        nextUser = { ...nextUser, name: display };
+                    }
+
+                    return { data: nextUser };
                 },
                 after: async (user: any) => {
-                    await discordService.notifyUserSignup(user.name || 'Unknown', user.id);
+                    await discordService.notifyUserSignup(
+                        user.displayUsername || user.username || user.name || 'Unknown',
+                        user.id
+                    );
 
                     const result = await db
                         .select({ count: sql<number>`count(*)` })
@@ -150,8 +203,25 @@ export const auth = betterAuth({
                             .set({ role: 'admin' })
                             .where(eq(schema.user.id, user.id));
                     }
-                }
-            }
-        }
+                },
+            },
+            update: {
+                before: async (user: any) => {
+                    if (typeof user.username !== 'string') {
+                        return { data: user };
+                    }
+                    const display =
+                        typeof user.displayUsername === 'string' && user.displayUsername.trim()
+                            ? user.displayUsername.trim()
+                            : user.username;
+                    return {
+                        data: {
+                            ...user,
+                            name: display,
+                        },
+                    };
+                },
+            },
+        },
     },
 })
