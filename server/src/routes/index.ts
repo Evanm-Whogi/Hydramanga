@@ -9,7 +9,6 @@ import analyticsRoutes from '@/routes/analyticsRoutes';
 import commentRoutes from '@/routes/commentRoutes';
 import reviewRoutes from '@/routes/reviewRoutes';
 import announcementRoutes from '@/routes/announcementRoutes';
-import inviteRoutes from '@/routes/inviteRoutes';
 import adminRoutes from '@/routes/adminRoutes';
 import pageRoutes from '@/routes/pageRoutes';
 import listRoutes from '@/routes/listRoutes';
@@ -44,7 +43,6 @@ module.exports = (app: Express) => {
     app.use('/comments', authMiddleware, commentRoutes);
     app.use('/reviews', authMiddleware, reviewRoutes);
     app.use('/announcements', authMiddleware, announcementRoutes);
-    app.use('/invites', inviteRoutes); // Some endpoints don't require auth (validate, use)
 
     // Contact and DMCA Routes (public)
     app.use('/', contactRoutes);

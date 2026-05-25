@@ -75,9 +75,9 @@ const MangaDetails = memo(({ manga }: { manga: any }) => (
       <strong className="text-muted">Authors:</strong>
       {manga.authors &&
         manga.authors.slice(0, 10).map((author: string, index: number) => (
-          <div key={index} className="px-2 py-1 bg-foreground rounded-md text-sm">
+          <Link key={index} href={`/discover?search=${author}`} className="px-2 py-1 bg-foreground rounded-md text-sm hover:bg-foreground/70 hover:cursor-pointer">
             {author}
-          </div>
+          </Link>
         ))}
       {manga.authors?.length > 10 && <span className="text-xs text-muted">+{manga.authors.length - 10} more</span>}
     </div>

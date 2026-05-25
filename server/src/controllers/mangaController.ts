@@ -24,6 +24,29 @@ function normalizeApostrophes(s: string): string {
         .replace(/\u201D/g, '"');  // RIGHT DOUBLE QUOTATION MARK "
 }
 
+/** Match author names; multi-word queries match all tokens in any order (e.g. "MIURA Kentaro" → "Kentarou Miura"). */
+function buildAuthorSearchCondition(normalizedSearch: string) {
+    const authorsArray = sql`COALESCE(${schema.series.authors}, '[]'::jsonb)`;
+    const tokens = normalizedSearch.split(/\s+/).map((t) => t.trim()).filter(Boolean);
+
+    if (tokens.length >= 2) {
+        const tokenConditions = tokens.map((token) => {
+            const tokenPattern = `%${token}%`;
+            return sql`author ILIKE ${tokenPattern}`;
+        });
+        return sql`EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(${authorsArray}) AS author
+            WHERE ${sql.join(tokenConditions, sql` AND `)}
+        )`;
+    }
+
+    const pattern = `%${normalizedSearch}%`;
+    return sql`EXISTS (
+        SELECT 1 FROM jsonb_array_elements_text(${authorsArray}) AS author
+        WHERE author ILIKE ${pattern}
+    )`;
+}
+
 // Helper function to enrich manga data with view stats
 async function enrichWithViewStats(mangaList: any[]) {
     if (mangaList.length === 0) return [];
@@ -99,7 +122,7 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         };
 
         // Global cache key: only filters + hideNsfw (no userId); isInUserList merged per-request for logged-in users
-        const cacheKey = `manga:search:${hideNsfw}:${normalizeQueryForCache(req.query)}`;
+        const cacheKey = `manga:search:v2:${hideNsfw}:${normalizeQueryForCache(req.query)}`;
         const cacheTtlSeconds = 60 * 60; // 1 hour (series table updates ~every 5 days)
 
         const conditions: any = [];
@@ -117,7 +140,8 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
             conditions.push(or(
                 sql`REPLACE(REPLACE(COALESCE(${schema.series.title}, ''), CHR(8217), ''''), CHR(8216), '''') ILIKE ${pattern}`,
                 sql`REPLACE(REPLACE(COALESCE(${schema.series.romanizedTitle}, ''), CHR(8217), ''''), CHR(8216), '''') ILIKE ${pattern}`,
-                sql`REPLACE(REPLACE(COALESCE(${schema.series.nativeTitle}, ''), CHR(8217), ''''), CHR(8216), '''') ILIKE ${pattern}`
+                sql`REPLACE(REPLACE(COALESCE(${schema.series.nativeTitle}, ''), CHR(8217), ''''), CHR(8216), '''') ILIKE ${pattern}`,
+                buildAuthorSearchCondition(normalizedSearch),
             ));
         }
 
