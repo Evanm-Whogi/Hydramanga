@@ -2,7 +2,7 @@
  * AtsuMoe Scraper Implementation
  *
  * Scraper for atsu.moe manga source.
- * Uses Typesense search API, allChapters API for chapter lists, and static CDN URLs for pages.
+ * Uses Typesense search API, allChapters API for chapter lists, and read/chapter API for page URLs.
  */
 
 import fs from 'fs';
@@ -72,16 +72,21 @@ interface AtsuMoeAllChaptersResponse {
     chapters: AtsuMoeChapterItem[];
 }
 
-/**
- * Sanitize folder/file names
- */
-const safeName = (val: string): string => {
-    const cleaned = (val || 'chapter')
-        .replace(/[^a-z0-9]+/gi, '-')
-        .replace(/^-+|-+$/g, '')
-        .toLowerCase();
-    return cleaned || 'chapter';
-};
+/** read/chapter API response (https://atsu.moe/api/read/chapter?mangaId=...&chapterId=...) */
+interface AtsuMoeReadChapterPage {
+    id: string;
+    image: string;
+    number: number;
+}
+
+interface AtsuMoeReadChapterResponse {
+    readChapter: {
+        id: string;
+        title: string;
+        scanlationMangaId: string;
+        pages: AtsuMoeReadChapterPage[];
+    };
+}
 
 /** Manga page URL with ?filter=all so the full chapter list is shown (and stored for rescans). */
 function mangaListUrl(pathOrUrl: string): string {
@@ -90,25 +95,21 @@ function mangaListUrl(pathOrUrl: string): string {
     return u.href;
 }
 
-/** Static page image URL (pages are 0-indexed). */
-function staticPageUrl(mangaId: string, chapterId: string, pageIndex: number): string {
-    return `${SITE_BASE}/static/pages/${mangaId}/${chapterId}/${pageIndex}.webp`;
-}
-
-function parseChapterUrl(url: string): { mangaId: string; chapterId: string; pageCount?: number } {
+function parseChapterUrl(url: string): { mangaId: string; chapterId: string } {
     const u = new URL(url, SITE_BASE);
     const segments = u.pathname.split('/').filter(Boolean);
     const readIdx = segments.indexOf('read');
     if (readIdx < 0 || segments.length < readIdx + 3) {
         throw new Error(`Invalid AtsuMoe chapter URL: ${url}`);
     }
-    const pageCountParam = u.searchParams.get('pageCount');
-    const pageCount = pageCountParam ? parseInt(pageCountParam, 10) : undefined;
     return {
         mangaId: segments[readIdx + 1],
         chapterId: segments[readIdx + 2],
-        pageCount: pageCount && pageCount > 0 ? pageCount : undefined,
     };
+}
+
+function absoluteImageUrl(imagePath: string): string {
+    return new URL(imagePath, SITE_BASE).href;
 }
 
 /**
@@ -155,7 +156,7 @@ function normalizeForSearch(value?: string): string {
 
 /**
  * AtsuMoe Scraper
- * Uses JSON search API, allChapters API, and static page URLs for downloads.
+ * Uses JSON search API, allChapters API, and read/chapter API for downloads.
  */
 export class AtsuMoeScraper implements IChapterScraper {
     private readonly metadata: ScraperMetadata = {
@@ -422,24 +423,16 @@ export class AtsuMoeScraper implements IChapterScraper {
             throw new Error(`Invalid allChapters response for mangaId=${mangaId}`);
         }
 
-        const chapterRows = [...data.chapters]
-            .reverse()
-            .map((ch) => {
-                const chapterUrl = new URL(`${SITE_BASE}/read/${mangaId}/${ch.id}`);
-                chapterUrl.searchParams.set('pageCount', String(ch.pageCount));
-                return {
-                    url: chapterUrl.href,
-                    title: ch.title || `Chapter ${ch.number}`,
-                };
-            });
+        const chapterRows = [...data.chapters].reverse();
 
         logger.info(
             `[AtsuMoe] Found ${chapterRows.length} chapters (API)`,
             { service: 'atsuMoeScraper' }
         );
 
-        for (const chap of chapterRows) {
-            const parsed = ChapterNumberParser.parse(chap.title);
+        for (const ch of chapterRows) {
+            const title = ch.title || `Chapter ${ch.number}`;
+            const parsed = ChapterNumberParser.parse(title);
 
             if (await checkExists(parsed.number)) {
                 logger.debug(
@@ -449,8 +442,11 @@ export class AtsuMoeScraper implements IChapterScraper {
                 continue;
             }
 
+            const chapterUrl = new URL(`${SITE_BASE}/read/${mangaId}/${ch.id}`);
+            chapterUrl.searchParams.set('pageCount', String(ch.pageCount));
+
             yield {
-                url: chap.url,
+                url: chapterUrl.href,
                 title: parsed.title,
                 number: parsed.number,
                 isSpecial: parsed.isSpecial,
@@ -459,20 +455,17 @@ export class AtsuMoeScraper implements IChapterScraper {
         }
     }
 
-    private async resolvePageCount(
+    private async fetchReadChapter(
         mangaId: string,
-        chapterId: string,
-        fromUrl?: number
-    ): Promise<number> {
-        if (fromUrl && fromUrl > 0) return fromUrl;
-
-        const apiUrl = `${SITE_BASE}/api/manga/allChapters?mangaId=${encodeURIComponent(mangaId)}`;
-        const response = await AtsuMoeScraper.axiosInstance.get<AtsuMoeAllChaptersResponse>(apiUrl);
-        const chapter = response.data?.chapters?.find((ch) => ch.id === chapterId);
-        if (chapter?.pageCount && chapter.pageCount > 0) {
-            return chapter.pageCount;
+        chapterId: string
+    ): Promise<AtsuMoeReadChapterResponse['readChapter']> {
+        const apiUrl = `${SITE_BASE}/api/read/chapter?mangaId=${encodeURIComponent(mangaId)}&chapterId=${encodeURIComponent(chapterId)}`;
+        const response = await AtsuMoeScraper.axiosInstance.get<AtsuMoeReadChapterResponse>(apiUrl);
+        const readChapter = response.data?.readChapter;
+        if (!readChapter?.pages?.length) {
+            throw new Error(`Invalid read/chapter response for mangaId=${mangaId}, chapterId=${chapterId}`);
         }
-        throw new Error(`Could not resolve pageCount for chapter ${chapterId} (mangaId=${mangaId})`);
+        return readChapter;
     }
 
     async downloadChapter(
@@ -482,15 +475,14 @@ export class AtsuMoeScraper implements IChapterScraper {
         mangaName: string,
         folderName: string
     ): Promise<DownloadedChapter> {
-        const { mangaId, chapterId, pageCount: pageCountFromUrl } = parseChapterUrl(url);
-        const pageCount = await this.resolvePageCount(mangaId, chapterId, pageCountFromUrl);
-
-        const imageUrls = Array.from({ length: pageCount }, (_, pageIndex) =>
-            staticPageUrl(mangaId, chapterId, pageIndex)
-        );
+        const { mangaId, chapterId } = parseChapterUrl(url);
+        const readChapter = await this.fetchReadChapter(mangaId, chapterId);
+        const imageUrls = [...readChapter.pages]
+            .sort((a, b) => a.number - b.number)
+            .map((page) => absoluteImageUrl(page.image));
 
         logger.info(
-            `[AtsuMoe] Downloading ${imageUrls.length} pages for chapter ${chapterNumber} (static CDN)`,
+            `[AtsuMoe] Downloading ${imageUrls.length} pages for chapter ${chapterNumber} (read/chapter API)`,
             { service: 'atsuMoeScraper' }
         );
 

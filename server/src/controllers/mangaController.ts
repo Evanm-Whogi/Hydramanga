@@ -25,27 +25,42 @@ function normalizeApostrophes(s: string): string {
         .replace(/\u201D/g, '"');  // RIGHT DOUBLE QUOTATION MARK "
 }
 
-/** Match author names; multi-word queries match all tokens in any order (e.g. "MIURA Kentaro" → "Kentarou Miura"). */
-function buildAuthorSearchCondition(normalizedSearch: string) {
-    const authorsArray = sql`COALESCE(${schema.series.authors}, '[]'::jsonb)`;
+/** Indexed search on denormalized search_text (titles + authors). Multi-word = all tokens match, any order. */
+function buildTextSearchCondition(normalizedSearch: string) {
     const tokens = normalizedSearch.split(/\s+/).map((t) => t.trim()).filter(Boolean);
-
     if (tokens.length >= 2) {
-        const tokenConditions = tokens.map((token) => {
-            const tokenPattern = `%${token}%`;
-            return sql`author ILIKE ${tokenPattern}`;
-        });
-        return sql`EXISTS (
-            SELECT 1 FROM jsonb_array_elements_text(${authorsArray}) AS author
-            WHERE ${sql.join(tokenConditions, sql` AND `)}
-        )`;
+        return and(...tokens.map((token) => ilike(schema.series.searchText, `%${token}%`)));
     }
+    return ilike(schema.series.searchText, `%${normalizedSearch}%`);
+}
 
-    const pattern = `%${normalizedSearch}%`;
-    return sql`EXISTS (
-        SELECT 1 FROM jsonb_array_elements_text(${authorsArray}) AS author
-        WHERE author ILIKE ${pattern}
-    )`;
+const discoverSeriesSelect = {
+    id: schema.series.id,
+    title: schema.series.title,
+    cover: schema.series.cover,
+    type: schema.series.type,
+    status: schema.series.status,
+    year: schema.series.year,
+    totalChapters: schema.series.totalChapters,
+    rating: schema.series.rating,
+    weightedScore: schema.series.weightedScore,
+    description: schema.series.description,
+    lastUpdatedAt: schema.series.lastUpdatedAt,
+};
+
+const DISCOVER_SORT_KEYS = ['weightedScore', 'totalChapters', 'lastUpdatedAt', 'title', 'year'] as const;
+type DiscoverSortKey = (typeof DISCOVER_SORT_KEYS)[number];
+
+function resolveDiscoverSortKey(sort: unknown): DiscoverSortKey {
+    const key = String(sort || 'weightedScore');
+    return (DISCOVER_SORT_KEYS as readonly string[]).includes(key) ? (key as DiscoverSortKey) : 'weightedScore';
+}
+
+function getDiscoverSortColumn(sortKey: DiscoverSortKey) {
+    if (sortKey === 'totalChapters') {
+        return sql`NULLIF(${schema.series.totalChapters}, '')::int`;
+    }
+    return discoverSeriesSelect[sortKey];
 }
 
 // Helper function to enrich manga data with view stats
@@ -224,8 +239,8 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         const { hideNsfw } = await getUserSettings(userId);
         const hasCursor = Boolean(cursor);
 
-        const cacheKey = `manga:search:v3:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query)}`;
-        const countCacheKey = `manga:search:count:v3:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query, true)}`;
+        const cacheKey = `manga:search:v4:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query)}`;
+        const countCacheKey = `manga:search:count:v4:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query, true)}`;
 
         const conditions: any = [];
 
@@ -237,14 +252,7 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         // 1. Filter Logic (normalize apostrophes so ' vs ' doesn't break search)
         if (search) {
             const normalizedSearch = normalizeApostrophes(String(search).trim());
-            const pattern = `%${normalizedSearch}%`;
-            // Compare against normalized title fields so DB-stored curly quotes match user's straight quotes
-            conditions.push(or(
-                sql`REPLACE(REPLACE(COALESCE(${schema.series.title}, ''), CHR(8217), ''''), CHR(8216), '''') ILIKE ${pattern}`,
-                sql`REPLACE(REPLACE(COALESCE(${schema.series.romanizedTitle}, ''), CHR(8217), ''''), CHR(8216), '''') ILIKE ${pattern}`,
-                sql`REPLACE(REPLACE(COALESCE(${schema.series.nativeTitle}, ''), CHR(8217), ''''), CHR(8216), '''') ILIKE ${pattern}`,
-                buildAuthorSearchCondition(normalizedSearch),
-            ));
+            conditions.push(buildTextSearchCondition(normalizedSearch));
         }
 
         const genreList = parseParam(genres);
@@ -283,11 +291,8 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         conditions.push(or(ne(schema.series.state, 'merged'), isNull(schema.series.state)));
 
         // 2. Sorting & Pagination Setup
-        const columns = getTableColumns(schema.series);
-        const sortKey = (sort as keyof typeof columns) || 'weightedScore';
-        const effectiveSort = sortKey === 'totalChapters' 
-            ? sql`NULLIF(${schema.series.totalChapters}, '')::int` 
-            : columns[sortKey];
+        const sortKey = resolveDiscoverSortKey(sort);
+        const effectiveSort = getDiscoverSortColumn(sortKey);
 
         const baseConditions = [...conditions];
 
@@ -301,7 +306,9 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                 const parsed = new Date(cursorVal);
                 typedVal = isNaN(parsed.getTime()) ? cursorVal : parsed;
             } else {
-                typedVal = (sortKey === 'totalChapters' || typeof columns[sortKey] === 'number') ? Number(cursorVal) : cursorVal;
+                typedVal = (sortKey === 'totalChapters' || sortKey === 'year' || sortKey === 'weightedScore')
+                    ? Number(cursorVal)
+                    : cursorVal;
             }
 
             conditions.push(sql`(${effectiveSort}, ${schema.series.id}) ${operator} (${typedVal}, ${Number(cursorId)})`);
@@ -311,7 +318,7 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
             { key: cacheKey, ttl: CATALOG_CACHE_TTL },
             async (): Promise<DiscoverSearchPayload> => {
                 const data = await db
-                    .select({ ...columns })
+                    .select(discoverSeriesSelect)
                     .from(series)
                     .where(and(...conditions))
                     .orderBy(

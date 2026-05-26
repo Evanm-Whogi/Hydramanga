@@ -1,8 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { getCookieCache, getSessionCookie } from "better-auth/cookies";
 
-const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://localhost:4000";
+const AUTH_SECRET = process.env.BETTER_AUTH_SECRET;
 
-const GUEST_PATHS = ["/login", "/register", "/reset-password"];
+if (!AUTH_SECRET) {
+    throw new Error(
+        "BETTER_AUTH_SECRET is required for proxy auth checks (signed cookie cache)."
+    );
+}
+
+const GUEST_PATHS = ["/login", "/register", "/reset-password"] as const;
 
 const PROTECTED_PATHS = [
     "/admin",
@@ -19,11 +26,15 @@ const PROTECTED_PATHS = [
     "/users",
     "/contact",
     "/request",
-];
+] as const;
 
-type SessionPayload = {
-    user?: { role?: string | null };
-} | null;
+type UserRole = "admin" | "user" | "moderator" | string;
+
+type CachedAuth = {
+    /** True when the signed cookie cache verified a user (cryptographic check). */
+    verified: boolean;
+    role: UserRole | null;
+};
 
 function matchesPath(pathname: string, paths: readonly string[]): boolean {
     return paths.some(
@@ -31,62 +42,85 @@ function matchesPath(pathname: string, paths: readonly string[]): boolean {
     );
 }
 
-async function getSession(request: NextRequest): Promise<SessionPayload> {
-    const cookie = request.headers.get("cookie");
-    if (!cookie) return null;
+function hasSessionToken(request: NextRequest): boolean {
+    return Boolean(getSessionCookie(request));
+}
 
+/** Single signed-cache read per request — no backend HTTP. */
+async function getCachedAuth(request: NextRequest): Promise<CachedAuth> {
     try {
-        const res = await fetch(`${BACKEND_INTERNAL_URL}/auth/get-session`, {
-            headers: { cookie },
-            cache: "no-store",
-        });
-        if (!res.ok) return null;
-        const data = await res.json();
-        if (!data?.user) return null;
-        return data;
+        const cached = await getCookieCache(request, { secret: AUTH_SECRET });
+        const user = cached?.user as { role?: UserRole | null } | undefined;
+
+        if (!user) {
+            return { verified: false, role: null };
+        }
+
+        return {
+            verified: true,
+            role: user.role ?? null,
+        };
     } catch {
-        return null;
+        return { verified: false, role: null };
     }
 }
 
+/**
+ * UX redirects only — not the security boundary.
+ * Real validation: admin/layout.tsx (server getSession) + Express authMiddleware.
+ */
 export default async function proxy(request: NextRequest) {
     const pathname = request.nextUrl.pathname;
+
     const isGuestRoute = matchesPath(pathname, GUEST_PATHS);
-    const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
+    const isAdminRoute =
+        pathname === "/admin" || pathname.startsWith("/admin/");
     const isProtectedRoute = matchesPath(pathname, PROTECTED_PATHS);
 
+    // Matcher is broad (static regex); skip auth logic on public routes.
+    if (!isGuestRoute && !isAdminRoute && !isProtectedRoute) {
+        return NextResponse.next();
+    }
+
+    const hasSession = hasSessionToken(request);
+
+    // Fast path — no cookie at all.
+    if (!hasSession) {
+        if (isProtectedRoute || isAdminRoute) {
+            return NextResponse.redirect(new URL("/login", request.url));
+        }
+        return NextResponse.next();
+    }
+
+    // One cache read for the rest of the request.
+    const auth = await getCachedAuth(request);
+
     if (isGuestRoute) {
-        const session = await getSession(request);
-        if (session?.user) {
+        if (auth.verified || hasSession) {
             return NextResponse.redirect(new URL("/home", request.url));
         }
         return NextResponse.next();
     }
 
     if (isAdminRoute) {
-        const session = await getSession(request);
-        if (!session?.user) {
-            return NextResponse.redirect(new URL("/login", request.url));
-        }
-        if (session.user.role !== "admin") {
+        // Fail closed when cache proves a non-admin user.
+        if (auth.verified && auth.role !== "admin") {
             return NextResponse.redirect(new URL("/home", request.url));
         }
+        // Token present but cache missing/stale → server layout validates via getSession.
         return NextResponse.next();
     }
 
     if (isProtectedRoute) {
-        const session = await getSession(request);
-        if (!session?.user) {
-            return NextResponse.redirect(new URL("/login", request.url));
-        }
+        // Session cookie present; root layout validates with backend on render.
         return NextResponse.next();
     }
 
     return NextResponse.next();
 }
 
+// Static literal required by Next.js/Turbopack. Path lists above control which routes
+// actually run auth logic; this regex only decides when the proxy function is invoked.
 export const config = {
-    matcher: [
-        "/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)",
-    ],
+    matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };

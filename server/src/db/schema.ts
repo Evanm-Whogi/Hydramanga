@@ -67,6 +67,8 @@ export const series = pgTable('series', {
   secondaryTitles: jsonb('secondary_titles'),
   cover: jsonb('cover'),
   authors: jsonb('authors'),
+  /** Lowercased titles + authors for GIN trgm search (maintained by DB trigger). */
+  searchText: text('search_text'),
   artists: jsonb('artists'),
   description: text('description'),
   note: text('note'),
@@ -118,6 +120,7 @@ export const series = pgTable('series', {
   
   // Fuzzy Search Title (Requires pg_trgm extension)
   titleTrgmIdx: index('idx_series_title_trgm').using('gin', t.title.op('gin_trgm_ops')),
+  searchTextTrgmIdx: index('idx_series_search_text_trgm').using('gin', t.searchText.op('gin_trgm_ops')),
   
   // Composite Filter Logic
   filterLogicIdx: index('idx_series_filter_logic').on(t.type, t.status, t.rating.desc()),

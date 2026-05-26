@@ -6,8 +6,8 @@ export const CATALOG_CACHE_TTL = 0;
 
 export async function invalidateCatalogCaches(): Promise<void> {
     await Promise.all([
-        cacheService.invalidatePattern('manga:search:v3:*'),
-        cacheService.invalidatePattern('manga:search:count:v3:*'),
+        cacheService.invalidatePattern('manga:search:v4:*'),
+        cacheService.invalidatePattern('manga:search:count:v4:*'),
         cacheService.del('manga:tags:all'),
         cacheService.del('collections:genres:v2'),
     ]);
