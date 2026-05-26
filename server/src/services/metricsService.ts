@@ -1,8 +1,10 @@
 import { db, schema } from '@/db/index';
-import { eq, and, sql, gte, desc } from 'drizzle-orm';
+import { eq, and, sql, gte, desc, inArray } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { cacheService } from '@/services/cacheService';
 import { shouldFilterManga } from '@/config/contentFilter';
+import { fetchSeriesChapterFlags, seriesCardColumns } from '@/lib/seriesQueries';
+import { series } from '@/db/schema';
 
 const CACHE_TTL = {
   TRENDING: 1800, // 30 minutes - trending is stable
@@ -219,15 +221,19 @@ class MetricsService {
         return [];
       }
 
-      const seriesData = await db.query.series.findMany({
-        where: (series, { inArray }) => inArray(series.id, seriesIds),
-      });
+      const seriesData = await db
+        .select(seriesCardColumns)
+        .from(series)
+        .where(inArray(series.id, seriesIds));
+
+      const { importedIds } = await fetchSeriesChapterFlags(seriesIds);
 
       // Combine trending stats with series data
       const results = trendingData.map((trend: any) => {
-        const series = seriesData.find((s: any) => s.id === trend.seriesId);
+        const row = seriesData.find((s) => s.id === trend.seriesId);
         return {
-          ...series,
+          ...row,
+          hasImportedChapters: importedIds.has(trend.seriesId),
           trendingStats: {
             viewCount: trend.viewCount || trend.totalViews,
             uniqueViewCount: trend.uniqueViewCount || trend.uniqueViews,

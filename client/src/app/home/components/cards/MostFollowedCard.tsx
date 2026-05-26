@@ -1,9 +1,10 @@
 "use client"
-import { Star, Eye, BookmarkCheck } from "lucide-react";
+import { Star, Eye } from "lucide-react";
 import Link from "next/link";
 import { mangaPath } from "@/lib/paths";
 import { formatToRating } from "@/lib/utils";
 import { memo } from "react";
+import MangaImportBadge from "@/components/MangaImportBadge";
 
 function MangaCard({ manga }: { manga?: any }) {
     return (
@@ -25,9 +26,7 @@ function MangaCard({ manga }: { manga?: any }) {
                 </div>
                 <div className="absolute bottom-0 inset-x-0 flex justify-between items-center p-3 bg-linear-to-t from-transparent-card/80 to-transparent-card/50">
                     <div className="flex items-center font-bold text-primary"><Star className="size-3.5 text-yellow-400 mr-1 fill-yellow-400" />{formatToRating(manga.rating)}</div>
-                    { manga.isInUserList && (
-                        <span className="text-green-400 font-semibold"><BookmarkCheck className="size-5" /></span>
-                    )}
+                    <MangaImportBadge manga={manga} />
                     <div className="flex items-center font-bold text-primary">
                         <Eye className="size-3.5 text-blue-300 mr-1" />
                         {manga.views > 0 ? formatViewCount(manga.views) : '0'}

@@ -1,12 +1,13 @@
 import { Request, Response } from 'express';
 import { db, schema } from '@/db/index';
-import { eq, desc, sql, getTableColumns, gte, gt, inArray, and } from 'drizzle-orm';
+import { eq, desc, sql, gte, gt, inArray, and, getTableColumns } from 'drizzle-orm';
 import { chapters, series } from '@/db/schema';
 import dotenv from 'dotenv';
 import { userProgressService } from '@/services/userProgressService';
 import { cacheService } from '@/services/cacheService';
 import { getUserSettings } from '@/services/userSettingsService';
 import { getNsfwFilterConditions } from '@/config/contentFilter';
+import { enrichNestedSeriesExtras, enrichSeriesListExtras, seriesCardColumns} from '@/lib/seriesQueries';
 
 dotenv.config();
 
@@ -52,27 +53,27 @@ export const getRecentlyAdded = async (req: Request, res: Response) => {
     const userId = (req as any).user?.id || (req as any).session?.userId;
     const { hideNsfw } = await getUserSettings(userId);
 
-    const cacheKey = `home:recentlyAdded:${userId ?? 'anon'}:${hideNsfw}:${page}:${limit}`;
+    const cacheKey = `home:recentlyAdded:${hideNsfw}:${page}:${limit}`;
     const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
     const data = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.userSpecific },
         async () => {
             const base = db
                 .select({
-                    ...getTableColumns(series),
+                    ...seriesCardColumns,
                     latestChapterDate: sql<string>`max(${chapters.createdAt})`,
-                    views: schema.mangaViewStats.totalViews,
-                    isNew: sql<boolean>`exists (select 1 from ${schema.chapters} c where c.series_id = ${series.id} and c.created_at >= now() - interval ${sql.raw(`'${newDaysInterval}'`)})`.mapWith(Boolean),
-                    isInUserList: userId ? sql<boolean>`exists (select 1 from ${schema.userSeriesList} usl where usl.series_id = ${series.id} and usl.user_id = ${userId})`.mapWith(Boolean) : sql<boolean>`false`,
+                    views: sql<number>`max(${schema.mangaViewStats.totalViews})`.mapWith(Number),
                 })
                 .from(series)
                 .innerJoin(chapters, eq(series.id, chapters.seriesId))
                 .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId));
             const withWhere = nsfwConditions.length ? base.where(and(...nsfwConditions)) : base;
-            return withWhere.groupBy(series.id, schema.mangaViewStats.totalViews)
+            const rows = await withWhere
+                .groupBy(series.id)
                 .orderBy(desc(sql`max(${chapters.createdAt})`))
                 .limit(limit)
                 .offset(offset);
+            return enrichSeriesListExtras(rows, newDaysInterval);
         }
     );
     res.json(data);
@@ -86,7 +87,7 @@ export const getPopularChapters = async (req: Request, res: Response) => {
     const userId = (req as any).user?.id || (req as any).session?.userId;
     const { hideNsfw } = await getUserSettings(userId);
 
-    const cacheKey = `home:popularChapters:${userId ?? 'anon'}:${hideNsfw}:${period}:${limit}`;
+    const cacheKey = `home:popularChapters:${hideNsfw}:${period}:${limit}`;
     const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
     const results = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.global },
@@ -123,9 +124,8 @@ export const getPopularChapters = async (req: Request, res: Response) => {
                     viewCount: subquery.viewCount,
                 },
                 series: {
-                    ...getTableColumns(series),
+                    ...seriesCardColumns,
                     totalMangaViews: schema.mangaViewStats.totalViews,
-                    isNew: sql<boolean>`exists (select 1 from ${chapters} c where c.series_id = ${series.id} and c.created_at >= now() - interval '7 days')`.mapWith(Boolean),
                 },
             })
                 .from(subquery)
@@ -133,7 +133,8 @@ export const getPopularChapters = async (req: Request, res: Response) => {
                 .innerJoin(series, eq(series.id, subquery.seriesId))
                 .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId));
             const withWhere = nsfwConditions.length ? base.where(and(...nsfwConditions)) : base;
-            return withWhere.orderBy(desc(subquery.viewCount));
+            const rows = await withWhere.orderBy(desc(subquery.viewCount));
+            return enrichNestedSeriesExtras(rows, newDaysInterval);
         }
     );
     res.json(results);
@@ -147,43 +148,56 @@ export const getPopularManga = async (req: Request, res: Response) => {
     const userId = (req as any).user?.id || (req as any).session?.userId;
     const { hideNsfw } = await getUserSettings(userId);
 
-    const cacheKey = `home:popularManga:${userId ?? 'anon'}:${hideNsfw}:${period}:${limit}`;
+    const cacheKey = `home:popularManga:${hideNsfw}:${period}:${limit}`;
     const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
     const results = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.global },
         async () => {
             const baseConditions = nsfwConditions.length ? and(...nsfwConditions) : undefined;
-            const query = db.select({
-                ...getTableColumns(series),
-                views: threshold
-                    ? sql<number>`count(${schema.mangaViews.id})`.mapWith(Number)
-                    : schema.mangaViewStats.totalViews,
-                isNew: sql<boolean>`exists (
-                    select 1 from ${schema.chapters} c 
-                    where c.series_id = ${series.id} 
-                    and c.created_at >= now() - interval ${sql.raw(`'${newDaysInterval}'`)}
-                )`.mapWith(Boolean),
-                isInUserList: userId
-                    ? sql<boolean>`exists (
-                        select 1 from ${schema.userSeriesList} usl 
-                        where usl.series_id = ${series.id} and usl.user_id = ${userId}
-                    )`.mapWith(Boolean)
-                    : sql<boolean>`false`,
-            })
-                .from(series)
-                .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId));
 
             if (threshold) {
-                query.innerJoin(schema.mangaViews, eq(series.id, schema.mangaViews.seriesId))
-                    .where(baseConditions ? and(gte(schema.mangaViews.viewedAt, threshold), baseConditions) : gte(schema.mangaViews.viewedAt, threshold))
-                    .groupBy(series.id, schema.mangaViewStats.totalViews)
-                    .having(sql`count(${schema.mangaViews.id}) > 0`)
-                    .orderBy(desc(sql`count(${schema.mangaViews.id})`));
-            } else {
-                query.where(baseConditions ? and(gt(schema.mangaViewStats.totalViews, 0), baseConditions) : gt(schema.mangaViewStats.totalViews, 0))
-                    .orderBy(desc(schema.mangaViewStats.totalViews));
+                const popularByViews = db
+                    .select({
+                        seriesId: schema.mangaViews.seriesId,
+                        views: sql<number>`count(*)`.mapWith(Number).as('period_views'),
+                    })
+                    .from(schema.mangaViews)
+                    .innerJoin(series, eq(series.id, schema.mangaViews.seriesId))
+                    .where(
+                        baseConditions
+                            ? and(gte(schema.mangaViews.viewedAt, threshold), baseConditions)
+                            : gte(schema.mangaViews.viewedAt, threshold),
+                    )
+                    .groupBy(schema.mangaViews.seriesId)
+                    .having(sql`count(*) > 0`)
+                    .orderBy(desc(sql`count(*)`))
+                    .limit(limit)
+                    .as('popular_by_views');
+
+                const rows = await db
+                    .select({
+                        ...seriesCardColumns,
+                        views: popularByViews.views,
+                    })
+                    .from(popularByViews)
+                    .innerJoin(series, eq(series.id, popularByViews.seriesId))
+                    .orderBy(desc(popularByViews.views));
+
+                return enrichSeriesListExtras(rows, newDaysInterval);
             }
-            return await query.limit(limit);
+
+            const rows = await db
+                .select({
+                    ...seriesCardColumns,
+                    views: schema.mangaViewStats.totalViews,
+                })
+                .from(series)
+                .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
+                .where(baseConditions ? and(gt(schema.mangaViewStats.totalViews, 0), baseConditions) : gt(schema.mangaViewStats.totalViews, 0))
+                .orderBy(desc(schema.mangaViewStats.totalViews))
+                .limit(limit);
+
+            return enrichSeriesListExtras(rows, newDaysInterval);
         }
     );
     res.json(results);
@@ -196,34 +210,24 @@ export const getHighScores = async (req: Request, res: Response) => {
     const userId = (req as any).user?.id || (req as any).session?.userId;
     const { hideNsfw } = await getUserSettings(userId);
 
-    const cacheKey = `home:highScores:${userId ?? 'anon'}:${hideNsfw}:${type}:${limit}`;
+    const cacheKey = `home:highScores:${hideNsfw}:${type}:${limit}`;
     const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
     const data = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.global },
         async () => {
             const typeCondition = type && type !== 'all' ? eq(series.type, type) : undefined;
             const whereClause = [typeCondition, ...nsfwConditions].filter(Boolean);
-            return db
+            const rows = await db
                 .select({
-                    ...getTableColumns(series),
+                    ...seriesCardColumns,
                     views: schema.mangaViewStats.totalViews,
-                    isNew: sql<boolean>`exists (
-                        select 1 from ${schema.chapters} c 
-                        where c.series_id = ${series.id} 
-                        and c.created_at >= now() - interval ${sql.raw(`'${newDaysInterval}'`)}
-                    )`.mapWith(Boolean),
-                    isInUserList: userId
-                        ? sql<boolean>`exists (
-                            select 1 from ${schema.userSeriesList} usl 
-                            where usl.series_id = ${series.id} and usl.user_id = ${userId}
-                        )`.mapWith(Boolean)
-                        : sql<boolean>`false`,
                 })
                 .from(series)
                 .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
                 .where(whereClause.length ? and(...(whereClause as any)) : undefined)
                 .orderBy(desc(series.weightedScore))
                 .limit(limit);
+            return enrichSeriesListExtras(rows, newDaysInterval);
         }
     );
     res.json(data);
@@ -237,7 +241,7 @@ export const getMostFollowed = async (req: Request, res: Response) => {
     const userId = (req as any).user?.id || (req as any).session?.userId;
     const { hideNsfw } = await getUserSettings(userId);
 
-    const cacheKey = `home:mostFollowed:${userId ?? 'anon'}:${hideNsfw}:${period}:${limit}`;
+    const cacheKey = `home:mostFollowed:${hideNsfw}:${period}:${limit}`;
     const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
     const data = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.global },
@@ -254,28 +258,20 @@ export const getMostFollowed = async (req: Request, res: Response) => {
                 .limit(limit)
                 .as('fc');
 
-            const base = db
+            const rows = await db
                 .select({
-                    ...getTableColumns(series),
+                    ...seriesCardColumns,
                     followerCount: followerCounts.count,
                     views: schema.mangaViewStats.totalViews,
-                    isNew: sql<boolean>`exists (
-                        select 1 from ${schema.chapters} c 
-                        where c.series_id = ${series.id} 
-                        and c.created_at >= now() - interval ${sql.raw(`'${newDaysInterval}'`)}
-                    )`.mapWith(Boolean),
-                    isInUserList: userId
-                        ? sql<boolean>`exists (
-                            select 1 from ${schema.userSeriesList} usl 
-                            where usl.series_id = ${series.id} and usl.user_id = ${userId}
-                        )`.mapWith(Boolean)
-                        : sql<boolean>`false`,
                 })
                 .from(series)
                 .innerJoin(followerCounts, eq(series.id, followerCounts.seriesId))
-                .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId));
-            const withWhere = nsfwConditions.length ? base.where(and(...nsfwConditions)) : base;
-            return withWhere.orderBy(desc(followerCounts.count));
+                .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
+                .where(nsfwConditions.length ? and(...nsfwConditions) : undefined)
+                .orderBy(desc(followerCounts.count))
+                .limit(limit);
+
+            return enrichSeriesListExtras(rows, newDaysInterval);
         }
     );
     res.json(data);
@@ -328,13 +324,8 @@ export const getRecentChaptersFromUserList = async (req: Request, res: Response)
                 .select({
                     chapter: getTableColumns(chapters),
                     series: {
-                        ...getTableColumns(series),
+                        ...seriesCardColumns,
                         views: schema.mangaViewStats.totalViews,
-                        isNew: sql<boolean>`exists (
-                            select 1 from ${schema.chapters} c
-                            where c.series_id = ${series.id}
-                            and c.created_at >= now() - interval ${sql.raw(`'${newDaysInterval}'`)}
-                        )`.mapWith(Boolean),
                     },
                 })
                 .from(chapters)
@@ -343,10 +334,10 @@ export const getRecentChaptersFromUserList = async (req: Request, res: Response)
                 .where(whereClause)
                 .orderBy(desc(chapters.createdAt));
 
-            return results.map((row) => ({
-                chapter: row.chapter,
-                series: row.series,
-            }));
+            return enrichNestedSeriesExtras(
+                results.map((row) => ({ chapter: row.chapter, series: row.series })),
+                newDaysInterval,
+            );
         }
     );
     res.json(formatted);

@@ -15,6 +15,7 @@ import { CATALOG_CACHE_TTL } from '@/lib/catalogCache';
 import axios from 'axios';
 import { getCollectionsList } from '@/services/collectionsService';
 import { enrichCommentsWithKarma } from '@/lib/enrichAuthors';
+import { fetchSeriesChapterFlags } from '@/lib/seriesQueries';
 
 // Normalize curly/smart quotes to ASCII so search matches titles regardless of apostrophe type
 function normalizeApostrophes(s: string): string {
@@ -110,6 +111,7 @@ async function enrichWithLatestChapter(mangaList: any[]) {
     return mangaList.map((manga: any) => ({
         ...manga,
         latestChapter: latestMap.get(manga.id) || null,
+        hasImportedChapters: latestMap.has(manga.id),
     }));
 }
 
@@ -150,16 +152,15 @@ async function getCachedDiscoverTotal(countCacheKey: string, baseConditions: any
     );
 }
 
-/** Live fields: chapters, lists, views, isNew — always fresh; not stored in skeleton cache. */
+/** Live fields: chapters, views, isNew — always fresh; not stored in skeleton cache. */
 async function enrichDiscoverSearchPayload(
     payload: DiscoverSearchPayload,
-    userId: string | undefined,
 ): Promise<DiscoverSearchPayload> {
     if (payload.items.length === 0) return payload;
 
     const seriesIds = payload.items.map((m: { id: number }) => m.id);
 
-    const [freshStatsRows, followerCountRows, inListRows, latestChapters, isNewRows] = await Promise.all([
+    const [freshStatsRows, followerCountRows, latestChapters, chapterFlags] = await Promise.all([
         db
             .select({
                 id: schema.series.id,
@@ -176,12 +177,6 @@ async function enrichDiscoverSearchPayload(
             .from(schema.userSeriesList)
             .where(inArray(schema.userSeriesList.seriesId, seriesIds))
             .groupBy(schema.userSeriesList.seriesId),
-        userId
-            ? db
-                  .select({ seriesId: schema.userSeriesList.seriesId })
-                  .from(schema.userSeriesList)
-                  .where(and(eq(schema.userSeriesList.userId, userId), inArray(schema.userSeriesList.seriesId, seriesIds)))
-            : Promise.resolve([]),
         db
             .selectDistinctOn([schema.chapters.seriesId], getTableColumns(schema.chapters))
             .from(schema.chapters)
@@ -191,24 +186,12 @@ async function enrichDiscoverSearchPayload(
                 desc(sql`CAST(split_part(${schema.chapters.chapterNumber}, '.', 1) AS INTEGER)`),
                 desc(sql`CASE WHEN ${schema.chapters.chapterNumber} LIKE '%.%' THEN CAST(split_part(${schema.chapters.chapterNumber}, '.', 2) AS INTEGER) ELSE 0 END`),
             ),
-        db
-            .select({
-                id: schema.series.id,
-                isNew: sql<boolean>`EXISTS (
-                    SELECT 1 FROM ${schema.chapters} c
-                    WHERE c.series_id = ${schema.series.id}
-                    AND c.created_at >= NOW() - INTERVAL ${sql.raw(`'${DISCOVER_NEW_INTERVAL}'`)}
-                )`.mapWith(Boolean),
-            })
-            .from(schema.series)
-            .where(inArray(schema.series.id, seriesIds)),
+        fetchSeriesChapterFlags(seriesIds, DISCOVER_NEW_INTERVAL),
     ]);
 
     const statsMap = new Map(freshStatsRows.map((r) => [r.id, r]));
     const followerCountMap = new Map(followerCountRows.map((r) => [r.seriesId, Number(r.count)]));
-    const inListSet = new Set(inListRows.map((r) => r.seriesId));
     const chapterMap = new Map(latestChapters.map((c) => [c.seriesId, c]));
-    const isNewMap = new Map(isNewRows.map((r) => [r.id, r.isNew]));
 
     return {
         ...payload,
@@ -221,9 +204,9 @@ async function enrichDiscoverSearchPayload(
                 views: fresh?.totalViews ?? item.views ?? 0,
                 uniqueViews: fresh?.uniqueViews ?? item.uniqueViews ?? 0,
                 followerCount: followerCountMap.get(item.id) ?? 0,
-                isInUserList: userId ? inListSet.has(item.id) : false,
-                isNew: isNewMap.get(item.id) ?? false,
+                isNew: chapterFlags.newIds.has(item.id),
                 latestChapter: chapterMap.get(item.id) || null,
+                hasImportedChapters: chapterFlags.importedIds.has(item.id),
             };
         }),
     };
@@ -367,7 +350,7 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
             skeleton.meta.total = await getCachedDiscoverTotal(countCacheKey, baseConditions);
         }
 
-        const responsePayload = await enrichDiscoverSearchPayload(skeleton, userId);
+        const responsePayload = await enrichDiscoverSearchPayload(skeleton);
 
         return res.json(responsePayload);
 

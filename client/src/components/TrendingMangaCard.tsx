@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { Star, TrendingUp, Eye, BookmarkCheck } from "lucide-react";
+import { Star, TrendingUp, Eye } from "lucide-react";
 import { formatToRating } from "@/lib/utils";
+import MangaImportBadge from "@/components/MangaImportBadge";
 
 interface TrendingMangaCardProps {
     manga: any;
@@ -11,20 +12,6 @@ export default function TrendingMangaCard({ manga, rank }: TrendingMangaCardProp
     const coverUrl = manga.cover?.raw?.url || manga.cover?.x350?.x3 || '/notFound.png';
     const viewCount = manga.trendingStats?.viewCount || 0;
     const uniqueViews = manga.trendingStats?.uniqueViewCount || 0;
-
-    // Check if manga is in any user list
-    const isInList = manga.userSeriesList 
-        ? Array.isArray(manga.userSeriesList) 
-            ? manga.userSeriesList.length > 0 
-            : true
-        : false;
-
-    // Get the first list name for tooltip
-    const firstListName = manga.userSeriesList 
-        ? Array.isArray(manga.userSeriesList) 
-            ? manga.userSeriesList[0]?.listTitle || manga.userSeriesList[0]?.listName || 'list'
-            : manga.userSeriesList?.listName || 'list'
-        : '';
 
     return (
         <Link href={`/manga/${manga.id}`} className="flex flex-col w-full h-fit group">
@@ -55,11 +42,7 @@ export default function TrendingMangaCard({ manga, rank }: TrendingMangaCardProp
                         <Star className="size-3.5 text-yellow-400 mr-1 fill-yellow-400" />
                         {formatToRating(manga.rating || manga.weightedScore)}
                     </div>
-                    { isInList && (
-                        <span title={`In "${firstListName}"`} className="text-green-400 font-semibold">
-                            <BookmarkCheck className="size-5" />
-                        </span>
-                    )}
+                    <MangaImportBadge manga={manga} />
                     <div className="flex flex-col items-end text-white text-xs">
                         <div className="flex items-center font-bold">
                             <Eye className="size-3.5 text-blue-300 mr-1" />
