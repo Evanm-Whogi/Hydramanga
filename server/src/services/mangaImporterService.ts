@@ -16,6 +16,7 @@ import path from 'path';
 import Database from 'better-sqlite3';
 import * as Sentry from "@sentry/node";
 import { withSpan, addBreadcrumb, captureError } from '@/utils/sentryHelper';
+import { invalidateCatalogCaches } from '@/lib/catalogCache';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -433,7 +434,8 @@ class MangaImporterService {
       });
 
       await discordService.notifyImportCompleted(fileName, stats);
-      
+      await invalidateCatalogCaches();
+
       if (job) await job.updateProgress(100);
       logger.info(`✅ Import complete: ${stats.inserted.toLocaleString()} inserted, ${stats.updated.toLocaleString()} updated in ${duration}`);
 

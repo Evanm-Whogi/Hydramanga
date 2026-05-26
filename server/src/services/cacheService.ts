@@ -22,6 +22,7 @@ dotenv.config();
 
 interface CacheOptions {
   key: string;
+  /** Seconds until expiry; 0 or negative = no expiry (invalidated explicitly). */
   ttl: number;
   staleIfError?: number;
   tags?: string[];
@@ -63,15 +64,17 @@ class CacheService {
         key: string,
         value: T,
         ttl: number = this.cacheTime,
-        tags?: string[]
+        _tags?: string[]
     ): Promise<void> {
         try {
             const serialized = JSON.stringify(value);
-            await this.redisClient.set(key, serialized, { EX: ttl });
-
-            // Store stale copy for error recovery
-            const staleKey = `${key}:stale`;
-            await this.redisClient.set(staleKey, serialized, { EX: ttl * 3 });
+            if (ttl > 0) {
+                await this.redisClient.set(key, serialized, { EX: ttl });
+                const staleKey = `${key}:stale`;
+                await this.redisClient.set(staleKey, serialized, { EX: ttl * 3 });
+            } else {
+                await this.redisClient.set(key, serialized);
+            }
         } catch (error) {
             logger.error(`Error setting cache for key ${key}: ${error}`, { service: 'cacheService' });
         }

@@ -67,9 +67,9 @@ export default function MangaList({ filters, onMangaNavigate }: MangaListProps) 
                         return (
                             <div key={item.id} ref={isLastElement ? lastElementRef : null}>
                                 {displayMode === 'grid' ? (
-                                    <MangaCard manga={item} onNavigate={onMangaNavigate} />
+                                    <MangaCard manga={item} onNavigate={onMangaNavigate} priority={index < 16} />
                                 ) : (
-                                    <MangaCardList manga={item} onNavigate={onMangaNavigate} />
+                                    <MangaCardList manga={item} onNavigate={onMangaNavigate} priority={index < 8} />
                                 )}
                             </div>
                         )

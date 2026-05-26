@@ -4,8 +4,9 @@ import Link from "next/link";
 import { mangaPath } from "@/lib/paths";
 import { formatToRating } from "@/lib/utils";
 import { memo, type MouseEvent } from "react";
+import CoverImage from "@/components/CoverImage";
 
-function MangaCard({ manga, onNavigate }: { manga?: any; onNavigate?: () => void }) {
+function MangaCard({ manga, onNavigate, priority }: { manga?: any; onNavigate?: () => void; priority?: boolean }) {
     const shouldHandleNavigate = (e: MouseEvent<HTMLAnchorElement>) =>
         e.button === 0 &&
         !e.metaKey &&
@@ -32,8 +33,13 @@ function MangaCard({ manga, onNavigate }: { manga?: any; onNavigate?: () => void
             onPointerDown={handlePointerDown}
             onClick={handleClick}
         >
-            <div className="relative aspect-2/3 w-full overflow-hidden rounded-2xl">
-                <img src={`${manga?.cover?.raw.url || '/notFound.png'}`} alt={manga.title} draggable={false} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+            <div className="relative aspect-2/3 w-full overflow-hidden rounded-2xl bg-foreground">
+                <CoverImage
+                    cover={manga?.cover}
+                    alt={manga.title}
+                    priority={priority}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
                 { manga.isNew && (
                     <div className="absolute top-2 right-2 z-5" title="Newly Added">
                         <span className="bg-accent/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-bold shadow-lg">

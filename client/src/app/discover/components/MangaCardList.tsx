@@ -3,8 +3,9 @@ import { Eye, Bookmark } from "lucide-react";
 import Link from "next/link";
 import { mangaPath } from "@/lib/paths";
 import { memo, type MouseEvent } from "react";
+import CoverImage from "@/components/CoverImage";
 
-function MangaCardList({ manga, onNavigate }: { manga?: any; onNavigate?: () => void }) {
+function MangaCardList({ manga, onNavigate, priority }: { manga?: any; onNavigate?: () => void; priority?: boolean }) {
     const shouldHandleNavigate = (e: MouseEvent<HTMLAnchorElement>) =>
         e.button === 0 &&
         !e.metaKey &&
@@ -31,8 +32,13 @@ function MangaCardList({ manga, onNavigate }: { manga?: any; onNavigate?: () => 
             onPointerDown={handlePointerDown}
             onClick={handleClick}
         >
-            <div className="relative aspect-2/3 w-lg lg:w-32 xl:w-32 overflow-hidden rounded-lg">
-                <img src={`${manga?.cover?.raw.url || '/notFound.png'}`} alt={manga.title} draggable={false} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+            <div className="relative aspect-2/3 w-lg lg:w-32 xl:w-32 overflow-hidden rounded-lg bg-foreground">
+                <CoverImage
+                    cover={manga?.cover}
+                    alt={manga.title}
+                    priority={priority}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
             </div>
             <div className="flex flex-col gap-2 ml-4 mt-2">
                 <h1 className="text-2xl font-bold">{manga.title}</h1>

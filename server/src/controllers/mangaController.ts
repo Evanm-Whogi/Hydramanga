@@ -11,6 +11,7 @@ import { shouldFilterManga, getBlockedGenres, getNsfwFilterConditions } from '@/
 import { getUserSettings } from '@/services/userSettingsService';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import { cacheService } from '@/services/cacheService';
+import { CATALOG_CACHE_TTL } from '@/lib/catalogCache';
 import axios from 'axios';
 import { getCollectionsList } from '@/services/collectionsService';
 import { enrichCommentsWithKarma } from '@/lib/enrichAuthors';
@@ -97,6 +98,122 @@ async function enrichWithLatestChapter(mangaList: any[]) {
     }));
 }
 
+const DISCOVER_NEW_INTERVAL = '3 days';
+const DISCOVER_PAGINATION_KEYS = new Set(['cursor', 'limit']);
+
+function normalizeDiscoverQueryForCache(query: Request['query'], excludePagination = false) {
+    const entries = Object.entries(query)
+        .filter(([key, value]) => {
+            if (key === 'nsfw' || value === undefined) return false;
+            if (excludePagination && DISCOVER_PAGINATION_KEYS.has(key)) return false;
+            return true;
+        })
+        .map(([key, value]) => {
+            if (Array.isArray(value)) {
+                return [key, value.map((v) => String(v)).sort()];
+            }
+            return [key, String(value)];
+        })
+        .sort(([a], [b]) => String(a).localeCompare(String(b)));
+
+    return JSON.stringify(entries);
+}
+
+type DiscoverSearchPayload = {
+    meta: { total: number | null; hasNextPage: boolean; sort: string; order: string };
+    items: any[];
+    nextCursor: string | null;
+};
+
+async function getCachedDiscoverTotal(countCacheKey: string, baseConditions: any[]): Promise<number> {
+    return cacheService.getOrSet(
+        { key: countCacheKey, ttl: CATALOG_CACHE_TTL },
+        async () => {
+            const [row] = await db.select({ count: count() }).from(series).where(and(...baseConditions));
+            return Number(row?.count || 0);
+        },
+    );
+}
+
+/** Live fields: chapters, lists, views, isNew — always fresh; not stored in skeleton cache. */
+async function enrichDiscoverSearchPayload(
+    payload: DiscoverSearchPayload,
+    userId: string | undefined,
+): Promise<DiscoverSearchPayload> {
+    if (payload.items.length === 0) return payload;
+
+    const seriesIds = payload.items.map((m: { id: number }) => m.id);
+
+    const [freshStatsRows, followerCountRows, inListRows, latestChapters, isNewRows] = await Promise.all([
+        db
+            .select({
+                id: schema.series.id,
+                rating: schema.series.rating,
+                weightedScore: schema.series.weightedScore,
+                totalViews: schema.mangaViewStats.totalViews,
+                uniqueViews: schema.mangaViewStats.uniqueViews,
+            })
+            .from(schema.series)
+            .leftJoin(schema.mangaViewStats, eq(schema.series.id, schema.mangaViewStats.seriesId))
+            .where(inArray(schema.series.id, seriesIds)),
+        db
+            .select({ seriesId: schema.userSeriesList.seriesId, count: count() })
+            .from(schema.userSeriesList)
+            .where(inArray(schema.userSeriesList.seriesId, seriesIds))
+            .groupBy(schema.userSeriesList.seriesId),
+        userId
+            ? db
+                  .select({ seriesId: schema.userSeriesList.seriesId })
+                  .from(schema.userSeriesList)
+                  .where(and(eq(schema.userSeriesList.userId, userId), inArray(schema.userSeriesList.seriesId, seriesIds)))
+            : Promise.resolve([]),
+        db
+            .selectDistinctOn([schema.chapters.seriesId], getTableColumns(schema.chapters))
+            .from(schema.chapters)
+            .where(inArray(schema.chapters.seriesId, seriesIds))
+            .orderBy(
+                schema.chapters.seriesId,
+                desc(sql`CAST(split_part(${schema.chapters.chapterNumber}, '.', 1) AS INTEGER)`),
+                desc(sql`CASE WHEN ${schema.chapters.chapterNumber} LIKE '%.%' THEN CAST(split_part(${schema.chapters.chapterNumber}, '.', 2) AS INTEGER) ELSE 0 END`),
+            ),
+        db
+            .select({
+                id: schema.series.id,
+                isNew: sql<boolean>`EXISTS (
+                    SELECT 1 FROM ${schema.chapters} c
+                    WHERE c.series_id = ${schema.series.id}
+                    AND c.created_at >= NOW() - INTERVAL ${sql.raw(`'${DISCOVER_NEW_INTERVAL}'`)}
+                )`.mapWith(Boolean),
+            })
+            .from(schema.series)
+            .where(inArray(schema.series.id, seriesIds)),
+    ]);
+
+    const statsMap = new Map(freshStatsRows.map((r) => [r.id, r]));
+    const followerCountMap = new Map(followerCountRows.map((r) => [r.seriesId, Number(r.count)]));
+    const inListSet = new Set(inListRows.map((r) => r.seriesId));
+    const chapterMap = new Map(latestChapters.map((c) => [c.seriesId, c]));
+    const isNewMap = new Map(isNewRows.map((r) => [r.id, r.isNew]));
+
+    return {
+        ...payload,
+        items: payload.items.map((item: any) => {
+            const fresh = statsMap.get(item.id);
+            return {
+                ...item,
+                rating: fresh?.rating ?? item.rating,
+                weightedScore: fresh?.weightedScore ?? item.weightedScore,
+                views: fresh?.totalViews ?? item.views ?? 0,
+                uniqueViews: fresh?.uniqueViews ?? item.uniqueViews ?? 0,
+                followerCount: followerCountMap.get(item.id) ?? 0,
+                isInUserList: userId ? inListSet.has(item.id) : false,
+                isNew: isNewMap.get(item.id) ?? false,
+                latestChapter: chapterMap.get(item.id) || null,
+            };
+        }),
+    };
+}
+
 // Search manga with filters, sorting, and pagination (Infinite Scroll)
 export async function searchManga(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
@@ -105,25 +222,10 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         const isAsc = String(order).toLowerCase() === 'asc';
         const userId = (req as any).user?.id || (req as any).session?.userId;
         const { hideNsfw } = await getUserSettings(userId);
-        const NEW_INTERVAL = '3 days';
+        const hasCursor = Boolean(cursor);
 
-        const normalizeQueryForCache = (query: Request['query']) => {
-            const entries = Object.entries(query)
-                .filter(([key, value]) => key !== 'nsfw' && value !== undefined)
-                .map(([key, value]) => {
-                    if (Array.isArray(value)) {
-                        return [key, value.map(v => String(v)).sort()];
-                    }
-                    return [key, String(value)];
-                })
-                .sort(([a]: any, [b]: any) => a.localeCompare(b));
-
-            return JSON.stringify(entries);
-        };
-
-        // Global cache key: only filters + hideNsfw (no userId); isInUserList merged per-request for logged-in users
-        const cacheKey = `manga:search:v2:${hideNsfw}:${normalizeQueryForCache(req.query)}`;
-        const cacheTtlSeconds = 60 * 60; // 1 hour (series table updates ~every 5 days)
+        const cacheKey = `manga:search:v3:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query)}`;
+        const countCacheKey = `manga:search:count:v3:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query, true)}`;
 
         const conditions: any = [];
 
@@ -187,6 +289,8 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
             ? sql`NULLIF(${schema.series.totalChapters}, '')::int` 
             : columns[sortKey];
 
+        const baseConditions = [...conditions];
+
         if (cursor) {
             const [cursorVal, cursorId] = String(cursor).split('|');
             const operator = isAsc ? sql`>` : sql`<`;
@@ -203,76 +307,23 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
             conditions.push(sql`(${effectiveSort}, ${schema.series.id}) ${operator} (${typedVal}, ${Number(cursorId)})`);
         }
 
-        const payload = await cacheService.getOrSet({
-                key: cacheKey,
-                ttl: cacheTtlSeconds,
-                staleIfError: cacheTtlSeconds,
-            },
-            async () => {
-                // 3. Main Execution: run count and data query in parallel to reduce latency
-                const [countRows, data] = await Promise.all([
-                    db.select({ count: count() }).from(schema.series).where(and(...conditions)),
-                    db
-                    .select({
-                        ...columns,
-                        views: schema.mangaViewStats.totalViews,
-                        uniqueViews: schema.mangaViewStats.uniqueViews,
-                        // Request 1: Is New (chapter in last X days)
-                        isNew: sql<boolean>`EXISTS (
-                            SELECT 1 FROM ${schema.chapters} c 
-                            WHERE c.series_id = ${schema.series.id} 
-                            AND c.created_at >= NOW() - INTERVAL ${sql.raw(`'${NEW_INTERVAL}'`)}
-                        )`.mapWith(Boolean),
-                        // Request 2: Is In User List (always false in cache; merged per-request below for logged-in users)
-                        isInUserList: sql<boolean>`false`.mapWith(Boolean),
-                        // Request 3: Follower Count
-                        followerCount: sql<number>`(
-                            SELECT COUNT(*) FROM ${schema.userSeriesList} usl 
-                            WHERE usl.series_id = ${schema.series.id}
-                        )`,
-                    })
-                    .from(schema.series)
-                    .leftJoin(schema.mangaViewStats, eq(schema.series.id, schema.mangaViewStats.seriesId))
+        const skeleton = await cacheService.getOrSet(
+            { key: cacheKey, ttl: CATALOG_CACHE_TTL },
+            async (): Promise<DiscoverSearchPayload> => {
+                const data = await db
+                    .select({ ...columns })
+                    .from(series)
                     .where(and(...conditions))
                     .orderBy(
-                        isAsc ? asc(effectiveSort) : desc(effectiveSort), 
-                        isAsc ? asc(schema.series.id) : desc(schema.series.id)
+                        isAsc ? asc(effectiveSort) : desc(effectiveSort),
+                        isAsc ? asc(schema.series.id) : desc(schema.series.id),
                     )
-                    .limit(pageSize + 1),
-                ]);
-                const totalCountResult = countRows[0];
+                    .limit(pageSize + 1);
 
                 const hasNextPage = data.length > pageSize;
                 const items = hasNextPage ? data.slice(0, -1) : data;
-                const seriesIds = items.map(m => m.id);
 
-                // 4. Optimized Latest Chapter Fetch (Batch only for the visible items)
-                let itemsWithChapters: any[] = items; 
-
-                if (seriesIds.length > 0) {
-                    const latestChapters = await db.selectDistinctOn([schema.chapters.seriesId])
-                        .from(schema.chapters)
-                        .where(inArray(schema.chapters.seriesId, seriesIds))
-                        .orderBy(
-                            schema.chapters.seriesId,
-                            desc(sql`CAST(split_part(${schema.chapters.chapterNumber}, '.', 1) AS INTEGER)`),
-                            desc(sql`CASE WHEN ${schema.chapters.chapterNumber} LIKE '%.%' THEN CAST(split_part(${schema.chapters.chapterNumber}, '.', 2) AS INTEGER) ELSE 0 END`)
-                        );
-
-                    const chapterMap = new Map(latestChapters.map(c => [c.seriesId, c]));
-                    
-                    // By mapping directly here, TypeScript infers the combined type correctly
-                    itemsWithChapters = items.map(item => ({
-                        ...item,
-                        latestChapter: chapterMap.get(item.id) || null
-                    }));
-                } else {
-                    // If no series, just map the empty chapters
-                    itemsWithChapters = items.map(item => ({ ...item, latestChapter: null }));
-                }
-
-                // 5. Build Cursor
-                let nextCursor = null;
+                let nextCursor: string | null = null;
                 if (hasNextPage) {
                     const last = items[items.length - 1];
                     let val: any = last[sortKey as keyof typeof last] ?? 0;
@@ -287,66 +338,29 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                     nextCursor = `${val}|${last.id}`;
                 }
 
+                let total: number | null = null;
+                if (!hasCursor) {
+                    total = await getCachedDiscoverTotal(countCacheKey, baseConditions);
+                }
+
                 return {
                     meta: {
-                        total: Number(totalCountResult?.count || 0),
+                        total,
                         hasNextPage,
-                        sort,
-                        order: isAsc ? 'asc' : 'desc'
+                        sort: String(sort),
+                        order: isAsc ? 'asc' : 'desc',
                     },
-                    items: itemsWithChapters,
-                    nextCursor
+                    items,
+                    nextCursor,
                 };
-            }
+            },
         );
 
-        // Merge fresh data that must not be cached: views, rating, isInUserList (and optionally followerCount)
-        let responsePayload = payload;
-        if (payload.items.length > 0) {
-            const seriesIds = payload.items.map((m: { id: number }) => m.id);
-            const [freshStatsRows, followerCountRows, inListRows] = await Promise.all([
-                db
-                    .select({
-                        id: schema.series.id,
-                        rating: schema.series.rating,
-                        weightedScore: schema.series.weightedScore,
-                        totalViews: schema.mangaViewStats.totalViews,
-                        uniqueViews: schema.mangaViewStats.uniqueViews,
-                    })
-                    .from(schema.series)
-                    .leftJoin(schema.mangaViewStats, eq(schema.series.id, schema.mangaViewStats.seriesId))
-                    .where(inArray(schema.series.id, seriesIds)),
-                db
-                    .select({ seriesId: schema.userSeriesList.seriesId, count: count() })
-                    .from(schema.userSeriesList)
-                    .where(inArray(schema.userSeriesList.seriesId, seriesIds))
-                    .groupBy(schema.userSeriesList.seriesId),
-                userId
-                    ? db
-                          .select({ seriesId: schema.userSeriesList.seriesId })
-                          .from(schema.userSeriesList)
-                          .where(and(eq(schema.userSeriesList.userId, userId), inArray(schema.userSeriesList.seriesId, seriesIds)))
-                    : Promise.resolve([]),
-            ]);
-            const statsMap = new Map(freshStatsRows.map((r: { id: number; rating: number | null; weightedScore: number | null; totalViews: number | null; uniqueViews: number | null }) => [r.id, r]));
-            const followerCountMap = new Map(followerCountRows.map((r: { seriesId: number; count: number }) => [r.seriesId, Number(r.count)]));
-            const inListSet = new Set(inListRows.map((r: { seriesId: number }) => r.seriesId));
-            responsePayload = {
-                ...payload,
-                items: payload.items.map((item: any) => {
-                    const fresh = statsMap.get(item.id);
-                    return {
-                        ...item,
-                        rating: fresh?.rating ?? item.rating,
-                        weightedScore: fresh?.weightedScore ?? item.weightedScore,
-                        views: fresh?.totalViews ?? item.views,
-                        uniqueViews: fresh?.uniqueViews ?? item.uniqueViews,
-                        followerCount: followerCountMap.get(item.id) ?? 0,
-                        isInUserList: userId ? inListSet.has(item.id) : item.isInUserList,
-                    };
-                }),
-            };
+        if (skeleton.meta.total === null) {
+            skeleton.meta.total = await getCachedDiscoverTotal(countCacheKey, baseConditions);
         }
+
+        const responsePayload = await enrichDiscoverSearchPayload(skeleton, userId);
 
         return res.json(responsePayload);
 
@@ -358,13 +372,11 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
 export async function getMangaTags(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
         const cacheKey = 'manga:tags:all';
-        const cacheTtlSeconds = 7 * 24 * 60 * 60;
 
         const tags = await cacheService.getOrSet(
             {
                 key: cacheKey,
-                ttl: cacheTtlSeconds,
-                staleIfError: cacheTtlSeconds,
+                ttl: CATALOG_CACHE_TTL,
             },
             async () => {
                 const results = await db.execute(sql`

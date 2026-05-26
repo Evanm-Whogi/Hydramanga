@@ -2,6 +2,7 @@ import { db, schema } from '@/db/index';
 import { sql } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { cacheService } from '@/services/cacheService';
+import { CATALOG_CACHE_TTL } from '@/lib/catalogCache';
 
 export async function getCollectionsList() {
      const genreMetadata = [
@@ -57,14 +58,12 @@ export async function getCollectionsList() {
     const defaultDescription = "Explore a curated selection of popular titles within this category.";
 
     const cacheKey = `collections:genres:v2`; // Updated key since data structure changed
-    const cacheTtlSeconds = 3 * 24 * 60 * 60; // 3 days
 
     try {
         const collectionsData = await cacheService.getOrSet(
             {
                 key: cacheKey,
-                ttl: cacheTtlSeconds,
-                staleIfError: cacheTtlSeconds,
+                ttl: CATALOG_CACHE_TTL,
             },
             async () => {
                 const genreNames = genreMetadata.map(g => g.name);

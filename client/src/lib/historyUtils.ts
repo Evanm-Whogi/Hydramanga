@@ -2,6 +2,8 @@
  * Utility functions for history-related features
  */
 
+import { getCardCoverUrl } from '@/lib/coverUtils';
+
 /**
  * Format seconds to human-readable time format (e.g., "10H 30M" or "45m" or "30s")
  * @param seconds - Total seconds to format
@@ -45,13 +47,9 @@ export function getTimeAgo(date: Date | string): string {
   return `${Math.floor(seconds / 2592000)}mo ago`;
 }
 
-/**
- * Get the cover image URL from manga cover object
- * @param cover - Cover object from manga
- * @returns Cover URL or fallback image
- */
-export function getCoverUrl(cover: any): string {
-  return cover?.raw?.url || cover?.x350?.x3 || '/notFound.png';
+/** @deprecated Prefer getCardCoverUrl — kept for existing imports */
+export function getCoverUrl(cover: unknown): string {
+  return getCardCoverUrl(cover);
 }
 
 /**

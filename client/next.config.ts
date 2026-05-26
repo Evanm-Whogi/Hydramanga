@@ -48,7 +48,13 @@ const nextConfig: NextConfig = {
         hostname: 'images.mangabaka.dev',
         pathname: '/**',
         search: '',
-      }
+      },
+      {
+        protocol: 'https',
+        hostname: 'cdn.mangabaka.dev',
+        pathname: '/**',
+        search: '',
+      },
     ],
     // In Docker/production, skip optimization to avoid permission/server overhead
     unoptimized: process.env.NODE_ENV === 'production',
