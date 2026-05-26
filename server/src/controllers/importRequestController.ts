@@ -17,8 +17,6 @@ export async function createImportRequest(req: Request, res: Response, next: Nex
       seriesId,
     });
 
-    await discordService.notifyImportRequest(userName, requestedTitle, requestedUrl, notes, seriesId);
-
     if ('error' in result) {
       switch (result.error) {
         case 'invalid_title':
@@ -32,6 +30,15 @@ export async function createImportRequest(req: Request, res: Response, next: Nex
           return res.status(400).json({ message: 'Invalid manga reference' });
       }
     }
+
+    await discordService.notifyImportRequest(
+      userName ?? 'Unknown',
+      result.request.requestedTitle,
+      result.request.requestedUrl,
+      result.request.notes,
+      result.request.id,
+      result.request.seriesId
+    );
 
     return res.status(201).json({ status: 201, request: result.request });
   } catch (error) {

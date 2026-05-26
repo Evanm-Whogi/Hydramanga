@@ -137,6 +137,9 @@ export interface LoggingConfig {
  * Discord Configuration
  */
 export interface DiscordConfig {
+    publicWebhookUrl?: string;
+    adminWebhookUrl?: string;
+    /** @deprecated Use DISCORD_PUBLIC_WEBHOOK_URL / DISCORD_ADMIN_WEBHOOK_URL */
     webhookUrl?: string;
     enabled: boolean;
     rateLimit: number; // milliseconds between notifications
@@ -351,8 +354,10 @@ export class AppConfigService {
 
             // Discord Integration
             discord: {
+                publicWebhookUrl: parseEnvString('DISCORD_PUBLIC_WEBHOOK_URL'),
+                adminWebhookUrl: parseEnvString('DISCORD_ADMIN_WEBHOOK_URL'),
                 webhookUrl: parseEnvString('DISCORD_WEBHOOK_URL'),
-                enabled: parseEnvBoolean('DISCORD_ENABLED', false),
+                enabled: parseEnvBoolean('ENABLE_DISCORD_NOTIFICATIONS', false) || parseEnvBoolean('DISCORD_ENABLED', false),
                 rateLimit: parseEnvNumber('DISCORD_RATE_LIMIT', 1000), // 1 second
                 colors: {
                     success: 0x10b981, // Green
@@ -414,11 +419,17 @@ export class AppConfigService {
         }
 
         // Warn about missing Discord webhook
-        if (config.discord.enabled && !config.discord.webhookUrl) {
-            logger.warn(
-                'Discord notifications enabled but webhook URL not configured',
-                { service: 'appConfig' }
-            );
+        if (config.discord.enabled) {
+            const hasPublic =
+                config.discord.publicWebhookUrl || config.discord.webhookUrl;
+            const hasAdmin =
+                config.discord.adminWebhookUrl || config.discord.webhookUrl;
+            if (!hasPublic || !hasAdmin) {
+                logger.warn(
+                    'Discord notifications enabled but webhook URL(s) missing (set DISCORD_PUBLIC_WEBHOOK_URL and DISCORD_ADMIN_WEBHOOK_URL)',
+                    { service: 'appConfig' }
+                );
+            }
         }
 
         // Log all issues

@@ -5,6 +5,8 @@ import dotenv from 'dotenv';
 import { karmaService } from '@/services/karmaService';
 import { enrichCommentsWithKarma } from '@/lib/enrichAuthors';
 import { isAdminRole } from '@/lib/authHelpers';
+import { discordService } from '@/services/discordService';
+import { notificationService } from '@/services/notificationService';
 dotenv.config();
 
 // Fetch top-level comments with replies and votes for a manga series
@@ -65,6 +67,45 @@ export async function createComment(req: Request, res: Response, next: NextFunct
             sourceId: String(newComment[0].id),
             idempotencyKey: `comment:${newComment[0].id}`,
         });
+
+        const [seriesRow] = await db
+            .select({ title: schema.series.title })
+            .from(schema.series)
+            .where(eq(schema.series.id, seriesId))
+            .limit(1);
+
+        if (seriesRow?.title) {
+            discordService
+                .notifyComment(
+                    req.user.name || 'Unknown',
+                    seriesId,
+                    seriesRow.title,
+                    content.trim(),
+                    newComment[0].id,
+                    !!parentId
+                )
+                .catch(() => undefined);
+        }
+
+        if (parentId) {
+            const parentComment = await db.query.comments.findFirst({
+                where: (comments, { eq }) => eq(comments.id, parentId),
+            });
+            if (
+                parentComment &&
+                parentComment.userId !== userId &&
+                seriesRow?.title
+            ) {
+                notificationService
+                    .notifyCommentReply({
+                        recipientUserId: parentComment.userId,
+                        replierName: req.user.name || 'Someone',
+                        seriesId,
+                        seriesTitle: seriesRow.title,
+                    })
+                    .catch(() => undefined);
+            }
+        }
 
         return res.status(201).json({ comment: newComment[0] });
     } catch (error) {

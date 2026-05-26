@@ -9,8 +9,9 @@
  * - Send notifications
  */
 
-import { db } from '@/db';
+import { db, schema } from '@/db';
 import { chapters, series, mangaImportProgress } from '@/db/schema';
+import { notificationService } from '@/services/notificationService';
 import { and, eq } from 'drizzle-orm';
 import { scraperManager } from '@/scrapers';
 import { queueService } from '@/services/queueService';
@@ -283,8 +284,17 @@ export class ChapterScannerService {
 
                 const chapterRange = ChapterNumberParser.formatRange(newChapters);
                 await withSpan(
-                    'notify_chapters_added',
+                    'notify_chapters_discord',
                     async () => {
+                        if (isFirstScan) {
+                            return discordService.notifyMangaImported(
+                                mangaTitle,
+                                seriesId,
+                                foundCount,
+                                chapterRange,
+                                coverUrl
+                            );
+                        }
                         return discordService.notifyChaptersAdded(
                             mangaTitle,
                             seriesId,
@@ -293,8 +303,33 @@ export class ChapterScannerService {
                             coverUrl
                         );
                     },
-                    { op: 'notification', tags: { type: 'chapters_added' } }
+                    {
+                        op: 'notification',
+                        tags: { type: isFirstScan ? 'manga_imported' : 'chapters_added' },
+                    }
                 );
+
+                const libraryUsers = await db
+                    .select({ userId: schema.userSeriesList.userId })
+                    .from(schema.userSeriesList)
+                    .where(eq(schema.userSeriesList.seriesId, seriesId));
+
+                const userIds = [
+                    ...new Set(libraryUsers.map((row) => row.userId)),
+                ];
+
+                if (userIds.length > 0) {
+                    notificationService
+                        .notifyNewChapters({
+                            userIds,
+                            seriesId,
+                            mangaTitle,
+                            chapterCount: foundCount,
+                            chapterRange,
+                            imageUrl: coverUrl ?? null,
+                        })
+                        .catch(() => undefined);
+                }
             } else {
                 // No NEW chapters found during this scan
                 if (isFirstScan) {
@@ -327,6 +362,19 @@ export class ChapterScannerService {
                     });
                 }
             }
+
+            await withSpan(
+                'notify_scan_completed',
+                async () =>
+                    discordService.notifyScanCompleted(
+                        mangaTitle,
+                        seriesId,
+                        foundCount,
+                        isFirstScan,
+                        coverUrl
+                    ),
+                { op: 'notification', tags: { type: 'scan_completed' } }
+            );
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error during scan';
             logger.error(

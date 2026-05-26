@@ -7,8 +7,8 @@ import * as homeService from '@/services/homeService';
 import MostFollowedCard from "@/app/home/components/cards/MostFollowedCard";
 import PopularChapterCard from "@/app/home/components/cards/PopularChapterCard";
 import ContinueReadingCard from "@/components/ContinueReadingCard";
-import CommentCard from "@/app/home/components/cards/CommentCard";
 import CollectionsCard from "@/app/home/components/cards/CollectionsCard";
+import HomeSidebar from "@/app/home/components/HomeSidebar";
 import RecentCard from "@/app/home/components/cards/RecentCard";
 import RecentChapterFromListCard from "@/app/home/components/cards/RecentChapterFromListCard";
 import { getCollections } from "@/services/mangaService";
@@ -97,15 +97,11 @@ export default function Lists() {
     const { data: mostFollowed, filter: followPeriod, setFilter: setFollowPeriod, loading: loadingFollows } = useFilteredManga(homeService.getMostFollowed, 'all');
 
     const [recentlyRead, setRecentlyRead] = useState<any>([]);
-    const [recentComments, setRecentComments] = useState([]);
-    const [topCommenters, setTopCommenters] = useState([]);
     const [collections, setCollections] = useState([]);
     const [recentChaptersFromList, setRecentChaptersFromList] = useState<any[]>([]);
 
     useEffect(() => {
         homeService.getRecentlyRead().then(setRecentlyRead).catch(() => {});
-        homeService.getRecentComments().then(setRecentComments).catch(() => {});
-        homeService.getTopCommenters().then(setTopCommenters).catch(() => {});
         getCollections().then(setCollections).catch(() => {});
         homeService.getRecentChaptersFromUserList(30).then(setRecentChaptersFromList).catch(() => setRecentChaptersFromList([]));
     }, []);
@@ -113,8 +109,8 @@ export default function Lists() {
     return (
         <section id="lists" className="pb-25">
             <div className="container mx-auto text-primary space-y-24 mt-10 md:mt-0">
-                <div className="flex flex-col lg:flex-col xl:flex-row gap-12">
-                    <div className="w-full lg:w-full xl:w-3/4 space-y-16 min-w-0">
+                <div className="flex flex-col gap-10 xl:flex-row xl:gap-8">
+                    <div className="min-w-0 flex-1 space-y-16">
 
                         {/* Reading History */}
                         {recentlyRead?.progress?.length > 0 && (
@@ -208,42 +204,8 @@ export default function Lists() {
                             ))}
                         </CarouselSection>
                     </div>
-                    <div className="w-full lg:w-full xl:w-1/4">
-                            <aside className="space-y-6">
-                                {recentComments?.length > 0 && (
-                                    <>
-                                        <h2 className="text-3xl font-bold mb-6">Recent Comments</h2>
-                                        <div className="space-y-4">
-                                            {recentComments.map((comment: any) => (
-                                                <CommentCard key={comment.id} comment={comment} />
-                                            ))}
-                                        </div>
-                                    </>
-                                )}
-                                {topCommenters?.length > 0 && (
-                                    <>
-                                        <h2 className="text-3xl font-bold mb-6">Top Commenters</h2>
-                                        <div className="space-y-4">
-                                            {topCommenters.map((user: any) => (
-                                                <div key={user.id} className="bg-foreground p-4 rounded-md shadow-md flex items-center gap-4">
-                                                    <img src={user.image || '/default-avatar.jpg'} alt={user.name} className="w-16 h-16 rounded-full object-cover" />
-                                                    <div>
-                                                        <h3 className="font-bold items-center">{user.name} <span className="px-2 py-1 bg-background/50 rounded-xl capitalize text-xs">{user.role}</span></h3>
-
-                                                        <div className="flex gap-2 items-center">
-                                                            <p className="text-sm text-green-600">{user.totalComments} comments</p>
-                                                            <p className="text-xs text-muted">|</p>
-                                                            <p className={`text-xs text-muted`}>
-                                                                {user.trend > 0 ? `+${user.trend}% this week` : user.trend < 0 ? `${user.trend}% this week` : 'No change'}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </>
-                                )}
-                        </aside>
+                    <div className="w-full shrink-0 xl:w-80">
+                        <HomeSidebar />
                     </div>
 
                 </div>

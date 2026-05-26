@@ -1,3 +1,4 @@
+import type { JobType } from 'bullmq';
 import { appConfig } from '@/config/appConfig';
 import { queueService } from '@/services/queueService';
 
@@ -124,7 +125,7 @@ function serializeJob(job: {
     processedAt: job.processedOn ? new Date(job.processedOn).toISOString() : null,
     finishedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : null,
     attemptsMade: job.attemptsMade ?? 0,
-    maxAttempts: job.opts?.attempts ?? 0,
+    maxAttempts: job.opts?.attempts ?? 3,
     failedReason: job.failedReason ?? null,
     progress,
     priority: job.opts?.priority ?? null,
@@ -208,29 +209,33 @@ class AdminQueueService {
 
     const { state, page, limit } = params;
     const queue = queueService.getQueue(queueName);
-    const types = resolveJobTypes(state);
+    const types = resolveJobTypes(state) as JobType[];
     const offset = (page - 1) * limit;
-    const fetchEnd = Math.min(offset + limit + 50, 999);
+    const start = offset;
+    const end = offset + limit - 1;
 
     try {
-      const [counts, ...jobGroups] = await Promise.race([
+      const [counts, pageJobs] = await Promise.race([
         Promise.all([
           queue.getJobCounts(),
-          ...types.map((type) => queue.getJobs([type as any], 0, fetchEnd, true)),
+          queue.getJobs(types, start, end, false),
         ]),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('queue jobs timeout')), 8000)
         ),
       ]);
 
-      const merged = jobGroups
-        .flat()
-        .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
-      const pageJobs = merged.slice(offset, offset + limit);
       const total = countForState(counts as Record<string, number>, state);
+      const stateCounts = {
+        waiting: countForState(counts as Record<string, number>, 'waiting'),
+        active: counts.active ?? 0,
+        delayed: counts.delayed ?? 0,
+        failed: counts.failed ?? 0,
+        completed: counts.completed ?? 0,
+      };
 
       const jobs: AdminQueueJobRow[] = await Promise.all(
-        pageJobs.map(async (job) => {
+        pageJobs.filter(Boolean).map(async (job) => {
           const base = serializeJob(job as Parameters<typeof serializeJob>[0]);
           const jobState = typeof job.getState === 'function' ? await job.getState() : state;
           return { ...base, state: jobState };
@@ -244,6 +249,7 @@ class AdminQueueService {
           description: QUEUE_DESCRIPTIONS[queueName] ?? '',
         },
         state,
+        counts: stateCounts,
         jobs,
         pagination: {
           page,
@@ -256,6 +262,71 @@ class AdminQueueService {
       return {
         error: 'unavailable' as const,
         message: err instanceof Error ? err.message : 'Failed to read queue jobs',
+      };
+    }
+  }
+
+  async retryJob(queueName: string, jobId: string) {
+    if (!isValidQueueName(queueName)) return { error: 'not_found' as const };
+    try {
+      await queueService.retryJob(queueName, jobId);
+      return { success: true as const };
+    } catch (err) {
+      return {
+        error: 'bad_request' as const,
+        message: err instanceof Error ? err.message : 'Failed to retry job',
+      };
+    }
+  }
+
+  async removeJob(queueName: string, jobId: string) {
+    if (!isValidQueueName(queueName)) return { error: 'not_found' as const };
+    try {
+      await queueService.removeJob(queueName, jobId);
+      return { success: true as const };
+    } catch (err) {
+      return {
+        error: 'bad_request' as const,
+        message: err instanceof Error ? err.message : 'Failed to remove job',
+      };
+    }
+  }
+
+  async promoteJob(queueName: string, jobId: string) {
+    if (!isValidQueueName(queueName)) return { error: 'not_found' as const };
+    try {
+      await queueService.promoteJob(queueName, jobId);
+      return { success: true as const };
+    } catch (err) {
+      return {
+        error: 'bad_request' as const,
+        message: err instanceof Error ? err.message : 'Failed to promote job',
+      };
+    }
+  }
+
+  async pauseQueue(queueName: string) {
+    if (!isValidQueueName(queueName)) return { error: 'not_found' as const };
+    try {
+      await queueService.pauseQueue(queueName);
+      return { success: true as const };
+    } catch (err) {
+      return {
+        error: 'unavailable' as const,
+        message: err instanceof Error ? err.message : 'Failed to pause queue',
+      };
+    }
+  }
+
+  async resumeQueue(queueName: string) {
+    if (!isValidQueueName(queueName)) return { error: 'not_found' as const };
+    try {
+      await queueService.resumeQueue(queueName);
+      return { success: true as const };
+    } catch (err) {
+      return {
+        error: 'unavailable' as const,
+        message: err instanceof Error ? err.message : 'Failed to resume queue',
       };
     }
   }

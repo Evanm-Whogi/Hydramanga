@@ -2,9 +2,9 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import {X, Loader2, ChevronLeft, ChevronRight, RefreshCw, ExternalLink} from "lucide-react";
+import {X, Loader2, ChevronLeft, ChevronRight, RefreshCw, ExternalLink, RotateCcw, Trash2, FastForward} from "lucide-react";
 import { toast } from "react-toastify";
-import { getAdminQueueJobs, type AdminQueueJobRow, type AdminQueueJobState, type AdminQueueRow } from "@/services/adminQueueService";
+import { getAdminQueueJobs, retryAdminQueueJob, promoteAdminQueueJob, removeAdminQueueJob, type AdminQueueJobCounts, type AdminQueueJobRow, type AdminQueueJobState, type AdminQueueRow } from "@/services/adminQueueService";
 
 const STATE_TABS: { value: AdminQueueJobState; label: string }[] = [
   { value: "waiting", label: "Waiting" },
@@ -13,6 +13,14 @@ const STATE_TABS: { value: AdminQueueJobState; label: string }[] = [
   { value: "failed", label: "Failed" },
   { value: "completed", label: "Completed" },
 ];
+
+const EMPTY_COUNTS: AdminQueueJobCounts = {
+  waiting: 0,
+  active: 0,
+  delayed: 0,
+  failed: 0,
+  completed: 0,
+};
 
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
@@ -35,32 +43,22 @@ function stateTabClass(active: boolean): string {
 interface QueueExploreModalProps {
   queue: AdminQueueRow;
   onClose: () => void;
+  onQueueUpdated?: () => void;
 }
 
-export default function QueueExploreModal({ queue, onClose }: QueueExploreModalProps) {
+export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: QueueExploreModalProps) {
   const [state, setState] = useState<AdminQueueJobState>("waiting");
   const [jobs, setJobs] = useState<AdminQueueJobRow[]>([]);
+  const [counts, setCounts] = useState<AdminQueueJobCounts>(EMPTY_COUNTS);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [actionJobId, setActionJobId] = useState<string | null>(null);
 
-  const countForState = (s: AdminQueueJobState): number => {
-    switch (s) {
-      case "waiting":
-        return queue.waiting;
-      case "active":
-        return queue.active;
-      case "delayed":
-        return queue.delayed;
-      case "failed":
-        return queue.failed;
-      case "completed":
-        return queue.completed;
-    }
-  };
+  const countForState = (s: AdminQueueJobState): number => counts[s];
 
   const fetchJobs = useCallback(
     async (silent = false) => {
@@ -69,6 +67,7 @@ export default function QueueExploreModal({ queue, onClose }: QueueExploreModalP
       try {
         const result = await getAdminQueueJobs(queue.name, { state, page, limit: 25 });
         setJobs(result.jobs);
+        setCounts(result.counts ?? EMPTY_COUNTS);
         setTotalPages(result.pagination.totalPages);
         setTotal(result.pagination.total);
       } catch (err) {
@@ -90,6 +89,35 @@ export default function QueueExploreModal({ queue, onClose }: QueueExploreModalP
     setPage(1);
     setExpandedId(null);
   }, [state]);
+
+  const runJobAction = async (
+    jobId: string,
+    action: "retry" | "promote" | "remove",
+    confirmMessage?: string
+  ) => {
+    if (confirmMessage && !window.confirm(confirmMessage)) return;
+
+    setActionJobId(jobId);
+    try {
+      if (action === "retry") {
+        await retryAdminQueueJob(queue.name, jobId);
+        toast.success("Job queued for retry");
+      } else if (action === "promote") {
+        await promoteAdminQueueJob(queue.name, jobId);
+        toast.success("Job promoted to waiting");
+      } else {
+        await removeAdminQueueJob(queue.name, jobId);
+        toast.success("Job removed");
+      }
+      await fetchJobs(true);
+      onQueueUpdated?.();
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setActionJobId(null);
+    }
+  };
 
   const seriesIdFromData = (data: Record<string, unknown>): number | null => {
     const id = data.seriesId;
@@ -151,7 +179,14 @@ export default function QueueExploreModal({ queue, onClose }: QueueExploreModalP
               <Loader2 className="size-8 animate-spin" />
             </div>
           ) : jobs.length === 0 ? (
-            <p className="text-center text-muted py-16 text-sm">No {state} jobs in this queue</p>
+            <p className="text-center text-muted py-16 text-sm">
+              No {state} jobs in this queue
+              {state === "completed" && (
+                <span className="block mt-2 text-xs">
+                  Completed jobs are removed from Redis automatically after success.
+                </span>
+              )}
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
@@ -161,12 +196,18 @@ export default function QueueExploreModal({ queue, onClose }: QueueExploreModalP
                     <th className="px-4 py-2 font-semibold text-muted">Summary</th>
                     <th className="px-4 py-2 font-semibold text-muted">Created</th>
                     <th className="px-4 py-2 font-semibold text-muted">Attempts</th>
+                    <th className="px-4 py-2 font-semibold text-muted w-28">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {jobs.map((job) => {
                     const expanded = expandedId === job.id;
                     const seriesId = seriesIdFromData(job.data);
+                    const busy = actionJobId === job.id;
+                    const canRetry = job.state === "failed" || state === "failed";
+                    const canPromote = job.state === "delayed" || state === "delayed";
                     return (
                       <Fragment key={job.id}>
                         <tr
@@ -176,6 +217,7 @@ export default function QueueExploreModal({ queue, onClose }: QueueExploreModalP
                           <td className="px-4 py-2 align-top">
                             <p className="font-mono text-xs text-primary">{job.id}</p>
                             <p className="text-xs text-muted mt-0.5">{job.name}</p>
+                            <p className="text-xs text-muted/70 mt-0.5">{job.state}</p>
                           </td>
                           <td className="px-4 py-2 align-top text-primary max-w-xs">
                             <p className="line-clamp-2">{job.summary}</p>
@@ -197,12 +239,57 @@ export default function QueueExploreModal({ queue, onClose }: QueueExploreModalP
                             {formatDateTime(job.createdAt)}
                           </td>
                           <td className="px-4 py-2 align-top text-muted tabular-nums">
-                            {job.attemptsMade}/{job.maxAttempts || "—"}
+                            {job.attemptsMade}/{job.maxAttempts}
+                          </td>
+                          <td className="px-4 py-2 align-top" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center gap-1">
+                              {canRetry && (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  title="Retry job"
+                                  onClick={() => runJobAction(job.id, "retry")}
+                                  className="p-1.5 rounded text-muted hover:text-teal-400 hover:bg-foreground disabled:opacity-50"
+                                >
+                                  {busy ? (
+                                    <Loader2 className="size-4 animate-spin" />
+                                  ) : (
+                                    <RotateCcw className="size-4" />
+                                  )}
+                                </button>
+                              )}
+                              {canPromote && (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  title="Promote to waiting"
+                                  onClick={() => runJobAction(job.id, "promote")}
+                                  className="p-1.5 rounded text-muted hover:text-blue-400 hover:bg-foreground disabled:opacity-50"
+                                >
+                                  <FastForward className="size-4" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                disabled={busy}
+                                title="Remove job"
+                                onClick={() =>
+                                  runJobAction(
+                                    job.id,
+                                    "remove",
+                                    `Remove job ${job.id}? This cannot be undone.`
+                                  )
+                                }
+                                className="p-1.5 rounded text-muted hover:text-red-400 hover:bg-foreground disabled:opacity-50"
+                              >
+                                <Trash2 className="size-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                         {expanded && (
                           <tr className="border-b border-borders/50 bg-foreground/40">
-                            <td colSpan={4} className="px-4 py-3">
+                            <td colSpan={5} className="px-4 py-3">
                               <pre className="text-xs text-muted overflow-x-auto max-h-48 whitespace-pre-wrap break-all font-mono">
                                 {JSON.stringify(job.data, null, 2)}
                               </pre>

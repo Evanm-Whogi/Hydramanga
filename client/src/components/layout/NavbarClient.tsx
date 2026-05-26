@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { HouseIcon, BookOpenIcon, DicesIcon, LibraryBig, SearchIcon, BellIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, CirclePlusIcon, ShieldIcon, TrophyIcon, MessagesSquareIcon, MessageCircleIcon } from 'lucide-react';
+import { HouseIcon, BookOpenIcon, DicesIcon, LibraryBig, SearchIcon, BellIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, CirclePlusIcon, ShieldIcon, TrophyIcon, MessagesSquareIcon, MessageCircleIcon, MegaphoneIcon } from 'lucide-react';
 import NavItem from './NavItem';
 import { authClient } from '@/lib/auth';
 import { useRouter, usePathname } from 'next/navigation';
@@ -11,8 +11,11 @@ import { useUser } from "@/providers/UserProvider";
 import { trackAuthEvent } from '@/lib/analytics';
 import { RandomModal } from '@/components/RandomModal';
 import { ThemeModal, restoreThemeFromCookies } from '@/components/ThemeModal';
+import NotificationsMenu from '@/components/layout/NotificationsMenu';
 
 type ThemeMode = 'theme-dark' | 'theme-light' | 'theme-night';
+
+const DISCORD_URL = process.env.NEXT_PUBLIC_DISCORD ?? "https://discord.gg/A27sQQTWWe";
 
 export default function NavbarClient() {
     const [isOpen, setIsOpen] = useState(false);
@@ -117,9 +120,10 @@ export default function NavbarClient() {
                                 <>
                                     <Link href="/request" className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><CirclePlusIcon className="size-4" /> Request</Link>
                                     <div onClick={toggleRandomManga} className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><DicesIcon className="size-4" />Random</div>
-                                    <a href="https://discord.gg/Key667vf6j" className="size-11" ><img src="/oauthIcons/discord.webp" alt="discord" /></a>
+                                    <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer" className="size-11" ><img src="/oauthIcons/discord.webp" alt="discord" /></a>
                                     <Link href="/discover" className="bg-background hover:bg-background/50 p-3 rounded-full"><SearchIcon className="size-5 hover:cursor-pointer" /></Link>
-                                    <Link href="/announcements" className="bg-background hover:bg-background/50 p-3 rounded-full"><BellIcon className="size-5 hover:cursor-pointer" /></Link>
+                                    <Link href="/announcements" className="bg-background hover:bg-background/50 p-3 rounded-full" aria-label="Announcements"><MegaphoneIcon className="size-5 hover:cursor-pointer" /></Link>
+                                    <NotificationsMenu />
 
                                     <div className="relative" ref={profileRef}>
                                         <button onClick={() => setIsProfileOpen(!isProfileOpen)} className="block focus:outline-none focus:ring-2 focus:ring-borders rounded-full">
@@ -203,8 +207,9 @@ export default function NavbarClient() {
                                             <MessageCircleIcon className="size-4" /> Chat
                                         </Link>
                                         <Link href="/announcements" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/announcements' ? 'text-primary' : 'text-muted'}`}>
-                                            <BellIcon className="size-4" /> Announcements
+                                            <MegaphoneIcon className="size-4" /> Announcements
                                         </Link>
+                                        <NotificationsMenu variant="link" />
                                         <Link href="/profile?tab=overview" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/profile' ? 'text-primary' : 'text-muted'}`}>
                                             <UserIcon className="size-4" /> Profile
                                         </Link>

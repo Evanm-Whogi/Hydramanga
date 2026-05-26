@@ -4,7 +4,6 @@ import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { cacheService } from '@/services/cacheService';
 import { queueService } from '@/services/queueService';
-import { discordService } from '@/services/discordService';
 import { mangaProgressService, isSourceOnlyProgress } from '@/services/mangaProgressService';
 
 // Constants
@@ -111,8 +110,6 @@ class MangaOrchestratorService {
       }
     );
     
-    // Send notification for new job
-    await discordService.notifyFirstMangaScan(mangaTitle, seriesId, coverUrl);
     logger.info(`Queued on-demand scan for ${mangaTitle} (${seriesId})`, { service: 'mangaOrchestratorService' });
   }
 

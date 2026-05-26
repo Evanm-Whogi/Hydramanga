@@ -1,5 +1,6 @@
 import { db, schema } from '@/db/index';
 import { eq, or, ilike, desc, count, and, SQL } from 'drizzle-orm';
+import { notificationService } from '@/services/notificationService';
 
 const VALID_STATUSES = ['pending', 'in_progress', 'completed', 'rejected'] as const;
 export type ImportRequestStatus = (typeof VALID_STATUSES)[number];
@@ -230,6 +231,17 @@ class ImportRequestService {
       .set(patch)
       .where(eq(schema.importRequests.id, id))
       .returning();
+
+    if (updates.status !== undefined && updates.status !== existing.status) {
+      notificationService
+        .notifyImportRequestStatus({
+          userId: existing.userId,
+          requestedTitle: updated.requestedTitle,
+          status: updated.status,
+          seriesId: updated.seriesId,
+        })
+        .catch(() => undefined);
+    }
 
     const adminRow = await this.getAdminById(updated.id);
     return { request: adminRow };

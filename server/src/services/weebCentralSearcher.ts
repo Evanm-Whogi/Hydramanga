@@ -13,8 +13,6 @@
 import axios from 'axios';
 import { JSDOM } from 'jsdom';
 import logger from '@/services/loggerService';
-import { discordService } from '@/services/discordService';
-
 export interface SearchResult {
     href: string;
     title?: string;

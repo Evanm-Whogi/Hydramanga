@@ -10,6 +10,7 @@ interface ChapterInfo { id: number; chapterNumber: string; title?: string | null
 interface MangaMetadata {
   title?: string | null;
   description?: string | null;
+  note?: string | null;
   status?: string | null;
   year?: number | null;
   contentRating?: string | null;
@@ -87,6 +88,7 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
     year: manga?.year != null ? String(manga.year) : "",
     contentRating: manga?.contentRating ?? "",
     type: manga?.type ?? "",
+    note: manga?.note ?? "",
   });
   const [savingMetadata, setSavingMetadata] = useState(false);
   const [modalPage, setModalPage] = useState<"source" | "chapters">("source");
@@ -126,6 +128,7 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
         year: manga.year != null ? String(manga.year) : "",
         contentRating: manga.contentRating ?? "",
         type: manga.type ?? "",
+        note: manga.note ?? "",
       });
     }
   }, [manga]);
@@ -244,6 +247,8 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
       if (yearVal !== (manga?.year ?? null)) updates.year = yearVal;
       if (metadataForm.contentRating !== (manga?.contentRating ?? "")) updates.contentRating = metadataForm.contentRating || null;
       if (metadataForm.type !== (manga?.type ?? "")) updates.type = metadataForm.type || null;
+      const noteVal = metadataForm.note.trim();
+      if (noteVal !== (manga?.note ?? "").trim()) updates.note = noteVal || null;
       if (Object.keys(updates).length === 0) {
         setEditMetadata(false);
         return;
@@ -608,6 +613,15 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
                         value={metadataForm.contentRating}
                         onChange={(e) => setMetadataForm((f) => ({ ...f, contentRating: e.target.value }))}
                         placeholder="safe, suggestive, …"
+                        className="w-full px-3 py-2 bg-background border border-borders rounded-md text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted">Note</label>
+                      <input
+                        value={metadataForm.note}
+                        onChange={(e) => setMetadataForm((f) => ({ ...f, note: e.target.value }))}
+                        placeholder="Shown above title on overview"
                         className="w-full px-3 py-2 bg-background border border-borders rounded-md text-sm"
                       />
                     </div>

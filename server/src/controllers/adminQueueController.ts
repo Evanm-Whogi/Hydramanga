@@ -41,3 +41,110 @@ export async function listAdminQueueJobs(req: Request, res: Response, next: Next
     return next(error);
   }
 }
+
+function handleQueueActionError(res: Response, result: { error?: string; message?: string }): Response | null {
+  if (!('error' in result) || !result.error) return null;
+  if (result.error === 'not_found') {
+    return res.status(404).json({ message: 'Queue not found' });
+  }
+  if (result.error === 'bad_request') {
+    return res.status(400).json({ message: result.message ?? 'Invalid request' });
+  }
+  if (result.error === 'unavailable') {
+    return res.status(503).json({ message: result.message ?? 'Queue unavailable' });
+  }
+  return null;
+}
+
+export async function retryAdminQueueJob(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const queueName = req.params.name;
+    const jobId = req.params.jobId;
+    if (!queueName || !jobId) return res.status(400).json({ message: 'Queue name and job ID are required' });
+
+    const result = await adminQueueService.retryJob(queueName, jobId);
+    if ('error' in result) {
+      const errRes = handleQueueActionError(res, result);
+      if (errRes) return errRes;
+    }
+
+    return res.json({ status: 200, success: true });
+  } catch (error) {
+    logger.error(`Failed to retry admin queue job: ${error}`, { service: 'adminQueueController' });
+    return next(error);
+  }
+}
+
+export async function removeAdminQueueJob(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const queueName = req.params.name;
+    const jobId = req.params.jobId;
+    if (!queueName || !jobId) return res.status(400).json({ message: 'Queue name and job ID are required' });
+
+    const result = await adminQueueService.removeJob(queueName, jobId);
+    if ('error' in result) {
+      const errRes = handleQueueActionError(res, result);
+      if (errRes) return errRes;
+    }
+
+    return res.json({ status: 200, success: true });
+  } catch (error) {
+    logger.error(`Failed to remove admin queue job: ${error}`, { service: 'adminQueueController' });
+    return next(error);
+  }
+}
+
+export async function promoteAdminQueueJob(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const queueName = req.params.name;
+    const jobId = req.params.jobId;
+    if (!queueName || !jobId) return res.status(400).json({ message: 'Queue name and job ID are required' });
+
+    const result = await adminQueueService.promoteJob(queueName, jobId);
+    if ('error' in result) {
+      const errRes = handleQueueActionError(res, result);
+      if (errRes) return errRes;
+    }
+
+    return res.json({ status: 200, success: true });
+  } catch (error) {
+    logger.error(`Failed to promote admin queue job: ${error}`, { service: 'adminQueueController' });
+    return next(error);
+  }
+}
+
+export async function pauseAdminQueue(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const queueName = req.params.name;
+    if (!queueName) return res.status(400).json({ message: 'Queue name is required' });
+
+    const result = await adminQueueService.pauseQueue(queueName);
+    if ('error' in result) {
+      const errRes = handleQueueActionError(res, result);
+      if (errRes) return errRes;
+    }
+
+    return res.json({ status: 200, success: true });
+  } catch (error) {
+    logger.error(`Failed to pause admin queue: ${error}`, { service: 'adminQueueController' });
+    return next(error);
+  }
+}
+
+export async function resumeAdminQueue(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const queueName = req.params.name;
+    if (!queueName) return res.status(400).json({ message: 'Queue name is required' });
+
+    const result = await adminQueueService.resumeQueue(queueName);
+    if ('error' in result) {
+      const errRes = handleQueueActionError(res, result);
+      if (errRes) return errRes;
+    }
+
+    return res.json({ status: 200, success: true });
+  } catch (error) {
+    logger.error(`Failed to resume admin queue: ${error}`, { service: 'adminQueueController' });
+    return next(error);
+  }
+}

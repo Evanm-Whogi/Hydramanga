@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { boardService } from '@/services/boardService';
 import { isAdminRole } from '@/lib/authHelpers';
+import { discordService } from '@/services/discordService';
 
 export async function listBoardPosts(req: Request, res: Response, next: NextFunction) {
   try {
@@ -30,6 +31,11 @@ export async function createBoardPost(req: Request, res: Response, next: NextFun
       return res.status(400).json({ message: 'Title and content are required' });
     }
     const post = await boardService.createPost(req.user.id, title, content);
+
+    discordService
+      .notifyBoardThread(req.user.name || 'Unknown', post.id, post.title, post.content)
+      .catch(() => undefined);
+
     return res.status(201).json({ post });
   } catch (error) {
     return next(error);

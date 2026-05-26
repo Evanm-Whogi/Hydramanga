@@ -69,6 +69,7 @@ export const series = pgTable('series', {
   authors: jsonb('authors'),
   artists: jsonb('artists'),
   description: text('description'),
+  note: text('note'),
   year: integer('year'),
   status: text('status'),
   isLicensed: boolean('is_licensed'),
@@ -502,6 +503,20 @@ export const importRequests = pgTable('import_requests', {
   createdAtIdx: index('idx_import_requests_created_at').on(t.createdAt.desc()),
 }));
 
+export const userNotifications = pgTable('user_notifications', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  title: text('title').notNull(),
+  message: text('message').notNull(),
+  linkUrl: text('link_url').notNull(),
+  imageUrl: text('image_url'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  userIdIdx: index('idx_user_notifications_user_id').on(t.userId),
+  userCreatedIdx: index('idx_user_notifications_user_created').on(t.userId, t.createdAt.desc()),
+}));
+
 // User Reading Time Table (per user, per series, per chapter)
 export const userReadingTime = pgTable('user_reading_time', {
   userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
@@ -657,4 +672,8 @@ export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
 
 export const karmaTransactionsRelations = relations(karmaTransactions, ({ one }) => ({
   user: one(user, { fields: [karmaTransactions.userId], references: [user.id] }),
+}));
+
+export const userNotificationsRelations = relations(userNotifications, ({ one }) => ({
+  user: one(user, { fields: [userNotifications.userId], references: [user.id] }),
 }));

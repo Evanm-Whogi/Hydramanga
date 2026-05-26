@@ -3,7 +3,7 @@
 import {useCallback, useEffect, useState } from "react";
 import {ListOrdered, Loader2, RefreshCw, Clock, Play, Pause, AlertTriangle, CheckCircle2, XCircle, Timer, EllipsisVertical} from "lucide-react";
 import {toast } from "react-toastify";
-import {getAdminQueues, type AdminQueueRow, type AdminQueueTotals } from "@/services/adminQueueService";
+import {getAdminQueues, pauseAdminQueue, resumeAdminQueue, type AdminQueueRow, type AdminQueueTotals} from "@/services/adminQueueService";
 import AdminStatCard from "../components/AdminStatCard";
 import QueueExploreModal from "./QueueExploreModal";
 
@@ -54,6 +54,7 @@ export default function QueuesAdminClient() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [exploringQueue, setExploringQueue] = useState<AdminQueueRow | null>(null);
+  const [queueAction, setQueueAction] = useState<string | null>(null);
 
   const fetchQueues = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -77,6 +78,35 @@ export default function QueuesAdminClient() {
     const interval = setInterval(() => fetchQueues(true), 30_000);
     return () => clearInterval(interval);
   }, [fetchQueues]);
+
+  useEffect(() => {
+    if (!exploringQueue) return;
+    const updated = queues.find((q) => q.name === exploringQueue.name);
+    if (updated) setExploringQueue(updated);
+  }, [queues, exploringQueue?.name]);
+
+  const handlePauseResume = async (row: AdminQueueRow) => {
+    const isPaused = row.status === "Paused";
+    const action = isPaused ? "resume" : "pause";
+    if (!window.confirm(`${isPaused ? "Resume" : "Pause"} queue "${row.label}"?`)) return;
+
+    setQueueAction(row.name);
+    try {
+      if (isPaused) {
+        await resumeAdminQueue(row.name);
+        toast.success(`${row.label} resumed`);
+      } else {
+        await pauseAdminQueue(row.name);
+        toast.success(`${row.label} paused`);
+      }
+      await fetchQueues(true);
+    } catch (err) {
+      console.error(err);
+      toast.error(`Failed to ${action} queue`);
+    } finally {
+      setQueueAction(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -138,7 +168,7 @@ export default function QueuesAdminClient() {
           <AdminStatCard
             label="Completed"
             value={formatNumber(totals.completed)}
-            hint="Tracked in Redis"
+            hint="Auto-removed on success"
             icon={CheckCircle2}
             iconClassName="text-green-400"
           />
@@ -158,7 +188,7 @@ export default function QueuesAdminClient() {
                 <th className="px-4 py-3 font-semibold text-muted text-right">Failed</th>
                 <th className="px-4 py-3 font-semibold text-muted text-right">Completed</th>
                 <th className="px-4 py-3 font-semibold text-muted">Oldest wait</th>
-                <th className="px-4 py-3 font-semibold text-muted text-right">Workers</th>
+                <th className="px-4 py-3 font-semibold text-muted text-right">Concurrency</th>
                 <th className="px-4 py-3 font-semibold text-muted w-12">
                   <span className="sr-only">Actions</span>
                 </th>
@@ -231,15 +261,35 @@ export default function QueuesAdminClient() {
                         {row.concurrency}
                       </td>
                       <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => setExploringQueue(row)}
-                          disabled={row.status === "Unavailable"}
-                          className="p-2 rounded-lg text-muted hover:text-primary hover:bg-background border border-transparent hover:border-borders transition-colors disabled:opacity-50"
-                          aria-label={`Explore ${row.label}`}
-                        >
-                          <EllipsisVertical className="size-5" />
-                        </button>
+                        <div className="flex items-center gap-1 justify-end">
+                          {row.status !== "Unavailable" && (
+                            <button
+                              type="button"
+                              onClick={() => handlePauseResume(row)}
+                              disabled={queueAction === row.name}
+                              className="p-2 rounded-lg text-muted hover:text-primary hover:bg-background border border-transparent hover:border-borders transition-colors disabled:opacity-50"
+                              aria-label={row.status === "Paused" ? `Resume ${row.label}` : `Pause ${row.label}`}
+                              title={row.status === "Paused" ? "Resume queue" : "Pause queue"}
+                            >
+                              {queueAction === row.name ? (
+                                <Loader2 className="size-5 animate-spin" />
+                              ) : row.status === "Paused" ? (
+                                <Play className="size-5" />
+                              ) : (
+                                <Pause className="size-5" />
+                              )}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setExploringQueue(row)}
+                            disabled={row.status === "Unavailable"}
+                            className="p-2 rounded-lg text-muted hover:text-primary hover:bg-background border border-transparent hover:border-borders transition-colors disabled:opacity-50"
+                            aria-label={`Explore ${row.label}`}
+                          >
+                            <EllipsisVertical className="size-5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -251,7 +301,11 @@ export default function QueuesAdminClient() {
       </div>
 
       {exploringQueue && (
-        <QueueExploreModal queue={exploringQueue} onClose={() => setExploringQueue(null)} />
+        <QueueExploreModal
+          queue={exploringQueue}
+          onClose={() => setExploringQueue(null)}
+          onQueueUpdated={() => fetchQueues(true)}
+        />
       )}
     </div>
   );

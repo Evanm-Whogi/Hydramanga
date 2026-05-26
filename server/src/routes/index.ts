@@ -18,6 +18,7 @@ import importRequestRoutes from '@/routes/importRequestRoutes';
 import leaderboardRoutes from '@/routes/leaderboardRoutes';
 import boardRoutes from '@/routes/boardRoutes';
 import chatRoutes from '@/routes/chatRoutes';
+import notificationRoutes from '@/routes/notificationRoutes';
 
 module.exports = (app: Express) => {
 
@@ -43,6 +44,7 @@ module.exports = (app: Express) => {
     app.use('/comments', authMiddleware, commentRoutes);
     app.use('/reviews', authMiddleware, reviewRoutes);
     app.use('/announcements', authMiddleware, announcementRoutes);
+    app.use('/notifications', authMiddleware, notificationRoutes);
 
     // Contact and DMCA Routes (public)
     app.use('/', contactRoutes);

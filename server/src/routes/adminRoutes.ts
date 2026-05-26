@@ -7,7 +7,7 @@ import { listAdminUsers, getAdminUser, patchAdminUser } from '@/controllers/admi
 import {sendAdminUserVerification, sendAdminUserPasswordReset} from '@/controllers/adminUserActionsController';
 import { banAdminUser, unbanAdminUser } from '@/controllers/adminUserBanController';
 import { listAdminImportRequests, patchAdminImportRequest } from '@/controllers/importRequestController';
-import { listAdminQueues, listAdminQueueJobs } from '@/controllers/adminQueueController';
+import {listAdminQueues, listAdminQueueJobs, pauseAdminQueue, resumeAdminQueue, promoteAdminQueueJob, removeAdminQueueJob, retryAdminQueueJob} from '@/controllers/adminQueueController';
 import { requireRole } from '@/middlewares/requireRole';
 
 const router = Router();
@@ -33,7 +33,12 @@ router.patch('/import-requests/:id', requireRole('admin'), patchAdminImportReque
 
 // Queues
 router.get('/queues', requireRole('admin'), listAdminQueues as RequestHandler);
+router.post('/queues/:name/pause', requireRole('admin'), pauseAdminQueue as RequestHandler);
+router.post('/queues/:name/resume', requireRole('admin'), resumeAdminQueue as RequestHandler);
 router.get('/queues/:name/jobs', requireRole('admin'), listAdminQueueJobs as RequestHandler);
+router.post('/queues/:name/jobs/:jobId/retry', requireRole('admin'), retryAdminQueueJob as RequestHandler);
+router.post('/queues/:name/jobs/:jobId/promote', requireRole('admin'), promoteAdminQueueJob as RequestHandler);
+router.delete('/queues/:name/jobs/:jobId', requireRole('admin'), removeAdminQueueJob as RequestHandler);
 
 // Manga import/sync endpoints
 router.get('/manga/sync', requireRole('admin'), triggerMangaSync as RequestHandler);

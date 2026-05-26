@@ -227,7 +227,7 @@ export async function adminUpdateSeries(req: Request, res: Response, next: NextF
 
         const body = req.body || {};
         const allowed: (keyof typeof series.$inferSelect)[] = [
-            'title', 'nativeTitle', 'romanizedTitle', 'description', 'status',
+            'title', 'nativeTitle', 'romanizedTitle', 'description', 'note', 'status',
             'year', 'contentRating', 'type', 'totalChapters', 'finalVolume', 'finalChapter',
         ];
         const updates: Record<string, unknown> = {};

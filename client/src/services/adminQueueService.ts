@@ -1,4 +1,4 @@
-import { apiGet } from '@/lib/api';
+import { apiDelete, apiGet, apiPost } from '@/lib/api';
 
 export interface AdminQueueRow {
   name: string;
@@ -40,6 +40,14 @@ export async function getAdminQueues(): Promise<AdminQueuesResponse> {
 
 export type AdminQueueJobState = 'waiting' | 'active' | 'delayed' | 'failed' | 'completed';
 
+export interface AdminQueueJobCounts {
+  waiting: number;
+  active: number;
+  delayed: number;
+  failed: number;
+  completed: number;
+}
+
 export interface AdminQueueJobRow {
   id: string;
   name: string;
@@ -59,6 +67,7 @@ export interface AdminQueueJobRow {
 export interface AdminQueueJobsResponse {
   queue: { name: string; label: string; description: string };
   state: AdminQueueJobState;
+  counts: AdminQueueJobCounts;
   jobs: AdminQueueJobRow[];
   pagination: { page: number; limit: number; total: number; totalPages: number };
 }
@@ -76,7 +85,28 @@ export async function getAdminQueueJobs(queueName: string, params: { state?: Adm
   return {
     queue: (data as { queue: AdminQueueJobsResponse['queue'] }).queue,
     state: (data as { state: AdminQueueJobState }).state,
+    counts: (data as { counts: AdminQueueJobCounts }).counts,
     jobs: (data as { jobs: AdminQueueJobRow[] }).jobs ?? [],
     pagination: (data as { pagination: AdminQueueJobsResponse['pagination'] }).pagination,
   };
+}
+
+export async function retryAdminQueueJob(queueName: string, jobId: string): Promise<void> {
+  await apiPost(`/admin/queues/${encodeURIComponent(queueName)}/jobs/${encodeURIComponent(jobId)}/retry`);
+}
+
+export async function promoteAdminQueueJob(queueName: string, jobId: string): Promise<void> {
+  await apiPost(`/admin/queues/${encodeURIComponent(queueName)}/jobs/${encodeURIComponent(jobId)}/promote`);
+}
+
+export async function removeAdminQueueJob(queueName: string, jobId: string): Promise<void> {
+  await apiDelete(`/admin/queues/${encodeURIComponent(queueName)}/jobs/${encodeURIComponent(jobId)}`);
+}
+
+export async function pauseAdminQueue(queueName: string): Promise<void> {
+  await apiPost(`/admin/queues/${encodeURIComponent(queueName)}/pause`);
+}
+
+export async function resumeAdminQueue(queueName: string): Promise<void> {
+  await apiPost(`/admin/queues/${encodeURIComponent(queueName)}/resume`);
 }

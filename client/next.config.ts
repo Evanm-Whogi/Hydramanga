@@ -42,6 +42,12 @@ const nextConfig: NextConfig = {
         hostname: 'cdn.discordapp.com',
         pathname: '/**',
         search: '',
+      },
+      {
+        protocol: 'https',
+        hostname: 'images.mangabaka.dev',
+        pathname: '/**',
+        search: '',
       }
     ],
     // In Docker/production, skip optimization to avoid permission/server overhead

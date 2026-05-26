@@ -1,8 +1,24 @@
 import axios from 'axios';
 import logger from '@/services/loggerService';
-import { user } from '@/db/schema';
 
-const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
+const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'http://localhost:3000';
+const SITE_NAME = process.env.PUBLIC_NAME || 'Manga Scrolls';
+const DISCORD_PUBLIC_WEBHOOK_URL = process.env.DISCORD_PUBLIC_WEBHOOK_URL || process.env.DISCORD_WEBHOOK_URL;
+const DISCORD_ADMIN_WEBHOOK_URL = process.env.DISCORD_ADMIN_WEBHOOK_URL || process.env.DISCORD_WEBHOOK_URL;
+const FOOTER_TEXT = SITE_NAME;
+
+const COLORS = {
+    brand: 0x5865f2,
+    success: 0x57f287,
+    info: 0x3498db,
+    warning: 0xfee75c,
+    error: 0xed4245,
+    purple: 0x9b59b6,
+    teal: 0x1abc9c,
+    muted: 0x95a5a6,
+} as const;
+
+type WebhookChannel = 'admin' | 'public';
 
 interface EmbedField {
     name: string;
@@ -11,59 +27,167 @@ interface EmbedField {
 }
 
 interface DiscordEmbed {
-    title: string;
-    description: string;
+    title?: string;
+    description?: string;
+    url?: string;
+    color?: number;
     fields?: EmbedField[];
-    color: number;
-    timestamp: string;
+    timestamp?: string;
     thumbnail?: { url: string };
+    footer?: { text: string };
 }
 
-const createEmbed = (overrides: Partial<DiscordEmbed>): DiscordEmbed => ({
-    color: 0x3498db,
+const truncate = (text: string, max: number) =>text.length <= max ? text : `${text.slice(0, max - 3)}...`;
+const mangaUrl = (seriesId: number) => `${PUBLIC_APP_URL}/manga/${seriesId}`;
+
+const buildEmbed = (options: {title: string; description?: string; url?: string; color: number; fields?: EmbedField[]; thumbnailUrl?: string}): DiscordEmbed => ({
+    title: truncate(options.title, 256),
+    description: options.description ? truncate(options.description, 4096) : undefined,
+    url: options.url,
+    color: options.color,
     timestamp: new Date().toISOString(),
-    ...overrides,
-    title: overrides.title || '',
-    description: overrides.description || '',
+    footer: { text: FOOTER_TEXT },
+    ...(options.thumbnailUrl && { thumbnail: { url: options.thumbnailUrl } }),
+    ...(options.fields?.length && {
+        fields: options.fields.map((f) => ({
+            ...f,
+            name: truncate(f.name, 256),
+            value: truncate(f.value, 1024),
+        })),
+    }),
 });
 
-const discordService = {
-    async sendEmbed(embed: DiscordEmbed, username = 'MangaScrolls Bot', avatarUrl?: string) {
-        if (!DISCORD_WEBHOOK_URL) return logger.warn('Discord webhook URL is not configured.');
-        if(process.env.ENABLE_DISCORD_NOTIFICATIONS !== 'true') return logger.info('Discord notifications are disabled. Skipping sendEmbed.');
+const getWebhookUrl = (channel: WebhookChannel): string | undefined => channel === 'public' ? DISCORD_PUBLIC_WEBHOOK_URL : DISCORD_ADMIN_WEBHOOK_URL;
+const isEnabled = () => process.env.ENABLE_DISCORD_NOTIFICATIONS === 'true';
 
-        try {
-            await axios.post(DISCORD_WEBHOOK_URL, {
-                embeds: [embed],
-                username,
-                avatar_url: avatarUrl,
-            });
-            logger.info('Discord embed sent successfully.');
-        } catch (error) {
-            logger.error('Error sending Discord embed:', error);
-        }
+async function sendEmbed(channel: WebhookChannel, embed: DiscordEmbed) {
+    if (!isEnabled()) return logger.debug(`Discord notifications disabled, skipping ${channel} embed`);
+
+    const webhookUrl = getWebhookUrl(channel);
+    if (!webhookUrl) return logger.warn(`Discord ${channel} webhook URL is not configured`);
+    
+    const username = channel === 'public' ? `${SITE_NAME} Updates` : `${SITE_NAME} Admin`;
+
+    try {
+        await axios.post(webhookUrl, { embeds: [embed], username });
+        logger.info(`Discord ${channel} embed sent: ${embed.title}`);
+    } catch (error) {
+        logger.error(`Error sending Discord ${channel} embed:`, error);
+    }
+}
+
+export const discordService = {
+    // ─── Public channel ───────────────────────────────────────────────────────
+
+    async notifyMangaImported(mangaTitle: string, seriesId: number, chapterCount: number, chapterRange: string, coverUrl?: string) {
+        await sendEmbed('public', buildEmbed({
+                title: 'New Manga Available',
+                description: `**${mangaTitle}** is now on ${SITE_NAME}.`,
+                url: mangaUrl(seriesId),
+                color: COLORS.success,
+                thumbnailUrl: coverUrl,
+                fields: [
+                    { name: 'Chapters', value: chapterRange, inline: true },
+                    { name: 'Count', value: `${chapterCount} chapter${chapterCount !== 1 ? 's' : ''}`, inline: true },
+                ],
+            })
+        );
     },
 
-    // Metadata import notifications
+    async notifyChaptersAdded(mangaTitle: string, seriesId: number, chapterCount: number, chapterRange: string, coverUrl?: string) {
+        await sendEmbed('public', buildEmbed({
+                title: 'New Chapters',
+                description: `**${mangaTitle}** has new chapters.`,
+                url: mangaUrl(seriesId),
+                color: COLORS.purple,
+                thumbnailUrl: coverUrl,
+                fields: [
+                    { name: 'Chapters', value: chapterRange, inline: true },
+                    { name: 'Count', value: `${chapterCount} new`, inline: true },
+                ],
+            })
+        );
+    },
+
+    // ─── Admin channel ────────────────────────────────────────────────────────
+
+    async notifyImportRequest(userName: string, requestedTitle: string, requestedUrl: string | null, notes: string | null, requestId: number, seriesId: number | null) {
+        const mangaLink = seriesId != null ? `[${requestedTitle}](${mangaUrl(seriesId)})` : requestedTitle;
+
+        await sendEmbed('admin', buildEmbed({
+                title: 'New Import Request',
+                description: `${userName} submitted a request for **${mangaLink}**.`,
+                url: `${PUBLIC_APP_URL}/admin/imports`,
+                color: COLORS.info,
+                fields: [
+                    { name: 'Request ID', value: `#${requestId}`, inline: true },
+                    ...(seriesId != null
+                        ? [{ name: 'Series ID', value: String(seriesId), inline: true }]
+                        : []),
+                    { name: 'Source URL', value: requestedUrl || '_None provided_', inline: false },
+                    ...(notes ? [{ name: 'User Notes', value: notes, inline: false }] : []),
+                ],
+            })
+        );
+    },
+
+    async notifyUserSignup(username: string, userId: string) {
+        await sendEmbed('admin', buildEmbed({
+                title: 'New User',
+                description: `**${username}** just signed up.`,
+                url: `${PUBLIC_APP_URL}/admin/users`,
+                color: COLORS.teal,
+                fields: [{ name: 'User ID', value: userId, inline: true }],
+            })
+        );
+    },
+
+    async notifyComment(username: string, seriesId: number, mangaTitle: string, content: string, commentId: number, isReply: boolean) {
+        const preview = truncate(content.replace(/\s+/g, ' ').trim(), 300);
+
+        await sendEmbed('admin', buildEmbed({
+                title: isReply ? 'New Comment Reply' : 'New Comment',
+                description: `**${username}** on [**${mangaTitle}**](${mangaUrl(seriesId)}):\n> ${preview}`,
+                url: mangaUrl(seriesId),
+                color: COLORS.brand,
+                fields: [
+                    { name: 'Comment ID', value: String(commentId), inline: true },
+                    { name: 'Type', value: isReply ? 'Reply' : 'Top-level', inline: true },
+                ],
+            })
+        );
+    },
+
+    async notifyBoardThread(username: string, postId: number, title: string, content: string) {
+        const preview = truncate(content.replace(/\s+/g, ' ').trim(), 300);
+
+        await sendEmbed('admin', buildEmbed({
+                title: 'New Board Thread',
+                description: `**${username}** posted [**${title}**](${PUBLIC_APP_URL}/board):\n> ${preview}`,
+                url: `${PUBLIC_APP_URL}/board`,
+                color: COLORS.brand,
+                fields: [{ name: 'Post ID', value: String(postId), inline: true }],
+            })
+        );
+    },
+
     async notifyImportStarted(fileName: string) {
-        await this.sendEmbed(
-            createEmbed({
-                title: '📦 Metadata Import Started',
-                description: `Starting import from \`${fileName}\``,
-                color: 0x3498db,
+        await sendEmbed('admin', buildEmbed({
+                title: 'Metadata Import Started',
+                description: `Importing catalog from \`${fileName}\``,
+                color: COLORS.info,
             })
         );
     },
 
     async notifyImportCompleted(fileName: string, stats: { inserted: number; updated: number; duration: string }) {
-        await this.sendEmbed(
-            createEmbed({
-                title: '✅ Metadata Import Completed',
-                description: `Successfully imported from \`${fileName}\``,
-                color: 0x2ecc71,
+        await sendEmbed('admin', buildEmbed({
+                title: 'Metadata Import Completed',
+                description: `Finished importing from \`${fileName}\``,
+                color: COLORS.success,
                 fields: [
-                    { name: 'New Series', value: stats.inserted.toString(), inline: true },
-                    { name: 'Updated Series', value: stats.updated.toString(), inline: true },
+                    { name: 'New Series', value: stats.inserted.toLocaleString(), inline: true },
+                    { name: 'Updated', value: stats.updated.toLocaleString(), inline: true },
                     { name: 'Duration', value: stats.duration, inline: true },
                 ],
             })
@@ -71,105 +195,56 @@ const discordService = {
     },
 
     async notifyImportFailed(fileName: string, error: string) {
-        await this.sendEmbed(
-            createEmbed({
-                title: '❌ Metadata Import Failed',
-                description: `Failed to import from \`${fileName}\``,
-                fields: [{ name: 'Error', value: `\`\`\`${error.slice(0, 1000)}\`\`\`` }],
-                color: 0xe74c3c,
+        await sendEmbed('admin', buildEmbed({
+                title: 'Metadata Import Failed',
+                description: `Import from \`${fileName}\` failed.`,
+                color: COLORS.error,
+                fields: [{ name: 'Error', value: `\`\`\`${truncate(error, 900)}\`\`\`` }],
             })
         );
     },
 
-    // Chapter notifications (batched)
-    async notifyChaptersAdded(mangaTitle: string, seriesId: number, chapterCount: number, chapterRange: string, coverUrl?: string) {
-        await this.sendEmbed(createEmbed({
-            title: '📚 New Chapters Added',
-            description: `**${mangaTitle}**`,
-             color: 0x9b59b6,
-            ...(coverUrl && { thumbnail: { url: coverUrl } }),
-            fields: [
-                { name: 'Chapters', value: chapterRange, inline: true },
-                { name: 'Total', value: `${chapterCount} new`, inline: true },
-                { name: 'Series ID', value: seriesId.toString(), inline: true },
-            ],
-        }));
+    async notifyScanCompleted(mangaTitle: string, seriesId: number, foundCount: number, isFirstScan: boolean, coverUrl?: string) {
+        const hasNew = foundCount > 0;
+        const scanType = isFirstScan ? 'First scan' : 'Rescan';
+
+        await sendEmbed('admin', buildEmbed({
+                title: 'Chapter Scan Completed',
+                description: hasNew
+                    ? `**${mangaTitle}** — found **${foundCount}** new chapter${foundCount !== 1 ? 's' : ''}.`
+                    : `**${mangaTitle}** — no new chapters found.`,
+                url: mangaUrl(seriesId),
+                color: hasNew ? COLORS.info : COLORS.muted,
+                thumbnailUrl: coverUrl,
+                fields: [
+                    { name: 'Scan Type', value: scanType, inline: true },
+                    { name: 'New Chapters', value: String(foundCount), inline: true },
+                    { name: 'Series ID', value: String(seriesId), inline: true },
+                ],
+            })
+        );
     },
 
-    // Scraper failed to find manga
     async notifyScraperFailed(mangaTitle: string, seriesId: number, foundTitles: Array<{ text: string; url: string }>, coverUrl?: string) {
-        await this.sendEmbed(createEmbed({
-            title: '⚠️ Scraper Failed',
-            description: `Could not find manga: **${mangaTitle}** (ID: ${seriesId})`,
-            color: 0xe67e22,
-            ...(coverUrl && { thumbnail: { url: coverUrl } }),
-            fields: [
-                {
-                    name: 'Found Instead',
-                    value:
-                        foundTitles.length > 0
-                            ? foundTitles.slice(0, 3).map((t) => `• ${t.text || 'Unknown'}`).join('\n')
-                            : 'No results found',
-                },
-            ],
-        }));
-    },
+        const suggestions =
+            foundTitles.length > 0
+                ? foundTitles
+                      .slice(0, 3)
+                      .map((t) => `• ${t.text || 'Unknown'}`)
+                      .join('\n')
+                : '_No alternative matches found_';
 
-    // Manga scan completed
-    async notifyScanCompleted(mangaTitle: string, seriesId: number, foundCount: number, coverUrl?: string) {
-        const icon = foundCount > 0 ? '🔄' : '⏭️';
-        const description =
-            foundCount > 0
-                ? `Found **${foundCount}** new chapter${foundCount !== 1 ? 's' : ''} for **${mangaTitle}**`
-                : `Scan completed for **${mangaTitle}** - No new chapters`;
-
-        await this.sendEmbed(createEmbed({
-            title: `${icon} Manga Scan Completed`,
-            description,
-            fields: [
-                { name: 'Series ID', value: seriesId.toString(), inline: true },
-                { name: 'New Chapters', value: foundCount.toString(), inline: true },
-            ],
-            color: foundCount > 0 ? 0x3498db : 0x95a5a6,
-            ...(coverUrl && { thumbnail: { url: coverUrl } }),
-        }));
-    },
-
-    // First time a user views a manga (on-demand scan)
-    async notifyFirstMangaScan(mangaTitle: string, seriesId: number, coverUrl?: string) {
-        await this.sendEmbed(createEmbed({
-            title: '👀 Manga Discovered',
-            description: `User is viewing **${mangaTitle}** for the first time. Scanning for chapters...`,
-            fields: [
-                { name: 'Series ID', value: seriesId.toString(), inline: true },
-                { name: 'Type', value: 'On-Demand Scan', inline: true },
-            ],
-            color: 0xf39c12,
-            ...(coverUrl && { thumbnail: { url: coverUrl } }),
-        }));
-    },
-
-    // Notify when a user signs up
-    async notifyUserSignup(username: string, userId: number) {
-        await this.sendEmbed(createEmbed({
-            title: '🆕 New User Signup',
-            description: `A new user has signed up: **${username}** (ID: ${userId})`,
-            color: 0x1abc9c,
-        }));
-    },
-
-    async notifyImportRequest(userName: string, requestedTitle: string, requestedUrl: string | null, notes: string | null, seriesId: number | null) {
-        await this.sendEmbed(createEmbed({
-            title: '📦 Import Request',
-            description: `A new import request has been submitted: **[${requestedTitle}](${process.env.PUBLIC_APP_URL}/manga/${seriesId})** (ID: ${seriesId})`,
-            fields: [
-                { name: 'Requested URL', value: requestedUrl || 'N/A', inline: true },
-                { name: 'User Notes', value: notes || 'N/A', inline: true },
-                { name: 'User', value: userName || 'N/A', inline: true },
-            ],
-            color: 0x3498db,
-        }));
+        await sendEmbed('admin', buildEmbed({
+                title: 'Chapter Scan Failed',
+                description: `Could not scan **${mangaTitle}** after all retries.`,
+                url: mangaUrl(seriesId),
+                color: COLORS.warning,
+                thumbnailUrl: coverUrl,
+                fields: [
+                    { name: 'Series ID', value: String(seriesId), inline: true },
+                    { name: 'Possible Matches', value: suggestions },
+                ],
+            })
+        );
     },
 };
-
-export { discordService };

@@ -76,8 +76,7 @@
     "dev": "nodemon src/index.ts",
     "build": "tsc",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:seed": "ts-node -r tsconfig-paths/register src/db/seed.ts"
+    "db:migrate": "drizzle-kit migrate"
   },
   "author": "",
   "license": "ISC",

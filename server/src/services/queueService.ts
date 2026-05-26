@@ -227,6 +227,45 @@ class QueueService {
         logger.info(`Queue ${queueName} has been RESUMED`, { service: 'queueService' });
     }
 
+    /** BullMQ splits priority jobs into `prioritized`; treat them as waiting for admin metrics. */
+    private normalizeJobCounts(counts: Record<string, number>) {
+        const waiting = (counts.waiting ?? counts.wait ?? 0) + (counts.prioritized ?? 0);
+        return {
+            waiting,
+            active: counts.active ?? 0,
+            completed: counts.completed ?? 0,
+            failed: counts.failed ?? 0,
+            delayed: counts.delayed ?? 0,
+        };
+    }
+
+    public async getJob(queueName: string, jobId: string): Promise<Job | undefined> {
+        const job = await this.getQueue(queueName).getJob(jobId);
+        return job ?? undefined;
+    }
+
+    public async retryJob(queueName: string, jobId: string): Promise<void> {
+        const job = await this.getJob(queueName, jobId);
+        if (!job) throw new Error('Job not found');
+        const state = await job.getState();
+        if (state !== 'failed') throw new Error('Only failed jobs can be retried');
+        await job.retry();
+    }
+
+    public async removeJob(queueName: string, jobId: string): Promise<void> {
+        const job = await this.getJob(queueName, jobId);
+        if (!job) throw new Error('Job not found');
+        await job.remove();
+    }
+
+    public async promoteJob(queueName: string, jobId: string): Promise<void> {
+        const job = await this.getJob(queueName, jobId);
+        if (!job) throw new Error('Job not found');
+        const state = await job.getState();
+        if (state !== 'delayed') throw new Error('Only delayed jobs can be promoted');
+        await job.promote();
+    }
+
     // Get detailed stats of the queue
     public async getQueueStatus(queueName: string) {
         const queue = this.getQueue(queueName);
@@ -234,15 +273,16 @@ class QueueService {
             queue.getJobCounts(),
             queue.isPaused()
         ]);
+        const normalized = this.normalizeJobCounts(counts as Record<string, number>);
 
         return {
             queueName,
             status: isPaused ? 'Paused' : 'Active',
-            waiting: counts.waiting,
-            active: counts.active,
-            completed: counts.completed,
-            failed: counts.failed,
-            delayed: counts.delayed
+            waiting: normalized.waiting,
+            active: normalized.active,
+            completed: normalized.completed,
+            failed: normalized.failed,
+            delayed: normalized.delayed
         };
     }
 
@@ -254,13 +294,15 @@ class QueueService {
             this.getOldestWaiting(queue)
         ]);
 
+        const normalized = this.normalizeJobCounts(counts as Record<string, number>);
+
         return {
             queueName,
-            waiting: counts.waiting,
-            active: counts.active,
-            completed: counts.completed,
-            failed: counts.failed,
-            delayed: counts.delayed,
+            waiting: normalized.waiting,
+            active: normalized.active,
+            completed: normalized.completed,
+            failed: normalized.failed,
+            delayed: normalized.delayed,
             oldestWaitingMs: oldest?.ageMs ?? null,
             oldestWaitingJobId: oldest?.jobId ?? null
         };
@@ -313,8 +355,8 @@ class QueueService {
 
     private async getOldestWaiting(queue: Queue): Promise<{ ageMs: number; jobId: string | number | undefined } | null> {
         try {
-            const jobs = await queue.getJobs(['waiting'], 0, 0, true);
-            const job = jobs[0];
+            const jobs = await queue.getJobs(['waiting', 'prioritized'], 0, 0, true);
+            const job = jobs.find((j) => j && typeof j.timestamp === 'number');
             if (!job || typeof job.timestamp !== 'number') return null;
             const age = Math.max(0, Date.now() - job.timestamp);
             return { ageMs: age, jobId: job.id };

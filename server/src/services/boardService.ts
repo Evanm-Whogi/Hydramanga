@@ -1,6 +1,7 @@
 import { db, schema } from '@/db/index';
 import { eq, and, desc, sql, inArray, count } from 'drizzle-orm';
 import { karmaService } from '@/services/karmaService';
+import { notificationService } from '@/services/notificationService';
 
 type AuthorWithRank = {
   id: string;
@@ -134,6 +135,35 @@ class BoardService {
       sourceId: String(reply.id),
       idempotencyKey: `board_reply:${reply.id}`,
     });
+
+    const [replier] = await db
+      .select({ name: schema.user.name })
+      .from(schema.user)
+      .where(eq(schema.user.id, userId))
+      .limit(1);
+    const replierName = replier?.name || 'Someone';
+
+    const recipients = new Set<string>();
+    if (post.userId !== userId) recipients.add(post.userId);
+
+    if (parentId) {
+      const parentReply = await db.query.boardReplies.findFirst({
+        where: eq(schema.boardReplies.id, parentId),
+      });
+      if (parentReply && parentReply.userId !== userId) {
+        recipients.add(parentReply.userId);
+      }
+    }
+
+    for (const recipientUserId of recipients) {
+      notificationService
+        .notifyBoardReply({
+          recipientUserId,
+          replierName,
+          postTitle: post.title,
+        })
+        .catch(() => undefined);
+    }
 
     return reply;
   }

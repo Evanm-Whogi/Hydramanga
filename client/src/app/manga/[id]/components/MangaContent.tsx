@@ -6,7 +6,7 @@ import {  formatToRating, formatTimeAgo } from '@/lib/utils';
 import Link from 'next/link';
 import MangaActions from './MangaActions';
 import RecommendedManga from './RecommendedManga';
-import { Eye, Bookmark, UserCheck, TriangleAlert, Star, Pencil, ShareIcon } from 'lucide-react';
+import { Eye, Bookmark, UserCheck, TriangleAlert, Star, Pencil, ShareIcon, StickyNote } from 'lucide-react';
 import { useMangaViewTracking } from '@/hooks/useViewTracking';
 import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
 import { useUser } from '@/providers/UserProvider';
@@ -396,6 +396,15 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
       </div>
     ) : null;
 
+    const mangaNote = manga.note?.trim();
+    const mangaNoteBanner = mangaNote ? (
+      <div className="bg-foreground/50 border border-borders rounded-md p-2 w-full flex items-center">
+          <StickyNote className="inline mr-2 size-5 text-accent" />
+          <span className="text-sm mr-2 font-bold text-accent">Admin Note:</span>
+        <p className="text-sm text-primary">{mangaNote}</p>
+      </div>
+    ) : null;
+
   return (
     <>
       <MangaHeader cover={manga?.cover?.x350?.x3 || manga?.cover?.raw?.url || "/notFound.png"} />
@@ -404,6 +413,7 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
           {/* Main Content */}
           <div className="flex flex-col space-y-3 w-full lg:w-2/3 mb-5">
             <div className={`space-y-3 flex flex-col ${isLg && sidebarHeight != null ? "shrink-0" : ""}`}>
+              {mangaNote && mangaNoteBanner}
               {containsAdultContent && containsAdultWarning}
             <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
               {manga.title} 

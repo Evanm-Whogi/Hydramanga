@@ -1,4 +1,5 @@
 import Link from 'next/link';
+const DISCORD_URL = process.env.NEXT_PUBLIC_DISCORD ?? "https://discord.gg/A27sQQTWWe";
 
 export default  function Footer() {
    return (
@@ -33,7 +34,7 @@ export default  function Footer() {
                         <Link href="/contact" className="hover:text-primary">Contact/DMCA Notice</Link>
                         <Link href="/privacy" className="hover:text-primary">Privacy Policy</Link>
                         <Link href="/pwa" className="hover:text-primary">Progressive Web App</Link>
-                        <a href="https://discord.gg/Key667vf6j" className="hover:text-primary">Join our Discord</a>
+                        <a href={DISCORD_URL} className="hover:text-primary">Join our Discord</a>
                     </div>
                 </div>
                 <div className="flex flex-col text-primary">
