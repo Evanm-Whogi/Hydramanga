@@ -2,11 +2,9 @@
  * AtsuMoe Scraper Implementation
  *
  * Scraper for atsu.moe manga source.
- * Combines patterns used by MangaTaro (API-driven search + axios image downloads)
- * and WeebCentral (Playwright-based chapter list and reader scraping).
+ * Uses Typesense search API, allChapters API for chapter lists, and static CDN URLs for pages.
  */
 
-import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
@@ -92,6 +90,27 @@ function mangaListUrl(pathOrUrl: string): string {
     return u.href;
 }
 
+/** Static page image URL (pages are 0-indexed). */
+function staticPageUrl(mangaId: string, chapterId: string, pageIndex: number): string {
+    return `${SITE_BASE}/static/pages/${mangaId}/${chapterId}/${pageIndex}.webp`;
+}
+
+function parseChapterUrl(url: string): { mangaId: string; chapterId: string; pageCount?: number } {
+    const u = new URL(url, SITE_BASE);
+    const segments = u.pathname.split('/').filter(Boolean);
+    const readIdx = segments.indexOf('read');
+    if (readIdx < 0 || segments.length < readIdx + 3) {
+        throw new Error(`Invalid AtsuMoe chapter URL: ${url}`);
+    }
+    const pageCountParam = u.searchParams.get('pageCount');
+    const pageCount = pageCountParam ? parseInt(pageCountParam, 10) : undefined;
+    return {
+        mangaId: segments[readIdx + 1],
+        chapterId: segments[readIdx + 2],
+        pageCount: pageCount && pageCount > 0 ? pageCount : undefined,
+    };
+}
+
 /**
  * Calculate title similarity (0-100)
  * Reused approach from MangaTaro scraper for consistent scoring.
@@ -136,7 +155,7 @@ function normalizeForSearch(value?: string): string {
 
 /**
  * AtsuMoe Scraper
- * Uses JSON search API and Playwright-powered DOM scraping.
+ * Uses JSON search API, allChapters API, and static page URLs for downloads.
  */
 export class AtsuMoeScraper implements IChapterScraper {
     private readonly metadata: ScraperMetadata = {
@@ -146,10 +165,6 @@ export class AtsuMoeScraper implements IChapterScraper {
         priority: appConfig.scraper.atsuMoe.priority,
         enabled: appConfig.scraper.atsuMoe.enabled,
     };
-
-    // Browser pool for reusing browser instances (pattern from MangaTaro/WeebCentral)
-    private static browserPool: any[] = [];
-    private static readonly MAX_BROWSERS = 5;
 
     private static readonly httpAgent = new http.Agent({
         keepAlive: true,
@@ -183,43 +198,6 @@ export class AtsuMoeScraper implements IChapterScraper {
 
     getMetadata(): ScraperMetadata {
         return { ...this.metadata };
-    }
-
-    /**
-     * Browser pool helpers
-     */
-    private static async getBrowser() {
-        if (AtsuMoeScraper.browserPool.length > 0) {
-            return AtsuMoeScraper.browserPool.pop();
-        }
-        logger.debug('[AtsuMoe] Launching new browser for pool', { service: 'atsuMoeScraper' });
-        return chromium.launch({
-            headless: true,
-            args: ['--disable-dev-shm-usage', '--no-sandbox'],
-        });
-    }
-
-    private static async releaseBrowser(browser: any) {
-        if (!browser) return;
-        try {
-            if (!browser.isConnected()) {
-                await browser.close().catch(() => {});
-                return;
-            }
-            if (AtsuMoeScraper.browserPool.length < AtsuMoeScraper.MAX_BROWSERS) {
-                AtsuMoeScraper.browserPool.push(browser);
-                logger.debug(
-                    `[AtsuMoe] Browser returned to pool (${AtsuMoeScraper.browserPool.length}/${AtsuMoeScraper.MAX_BROWSERS})`,
-                    { service: 'atsuMoeScraper' }
-                );
-            } else {
-                await browser.close().catch(() => {});
-                logger.debug('[AtsuMoe] Browser closed (pool full)', { service: 'atsuMoeScraper' });
-            }
-        } catch (error) {
-            logger.warn(`[AtsuMoe] Error releasing browser: ${error}`, { service: 'atsuMoeScraper' });
-            await browser.close().catch(() => {});
-        }
     }
 
     async canHandle(mangaName: string, seriesId?: number): Promise<boolean> {
@@ -446,10 +424,14 @@ export class AtsuMoeScraper implements IChapterScraper {
 
         const chapterRows = [...data.chapters]
             .reverse()
-            .map((ch) => ({
-                url: `${SITE_BASE}/read/${mangaId}/${ch.id}`,
-                title: ch.title || `Chapter ${ch.number}`,
-            }));
+            .map((ch) => {
+                const chapterUrl = new URL(`${SITE_BASE}/read/${mangaId}/${ch.id}`);
+                chapterUrl.searchParams.set('pageCount', String(ch.pageCount));
+                return {
+                    url: chapterUrl.href,
+                    title: ch.title || `Chapter ${ch.number}`,
+                };
+            });
 
         logger.info(
             `[AtsuMoe] Found ${chapterRows.length} chapters (API)`,
@@ -477,6 +459,22 @@ export class AtsuMoeScraper implements IChapterScraper {
         }
     }
 
+    private async resolvePageCount(
+        mangaId: string,
+        chapterId: string,
+        fromUrl?: number
+    ): Promise<number> {
+        if (fromUrl && fromUrl > 0) return fromUrl;
+
+        const apiUrl = `${SITE_BASE}/api/manga/allChapters?mangaId=${encodeURIComponent(mangaId)}`;
+        const response = await AtsuMoeScraper.axiosInstance.get<AtsuMoeAllChaptersResponse>(apiUrl);
+        const chapter = response.data?.chapters?.find((ch) => ch.id === chapterId);
+        if (chapter?.pageCount && chapter.pageCount > 0) {
+            return chapter.pageCount;
+        }
+        throw new Error(`Could not resolve pageCount for chapter ${chapterId} (mangaId=${mangaId})`);
+    }
+
     async downloadChapter(
         url: string,
         seriesId: number,
@@ -484,103 +482,30 @@ export class AtsuMoeScraper implements IChapterScraper {
         mangaName: string,
         folderName: string
     ): Promise<DownloadedChapter> {
-        const browser = await AtsuMoeScraper.getBrowser();
-        const context = await browser.newContext({
-            userAgent: appConfig.scraper.atsuMoe.userAgent,
-        });
-        const page = await context.newPage();
+        const { mangaId, chapterId, pageCount: pageCountFromUrl } = parseChapterUrl(url);
+        const pageCount = await this.resolvePageCount(mangaId, chapterId, pageCountFromUrl);
 
-        try {
-            logger.info(
-                `[AtsuMoe] Navigating to chapter "${folderName}"`,
-                { service: 'atsuMoeScraper' }
-            );
+        const imageUrls = Array.from({ length: pageCount }, (_, pageIndex) =>
+            staticPageUrl(mangaId, chapterId, pageIndex)
+        );
 
-            await page.goto(url, {
-                waitUntil: 'load',
-                timeout: 45000,
-            });
+        logger.info(
+            `[AtsuMoe] Downloading ${imageUrls.length} pages for chapter ${chapterNumber} (static CDN)`,
+            { service: 'atsuMoeScraper' }
+        );
 
-            // Wait for reader container and images
-            try {
-                await page.waitForSelector('#reader-scroll-inner img', {
-                    timeout: 15000,
-                    state: 'attached',
-                });
-                await page.waitForLoadState('domcontentloaded').catch(() => {});
-                await page.waitForTimeout(1000);
-            } catch (err) {
-                logger.warn(
-                    `[AtsuMoe] Timeout waiting for reader images: ${err}`,
-                    { service: 'atsuMoeScraper' }
-                );
-            }
+        const referer = `${SITE_BASE}/read/${mangaId}/${chapterId}`;
+        const storagePrefix = await this.downloadImages(
+            imageUrls,
+            seriesId,
+            chapterNumber,
+            referer
+        );
 
-            const extractImageUrls = (): Promise<string[]> =>
-                page.evaluate((siteBase: string) => {
-                    const container = document.querySelector<HTMLElement>('#reader-scroll-inner');
-                    if (!container) return [] as string[];
-
-                    const resolveUrl = (src: string) => {
-                        if (!src) return '';
-                        if (src.startsWith('http')) return src;
-                        try {
-                            return new URL(src, siteBase).href;
-                        } catch {
-                            return '';
-                        }
-                    };
-
-                    return Array.from(container.querySelectorAll<HTMLImageElement>('img'))
-                        .map(img => img.getAttribute('src') || '')
-                        .map(src => resolveUrl(src))
-                        .filter((src): src is string => !!src);
-                }, SITE_BASE);
-
-            let imageUrls: string[];
-            try {
-                imageUrls = await extractImageUrls();
-            } catch (err: any) {
-                const msg = err?.message || String(err);
-                if (msg.includes('Execution context was destroyed') || msg.includes('Target closed')) {
-                    logger.warn(
-                        '[AtsuMoe] Reader context lost, re-navigating and retrying image extraction',
-                        { service: 'atsuMoeScraper' }
-                    );
-                    await page.goto(url, { waitUntil: 'load', timeout: 45000 });
-                    await page.waitForSelector('#reader-scroll-inner img', { timeout: 15000, state: 'attached' }).catch(() => {});
-                    await page.waitForTimeout(500);
-                    imageUrls = await extractImageUrls();
-                } else {
-                    throw err;
-                }
-            }
-
-            logger.info(
-                `[AtsuMoe] Found ${imageUrls.length} images for chapter ${chapterNumber}`,
-                { service: 'atsuMoeScraper' }
-            );
-
-            if (imageUrls.length === 0) {
-                throw new Error(`No images found at ${url}`);
-            }
-
-            const storagePrefix = await this.downloadImages(
-                imageUrls,
-                seriesId,
-                chapterNumber,
-                url
-            );
-
-            return {
-                storagePrefix,
-                pageCount: imageUrls.length,
-            };
-        } finally {
-            await page.close().catch(() => {});
-            await context.close().catch(() => {});
-            await AtsuMoeScraper.releaseBrowser(browser);
-        }
+        return {
+            storagePrefix,
+            pageCount: imageUrls.length,
+        };
     }
 
     /**
