@@ -18,6 +18,7 @@ import { MangaTaroScraper } from './implementations/MangaTaroScraper';
 import { ToonilyScraper } from './implementations/ToonilyScraper';
 import { AtsuMoeScraper } from './implementations/AtsuMoeScraper';
 import { AsuraComicScraper } from './implementations/AsuraComicScraper';
+import { ComixScraper } from './implementations/ComixScraper';
 import logger from '@/services/loggerService';
 
 /**
@@ -38,6 +39,10 @@ export function initializeScrapers(): void {
     // Register AsuraComic scraper
     const asuraComicScraper = new AsuraComicScraper();
     scraperManager.registerScraper(asuraComicScraper);
+
+    // Register Comix scraper
+    const comixScraper = new ComixScraper();
+    scraperManager.registerScraper(comixScraper);
 
     // Register MangaTaro scraper
     const mangaTaroScraper = new MangaTaroScraper();

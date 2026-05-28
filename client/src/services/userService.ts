@@ -3,6 +3,7 @@ import { apiPostFormData, apiDelete, apiGet, apiPatch } from '@/lib/api';
 export interface UserSettings {
   hideNsfw: boolean;
   isProfilePublic: boolean;
+  incognitoMode: boolean;
 }
 
 export async function getSettings(): Promise<UserSettings> {
@@ -10,6 +11,7 @@ export async function getSettings(): Promise<UserSettings> {
   return {
     hideNsfw: data?.hideNsfw ?? false,
     isProfilePublic: data?.isProfilePublic ?? true,
+    incognitoMode: data?.incognitoMode ?? false,
   };
 }
 
@@ -18,6 +20,7 @@ export async function updateSettings(updates: Partial<UserSettings>): Promise<Us
   return {
     hideNsfw: data?.hideNsfw ?? false,
     isProfilePublic: data?.isProfilePublic ?? true,
+    incognitoMode: data?.incognitoMode ?? false,
   };
 }
 

@@ -85,6 +85,14 @@ export interface ScraperConfig {
         priority: number; // 1 = highest priority
         enabled: boolean;
     };
+    comix: {
+        baseUrl: string;
+        searchApiUrl: string;
+        userAgent: string;
+        timeout: number; // milliseconds
+        priority: number; // 1 = highest priority
+        enabled: boolean;
+    };
     atsuMoe: {
         apiUrl: string;
         baseUrl: string;
@@ -305,6 +313,14 @@ export class AppConfigService {
                     timeout: parseEnvNumber('ASURA_COMIC_TIMEOUT', 30000), // 30 seconds
                     priority: parseEnvNumber('ASURA_COMIC_PRIORITY', 2), // 2 = second priority tier
                     enabled: parseEnvBoolean('ASURA_COMIC_ENABLED', true),
+                },
+                comix: {
+                    baseUrl: 'https://comix.to',
+                    searchApiUrl: 'https://comix.to/api/v1/manga',
+                    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    timeout: parseEnvNumber('COMIX_TIMEOUT', 30000), // 30 seconds
+                    priority: parseEnvNumber('COMIX_PRIORITY', 3), // 3 = third priority tier
+                    enabled: parseEnvBoolean('COMIX_ENABLED', true),
                 },
                 atsuMoe: {
                     apiUrl: 'https://atsu.moe/collections/manga/documents/search',

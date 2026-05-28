@@ -73,7 +73,8 @@
   "main": "src/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon src/index.ts",
+    "dev": "RUN_WORKERS=false nodemon src/index.ts",
+    "worker": "RUN_WORKERS=true nodemon src/worker.ts",
     "build": "tsc",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"

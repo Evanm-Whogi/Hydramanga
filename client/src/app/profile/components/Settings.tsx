@@ -17,6 +17,7 @@ export default function Settings({ user }: { user: any }) {
     const [sessions, setSessions] = useState<any[]>([]);
     const [hideNsfw, setHideNsfw] = useState(false);
     const [isProfilePublic, setIsProfilePublic] = useState(true);
+    const [incognitoMode, setIncognitoMode] = useState(false);
     const [settingsLoading, setSettingsLoading] = useState(false);
 
   const fetchSettings = async () => {
@@ -24,9 +25,11 @@ export default function Settings({ user }: { user: any }) {
       const s = await getSettings();
       setHideNsfw(s.hideNsfw);
       setIsProfilePublic(s.isProfilePublic);
+      setIncognitoMode(s.incognitoMode ?? false);
     } catch {
       setHideNsfw(false);
       setIsProfilePublic(true);
+      setIncognitoMode(false);
     }
   };
 
@@ -56,6 +59,25 @@ export default function Settings({ user }: { user: any }) {
             await updateSettings({ isProfilePublic: newValue });
             setIsProfilePublic(newValue);
             toast.success(newValue ? "Profile is now public" : "Profile is now private");
+            router.refresh();
+        } catch {
+            toast.error("Failed to update setting");
+        } finally {
+            setSettingsLoading(false);
+        }
+    };
+
+    const handleIncognitoToggle = async () => {
+        const newValue = !incognitoMode;
+        setSettingsLoading(true);
+        try {
+            await updateSettings({ incognitoMode: newValue });
+            setIncognitoMode(newValue);
+            toast.success(
+              newValue
+                ? "Incognito mode enabled. View and reading history won't be saved."
+                : "Incognito mode disabled. History tracking resumed."
+            );
             router.refresh();
         } catch {
             toast.error("Failed to update setting");
@@ -212,6 +234,22 @@ export default function Settings({ user }: { user: any }) {
                             className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 ${isProfilePublic ? 'bg-accent' : 'bg-foreground'}`}
                         >
                             <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${isProfilePublic ? 'translate-x-5' : 'translate-x-1'}`} />
+                        </button>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 mt-6 pt-6 border-t border-borders">
+                        <div>
+                            <p className="font-medium text-primary">Incognito mode</p>
+                            <p className="text-sm text-muted">When on, new manga views and reading history won't be saved until you turn it off.</p>
+                        </div>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={incognitoMode}
+                            disabled={settingsLoading}
+                            onClick={handleIncognitoToggle}
+                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 ${incognitoMode ? 'bg-accent' : 'bg-foreground'}`}
+                        >
+                            <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${incognitoMode ? 'translate-x-5' : 'translate-x-1'}`} />
                         </button>
                     </div>
                 </div>

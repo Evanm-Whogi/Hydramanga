@@ -1,9 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
 import { metricsService } from '@/services/metricsService';
 import { userProgressService } from '@/services/userProgressService';
+import { getUserSettings } from '@/services/userSettingsService';
 import logger from '@/services/loggerService';
 import { db, schema } from '@/db/index';
 import { eq, avg, count } from 'drizzle-orm';
+
+async function isIncognitoEnabled(userId: string | undefined): Promise<boolean> {
+  if (!userId) return false;
+  const settings = await getUserSettings(userId);
+  return settings.incognitoMode === true;
+}
 
 /**
  * Get trending manga for a specific time period
@@ -174,6 +181,13 @@ export async function updateProgress(req: Request, res: Response, next: NextFunc
       });
     }
 
+    if (await isIncognitoEnabled(userId)) {
+      return res.json({
+        status: 200,
+        message: 'Incognito mode enabled; progress not persisted',
+      });
+    }
+
     await userProgressService.updateProgress({
       userId,
       seriesId: Number(seriesId),
@@ -206,6 +220,13 @@ export async function markChapterAsRead(req: Request, res: Response, next: NextF
       });
     }
 
+    if (await isIncognitoEnabled(userId)) {
+      return res.json({
+        status: 200,
+        message: 'Incognito mode enabled; progress not persisted',
+      });
+    }
+
     await userProgressService.markChapterAsRead(
       userId,
       Number(seriesId),
@@ -233,6 +254,13 @@ export async function markChapterAsUnread(req: Request, res: Response, next: Nex
     if (!chapterId) {
       return res.status(400).json({ 
         error: 'Missing required field: chapterId' 
+      });
+    }
+
+    if (await isIncognitoEnabled(userId)) {
+      return res.json({
+        status: 200,
+        message: 'Incognito mode enabled; progress not persisted',
       });
     }
 
@@ -334,6 +362,13 @@ export async function recordReadingTime(
       return res.status(400).json({
         error:
           'Invalid request body: seriesId (number), chapterId (number), and seconds (positive number) are required',
+      });
+    }
+
+    if (await isIncognitoEnabled(userId)) {
+      return res.json({
+        status: 200,
+        message: 'Incognito mode enabled; reading time not persisted',
       });
     }
 

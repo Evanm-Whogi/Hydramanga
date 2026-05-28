@@ -350,6 +350,7 @@ export const userSettings = pgTable('user_settings', {
   userId: text('user_id').primaryKey().references(() => user.id, { onDelete: 'cascade' }),
   hideNsfw: boolean('hide_nsfw').notNull().default(false),
   isProfilePublic: boolean('is_profile_public').notNull().default(true),
+  incognitoMode: boolean('incognito_mode').notNull().default(false),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   userIdIdx: index('idx_user_settings_user_id').on(t.userId),

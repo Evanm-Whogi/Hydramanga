@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 
 const DEFAULT_HIDE_NSFW = false;
 const DEFAULT_PROFILE_PUBLIC = true;
+const DEFAULT_INCOGNITO_MODE = false;
 const SETTINGS_CACHE_TTL_MS = 60_000; // 1 minute
 
 interface CachedSettings {
@@ -15,10 +16,17 @@ const settingsCache = new Map<string, CachedSettings>();
 export interface UserSettings {
   hideNsfw: boolean;
   isProfilePublic: boolean;
+  incognitoMode: boolean;
 }
 
 export async function getUserSettings(userId: string | null | undefined): Promise<UserSettings> {
-  if (!userId) return { hideNsfw: DEFAULT_HIDE_NSFW, isProfilePublic: DEFAULT_PROFILE_PUBLIC };
+  if (!userId) {
+    return {
+      hideNsfw: DEFAULT_HIDE_NSFW,
+      isProfilePublic: DEFAULT_PROFILE_PUBLIC,
+      incognitoMode: DEFAULT_INCOGNITO_MODE,
+    };
+  }
 
   const now = Date.now();
   const cached = settingsCache.get(userId);
@@ -31,8 +39,16 @@ export async function getUserSettings(userId: string | null | undefined): Promis
     .limit(1);
   const settings: UserSettings =
     row.length === 0
-      ? { hideNsfw: DEFAULT_HIDE_NSFW, isProfilePublic: DEFAULT_PROFILE_PUBLIC }
-      : { hideNsfw: row[0].hideNsfw, isProfilePublic: row[0].isProfilePublic ?? DEFAULT_PROFILE_PUBLIC };
+      ? {
+          hideNsfw: DEFAULT_HIDE_NSFW,
+          isProfilePublic: DEFAULT_PROFILE_PUBLIC,
+          incognitoMode: DEFAULT_INCOGNITO_MODE,
+        }
+      : {
+          hideNsfw: row[0].hideNsfw,
+          isProfilePublic: row[0].isProfilePublic ?? DEFAULT_PROFILE_PUBLIC,
+          incognitoMode: row[0].incognitoMode ?? DEFAULT_INCOGNITO_MODE,
+        };
   settingsCache.set(userId, {
     settings,
     expiresAt: now + SETTINGS_CACHE_TTL_MS,
@@ -50,20 +66,23 @@ export async function updateUserSettings(userId: string, updates: Partial<UserSe
   const hideNsfw = updates.hideNsfw ?? existing[0]?.hideNsfw ?? DEFAULT_HIDE_NSFW;
   const isProfilePublic =
     updates.isProfilePublic ?? existing[0]?.isProfilePublic ?? DEFAULT_PROFILE_PUBLIC;
+  const incognitoMode =
+    updates.incognitoMode ?? existing[0]?.incognitoMode ?? DEFAULT_INCOGNITO_MODE;
 
   if (existing.length) {
     await db
       .update(schema.userSettings)
-      .set({ hideNsfw, isProfilePublic, updatedAt: new Date() })
+      .set({ hideNsfw, isProfilePublic, incognitoMode, updatedAt: new Date() })
       .where(eq(schema.userSettings.userId, userId));
   } else {
     await db.insert(schema.userSettings).values({
       userId,
       hideNsfw,
       isProfilePublic,
+      incognitoMode,
     });
   }
 
   settingsCache.delete(userId);
-  return { hideNsfw, isProfilePublic };
+  return { hideNsfw, isProfilePublic, incognitoMode };
 }

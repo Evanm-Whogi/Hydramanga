@@ -739,9 +739,15 @@ export async function triggerMangaScan(req: Request, res: Response, next: NextFu
 export async function trackMangaViewEndpoint(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const id = parseInt(req.params.id, 10);
     const trackingData = (req as any).trackingData;
+    const userId = req.user?.id;
 
     if (isNaN(id) || id <= 0) {
         return res.status(400).json({ status: 400, message: "Invalid manga ID" });
+    }
+
+    const { incognitoMode } = await getUserSettings(userId);
+    if (incognitoMode) {
+        return res.status(200).json({ success: true, skipped: 'incognito' });
     }
 
     if (trackingData) {
@@ -779,11 +785,17 @@ export async function trackMangaViewEndpoint(req: Request, res: Response, next: 
 export async function trackChapterViewEndpoint(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const { id, chapterId } = req.params;
     const trackingData = (req as any).trackingData;
+    const userId = req.user?.id;
     const numericId = Number(id);
     const numericChapterId = Number(chapterId);
 
     if (isNaN(numericId) || numericId <= 0 || isNaN(numericChapterId) || numericChapterId <= 0) {
         return res.status(400).json({ status: 400, message: "Invalid manga or chapter ID" });
+    }
+
+    const { incognitoMode } = await getUserSettings(userId);
+    if (incognitoMode) {
+        return res.status(200).json({ success: true, skipped: 'incognito' });
     }
 
     if (trackingData) {
