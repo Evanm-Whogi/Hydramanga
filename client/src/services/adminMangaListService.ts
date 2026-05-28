@@ -28,7 +28,14 @@ export interface ListAdminMangaParams {
   limit?: number;
   search?: string;
   status?: 'all' | 'none' | 'scanning' | 'downloading' | 'completed' | 'failed';
+  scraperId?: string;
   sort?: 'updated' | 'title' | 'chapters';
+}
+
+export interface AdminMangaScraperFilterOption {
+  id: string;
+  name: string;
+  count: number;
 }
 
 export async function listAdminManga(params: ListAdminMangaParams = {}): Promise<AdminMangaListResponse> {
@@ -37,6 +44,7 @@ export async function listAdminManga(params: ListAdminMangaParams = {}): Promise
   if (params.limit) query.set('limit', String(params.limit));
   if (params.search?.trim()) query.set('search', params.search.trim());
   if (params.status && params.status !== 'all') query.set('status', params.status);
+  if (params.scraperId && params.scraperId !== 'all') query.set('scraperId', params.scraperId);
   if (params.sort) query.set('sort', params.sort);
 
   const qs = query.toString();
@@ -45,6 +53,11 @@ export async function listAdminManga(params: ListAdminMangaParams = {}): Promise
     manga: (data as { manga: AdminMangaListItem[] }).manga ?? [],
     pagination: (data as { pagination: AdminMangaListResponse['pagination'] }).pagination,
   };
+}
+
+export async function listAdminMangaScraperFilters(): Promise<{ filters: AdminMangaScraperFilterOption[] }> {
+  const data = await apiGet('/admin/manga/scraper-filters');
+  return { filters: (data as { filters: AdminMangaScraperFilterOption[] }).filters ?? [] };
 }
 
 export async function fetchMangaForAdminEdit(mangaId: number): Promise<{manga: Record<string, unknown>; chapters: Array<{ id: number; chapterNumber: string; title?: string | null }>;}> {

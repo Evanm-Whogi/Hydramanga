@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {Search, ChevronLeft, ChevronRight, Loader2, EllipsisVertical, ExternalLink} from "lucide-react";
 import { toast } from "react-toastify";
-import { listAdminManga, fetchMangaForAdminEdit, type AdminMangaListItem, type ListAdminMangaParams } from "@/services/adminMangaListService";
+import { listAdminManga, listAdminMangaScraperFilters, fetchMangaForAdminEdit, type AdminMangaListItem, type ListAdminMangaParams, type AdminMangaScraperFilterOption } from "@/services/adminMangaListService";
 import { adminGetSource } from "@/services/adminMangaService";
 import { getCoverUrl } from "@/lib/historyUtils";
 import AdminMangaEditModal from "@/app/manga/[id]/components/AdminMangaEditModal";
@@ -49,6 +49,8 @@ export default function MangaAdminClient() {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [statusFilter, setStatusFilter] = useState<ListAdminMangaParams["status"]>("all");
+  const [scraperFilter, setScraperFilter] = useState<string>("all");
+  const [scraperFilterOptions, setScraperFilterOptions] = useState<AdminMangaScraperFilterOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [openingId, setOpeningId] = useState<number | null>(null);
   const [editModal, setEditModal] = useState<{
@@ -68,6 +70,7 @@ export default function MangaAdminClient() {
         limit: 20,
         search: search || undefined,
         status: statusFilter,
+        scraperId: scraperFilter,
       });
       setManga(result.manga);
       setTotalPages(result.pagination.totalPages);
@@ -78,11 +81,17 @@ export default function MangaAdminClient() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, statusFilter]);
+  }, [page, search, statusFilter, scraperFilter]);
 
   useEffect(() => {
     fetchManga();
   }, [fetchManga]);
+
+  useEffect(() => {
+    listAdminMangaScraperFilters()
+      .then((res) => setScraperFilterOptions(res.filters))
+      .catch(() => setScraperFilterOptions([]));
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -160,8 +169,28 @@ export default function MangaAdminClient() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-muted">Source:</span>
+        <select
+          value={scraperFilter}
+          onChange={(e) => {
+            setScraperFilter(e.target.value);
+            setPage(1);
+          }}
+          className="px-3 py-1.5 rounded-lg text-sm bg-foreground border border-borders text-primary focus:outline-none focus:ring-2 focus:ring-accent/50"
+        >
+          <option value="all">All sources</option>
+          <option value="none">No source set</option>
+          {scraperFilterOptions.map((opt) => (
+            <option key={opt.id} value={opt.id}>
+              {opt.name} ({opt.count})
+            </option>
+          ))}
+        </select>
+      </div>
+
       <p className="text-sm text-muted">
-        {total} series total · sorted by latest import activity
+        {total} series{scraperFilter !== "all" ? " matching filter" : ""} · sorted by latest import activity
       </p>
 
       <div className="bg-foreground rounded-lg overflow-hidden border border-borders">

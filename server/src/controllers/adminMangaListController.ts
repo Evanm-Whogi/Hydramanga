@@ -10,6 +10,7 @@ export async function listAdminManga(req: Request, res: Response, next: NextFunc
     const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.floor(rawLimit), 1), 100) : 20;
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const scraperId = typeof req.query.scraperId === 'string' ? req.query.scraperId : undefined;
     const sort =
       req.query.sort === 'title' || req.query.sort === 'chapters' || req.query.sort === 'updated'
         ? req.query.sort
@@ -21,6 +22,7 @@ export async function listAdminManga(req: Request, res: Response, next: NextFunc
       limit,
       search,
       status: status === 'all' ? undefined : status,
+      scraperId: scraperId === 'all' ? undefined : scraperId,
       sort,
       order,
     });
@@ -28,6 +30,16 @@ export async function listAdminManga(req: Request, res: Response, next: NextFunc
     return res.json({ status: 200, ...result });
   } catch (error) {
     logger.error(`Failed to list admin manga: ${error}`, { service: 'adminMangaListController' });
+    return next(error);
+  }
+}
+
+export async function listAdminMangaScraperFilters(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const filters = await adminMangaListService.getScraperFilterOptions();
+    return res.json({ status: 200, filters });
+  } catch (error) {
+    logger.error(`Failed to list scraper filters: ${error}`, { service: 'adminMangaListController' });
     return next(error);
   }
 }

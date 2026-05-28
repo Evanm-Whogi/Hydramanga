@@ -1,7 +1,7 @@
 import { Router, RequestHandler } from 'express';
 import { triggerMangaSync, triggerMonitoredRescan, triggerTrendingRescan } from '@/controllers/mangaImportController';
 import { adminScraperSearch, adminSetSource, adminAddSecondaryTitle, adminTriggerRescan, adminGetSource, adminClearSource, adminCancelScan, adminDeleteChapters, adminUpdateSeries } from '@/controllers/adminMangaController';
-import { listAdminManga } from '@/controllers/adminMangaListController';
+import { listAdminManga, listAdminMangaScraperFilters } from '@/controllers/adminMangaListController';
 import { getAdminOverviewStats, getAdminTimeseries } from '@/controllers/adminStatsController';
 import { listAdminUsers, getAdminUser, patchAdminUser } from '@/controllers/adminUserController';
 import {sendAdminUserVerification, sendAdminUserPasswordReset} from '@/controllers/adminUserActionsController';
@@ -26,6 +26,7 @@ router.post('/users/:id/ban', requireRole('admin'), banAdminUser as RequestHandl
 router.post('/users/:id/unban', requireRole('admin'), unbanAdminUser as RequestHandler);
 
 router.get('/manga', requireRole('admin'), listAdminManga as RequestHandler);
+router.get('/manga/scraper-filters', requireRole('admin'), listAdminMangaScraperFilters as RequestHandler);
 
 // Import requests
 router.get('/import-requests', requireRole('admin'), listAdminImportRequests as RequestHandler);

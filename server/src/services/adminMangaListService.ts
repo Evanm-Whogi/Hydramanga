@@ -1,13 +1,21 @@
 import { db, schema } from '@/db/index';
-import { eq, or, ilike, desc, asc, count, and, sql, SQL, isNull } from 'drizzle-orm';
+import { eq, or, ilike, desc, asc, count, and, sql, SQL, isNull, isNotNull } from 'drizzle-orm';
+import { scraperManager } from '@/scrapers';
 
 export interface AdminMangaListParams {
   page: number;
   limit: number;
   search?: string;
   status?: string;
+  scraperId?: string;
   sort?: 'updated' | 'title' | 'chapters';
   order?: 'asc' | 'desc';
+}
+
+export interface AdminMangaScraperFilterOption {
+  id: string;
+  name: string;
+  count: number;
 }
 
 export interface AdminMangaListItem {
@@ -25,7 +33,7 @@ export interface AdminMangaListItem {
 
 class AdminMangaListService {
   async listManga(params: AdminMangaListParams) {
-    const { page, limit, search, status, sort = 'updated', order = 'desc' } = params;
+    const { page, limit, search, status, scraperId, sort = 'updated', order = 'desc' } = params;
     const offset = (page - 1) * limit;
 
     const filters: SQL[] = [];
@@ -46,6 +54,14 @@ class AdminMangaListService {
         filters.push(isNull(schema.mangaImportProgress.seriesId));
       } else {
         filters.push(eq(schema.mangaImportProgress.status, status as 'scanning' | 'downloading' | 'completed' | 'failed'));
+      }
+    }
+
+    if (scraperId && scraperId !== 'all') {
+      if (scraperId === 'none') {
+        filters.push(isNull(schema.mangaImportProgress.scraperId));
+      } else {
+        filters.push(eq(schema.mangaImportProgress.scraperId, scraperId));
       }
     }
 
@@ -126,6 +142,30 @@ class AdminMangaListService {
         totalPages: Math.max(1, Math.ceil(total / limit)),
       },
     };
+  }
+
+  async getScraperFilterOptions(): Promise<AdminMangaScraperFilterOption[]> {
+    const rows = await db
+      .select({
+        scraperId: schema.mangaImportProgress.scraperId,
+        count: count(),
+      })
+      .from(schema.mangaImportProgress)
+      .where(isNotNull(schema.mangaImportProgress.scraperId))
+      .groupBy(schema.mangaImportProgress.scraperId)
+      .orderBy(desc(count()));
+
+    const nameById = new Map(
+      scraperManager.getScrapers().map((s) => [s.getMetadata().id, s.getMetadata().name]),
+    );
+
+    return rows
+      .filter((row): row is { scraperId: string; count: number } => row.scraperId != null)
+      .map((row) => ({
+        id: row.scraperId,
+        name: nameById.get(row.scraperId) ?? row.scraperId,
+        count: Number(row.count),
+      }));
   }
 }
 
