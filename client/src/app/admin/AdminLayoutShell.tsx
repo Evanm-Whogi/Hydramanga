@@ -8,6 +8,7 @@ import {
     BookOpen,
     Inbox,
     ListOrdered,
+    ScrollText,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 
@@ -17,6 +18,7 @@ const NAV_ITEMS = [
     { href: "/admin/manga", label: "Manga", icon: BookOpen },
     { href: "/admin/imports", label: "Imports", icon: Inbox },
     { href: "/admin/queues", label: "Queues", icon: ListOrdered },
+    { href: "/admin/audit", label: "Audit", icon: ScrollText },
 ] as const;
 
 const PAGE_HEADERS: Record<string, { title: string; description: string }> = {
@@ -39,6 +41,10 @@ const PAGE_HEADERS: Record<string, { title: string; description: string }> = {
     "/admin/queues": {
         title: "Queues",
         description: "Job queue health and backlog overview",
+    },
+    "/admin/audit": {
+        title: "Audit Log",
+        description: "System-wide activity from users and admins",
     },
 };
 

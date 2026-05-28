@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useRef } from 'react';
 import { getClientApiBase } from '@/lib/env';
-import { trackMangaView, trackChapterRead } from '@/lib/analytics';
 
 /**
  * Hook to track manga view on client-side page mount
@@ -26,11 +25,6 @@ export function useMangaViewTracking(mangaId: string | number, mangaTitle?: stri
       }
     })();
     
-    if (mangaTitle) {
-      trackMangaView(mangaId.toString(), mangaTitle, {
-        source: 'manga_page',
-      });
-    }
   }, [mangaId, mangaTitle]);
 }
 
@@ -57,8 +51,5 @@ export function useChapterViewTracking(mangaId: string | number, chapterId: stri
       }
     })();
     
-    if (mangaTitle && chapterNumber) {
-      trackChapterRead(mangaId.toString(), mangaTitle, chapterNumber, chapterId.toString());
-    }
   }, [mangaId, chapterId, mangaTitle, chapterNumber]);
 }

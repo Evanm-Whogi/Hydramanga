@@ -5,6 +5,19 @@ import { db, schema } from "@/db/index";
 import { emailService } from "@/services/emailService";
 import { discordService } from "@/services/discordService";
 import { eq, sql } from "drizzle-orm";
+import { auditLogService } from "@/services/auditLogService";
+
+function getRequestMeta(context: { request?: Request } | null | undefined) {
+    const headers = context?.request?.headers;
+    if (!headers) return { ipAddress: null as string | null, userAgent: null as string | null };
+    const forwarded = headers.get('x-forwarded-for');
+    let ipAddress = forwarded?.split(',')[0]?.trim() || headers.get('x-real-ip') || null;
+    if (ipAddress?.startsWith('::ffff:')) ipAddress = ipAddress.substring(7);
+    return {
+        ipAddress,
+        userAgent: headers.get('user-agent'),
+    };
+}
 
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'http://localhost:3000';
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || `${PUBLIC_APP_URL}/auth/callback/google`;
@@ -186,7 +199,29 @@ export const auth = betterAuth({
 
                     return { data: nextUser };
                 },
-                after: async (user: any) => {
+                after: async (user: any, context) => {
+                    const meta = getRequestMeta(context);
+                    const path = (context as { path?: string })?.path ?? '';
+
+                    await auditLogService.record({
+                        actorId: user.id,
+                        impersonatorId: null,
+                        actorRole: 'user',
+                        action: 'auth.register',
+                        category: 'auth',
+                        resourceType: 'user',
+                        resourceId: user.id,
+                        path: path ? `/auth${path}` : '/auth/sign-up',
+                        success: true,
+                        ipAddress: meta.ipAddress,
+                        userAgent: meta.userAgent,
+                        skipDedup: true,
+                        metadata: {
+                            isAnonymous: false,
+                            provider: path.includes('social') ? 'oauth' : 'email',
+                        },
+                    });
+
                     await discordService.notifyUserSignup(
                         user.displayUsername || user.username || user.name || 'Unknown',
                         user.id
@@ -220,6 +255,100 @@ export const auth = betterAuth({
                             name: display,
                         },
                     };
+                },
+            },
+        },
+        session: {
+            create: {
+                after: async (session: { userId: string; impersonatedBy?: string | null }, context) => {
+                    const meta = getRequestMeta(context);
+                    const path = (context as { path?: string })?.path ?? '';
+
+                    if (session.impersonatedBy) {
+                        await auditLogService.record({
+                            actorId: session.userId,
+                            impersonatorId: session.impersonatedBy,
+                            actorRole: 'user',
+                            action: 'auth.impersonation_start',
+                            category: 'auth',
+                            resourceType: 'user',
+                            resourceId: session.userId,
+                            targetUserId: session.userId,
+                            path: path ? `/auth${path}` : null,
+                            success: true,
+                            ipAddress: meta.ipAddress,
+                            userAgent: meta.userAgent,
+                            skipDedup: true,
+                            metadata: { isAnonymous: false },
+                        });
+                        return;
+                    }
+
+                    const [actor] = await db
+                        .select({ role: schema.user.role })
+                        .from(schema.user)
+                        .where(eq(schema.user.id, session.userId))
+                        .limit(1);
+
+                    await auditLogService.record({
+                        actorId: session.userId,
+                        impersonatorId: null,
+                        actorRole: actor?.role === 'admin' ? 'admin' : 'user',
+                        action: 'auth.login',
+                        category: 'auth',
+                        resourceType: 'session',
+                        resourceId: (session as { id?: string }).id ?? null,
+                        path: path ? `/auth${path}` : '/auth/sign-in',
+                        success: true,
+                        ipAddress: meta.ipAddress,
+                        userAgent: meta.userAgent,
+                        skipDedup: true,
+                        metadata: {
+                            isAnonymous: false,
+                            provider: path.includes('callback') ? 'oauth' : 'credentials',
+                        },
+                    });
+                },
+            },
+            delete: {
+                after: async (session: { userId: string; impersonatedBy?: string | null }, context) => {
+                    const meta = getRequestMeta(context);
+                    const path = (context as { path?: string })?.path ?? '';
+
+                    if (session.impersonatedBy) {
+                        await auditLogService.record({
+                            actorId: session.userId,
+                            impersonatorId: session.impersonatedBy,
+                            actorRole: 'user',
+                            action: 'auth.impersonation_end',
+                            category: 'auth',
+                            resourceType: 'user',
+                            resourceId: session.userId,
+                            path: path ? `/auth${path}` : null,
+                            success: true,
+                            ipAddress: meta.ipAddress,
+                            userAgent: meta.userAgent,
+                            skipDedup: true,
+                            metadata: { isAnonymous: false },
+                        });
+                        return;
+                    }
+
+                    await auditLogService.record({
+                        actorId: session.userId,
+                        impersonatorId: null,
+                        actorRole: 'user',
+                        action: 'auth.logout',
+                        category: 'auth',
+                        resourceType: 'session',
+                        resourceId: (session as { id?: string }).id ?? null,
+                        path: path ? `/auth${path}` : '/auth/sign-out',
+                        success: true,
+                        ipAddress: meta.ipAddress,
+                        userAgent: meta.userAgent,
+                        skipDedup: true,
+                        metadata: { isAnonymous: false },
+                    });
                 },
             },
         },

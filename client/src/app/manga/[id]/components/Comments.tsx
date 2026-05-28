@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { postComment, voteComment, updateComment, deleteComment } from "@/services/commentService";
 import { toast } from "react-toastify";
 import { useUser } from "@/providers/UserProvider";
-import { trackCommentAction } from "@/lib/analytics";
 import ContentComposer from "@/components/content/ContentComposer";
 import SocialPostCard from "@/components/social/SocialPostCard";
 import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
@@ -79,7 +78,6 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
     setIsSubmitting(true);
     try {
       const result = await postComment({ seriesId: manga.id, content, parentId, isSpoiler: false });
-      trackCommentAction("posted", result?.comment?.id?.toString(), manga.id.toString(), manga.title, content);
       setText("");
       setReplyText("");
       setReplyingTo(null);
@@ -117,7 +115,6 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
   const handleDelete = async (commentId: number, commentText: string) => {
     try {
       await deleteComment(commentId);
-      trackCommentAction("deleted", commentId.toString(), manga.id.toString(), manga.title, commentText);
       router.refresh();
     } catch {
       toast.error("Failed to delete.");

@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { trackSearch, trackFilterApplied } from '@/lib/analytics';
 
 export function useInfiniteScroll(filters: any) {
   const [items, setItems] = useState<any[]>([]);
@@ -51,14 +50,6 @@ export function useInfiniteScroll(filters: any) {
           setMeta(data.meta);
 
           if (filters.search && filters.search.length >= 2 && filters.search !== lastTrackedSearch.current) {
-            trackSearch(filters.search, data.meta?.total || data.items.length, {
-              genres: filters.genres,
-              tags: filters.tags,
-              types: filters.types,
-              statuses: filters.statuses,
-              years: filters.years,
-              sort: filters.sort,
-            });
             lastTrackedSearch.current = filters.search;
           }
           
@@ -72,7 +63,8 @@ export function useInfiniteScroll(filters: any) {
               if (Array.isArray(currentValue) && currentValue.length === 0) return;
               if (!currentValue || currentValue === '' || currentValue === 'weightedScore') return;
               
-              trackFilterApplied(key, currentValue);
+              void key;
+              void currentValue;
             }
           });
           

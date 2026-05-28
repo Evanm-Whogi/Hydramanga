@@ -5,7 +5,6 @@ import { getSeriesChapterProgress, markChapterAsRead, markChapterAsUnread } from
 import { getSeriesBookmarks, removeBookmark, addBookmark } from "@/services/bookmarkService";
 import BookmarkModal from "@/components/BookmarkModal";
 import { toast } from "react-toastify";
-import { trackBookmarkAction } from "@/lib/analytics";
 import Link from "next/link";
 
 type FilterOption = "all" | "unread" | "read" | "bookmarked";
@@ -352,15 +351,13 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                     delete updated[chapterId];
                     return updated;
                 });
-                const chapter = chapters.find((ch: any) => ch.id === chapterId);
-                trackBookmarkAction("removed", manga.id.toString(), manga.title, chapterId.toString(), chapter?.chapterNumber, bookmarks[chapterId]?.note);
             } catch (error) {
                 console.error("Failed to remove bookmark:", error);
             } finally {
                 setIsOperating(false);
             }
         },
-        [manga.id, manga.title, chapters, bookmarks, isOperating]
+        [manga.id, isOperating]
     );
 
     const handleBookmarkSuccess = useCallback(() => { fetchBookmarks(); }, [fetchBookmarks]);

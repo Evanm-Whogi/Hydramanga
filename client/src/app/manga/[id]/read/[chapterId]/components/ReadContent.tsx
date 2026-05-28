@@ -12,7 +12,6 @@ import { updateImportProgressToast, dismissImportProgressToast } from '@/compone
 import { showContinuousModeToast, dismissContinuousModeToast } from '@/components/ContinuousModeToast';
 import BookmarkModal from '@/components/BookmarkModal';
 import ReaderSettingsModal from './ReaderSettingsModal';
-import { trackPageSwitch, trackChapterCompleted, trackBookmarkAction, trackChapterRead, trackContinuousModePrompt, trackContinuousModeToggled, trackContinuousModeActive } from '@/lib/analytics';
 import { 
   ReaderSettings, 
   loadReaderSettings, 
@@ -301,7 +300,6 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     const updated = { ...settings, continuousMode: true };
     setSettings(updated);
     saveReaderSettings(updated);
-    trackContinuousModeToggled(true, id || '', mangaTitle);
   }, [settings, id, mangaTitle]);
 
   // Get current and adjacent chapters
@@ -339,9 +337,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     try {
       await removeBookmark(Number(id), Number(chapterId));
       setIsBookmarked(false);
-      const removedNote = bookmarkNote;
       setBookmarkNote('');
-      trackBookmarkAction('removed', id as string, mangaTitle, chapterId as string, data?.chapterNumber, removedNote);
     } catch (error) {
       console.error('Failed to remove bookmark:', error);
     } finally {
@@ -389,7 +385,6 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     }
     
     if (data && chapter.id !== Number(chapterId)) {
-      trackChapterCompleted(id || '', mangaTitle, data.chapterNumber);
     }
     
     setIsNavigating(true);
@@ -458,11 +453,8 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
   // Settings change handler
   const handleSettingsChange = useCallback((newSettings: ReaderSettings) => {
-    if (newSettings.continuousMode !== settings.continuousMode) {
-      trackContinuousModeToggled(newSettings.continuousMode, id || '', mangaTitle);
-    }
     setSettings(newSettings);
-  }, [settings.continuousMode, id, mangaTitle]);
+  }, []);
 
   useEffect(() => {
     if (!id || !data?.isSinglePageSeries) return;
@@ -477,7 +469,6 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     if (localStorage.getItem(storageKey)) return;
 
     localStorage.setItem(storageKey, '1');
-    trackContinuousModePrompt(id, mangaTitle);
     showContinuousModeToast({
       mangaId: Number(id),
       mangaTitle,
@@ -487,10 +478,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
   useEffect(() => {
     if (isMergedMode && id && !hasTrackedContinuousRef.current) {
-      trackContinuousModeActive(id, mangaTitle);
       hasTrackedContinuousRef.current = true;
     }
-  }, [isMergedMode, id, mangaTitle]);
+  }, [isMergedMode, id]);
 
   useEffect(() => {
     if (!isMergedMode) return;
@@ -499,7 +489,6 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     if (lastActiveChapterRef.current && lastActiveChapterRef.current !== activeChapterId) {
       const previous = allChapters.find((ch) => ch.id === lastActiveChapterRef.current);
       if (previous) {
-        trackChapterCompleted(id || '', mangaTitle, previous.chapterNumber);
         // Mark the previous chapter as read when scrolling past it in merged mode
         if (user) {
           markChapterAsRead(Number(id), previous.id).catch((err) => {
@@ -509,12 +498,8 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       }
     }
 
-    if (lastActiveChapterRef.current !== activeChapterId) {
-      trackChapterRead(id || '', mangaTitle, activeChapterNumber, String(activeChapterId));
-    }
-
     lastActiveChapterRef.current = activeChapterId;
-  }, [isMergedMode, activeChapterId, activeChapterNumber, allChapters, id, mangaTitle, user]);
+  }, [isMergedMode, activeChapterId, activeChapterNumber, allChapters, id, user]);
 
   useEffect(() => {
     if (isMergedMode) {
@@ -873,9 +858,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           if (newPage !== currentPage) {
             setCurrentPage(newPage);
             const currentItem = imageItems[i];
-            if (currentItem && (newPage % 5 === 0 || newPage === imageItems.length)) {
-              trackPageSwitch(id || '', currentItem.chapterNumber, currentItem.pageNumber, currentItem.totalPagesInChapter);
-            }
+            void currentItem;
           }
           break;
         }
@@ -886,7 +869,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     handleScroll();
 
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [imageItems, id, currentPage]);
+  }, [imageItems, currentPage]);
 
   // Keyboard navigation
   useEffect(() => {

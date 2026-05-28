@@ -16,6 +16,8 @@ import axios from 'axios';
 import { getCollectionsList } from '@/services/collectionsService';
 import { enrichCommentsWithKarma } from '@/lib/enrichAuthors';
 import { fetchSeriesChapterFlags } from '@/lib/seriesQueries';
+import { recordAuditFromRequest } from '@/audit/record';
+import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
 
 // Normalize curly/smart quotes to ASCII so search matches titles regardless of apostrophe type
 function normalizeApostrophes(s: string): string {
@@ -750,6 +752,27 @@ export async function trackMangaViewEndpoint(req: Request, res: Response, next: 
         }
     }
 
+    const [seriesRow] = await db
+        .select({ title: schema.series.title })
+        .from(schema.series)
+        .where(eq(schema.series.id, id))
+        .limit(1);
+
+    const seriesTitle = seriesRow?.title ?? `Series #${id}`;
+
+    recordAuditFromRequest(req, {
+        action: 'manga.view',
+        category: 'manga',
+        resourceType: 'series',
+        resourceId: String(id),
+        metadata: contentAuditMeta({
+            href: mangaPageHref(id),
+            summary: `Viewed manga: ${seriesTitle}`,
+            title: seriesTitle,
+            extra: { seriesId: id, seriesTitle },
+        }),
+    });
+
     return res.status(200).json({ success: true });
 }
 
@@ -770,6 +793,40 @@ export async function trackChapterViewEndpoint(req: Request, res: Response, next
             logger.error(`Failed to track chapter view: ${err}`, { service: 'mangaController' });
         }
     }
+
+    const [contextRow] = await db
+        .select({
+            seriesTitle: schema.series.title,
+            chapterNumber: schema.chapters.chapterNumber,
+        })
+        .from(schema.chapters)
+        .innerJoin(schema.series, eq(schema.chapters.seriesId, schema.series.id))
+        .where(eq(schema.chapters.id, numericChapterId))
+        .limit(1);
+
+    const seriesTitle = contextRow?.seriesTitle ?? `Series #${numericId}`;
+    const chapterLabel =
+        contextRow?.chapterNumber != null
+            ? `Chapter ${contextRow.chapterNumber}`
+            : `Chapter #${numericChapterId}`;
+
+    recordAuditFromRequest(req, {
+        action: 'chapter.view',
+        category: 'manga',
+        resourceType: 'chapter',
+        resourceId: String(numericChapterId),
+        metadata: contentAuditMeta({
+            href: `/manga/${numericId}/read/${numericChapterId}`,
+            summary: `Viewed ${chapterLabel} of ${seriesTitle}`,
+            title: seriesTitle,
+            extra: {
+                seriesId: numericId,
+                seriesTitle,
+                chapterId: numericChapterId,
+                chapterNumber: contextRow?.chapterNumber ?? null,
+            },
+        }),
+    });
 
     return res.status(200).json({ success: true });
 }

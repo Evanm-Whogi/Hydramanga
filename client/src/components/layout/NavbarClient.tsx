@@ -8,7 +8,6 @@ import { authClient } from '@/lib/auth';
 import { useRouter, usePathname } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { useUser } from "@/providers/UserProvider";
-import { trackAuthEvent } from '@/lib/analytics';
 import { RandomModal } from '@/components/RandomModal';
 import { ThemeModal, restoreThemeFromCookies } from '@/components/ThemeModal';
 import NotificationsMenu from '@/components/layout/NotificationsMenu';
@@ -59,7 +58,6 @@ export default function NavbarClient() {
         await authClient.signOut({
             fetchOptions: {
                 onSuccess: () => {
-                    trackAuthEvent('logout', user?.id, user?.email, user?.name);
                     setIsProfileOpen(false);
                     router.push('/');
                     router.refresh();

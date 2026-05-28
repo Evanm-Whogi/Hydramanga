@@ -6,6 +6,8 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { toNodeHandler } from "better-auth/node";
 import { auth } from '@/utils/auth';
+import { auditAuthHandler } from '@/middlewares/auditAuthHandler';
+import { trackingMiddleware } from '@/middlewares/tracking';
 import http from 'http';
 import { Server } from 'socket.io';
 import { setupProgressSocket } from '@/sockets/progressSocket';
@@ -44,8 +46,9 @@ const corsOrigins = ['https://manga.chit.sh', process.env.PUBLIC_APP_URL].filter
 app.use(cors({ origin: corsOrigins, credentials: true }));
 app.set('trust proxy', 1);
 
-// Auth Routes
-app.all("/auth/{*any}", toNodeHandler(auth));
+// Auth Routes (tracking for IP/UA on auth events)
+app.use('/auth', trackingMiddleware);
+app.all("/auth/{*any}", auditAuthHandler(toNodeHandler(auth)));
 
 // Middlewares
 app.use(bodyParser.json());

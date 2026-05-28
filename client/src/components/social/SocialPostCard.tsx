@@ -26,6 +26,7 @@ export default function SocialPostCard({
   actionBarClassName,
   children,
   className = "",
+  anchorId,
 }: {
   author?: SocialAuthor & { image?: string | null };
   createdAt?: string;
@@ -46,6 +47,8 @@ export default function SocialPostCard({
   actionBarClassName?: string;
   children?: ReactNode;
   className?: string;
+  /** HTML id for deep links (e.g. board#post-12) */
+  anchorId?: string;
 }) {
   const isNested = variant === "nested";
   const shell = isNested
@@ -62,7 +65,7 @@ export default function SocialPostCard({
   );
 
   return (
-    <div className={`${shell} relative ${className}`}>
+    <div id={anchorId} className={`${shell} relative scroll-mt-24 ${className}`}>
       {showTopRightAbsolute && (
         <div className={`absolute ${isNested ? "top-3 right-3" : "top-4 right-4"} flex items-center gap-2 z-10`}>
           {headerRight}

@@ -370,6 +370,33 @@ export const karmaTransactions = pgTable('karma_transactions', {
   createdAtIdx: index('idx_karma_transactions_created_at').on(t.createdAt.desc()),
 }));
 
+export const auditLogs = pgTable('audit_logs', {
+  id: serial('id').primaryKey(),
+  actorId: text('actor_id').references(() => user.id, { onDelete: 'set null' }),
+  impersonatorId: text('impersonator_id').references(() => user.id, { onDelete: 'set null' }),
+  actorRole: text('actor_role').notNull().default('anonymous'),
+  action: text('action').notNull(),
+  category: text('category').notNull(),
+  resourceType: text('resource_type'),
+  resourceId: text('resource_id'),
+  targetUserId: text('target_user_id').references(() => user.id, { onDelete: 'set null' }),
+  method: varchar('method', { length: 10 }),
+  path: text('path'),
+  statusCode: integer('status_code'),
+  success: boolean('success').notNull().default(true),
+  ipAddress: text('ip_address'),
+  userAgent: text('user_agent'),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  createdAtIdx: index('idx_audit_logs_created_at').on(t.createdAt.desc()),
+  actorIdIdx: index('idx_audit_logs_actor_id').on(t.actorId, t.createdAt.desc()),
+  actionIdx: index('idx_audit_logs_action').on(t.action, t.createdAt.desc()),
+  categoryIdx: index('idx_audit_logs_category').on(t.category, t.createdAt.desc()),
+  resourceIdx: index('idx_audit_logs_resource').on(t.resourceType, t.resourceId),
+  targetUserIdIdx: index('idx_audit_logs_target_user_id').on(t.targetUserId, t.createdAt.desc()),
+}));
+
 // Daily reading activity for streaks
 export const userReadingDays = pgTable('user_reading_days', {
   userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
@@ -679,4 +706,9 @@ export const karmaTransactionsRelations = relations(karmaTransactions, ({ one })
 
 export const userNotificationsRelations = relations(userNotifications, ({ one }) => ({
   user: one(user, { fields: [userNotifications.userId], references: [user.id] }),
+}));
+
+export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
+  actor: one(user, { fields: [auditLogs.actorId], references: [user.id] }),
+  targetUser: one(user, { fields: [auditLogs.targetUserId], references: [user.id] }),
 }));

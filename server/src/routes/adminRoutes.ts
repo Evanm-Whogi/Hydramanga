@@ -1,4 +1,6 @@
 import { Router, RequestHandler } from 'express';
+import { auditAdminMiddleware } from '@/middlewares/auditAdminMiddleware';
+import { listAdminAuditLogs } from '@/controllers/adminAuditController';
 import { triggerMangaSync, triggerMonitoredRescan, triggerTrendingRescan } from '@/controllers/mangaImportController';
 import { adminScraperSearch, adminSetSource, adminAddSecondaryTitle, adminTriggerRescan, adminGetSource, adminClearSource, adminCancelScan, adminDeleteChapters, adminUpdateSeries } from '@/controllers/adminMangaController';
 import { listAdminManga, listAdminMangaScraperFilters } from '@/controllers/adminMangaListController';
@@ -11,6 +13,11 @@ import {listAdminQueues, listAdminQueueJobs, pauseAdminQueue, resumeAdminQueue, 
 import { requireRole } from '@/middlewares/requireRole';
 
 const router = Router();
+
+router.use(auditAdminMiddleware);
+
+// Audit log
+router.get('/audit', requireRole('admin'), listAdminAuditLogs as RequestHandler);
 
 // Stats
 router.get('/stats/overview', requireRole('admin'), getAdminOverviewStats as RequestHandler);

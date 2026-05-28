@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { getUserSettings, updateUserSettings } from '@/services/userSettingsService';
+import { recordAuditFromRequest } from '@/audit/record';
 
 export async function getSettings(req: Request, res: Response) {
   try {
@@ -18,6 +19,13 @@ export async function patchSettings(req: Request, res: Response) {
     if (!userId) return res.status(401).json({ message: 'Unauthorized' });
     const { hideNsfw, isProfilePublic } = req.body || {};
     const settings = await updateUserSettings(userId, { hideNsfw, isProfilePublic });
+    recordAuditFromRequest(req, {
+      action: 'settings.update',
+      category: 'settings',
+      resourceType: 'user',
+      resourceId: userId,
+      metadata: { hideNsfw, isProfilePublic },
+    });
     return res.json(settings);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update settings' });

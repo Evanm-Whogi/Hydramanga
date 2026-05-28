@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { db, schema } from '@/db/index';
 import { eq, or, and, sql, asc, desc, count, gte, inArray, isNotNull, not, isNull  } from 'drizzle-orm';
 import dotenv from 'dotenv';
+import { recordAuditFromRequest } from '@/audit/record';
+import { contentAuditMeta } from '@/audit/metadataHelpers';
 dotenv.config();
 
 // Fetch published announcements
@@ -30,6 +32,19 @@ export async function createAnnouncement(req: Request, res: Response, next: Next
             isPublished: published,
             ...(published && { publishedAt: new Date() }),
         }).returning();
+        recordAuditFromRequest(req, {
+            action: 'announcement.create',
+            category: 'admin',
+            resourceType: 'announcement',
+            resourceId: String(newAnnouncement.id),
+            metadata: contentAuditMeta({
+                href: '/',
+                summary: `Published announcement: ${titleStr || 'Untitled'}`,
+                title: titleStr,
+                content: contentStr,
+                extra: { type: typeStr, isPublished: published },
+            }),
+        });
         return res.status(201).json(newAnnouncement);
     } catch (error) {
         return next(error);

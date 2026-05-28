@@ -5,7 +5,6 @@ import { updateUser, changeEmail, changePassword, sendVerificationEmail, signOut
 import { getSettings, updateSettings } from "@/services/userService";
 import { toast } from "react-toastify";
 import { useRouter } from "next/navigation";
-import { trackAuthEvent } from "@/lib/analytics";
 import { getUserDisplayName } from "@/lib/userDisplay";
 
 export default function Settings({ user }: { user: any }) {
@@ -132,7 +131,6 @@ export default function Settings({ user }: { user: any }) {
             await signOut({
                 fetchOptions: {
                     onSuccess: () => {
-                        trackAuthEvent("logout", user?.id ?? undefined, user?.email ?? undefined, getUserDisplayName(user));
                         router.push('/');
                         router.refresh();
                         toast('See you next time.', { type: 'info' });

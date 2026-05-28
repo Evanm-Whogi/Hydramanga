@@ -2,9 +2,6 @@ import { Bounce, ToastContainer, toast } from 'react-toastify';
 import type { Metadata } from "next";
 import "@/styles/globals.css";
 import { UserProvider } from '@/providers/UserProvider';
-import PostHogProvider from '@/providers/PostHogProvider';
-import { PageTrackingProvider } from '@/components/PageTrackingProvider';
-import ErrorTracker from '@/providers/ErrorTracker';
 import { useSession } from '@/lib/useUser';
 import { cookies } from 'next/headers';
 
@@ -79,22 +76,16 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <link rel="preconnect" href="https://images.mangabaka.dev" crossOrigin="anonymous" />
       </head>
       <body className="bg-background text-primary min-h-screen flex flex-col" suppressHydrationWarning={true}>
-        <PostHogProvider>
-          <ErrorTracker>
-            <PageTrackingProvider>
-              <UserProvider initialSession={session}>
-                <ImpersonationBanner />
-                <BannedSessionGuard />
-                <Navbar />
-                <main className="flex-1">
-                  {children}
-                </main>
-                <Footer />
-                <WelcomeModalGate />
-              </UserProvider>
-            </PageTrackingProvider>
-          </ErrorTracker>
-        </PostHogProvider>
+        <UserProvider initialSession={session}>
+          <ImpersonationBanner />
+          <BannedSessionGuard />
+          <Navbar />
+          <main className="flex-1">
+            {children}
+          </main>
+          <Footer />
+          <WelcomeModalGate />
+        </UserProvider>
         <ToastContainer
           position="bottom-right"
           autoClose={5000}

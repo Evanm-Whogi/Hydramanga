@@ -4,7 +4,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { toast } from "react-toastify";
 import { signUp } from "@/lib/auth";
-import { trackAuthEvent } from "@/lib/analytics";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import InputField from '@/components/InputField';
 import OAuthButtons from "@/components/auth/OAuthButtons";
@@ -39,13 +38,6 @@ export default function RegisterContent() {
         setIsRegistering(false);
         return;
       }
-
-      trackAuthEvent(
-        'register',
-        data.user?.id,
-        data.user?.email,
-        getUserDisplayName(data.user)
-      );
 
       toast.success(`Welcome ${getUserDisplayName(data.user)}! Your account has been created.`);
 

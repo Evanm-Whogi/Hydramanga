@@ -7,6 +7,8 @@ import { enrichCommentsWithKarma } from '@/lib/enrichAuthors';
 import { isAdminRole } from '@/lib/authHelpers';
 import { discordService } from '@/services/discordService';
 import { notificationService } from '@/services/notificationService';
+import { recordAuditFromRequest } from '@/audit/record';
+import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
 dotenv.config();
 
 // Fetch top-level comments with replies and votes for a manga series
@@ -107,6 +109,19 @@ export async function createComment(req: Request, res: Response, next: NextFunct
             }
         }
 
+        recordAuditFromRequest(req, {
+            action: 'comment.create',
+            category: 'social',
+            resourceType: 'comment',
+            resourceId: String(newComment[0].id),
+            metadata: contentAuditMeta({
+                href: mangaPageHref(seriesId),
+                summary: `Posted a comment${seriesRow?.title ? ` on ${seriesRow.title}` : ''}`,
+                content: content.trim(),
+                extra: { seriesId, seriesTitle: seriesRow?.title ?? null, parentId: parentId ?? null },
+            }),
+        });
+
         return res.status(201).json({ comment: newComment[0] });
     } catch (error) {
         return next(error);
@@ -137,6 +152,13 @@ export async function voteComment(req: Request, res: Response, next: NextFunctio
 
         if (!existing) {
             await db.insert(schema.commentLikes).values({ commentId, userId, type });
+            recordAuditFromRequest(req, {
+                action: 'comment.vote',
+                category: 'social',
+                resourceType: 'comment',
+                resourceId: String(commentId),
+                metadata: { voteType: type },
+            });
             return res.status(201).json({ message: `Comment ${type}d` });
         }
 
@@ -148,6 +170,13 @@ export async function voteComment(req: Request, res: Response, next: NextFunctio
                     eq(schema.commentLikes.userId, userId)
                 )
             );
+            recordAuditFromRequest(req, {
+                action: 'comment.vote_remove',
+                category: 'social',
+                resourceType: 'comment',
+                resourceId: String(commentId),
+                metadata: { voteType: type },
+            });
             return res.status(200).json({ message: `Comment un-${type}d` });
         }
 
@@ -160,6 +189,13 @@ export async function voteComment(req: Request, res: Response, next: NextFunctio
                     eq(schema.commentLikes.userId, userId)
                 )
             );
+        recordAuditFromRequest(req, {
+            action: 'comment.vote',
+            category: 'social',
+            resourceType: 'comment',
+            resourceId: String(commentId),
+            metadata: { voteType: type, switched: true },
+        });
         return res.status(200).json({ message: `Vote switched to ${type}` });
     } catch (error) {
         return next(error);
@@ -186,6 +222,19 @@ export async function updateComment(req: Request, res: Response, next: NextFunct
             .set({ content: content.trim(), updatedAt: new Date() })
             .where(eq(schema.comments.id, commentId))
             .returning();
+
+        recordAuditFromRequest(req, {
+            action: 'comment.update',
+            category: 'social',
+            resourceType: 'comment',
+            resourceId: String(commentId),
+            metadata: contentAuditMeta({
+                href: mangaPageHref(comment.seriesId),
+                summary: 'Edited a comment',
+                content: content.trim(),
+                extra: { seriesId: comment.seriesId },
+            }),
+        });
 
         return res.status(200).json({ comment: updated });
     } catch (error) {
@@ -216,6 +265,19 @@ export async function deleteComment(req: Request, res: Response, next: NextFunct
             sourceType: 'comment',
             sourceId: String(commentId),
             originalIdempotencyKey: `comment:${commentId}`,
+        });
+
+        recordAuditFromRequest(req, {
+            action: admin ? 'comment.delete.admin' : 'comment.delete',
+            category: 'social',
+            resourceType: 'comment',
+            resourceId: String(commentId),
+            metadata: contentAuditMeta({
+                href: mangaPageHref(comment.seriesId),
+                summary: admin ? 'Admin deleted a comment' : 'Deleted a comment',
+                content: comment.content,
+                extra: { seriesId: comment.seriesId, ownerId: comment.userId },
+            }),
         });
 
         return res.status(200).json({ message: 'Comment deleted successfully' });

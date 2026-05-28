@@ -1,7 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
+import { db, schema } from '@/db/index';
+import { eq } from 'drizzle-orm';
 import { boardService } from '@/services/boardService';
 import { isAdminRole } from '@/lib/authHelpers';
 import { discordService } from '@/services/discordService';
+import { recordAuditFromRequest } from '@/audit/record';
+import { boardPostHref, contentAuditMeta } from '@/audit/metadataHelpers';
 
 export async function listBoardPosts(req: Request, res: Response, next: NextFunction) {
   try {
@@ -36,6 +40,19 @@ export async function createBoardPost(req: Request, res: Response, next: NextFun
       .notifyBoardThread(req.user.name || 'Unknown', post.id, post.title, post.content)
       .catch(() => undefined);
 
+    recordAuditFromRequest(req, {
+      action: 'board.post.create',
+      category: 'community',
+      resourceType: 'board_post',
+      resourceId: String(post.id),
+      metadata: contentAuditMeta({
+        href: boardPostHref(post.id),
+        summary: `Created board post: ${title.trim()}`,
+        title: title.trim(),
+        content: content.trim(),
+      }),
+    });
+
     return res.status(201).json({ post });
   } catch (error) {
     return next(error);
@@ -53,6 +70,19 @@ export async function createBoardReply(req: Request, res: Response, next: NextFu
       content,
       parentId ? parseInt(parentId, 10) : undefined
     );
+    recordAuditFromRequest(req, {
+      action: 'board.reply.create',
+      category: 'community',
+      resourceType: 'board_reply',
+      resourceId: String(reply.id),
+      metadata: contentAuditMeta({
+        href: boardPostHref(postId),
+        summary: 'Replied on a board post',
+        content: content.trim(),
+        extra: { postId, parentId: parentId ?? null },
+      }),
+    });
+
     return res.status(201).json({ reply });
   } catch (error: any) {
     if (error.message === 'Post not found') return res.status(404).json({ message: error.message });
@@ -68,6 +98,13 @@ export async function voteBoardPost(req: Request, res: Response, next: NextFunct
       return res.status(400).json({ message: 'type must be like or dislike' });
     }
     await boardService.votePost(req.user.id, parseInt(postId, 10), type);
+    recordAuditFromRequest(req, {
+      action: 'board.post.vote',
+      category: 'community',
+      resourceType: 'board_post',
+      resourceId: String(postId),
+      metadata: { voteType: type },
+    });
     return res.json({ message: 'Vote recorded' });
   } catch (error) {
     return next(error);
@@ -81,6 +118,13 @@ export async function voteBoardReply(req: Request, res: Response, next: NextFunc
       return res.status(400).json({ message: 'type must be like or dislike' });
     }
     await boardService.voteReply(req.user.id, parseInt(replyId, 10), type);
+    recordAuditFromRequest(req, {
+      action: 'board.reply.vote',
+      category: 'community',
+      resourceType: 'board_reply',
+      resourceId: String(replyId),
+      metadata: { voteType: type },
+    });
     return res.json({ message: 'Vote recorded' });
   } catch (error) {
     return next(error);
@@ -96,6 +140,21 @@ export async function adminBoardPost(req: Request, res: Response, next: NextFunc
       { isPinned, isLocked, isDeleted },
       req.user.id
     );
+    const flags: string[] = [];
+    if (isPinned !== undefined) flags.push(isPinned ? 'pinned' : 'unpinned');
+    if (isLocked !== undefined) flags.push(isLocked ? 'locked' : 'unlocked');
+    if (isDeleted) flags.push('deleted');
+    recordAuditFromRequest(req, {
+      action: 'board.post.admin',
+      category: 'moderation',
+      resourceType: 'board_post',
+      resourceId: String(postId),
+      metadata: contentAuditMeta({
+        href: boardPostHref(postId),
+        summary: `Moderated board post #${postId}${flags.length ? `: ${flags.join(', ')}` : ''}`,
+        extra: { isPinned, isLocked, isDeleted },
+      }),
+    });
     return res.json({ message: 'Post updated' });
   } catch (error) {
     return next(error);
@@ -107,6 +166,18 @@ export async function updateBoardPost(req: Request, res: Response, next: NextFun
     const postId = parseInt(req.params.postId, 10);
     const { title, content } = req.body;
     const post = await boardService.updatePost(req.user.id, postId, { title, content });
+    recordAuditFromRequest(req, {
+      action: 'board.post.update',
+      category: 'community',
+      resourceType: 'board_post',
+      resourceId: String(postId),
+      metadata: contentAuditMeta({
+        href: boardPostHref(postId),
+        summary: 'Edited a board post',
+        title: title?.trim() ?? post.title,
+        content: content?.trim() ?? post.content,
+      }),
+    });
     return res.json({ post });
   } catch (error: any) {
     if (error.message === 'Post not found') return res.status(404).json({ message: error.message });
@@ -118,7 +189,20 @@ export async function updateBoardPost(req: Request, res: Response, next: NextFun
 export async function deleteBoardPost(req: Request, res: Response, next: NextFunction) {
   try {
     const postId = parseInt(req.params.postId, 10);
+    const existingPost = await boardService.getPost(postId);
     await boardService.deletePost(req.user.id, postId, isAdminRole(req.user.role));
+    recordAuditFromRequest(req, {
+      action: isAdminRole(req.user.role) ? 'board.post.delete.admin' : 'board.post.delete',
+      category: 'community',
+      resourceType: 'board_post',
+      resourceId: String(postId),
+      metadata: contentAuditMeta({
+        href: boardPostHref(postId),
+        summary: isAdminRole(req.user.role) ? 'Admin deleted a board post' : 'Deleted a board post',
+        title: existingPost?.post?.title,
+        content: existingPost?.post?.content,
+      }),
+    });
     return res.json({ message: 'Post deleted' });
   } catch (error: any) {
     if (error.message === 'Post not found') return res.status(404).json({ message: error.message });
@@ -133,6 +217,18 @@ export async function updateBoardReply(req: Request, res: Response, next: NextFu
     const { content } = req.body;
     if (!content?.trim()) return res.status(400).json({ message: 'Content is required' });
     const reply = await boardService.updateReply(req.user.id, replyId, content);
+    recordAuditFromRequest(req, {
+      action: 'board.reply.update',
+      category: 'community',
+      resourceType: 'board_reply',
+      resourceId: String(replyId),
+      metadata: contentAuditMeta({
+        href: boardPostHref(reply.postId),
+        summary: 'Edited a board reply',
+        content: content.trim(),
+        extra: { postId: reply.postId },
+      }),
+    });
     return res.json({ reply });
   } catch (error: any) {
     if (error.message === 'Reply not found') return res.status(404).json({ message: error.message });
@@ -144,7 +240,22 @@ export async function updateBoardReply(req: Request, res: Response, next: NextFu
 export async function deleteBoardReply(req: Request, res: Response, next: NextFunction) {
   try {
     const replyId = parseInt(req.params.replyId, 10);
+    const existing = await db.query.boardReplies.findFirst({
+      where: eq(schema.boardReplies.id, replyId),
+    });
     await boardService.deleteReply(req.user.id, replyId, isAdminRole(req.user.role));
+    recordAuditFromRequest(req, {
+      action: isAdminRole(req.user.role) ? 'board.reply.delete.admin' : 'board.reply.delete',
+      category: 'community',
+      resourceType: 'board_reply',
+      resourceId: String(replyId),
+      metadata: contentAuditMeta({
+        href: existing ? boardPostHref(existing.postId) : '/board',
+        summary: isAdminRole(req.user.role) ? 'Admin deleted a board reply' : 'Deleted a board reply',
+        content: existing?.content,
+        extra: { postId: existing?.postId },
+      }),
+    });
     return res.json({ message: 'Reply deleted' });
   } catch (error: any) {
     if (error.message === 'Reply not found') return res.status(404).json({ message: error.message });

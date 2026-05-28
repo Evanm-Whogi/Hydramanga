@@ -3,6 +3,7 @@ import { db } from '../db';
 import * as schema from '../db/schema';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 import { karmaService } from '@/services/karmaService';
+import { recordAuditFromRequest } from '@/audit/record';
 
 // Helper function to create default lists for a user
 export async function ensureDefaultLists(userId: string) {
@@ -107,6 +108,13 @@ export async function createList(req: Request, res: Response, next: NextFunction
             sortOrder,
         }).returning();
 
+        recordAuditFromRequest(req, {
+            action: 'list.create',
+            category: 'library',
+            resourceType: 'list',
+            resourceId: String(newList.id),
+        });
+
         return res.status(201).json({ 
             success: true, 
             list: newList 
@@ -197,6 +205,13 @@ export async function updateList(req: Request, res: Response, next: NextFunction
             ))
             .returning();
 
+        recordAuditFromRequest(req, {
+            action: 'list.update',
+            category: 'library',
+            resourceType: 'list',
+            resourceId: String(listId),
+        });
+
         return res.json({ 
             success: true, 
             list: updatedList 
@@ -248,6 +263,13 @@ export async function deleteList(req: Request, res: Response, next: NextFunction
                 eq(schema.userLists.id, listId),
                 eq(schema.userLists.userId, userId)
             ));
+
+        recordAuditFromRequest(req, {
+            action: 'list.delete',
+            category: 'library',
+            resourceType: 'list',
+            resourceId: String(listId),
+        });
 
         return res.json({ 
             success: true, 
@@ -382,6 +404,14 @@ export async function addToList(req: Request, res: Response, next: NextFunction)
             });
         }
 
+        recordAuditFromRequest(req, {
+            action: 'list.item.add',
+            category: 'library',
+            resourceType: 'list',
+            resourceId: String(listId),
+            metadata: { seriesId },
+        });
+
         return res.json({ 
             success: true, 
             message: `Manga added to ${list.name}`,
@@ -410,6 +440,13 @@ export async function removeFromList(req: Request, res: Response, next: NextFunc
                 eq(schema.userSeriesList.userId, userId),
                 eq(schema.userSeriesList.seriesId, seriesId)
             ));
+
+        recordAuditFromRequest(req, {
+            action: 'list.item.remove',
+            category: 'library',
+            resourceType: 'series',
+            resourceId: String(seriesId),
+        });
 
         return res.json({ 
             success: true,
@@ -442,6 +479,13 @@ export async function reorderLists(req: Request, res: Response, next: NextFuncti
                     eq(schema.userLists.userId, userId)
                 ));
         }
+
+        recordAuditFromRequest(req, {
+            action: 'list.reorder',
+            category: 'library',
+            resourceType: 'list',
+            metadata: { count: listOrders.length },
+        });
 
         return res.json({ 
             success: true, 

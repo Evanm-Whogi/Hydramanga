@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { HeartIcon, ChevronDownIcon, Trash2Icon, CheckCircle2 } from 'lucide-react';
 import { fetchUserLists, addToList, removeFromList as removeFromListService, UserList } from '@/services/listService';
 import { toast } from 'react-toastify';
-import { trackMangaListAction } from '@/lib/analytics';
 
 export default function ListDropdown({ seriesId, initialListName, mangaTitle }: { seriesId: number, initialListName: string | null, mangaTitle?: string }) {
     const [open, setOpen] = useState(false);
@@ -70,18 +69,10 @@ export default function ListDropdown({ seriesId, initialListName, mangaTitle }: 
                 await addToList(list.id, seriesId);
                 setStatus(list.name);
                 toast.success(`Manga added to ${list.name}`);
-                // Track manga added to list
-                if (mangaTitle) {
-                  trackMangaListAction('added_to_list', list.id.toString(), list.name, seriesId.toString(), mangaTitle);
-                }
             } else {
                 await removeFromListService(seriesId);
                 setStatus('Add to List');
                 toast.info('Manga removed from all lists');
-                // Track manga removed from list
-                if (mangaTitle) {
-                  trackMangaListAction('removed_from_list', '', '', seriesId.toString(), mangaTitle);
-                }
             }
         } catch (error) {
             console.error("Failed to update manga list:", error);

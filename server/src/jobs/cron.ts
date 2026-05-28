@@ -8,6 +8,7 @@ import { extract } from 'tar';
 import { queueService } from '@/services/queueService';
 import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import logger from '@/services/loggerService';
+import { auditLogService } from '@/services/auditLogService';
 import axios from 'axios';
 
 const cronTasks: ScheduledTask[] = [];
@@ -91,6 +92,21 @@ export const initCronJobs = () => {
     await mangaOrchestratorService.enqueueMonitoredRescans();
   });
   cronTasks.push(monitoredTask);
+
+  // Audit log retention (default 90 days, AUDIT_LOG_RETENTION_DAYS)
+  const auditRetentionTask = cron.schedule('15 5 * * *', async () => {
+    try {
+      const removed = await auditLogService.pruneExpired();
+      if (removed > 0) {
+        logger.info(`[CRON] Pruned ${removed} audit log rows older than ${auditLogService.retentionDays} days`, {
+          service: 'cronJobs',
+        });
+      }
+    } catch (error) {
+      logger.error('[CRON] Audit log retention prune failed', { service: 'cronJobs', error });
+    }
+  });
+  cronTasks.push(auditRetentionTask);
 };
 
 export const stopCronJobs = () => {

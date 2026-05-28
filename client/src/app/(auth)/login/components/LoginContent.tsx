@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { signIn, requestPasswordReset } from "@/lib/auth";
-import { trackAuthEvent } from "@/lib/analytics";
 import { getUserDisplayName, isEmailIdentifier } from "@/lib/userDisplay";
 import { consumeAuthRedirectMessage } from "@/lib/authSession";
 import InputField from '@/components/InputField';
@@ -65,12 +64,6 @@ export default function LoginContent() {
         return;
       }
 
-      trackAuthEvent(
-        'login',
-        result.data?.user?.id,
-        result.data?.user?.email,
-        getUserDisplayName(result.data?.user)
-      );
       toast(`Welcome Back!`, { type: "success" });
       
       window.location.href = "/home";

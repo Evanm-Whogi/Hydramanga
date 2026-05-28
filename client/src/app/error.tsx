@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
-import { trackError } from '@/lib/analytics';
 
 export default function Error({
   error,
@@ -14,17 +13,6 @@ export default function Error({
   const isDevelopment = process.env.NODE_ENV === 'development';
 
   useEffect(() => {
-    // Log error to PostHog (will be sanitized)
-    trackError(
-      error.message || 'An unexpected error occurred',
-      error.name || 'UnknownError',
-      error.stack,
-      {
-        digest: error.digest,
-        page: typeof window !== 'undefined' ? window.location.pathname : undefined,
-      }
-    );
-
     // Only log to console in development
     if (isDevelopment) {
       console.error('Global error caught:', error);

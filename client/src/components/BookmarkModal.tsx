@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { addBookmark } from '@/services/bookmarkService';
-import { trackBookmarkAction } from '@/lib/analytics';
 
 interface BookmarkModalProps {
   isOpen: boolean;
@@ -44,17 +43,6 @@ export default function BookmarkModal({
 
     try {
       await addBookmark(seriesId, chapterId, note || undefined);
-      
-      // Track bookmark action
-      const action = existingNote ? 'updated' : 'added';
-      trackBookmarkAction(
-        action,
-        seriesId.toString(),
-        mangaTitle,
-        chapterId.toString(),
-        chapterNumber,
-        note || undefined
-      );
       
       setNote('');
       onSuccess?.();

@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { importRequestService } from '@/services/importRequestService';
 import logger from '@/services/loggerService';
 import { discordService } from '@/services/discordService';
+import { recordAuditFromRequest } from '@/audit/record';
+import { adminImportsHref, contentAuditMeta } from '@/audit/metadataHelpers';
 
 export async function createImportRequest(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
   try {
@@ -39,6 +41,20 @@ export async function createImportRequest(req: Request, res: Response, next: Nex
       result.request.id,
       result.request.seriesId
     );
+
+    recordAuditFromRequest(req, {
+      action: 'import_request.create',
+      category: 'manga',
+      resourceType: 'import_request',
+      resourceId: String(result.request.id),
+      metadata: contentAuditMeta({
+        href: '/request',
+        summary: `Requested import: ${result.request.requestedTitle}`,
+        title: result.request.requestedTitle,
+        content: result.request.notes ?? result.request.requestedUrl ?? undefined,
+        extra: { requestedUrl: result.request.requestedUrl, seriesId: result.request.seriesId },
+      }),
+    });
 
     return res.status(201).json({ status: 201, request: result.request });
   } catch (error) {
@@ -107,6 +123,43 @@ export async function patchAdminImportRequest(req: Request, res: Response, next:
           return res.status(400).json({ message: 'No valid fields to update' });
       }
     }
+
+    const reqRow = result.request;
+    const summaryParts = [`Updated import request #${id}`];
+    if (updates.status) summaryParts.push(`status → ${reqRow.status}`);
+    if (updates.adminNotes !== undefined) {
+      summaryParts.push(
+        updates.adminNotes
+          ? `notes: "${String(updates.adminNotes).slice(0, 120)}${String(updates.adminNotes).length > 120 ? '…' : ''}"`
+          : 'cleared admin notes'
+      );
+    }
+    if (updates.seriesId !== undefined) {
+      summaryParts.push(`series link → ${reqRow.seriesId ?? 'none'}`);
+    }
+
+    res.locals.auditLoggedExplicitly = true;
+    recordAuditFromRequest(req, {
+      action: 'admin.import_request.update',
+      category: 'admin',
+      resourceType: 'import_request',
+      resourceId: String(id),
+      metadata: contentAuditMeta({
+        href: adminImportsHref(),
+        summary: summaryParts.join(' · '),
+        title: reqRow.requestedTitle,
+        content: reqRow.requestedUrl ?? reqRow.notes ?? undefined,
+        extra: {
+          status: reqRow.status,
+          adminNotes: reqRow.adminNotes,
+          requestedTitle: reqRow.requestedTitle,
+          requestedUrl: reqRow.requestedUrl,
+          userNotes: reqRow.notes,
+          seriesId: reqRow.seriesId,
+          changes: updates,
+        },
+      }),
+    });
 
     return res.json({ status: 200, request: result.request });
   } catch (error) {

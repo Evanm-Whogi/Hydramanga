@@ -4,8 +4,11 @@ import { profilePictureUpload } from '@/config/multer';
 import { uploadProfilePicture, deleteProfilePicture } from '@/controllers/userController';
 import { getSettings, patchSettings } from '@/controllers/userSettingsController';
 import { getPublicProfile } from '@/controllers/profileController';
+import { listMyAuthAuditLogs } from '@/controllers/userAuditController';
 
 const router = Router();
+
+router.get('/me/audit', authMiddleware, listMyAuthAuditLogs as RequestHandler);
 
 // User settings (e.g. hide NSFW)
 router.get('/settings', getSettings as RequestHandler);

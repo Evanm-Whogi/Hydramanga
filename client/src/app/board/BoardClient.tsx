@@ -301,6 +301,7 @@ function BoardPostCard({post, refreshVersion, userId, isAdmin, menuOpenKey, setM
 
   return (
     <SocialPostCard
+      anchorId={`post-${current.id}`}
       author={current.author}
       createdAt={current.createdAt}
       content={current.content}

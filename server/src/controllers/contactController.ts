@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import logger from '@/services/loggerService';
 import { emailService } from '@/services/emailService';
+import { recordAuditFromRequest } from '@/audit/record';
+import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
 
 const isValidEmail = (email: string): boolean => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -44,6 +46,16 @@ export async function submitContact(req: Request, res: Response, next: NextFunct
       message,
       ip,
       userAgent,
+    });
+
+    recordAuditFromRequest(req, {
+      actorId: null,
+      actorRole: 'anonymous',
+      action: 'contact.submit',
+      category: 'system',
+      resourceType: 'contact',
+      metadata: { subject, contactEmail: email },
+      skipDedup: true,
     });
 
     return res.json({ success: true });
@@ -97,6 +109,21 @@ export async function submitMangaReport(req: Request, res: Response, next: NextF
       userAgent,
     });
 
+    recordAuditFromRequest(req, {
+      action: 'manga.report',
+      category: 'manga',
+      resourceType: 'series',
+      resourceId: String(mangaId),
+      skipDedup: true,
+      metadata: contentAuditMeta({
+        href: mangaPageHref(mangaId),
+        summary: `Reported manga: ${reportTypeLabel}`,
+        title: mangaTitle || `Series #${mangaId}`,
+        content: details || undefined,
+        extra: { reportType, reportTypeLabel },
+      }),
+    });
+
     return res.json({ success: true });
   } catch (error) {
     logger.error(`Failed to submit manga report: ${error}`, { service: 'contactController' });
@@ -127,6 +154,16 @@ export async function submitDmca(req: Request, res: Response, next: NextFunction
       references,
       ip,
       userAgent,
+    });
+
+    recordAuditFromRequest(req, {
+      actorId: null,
+      actorRole: 'anonymous',
+      action: 'dmca.submit',
+      category: 'system',
+      resourceType: 'dmca',
+      metadata: { submitterEmail: email },
+      skipDedup: true,
     });
 
     return res.json({ success: true });

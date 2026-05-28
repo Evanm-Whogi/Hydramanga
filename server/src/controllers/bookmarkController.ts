@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { BookmarkService } from '@/services/bookmarkService';
 import logger from '@/services/loggerService';
+import { recordAuditFromRequest } from '@/audit/record';
 
 /**
  * Add or update a bookmark with optional note
@@ -32,6 +33,14 @@ export async function addBookmark(
       parsedChapterId,
       note
     );
+
+    recordAuditFromRequest(req, {
+      action: 'bookmark.create',
+      category: 'library',
+      resourceType: 'chapter',
+      resourceId: String(parsedChapterId),
+      metadata: { seriesId: req.params.id },
+    });
 
     res.status(200).json({
       success: true,
@@ -70,6 +79,14 @@ export async function removeBookmark(
     }
 
     await BookmarkService.removeBookmark(userId, parsedChapterId);
+
+    recordAuditFromRequest(req, {
+      action: 'bookmark.delete',
+      category: 'library',
+      resourceType: 'chapter',
+      resourceId: String(parsedChapterId),
+      metadata: { seriesId: req.params.id },
+    });
 
     res.status(200).json({
       success: true,

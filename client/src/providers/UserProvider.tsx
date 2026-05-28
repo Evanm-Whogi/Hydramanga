@@ -1,8 +1,7 @@
 "use client";
 
-import { createContext, useContext, ReactNode, useState, useEffect } from "react";
+import { createContext, useContext, ReactNode } from "react";
 import { authClient } from "@/lib/auth";
-import { identifyUser, clearUser } from "@/lib/analytics";
 
 type Session = typeof authClient.$Infer.Session;
 
@@ -23,20 +22,6 @@ export function UserProvider({
 }) {
   const { data: liveSession, isPending } = authClient.useSession();
   const currentSession = liveSession || initialSession;
-
-  // Track user identification for PostHog
-  useEffect(() => {
-    if (currentSession?.user) {
-      identifyUser(currentSession.user.id, {
-        email: currentSession.user.email,
-        name: currentSession.user.name,
-        created_at: currentSession.user.createdAt,
-        role: currentSession.user.role,
-      });
-    } else {
-      clearUser();
-    }
-  }, [currentSession?.user?.id]);
 
   return (
     <UserContext.Provider 

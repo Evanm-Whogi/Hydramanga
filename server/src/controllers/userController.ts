@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import fs from 'fs-extra';
 import path from 'path';
 import logger from '@/services/loggerService';
+import { recordAuditFromRequest } from '@/audit/record';
 
 export const uploadProfilePicture = async (req: Request, res: Response) => {
   try {
@@ -63,6 +64,13 @@ export const uploadProfilePicture = async (req: Request, res: Response) => {
 
     logger.info(`Profile picture uploaded for user ${userId}: ${relativePath}`);
 
+    recordAuditFromRequest(req, {
+      action: 'profile.avatar.upload',
+      category: 'settings',
+      resourceType: 'user',
+      resourceId: userId,
+    });
+
     return res.status(200).json({
       message: 'Profile picture uploaded successfully',
       image: relativePath,
@@ -110,6 +118,13 @@ export const deleteProfilePicture = async (req: Request, res: Response) => {
       .where(eq(schema.user.id, userId));
 
     logger.info(`Profile picture deleted for user ${userId}`);
+
+    recordAuditFromRequest(req, {
+      action: 'profile.avatar.delete',
+      category: 'settings',
+      resourceType: 'user',
+      resourceId: userId,
+    });
 
     return res.status(200).json({
       message: 'Profile picture deleted successfully',

@@ -4,6 +4,8 @@ import { eq, and, avg, count } from 'drizzle-orm';
 import { karmaService } from '@/services/karmaService';
 import { enrichAuthors } from '@/lib/enrichAuthors';
 import { isAdminRole } from '@/lib/authHelpers';
+import { recordAuditFromRequest } from '@/audit/record';
+import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
 
 export async function fetchReviews(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const seriesId = parseInt(req.query.seriesId as string, 10);
@@ -64,6 +66,19 @@ export async function createReview(req: Request, res: Response, next: NextFuncti
             idempotencyKey: `review:${review.id}`,
         });
 
+        recordAuditFromRequest(req, {
+            action: 'review.create',
+            category: 'social',
+            resourceType: 'review',
+            resourceId: String(review.id),
+            metadata: contentAuditMeta({
+                href: mangaPageHref(seriesId),
+                summary: `Posted a review (${ratingNum}/10)`,
+                content: content.trim(),
+                extra: { seriesId, rating: ratingNum },
+            }),
+        });
+
         return res.status(201).json({ review });
     } catch (error) {
         return next(error);
@@ -89,6 +104,19 @@ export async function updateReview(req: Request, res: Response, next: NextFuncti
             .set({ content: content?.trim() ?? existing.content, rating: ratingNum, updatedAt: new Date() })
             .where(eq(schema.reviews.id, reviewId))
             .returning();
+
+        recordAuditFromRequest(req, {
+            action: 'review.update',
+            category: 'social',
+            resourceType: 'review',
+            resourceId: String(reviewId),
+            metadata: contentAuditMeta({
+                href: mangaPageHref(existing.seriesId),
+                summary: `Edited a review (${ratingNum}/10)`,
+                content: content?.trim() ?? existing.content,
+                extra: { seriesId: existing.seriesId, rating: ratingNum },
+            }),
+        });
 
         return res.status(200).json({ review: updated });
     } catch (error) {
@@ -119,6 +147,19 @@ export async function deleteReview(req: Request, res: Response, next: NextFuncti
             originalIdempotencyKey: `review:${reviewId}`,
         });
 
+        recordAuditFromRequest(req, {
+            action: isAdminRole(req.user.role) ? 'review.delete.admin' : 'review.delete',
+            category: 'social',
+            resourceType: 'review',
+            resourceId: String(reviewId),
+            metadata: contentAuditMeta({
+                href: mangaPageHref(existing.seriesId),
+                summary: isAdminRole(req.user.role) ? 'Admin deleted a review' : 'Deleted a review',
+                content: existing.content,
+                extra: { seriesId: existing.seriesId, rating: existing.rating },
+            }),
+        });
+
         return res.status(200).json({ message: 'Review deleted' });
     } catch (error) {
         return next(error);
@@ -140,6 +181,13 @@ export async function voteReview(req: Request, res: Response, next: NextFunction
 
         if (!existing) {
             await db.insert(schema.reviewVotes).values({ reviewId, userId, type });
+            recordAuditFromRequest(req, {
+                action: 'review.vote',
+                category: 'social',
+                resourceType: 'review',
+                resourceId: String(reviewId),
+                metadata: { voteType: type },
+            });
             return res.status(201).json({ message: `Review ${type}d` });
         }
 
@@ -147,12 +195,25 @@ export async function voteReview(req: Request, res: Response, next: NextFunction
             await db.delete(schema.reviewVotes).where(
                 and(eq(schema.reviewVotes.reviewId, reviewId), eq(schema.reviewVotes.userId, userId))
             );
+            recordAuditFromRequest(req, {
+                action: 'review.vote_remove',
+                category: 'social',
+                resourceType: 'review',
+                resourceId: String(reviewId),
+            });
             return res.status(200).json({ message: `Review un-${type}d` });
         }
 
         await db.update(schema.reviewVotes)
             .set({ type })
             .where(and(eq(schema.reviewVotes.reviewId, reviewId), eq(schema.reviewVotes.userId, userId)));
+        recordAuditFromRequest(req, {
+            action: 'review.vote',
+            category: 'social',
+            resourceType: 'review',
+            resourceId: String(reviewId),
+            metadata: { voteType: type, switched: true },
+        });
         return res.status(200).json({ message: `Vote switched to ${type}` });
     } catch (error) {
         return next(error);
