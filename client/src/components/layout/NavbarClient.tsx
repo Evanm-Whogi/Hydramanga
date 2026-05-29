@@ -71,11 +71,32 @@ export default function NavbarClient() {
         setIsRandomModalOpen(true);
     };
 
+    const openRandomManga = () => {
+        closeDropdown();
+        setIsOpen(false);
+        setIsRandomModalOpen(true);
+    };
+
     const openThemeModal = () => {
         setIsProfileOpen(false);
         setIsOpen(false);
         setIsThemeModalOpen(true);
     };
+
+    const profileOverflowItems = (
+        <div className="min-[1700px]:hidden">
+            <hr className="my-1 border-borders" />
+            <Link href="/request" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><CirclePlusIcon className="size-4" /> Request</Link>
+            <button type="button" className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors hover:cursor-pointer" onClick={openRandomManga}><DicesIcon className="size-4" /> Random</button>
+            <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}>
+                <img src="/oauthIcons/discord.webp" alt="" className="size-4 rounded-sm" />
+                Discord
+            </a>
+            <Link href="/discover" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><SearchIcon className="size-4" /> Search</Link>
+            <Link href="/announcements" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><MegaphoneIcon className="size-4" /> Announcements</Link>
+            <NotificationsMenu variant="dropdown" onOpen={closeDropdown} />
+        </div>
+    );
 
     return (
         <>
@@ -116,12 +137,14 @@ export default function NavbarClient() {
                         <div className="hidden xl:flex items-center gap-3">
                             {user ? (
                                 <>
-                                    <Link href="/request" className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><CirclePlusIcon className="size-4" /> Request</Link>
-                                    <div onClick={toggleRandomManga} className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><DicesIcon className="size-4" />Random</div>
-                                    <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer" className="size-11" ><img src="/oauthIcons/discord.webp" alt="discord" /></a>
-                                    <Link href="/discover" className="bg-background hover:bg-background/50 p-3 rounded-full"><SearchIcon className="size-5 hover:cursor-pointer" /></Link>
-                                    <Link href="/announcements" className="bg-background hover:bg-background/50 p-3 rounded-full" aria-label="Announcements"><MegaphoneIcon className="size-5 hover:cursor-pointer" /></Link>
-                                    <NotificationsMenu />
+                                    <div className="hidden min-[1700px]:flex items-center gap-3">
+                                        <Link href="/request" className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><CirclePlusIcon className="size-4" /> Request</Link>
+                                        <div onClick={toggleRandomManga} className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><DicesIcon className="size-4" />Random</div>
+                                        <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer" className="size-11" ><img src="/oauthIcons/discord.webp" alt="discord" /></a>
+                                        <Link href="/discover" className="bg-background hover:bg-background/50 p-3 rounded-full"><SearchIcon className="size-5 hover:cursor-pointer" /></Link>
+                                        <Link href="/announcements" className="bg-background hover:bg-background/50 p-3 rounded-full" aria-label="Announcements"><MegaphoneIcon className="size-5 hover:cursor-pointer" /></Link>
+                                        <NotificationsMenu />
+                                    </div>
 
                                     <div className="relative" ref={profileRef}>
                                         <button onClick={() => setIsProfileOpen(!isProfileOpen)} className="block focus:outline-none focus:ring-2 focus:ring-borders rounded-full">
@@ -139,6 +162,8 @@ export default function NavbarClient() {
                                                 {user?.role === "admin" && (
                                                     <Link href="/admin" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><ShieldIcon className="size-4" /> Admin</Link>
                                                 )}
+
+                                                {profileOverflowItems}
                                                 
                                                 <hr className="my-1 border-borders" />
                                                 <div className="flex place-content-between w-fit">

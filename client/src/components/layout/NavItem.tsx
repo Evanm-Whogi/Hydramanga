@@ -13,7 +13,7 @@ interface navItemProps {
 export default function navItem ({ href, icon, label, className, closeMenu}: navItemProps) {
     const pathname = usePathname();
     return (
-        <Link href={href} className={`flex items-center gap-1 ${pathname === href ? 'text-primary' : 'text-muted hover:text-primary'}`} onClick={closeMenu}>
+        <Link href={href} className={`flex shrink-0 items-center gap-1 whitespace-nowrap ${pathname === href ? 'text-primary' : 'text-muted hover:text-primary'} ${className ?? ''}`} onClick={closeMenu}>
             {icon}
             <span>{label}</span>
         </Link>

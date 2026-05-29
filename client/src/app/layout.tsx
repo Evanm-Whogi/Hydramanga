@@ -10,6 +10,7 @@ import Footer from "@/components/layout/Footer";
 import WelcomeModalGate from "@/components/WelcomeModalGate";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import BannedSessionGuard from "@/components/BannedSessionGuard";
+import DevToolsGuardScript from "@/components/DevToolsGuardScript";
 
 export async function generateMetadata(): Promise<Metadata> {
   const siteConfig = {
@@ -72,6 +73,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   return (
     <html lang="en" suppressHydrationWarning={true} className={themeMode} style={themeAccent ? { '--color-accent': themeAccent } as React.CSSProperties : undefined}>
       <head>
+        <DevToolsGuardScript />
         <link rel="preconnect" href="https://cdn.mangabaka.dev" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://images.mangabaka.dev" crossOrigin="anonymous" />
       </head>

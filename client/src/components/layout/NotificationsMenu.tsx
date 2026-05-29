@@ -19,12 +19,14 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 type NotificationsMenuProps = {
-  /** Desktop navbar: circular icon button. Mobile menu: bordered tile like other links. */
-  variant?: 'icon' | 'link';
+  /** Desktop navbar: circular icon button. Mobile menu: bordered tile. Profile dropdown: menu row. */
+  variant?: 'icon' | 'link' | 'dropdown';
+  onOpen?: () => void;
 };
 
-export default function NotificationsMenu({ variant = 'icon' }: NotificationsMenuProps) {
+export default function NotificationsMenu({ variant = 'icon', onOpen }: NotificationsMenuProps) {
   const isLink = variant === 'link';
+  const isDropdown = variant === 'dropdown';
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -111,21 +113,28 @@ export default function NotificationsMenu({ variant = 'icon' }: NotificationsMen
     <div className="relative" ref={rootRef}>
       <button
         type="button"
-        onClick={() => setIsOpen((open) => !open)}
+        onClick={() => {
+          setIsOpen((open) => {
+            if (!open) onOpen?.();
+            return !open;
+          });
+        }}
         aria-label="Notifications"
         aria-expanded={isOpen}
         className={
-          isLink
+          isDropdown
+            ? 'relative flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors focus:outline-none focus:ring-2 focus:ring-borders'
+            : isLink
             ? 'relative flex w-full items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm text-muted hover:bg-foreground/70 focus:outline-none focus:ring-2 focus:ring-borders'
             : 'relative bg-background hover:bg-background/50 p-3 rounded-full focus:outline-none focus:ring-2 focus:ring-borders'
         }
       >
-        <BellRing className={isLink ? 'size-4 shrink-0' : 'size-5'} />
-        {isLink && <span>Notifications</span>}
+        <BellRing className={isLink || isDropdown ? 'size-4 shrink-0' : 'size-5'} />
+        {(isLink || isDropdown) && <span>Notifications</span>}
         {count > 0 && (
           <span
             className={
-              isLink
+              isLink || isDropdown
                 ? 'ml-auto min-w-5 h-5 px-1 flex items-center justify-center rounded-full bg-accent text-background text-[10px] font-bold leading-none'
                 : 'absolute -top-0.5 -right-0.5 min-w-5 h-5 px-1 flex items-center justify-center rounded-full bg-accent text-background text-[10px] font-bold leading-none'
             }
