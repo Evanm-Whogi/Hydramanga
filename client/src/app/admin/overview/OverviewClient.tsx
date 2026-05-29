@@ -6,12 +6,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { getHeartbeat } from "@/services/healthservice";
 import { getAdminOverviewStats, getAdminTimeseries, type AdminOverviewStats, type AdminTimeseries } from "@/services/adminStatsService";
 import AdminStatCard from "../components/AdminStatCard";
-
-function formatNumber(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
-}
+import { formatCompactNumber as formatNumber } from "@/lib/utils";
 
 function formatChartDate(date: string): string {
   const d = new Date(`${date}T00:00:00`);

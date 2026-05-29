@@ -1,17 +1,8 @@
-// truncate based on word count replaced by tailwind truncate but ill leave it incase I have a specific use-case
-export function truncate(text: string, maxLength: number) {
-  const words = text.split(" ");
-  return words.length > maxLength ? words.slice(0, maxLength).join(" ") + "..." : text;
-}
-
-// Format Dates
-export function formatDate(date: string | Date, noTime: boolean = false) {
-  const actualDate = typeof date === "string" ? new Date(date) : date;
-  return actualDate.toLocaleString("en-US", {
-    dateStyle: "medium",
-    timeStyle: noTime ? undefined : "short",
-    hour12: true,
-  });
+// Compact number formatting (e.g. 1.2K, 3.4M) for view/follower counts
+export function formatCompactNumber(num: number): string {
+  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
+  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
+  return num.toString();
 }
 
 // Convert to Stars
@@ -37,18 +28,6 @@ export const formatToStars = (score: number) => {
   return stars + emptyStars;
 };
 
-// Convert 0-5 rating to stars
-export const ratingToStars = (rating: number) => {
-  const totalStars = 5;
-  const clampedRating = Math.min(Math.max(rating, 0), totalStars);
-  const emptyStarsCount = totalStars - clampedRating;
-
-  const stars = '★'.repeat(clampedRating);
-  const emptyStars = '☆'.repeat(emptyStarsCount);
-  
-  return stars + emptyStars;
-}
-
 export const formatTimeAgo = (value?: string | Date | null): string => {
     if (!value) return 'unknown';
 
@@ -62,9 +41,10 @@ export const formatTimeAgo = (value?: string | Date | null): string => {
         // Normalize timezone offset to ±HH:MM format
         normalized = normalized.replace(/([+-])(\d{2}):?(\d{2})$/, '$1$2:$3');
         normalized = normalized.replace(/([+-])(\d{2})$/, '$1$2:00');
-        // If no timezone present, assume UTC
+        // If no timezone present, assume UTC (server timestamps are UTC)
         if (!/([zZ]|[+-]\d{2}:\d{2})$/.test(normalized)) {
-      }
+            normalized += 'Z';
+        }
       date = new Date(normalized);
     }
 

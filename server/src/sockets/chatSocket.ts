@@ -1,5 +1,8 @@
 import Redis from 'ioredis';
 import { Namespace, Server, Socket } from 'socket.io';
+import { fromNodeHeaders } from 'better-auth/node';
+import { auth } from '@/utils/auth';
+import { isUserBanned } from '@/lib/banHelpers';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
 import { CHAT_CHANNEL, CHAT_ROOM } from '@/services/chatService';
@@ -87,23 +90,64 @@ export function setupChatSocket(io: Server) {
 
   const chatNamespace = io.of('/chat');
 
-  chatNamespace.on('connection', (socket: Socket) => {
-    socket.join(CHAT_ROOM);
-    logger.debug(`Chat client connected: ${socket.id}`, { service: 'chatSocket' });
-
-    socket.on('join', (user: ChatPresenceUser) => {
-      if (!user?.id || !user?.name) return;
-      socket.data.userId = user.id;
-      addPresence({
-        id: user.id,
-        name: user.name,
-        username: user.username ?? null,
-        displayUsername: user.displayUsername ?? null,
-        image: user.image ?? null,
-        role: user.role ?? 'user',
+  // Authenticate every chat connection from the session cookie in the handshake.
+  // Identity is derived server-side; client-supplied identity is never trusted.
+  chatNamespace.use(async (socket: Socket, next: (err?: Error) => void) => {
+    try {
+      const session = await auth.api.getSession({
+        headers: fromNodeHeaders(socket.handshake.headers),
       });
-      broadcastPresence(chatNamespace);
-    });
+
+      if (!session?.user) {
+        return next(new Error('Unauthorized'));
+      }
+
+      const sessionUser = session.user as {
+        id: string;
+        name?: string | null;
+        username?: string | null;
+        displayUsername?: string | null;
+        image?: string | null;
+        role?: string | null;
+        banned?: boolean | null;
+        banReason?: string | null;
+        banExpires?: Date | string | null;
+      };
+
+      if (isUserBanned(sessionUser)) {
+        return next(new Error('Forbidden'));
+      }
+
+      socket.data.authUser = {
+        id: sessionUser.id,
+        name: sessionUser.displayUsername || sessionUser.name || sessionUser.username || 'User',
+        username: sessionUser.username ?? null,
+        displayUsername: sessionUser.displayUsername ?? null,
+        image: sessionUser.image ?? null,
+        role: sessionUser.role === 'admin' ? 'admin' : 'user',
+      } satisfies ChatPresenceUser;
+
+      next();
+    } catch (err) {
+      logger.error(`Chat socket auth error: ${err}`, { service: 'chatSocket' });
+      next(new Error('Unauthorized'));
+    }
+  });
+
+  chatNamespace.on('connection', (socket: Socket) => {
+    const authUser = socket.data.authUser as ChatPresenceUser | undefined;
+    if (!authUser) {
+      socket.disconnect(true);
+      return;
+    }
+
+    socket.join(CHAT_ROOM);
+    socket.data.userId = authUser.id;
+    logger.debug(`Chat client connected: ${socket.id} (user ${authUser.id})`, { service: 'chatSocket' });
+
+    // Register presence using the authenticated identity only.
+    addPresence(authUser);
+    broadcastPresence(chatNamespace);
 
     socket.on('disconnect', () => {
       const userId = socket.data.userId as string | undefined;

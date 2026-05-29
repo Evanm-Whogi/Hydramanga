@@ -38,24 +38,15 @@ export function useChatSocket(onEvent: (event: ChatSocketEvent) => void, enabled
   useEffect(() => {
     if (!enabled || !session || !user?.id) return;
 
+    // withCredentials forwards the session cookie so the server can authenticate
+    // the connection and derive identity itself (no client-supplied identity is trusted).
     const socket = io(`${getWebSocketBase()}/chat`, {
       reconnection: true,
       transports: ["websocket", "polling"],
+      withCredentials: true,
     });
     socketRef.current = socket;
 
-    const joinChat = () => {
-      socket.emit("join", {
-        id: user.id,
-        name: user.name ?? "User",
-        username: user.username ?? null,
-        displayUsername: (user as { displayUsername?: string }).displayUsername ?? null,
-        image: user.image ?? null,
-        role: user.role ?? "user",
-      });
-    };
-
-    socket.on("connect", joinChat);
     socket.on("chat", (payload: ChatSocketEvent) => {
       onEventRef.current(payload);
     });

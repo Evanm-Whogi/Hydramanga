@@ -56,7 +56,6 @@ export const DEFAULT_FILTERS = {
   years: [] as string[],
   sort: "weightedScore",
 } as const;
-export const SORT_DEFAULT = "weightedScore";
 
 export const WARNING_GENRES = ["Hentai", "Adult", "Doujinshi", "Lolicon", "Shotacon", "Erotica", "Smut"] as const;
 export const WARNING_RATINGS = ["suggestive", "erotica", "pornographic"] as const;

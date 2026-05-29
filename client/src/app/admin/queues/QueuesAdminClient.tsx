@@ -6,12 +6,7 @@ import {toast } from "react-toastify";
 import {getAdminQueues, pauseAdminQueue, resumeAdminQueue, type AdminQueueRow, type AdminQueueTotals} from "@/services/adminQueueService";
 import AdminStatCard from "../components/AdminStatCard";
 import QueueExploreModal from "./QueueExploreModal";
-
-function formatNumber(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
-}
+import { formatCompactNumber as formatNumber } from "@/lib/utils";
 
 function formatDuration(ms: number | null): string {
   if (ms == null) return "—";

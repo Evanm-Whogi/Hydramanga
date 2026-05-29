@@ -79,27 +79,6 @@ export function saveReaderSettings(settings: ReaderSettings): void {
 }
 
 /**
- * Update a specific setting
- */
-export function updateReaderSetting<K extends keyof ReaderSettings>(
-  key: K,
-  value: ReaderSettings[K]
-): ReaderSettings {
-  const current = loadReaderSettings();
-  const updated = { ...current, [key]: value };
-  saveReaderSettings(updated);
-  return updated;
-}
-
-/**
- * Reset settings to defaults
- */
-export function resetReaderSettings(): ReaderSettings {
-  saveReaderSettings(DEFAULT_SETTINGS);
-  return DEFAULT_SETTINGS;
-}
-
-/**
  * Get auto-scroll speed in pixels per second
  */
 export function getAutoScrollSpeed(speed: AutoScrollSpeed): number {

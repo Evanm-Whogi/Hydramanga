@@ -1,7 +1,6 @@
 import express, { Express } from 'express';
 import 'tsconfig-paths/register';
 import cors from 'cors';
-import bodyParser from 'body-parser';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { toNodeHandler } from "better-auth/node";
@@ -24,7 +23,7 @@ if (process.env.ENABLE_SENTRY === 'true') {
 }
 
 // Middlewares
-import { rateLimiter } from '@/middlewares/rateLimit';
+import { rateLimiter, authRateLimiter } from '@/middlewares/rateLimit';
 import { isMaintenance } from '@/middlewares/maintenance';
 // Services
 import '@/services/loggerService';
@@ -48,10 +47,12 @@ app.set('trust proxy', 1);
 
 // Auth Routes (tracking for IP/UA on auth events)
 app.use('/auth', trackingMiddleware);
+// Brute-force protection on sensitive auth endpoints only (get-session etc. stay unthrottled)
+app.use(['/auth/sign-in', '/auth/sign-up', '/auth/forget-password', '/auth/reset-password', '/auth/request-password-reset'], authRateLimiter);
 app.all("/auth/{*any}", auditAuthHandler(toNodeHandler(auth)));
 
 // Middlewares
-app.use(bodyParser.json());
+app.use(express.json());
 app.use(isMaintenance);
 
 // Enable rate limiting only in production [Disabled]
@@ -66,7 +67,11 @@ require('@/routes')(app);
 app.use((err: Error, req: any, res: any, next: any) => {
   logger.error(err);
   Sentry.captureException(err);
-  res.status(500).send({ error: err.message || 'Internal Server Error' });
+  // Avoid leaking internal error details (stack/paths) to clients in production
+  const message = process.env.NODE_ENV === 'production'
+    ? 'Internal Server Error'
+    : (err.message || 'Internal Server Error');
+  res.status(500).send({ error: message });
 });
 
 // Server - use http.createServer instead of app.listen for Socket.IO

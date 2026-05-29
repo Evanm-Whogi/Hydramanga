@@ -2,7 +2,7 @@
 import { Star, Eye } from "lucide-react";
 import Link from "next/link";
 import { mangaPath } from "@/lib/paths";
-import { formatToRating } from "@/lib/utils";
+import { formatToRating, formatCompactNumber as formatViewCount } from "@/lib/utils";
 import { memo, type MouseEvent } from "react";
 import CoverImage from "@/components/CoverImage";
 import MangaImportBadge from "@/components/MangaImportBadge";
@@ -75,9 +75,3 @@ function MangaCard({ manga, onNavigate, priority }: { manga?: any; onNavigate?: 
 }
 
 export default memo(MangaCard);
-
-function formatViewCount(count: number): string {
-    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
-    if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
-    return count.toString();
-}

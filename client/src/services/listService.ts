@@ -26,15 +26,6 @@ export interface UserList {
   updatedAt: string;
 }
 
-export interface ListItem {
-  id: number;
-  title: string;
-  listStatus?: string;
-  listName?: string;
-  addedAt?: string;
-  [key: string]: any;
-}
-
 export interface ListsData {
   lists: UserList[];
   [listSlug: string]: any;
@@ -84,16 +75,6 @@ export const deleteList = async (listId: number): Promise<{ success: boolean; me
     return clientRequest(`/lists/${listId}`, { method: 'DELETE' });
   }
   const response = await apiDelete(`/lists/${listId}`);
-  return response.data;
-};
-
-// Get items in a specific list
-export const fetchListItems = async (listId: number): Promise<{ 
-  success: boolean; 
-  list: UserList;
-  items: ListItem[] 
-}> => {
-  const response = await apiGet(`/lists/${listId}`);
   return response.data;
 };
 

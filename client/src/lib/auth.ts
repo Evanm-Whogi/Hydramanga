@@ -38,7 +38,6 @@ export const authClient = createAuthClient({
 export const {
     signIn,
     signUp,
-    isUsernameAvailable,
     useSession,
     signOut,
     updateUser,

@@ -46,20 +46,12 @@ export async function fetchMangaPages(id: any, chapterId: any): Promise<any> {
     return await apiGet(`/manga/${id}/${chapterId}`);
 }
 
-export async function getTrending(period: string = 'week', limit: number = 20): Promise<any> {
-    return await apiGet(`/analytics/trending?period=${period}&limit=${limit}`);
-}
-
 export async function getMangaAnalytics(id: number): Promise<any> {
     return await apiGet(`/analytics/manga/${id}`);
 }
 
 export async function getMyProgress(limit: number = 20): Promise<any> {
     return await apiGet(`/analytics/progress?limit=${limit}`);
-}
-
-export async function getMangaProgress(id: number): Promise<any> {
-    return await apiGet(`/analytics/progress/manga/${id}`);
 }
 
 export async function getSeriesChapterProgress(id: number): Promise<any> {

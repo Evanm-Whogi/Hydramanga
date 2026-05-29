@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState, memo, useTransition, Fragment, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { getMangaAnalytics, triggerMangaScan } from '@/services/mangaService';
-import {  formatToRating, formatTimeAgo } from '@/lib/utils';
+import { getMangaAnalytics } from '@/services/mangaService';
+import { formatToRating, formatTimeAgo, formatCompactNumber as formatNumber } from '@/lib/utils';
 import Link from 'next/link';
 import MangaActions from './MangaActions';
 import RecommendedManga from './RecommendedManga';
@@ -10,7 +10,7 @@ import { Eye, Bookmark, UserCheck, TriangleAlert, Star, Pencil, ShareIcon, Stick
 import { useMangaViewTracking } from '@/hooks/useViewTracking';
 import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
 import { useUser } from '@/providers/UserProvider';
-import { showImportProgressToast, updateImportProgressToast, dismissImportProgressToast } from '@/components/ImportProgressToast';
+import { updateImportProgressToast, dismissImportProgressToast } from '@/components/ImportProgressToast';
 import AdminMangaEditModal from './AdminMangaEditModal';
 import ReportMangaModal from './ReportMangaModal';
 import { WARNING_GENRES, WARNING_RATINGS } from '@/constants/filters';
@@ -291,25 +291,6 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
   const isFetchingAnalytics = useRef(false);
 
   useEffect(() => {
-    // Only trigger scan if no chapters exist
-    // The backend will check manga_import_progress to prevent duplicate scans
-
-    //! Disabled auto scan trigger, instead relying on admin importing the manga manually.
-    // if ((manga.chapters?.length || 0) === 0) {
-    //   setWasActiveOnLoad(true);
-    //   showImportProgressToast(mangaId, manga.title);
-    //     triggerMangaScan(mangaId)
-    //       .then((response) => {
-    //         // Backend returns status if already scanning/downloading
-    //         if (response?.status) {
-    //           console.log(`Manga ${mangaId} is already ${response.status}`);
-    //         }
-    //       })
-    //       .catch((err) => {
-    //         console.error('Failed to trigger manga scan:', err);
-    //       });
-    // }
-    
     let isMounted = true;
     
     const getAnalyticsData = async () => {
@@ -612,8 +593,3 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
   );
 }
 
-function formatNumber(num: number): string {
-  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-  return num.toString();
-}

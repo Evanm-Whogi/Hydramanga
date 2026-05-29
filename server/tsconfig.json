@@ -20,5 +20,11 @@
     "strict": true,                                      /* Enable all strict type-checking options. */
     "skipLibCheck": true,                                 /* Skip type checking all .d.ts files. */
   },
+  "ts-node": {
+    // Load tsconfig's full file list (including ambient .d.ts globals like
+    // src/types/express.d.ts) up front, instead of lazily by require order.
+    "files": true
+  },
+  "include": ["src/**/*.ts"],
   "exclude": ["./drizzle.config.ts"] // Exclude files from being compiled drizzle.config.ts
 }

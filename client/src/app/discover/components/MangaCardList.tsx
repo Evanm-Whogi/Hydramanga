@@ -4,6 +4,7 @@ import Link from "next/link";
 import { mangaPath } from "@/lib/paths";
 import { memo, type MouseEvent } from "react";
 import CoverImage from "@/components/CoverImage";
+import { formatCompactNumber as formatViewCount } from "@/lib/utils";
 
 function MangaCardList({ manga, onNavigate, priority }: { manga?: any; onNavigate?: () => void; priority?: boolean }) {
     const shouldHandleNavigate = (e: MouseEvent<HTMLAnchorElement>) =>
@@ -62,9 +63,3 @@ function MangaCardList({ manga, onNavigate, priority }: { manga?: any; onNavigat
 }
 
 export default memo(MangaCardList);
-
-function formatViewCount(count: number): string {
-    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
-    if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
-    return count.toString();
-}

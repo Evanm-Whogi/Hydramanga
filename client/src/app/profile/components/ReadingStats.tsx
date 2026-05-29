@@ -4,12 +4,7 @@ import { useEffect, useState } from "react";
 import { getUserStats } from "@/services/mangaService";
 import type { UserStats } from "@/types/stats";
 import { BookOpen, TrendingUp, Target, BookCheckIcon, FlameIcon } from "lucide-react";
-
-function formatNumber(num: number): string {
-  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
-  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
-  return num.toString();
-}
+import { formatCompactNumber as formatNumber } from "@/lib/utils";
 
 export default function ReadingStats() {
   const [stats, setStats] = useState<UserStats | null>(null);

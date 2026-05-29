@@ -1,9 +1,4 @@
-
-import { apiPost, apiGet, apiDelete, apiPut } from '@/lib/api';
-
-export async function fetchComments(seriesId: number): Promise<any> {
-    return await apiGet(`/comments?seriesId=${seriesId}`);
-}
+import { apiPost, apiDelete, apiPut } from '@/lib/api';
 
 export async function postComment({ seriesId, content, parentId, isSpoiler }: { seriesId: number, content: string, parentId?: number | null, isSpoiler?: boolean }): Promise<any> {
     const data = await apiPost('/comments', { seriesId, content, parentId, isSpoiler });

@@ -2,7 +2,7 @@
 import { Star, Eye } from "lucide-react";
 import Link from "next/link";
 import { mangaPath } from "@/lib/paths";
-import { formatToRating } from "@/lib/utils";
+import { formatToRating, formatCompactNumber as formatViewCount } from "@/lib/utils";
 import { memo } from "react";
 
 function PopularChapterCard({ manga }: { manga?: any }) {
@@ -46,9 +46,3 @@ function PopularChapterCard({ manga }: { manga?: any }) {
 }
 
 export default memo(PopularChapterCard);
-
-function formatViewCount(count: number): string {
-    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
-    if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
-    return count.toString();
-}
