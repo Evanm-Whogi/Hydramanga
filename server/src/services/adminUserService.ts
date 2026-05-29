@@ -1,5 +1,5 @@
 import { db, schema } from '@/db/index';
-import { eq, or, ilike, desc, asc, count, and, ne, SQL, gt, lt, isNull, isNotNull } from 'drizzle-orm';
+import { eq, or, ilike, desc, asc, count, and, ne, SQL, gt, lt, isNull, isNotNull, inArray, max } from 'drizzle-orm';
 import { userProgressService } from '@/services/userProgressService';
 import { isUserBanned } from '@/lib/banHelpers';
 import { isAllowedProfileImageUrl } from '@/lib/profileImagePath';
@@ -30,6 +30,7 @@ export interface AdminUserRow {
   banExpires: Date | null;
   isBanned: boolean;
   createdAt: Date;
+  lastOnlineAt: Date | null;
   xp: {
     totalXp: number;
     level: number;
@@ -50,6 +51,24 @@ const userSelectFields = {
   banExpires: schema.user.banExpires,
   createdAt: schema.user.createdAt,
 };
+
+async function getLastOnlineMap(userIds: string[]) {
+  if (userIds.length === 0) return {} as Record<string, Date | null>;
+
+  const rows = await db
+    .select({
+      userId: schema.session.userId,
+      lastOnlineAt: max(schema.session.updatedAt),
+    })
+    .from(schema.session)
+    .where(inArray(schema.session.userId, userIds))
+    .groupBy(schema.session.userId);
+
+  return rows.reduce<Record<string, Date | null>>((acc, row) => {
+    acc[row.userId] = row.lastOnlineAt ?? null;
+    return acc;
+  }, {});
+}
 
 function toAdminUserRow(
   row: {
@@ -74,6 +93,7 @@ function toAdminUserRow(
     banReason: row.banReason,
     banExpires: row.banExpires,
     isBanned: isUserBanned({ banned, banExpires: row.banExpires }),
+    lastOnlineAt: null,
     xp,
   };
 }
@@ -130,9 +150,13 @@ class AdminUserService {
 
     const total = Number(totalResult[0]?.total ?? 0);
     const xpMap = await userProgressService.getUserXpSummaries(rows.map((r) => r.id));
+    const lastOnlineMap = await getLastOnlineMap(rows.map((r) => r.id));
 
     const users: AdminUserRow[] = rows.map((row) =>
-      toAdminUserRow(row, xpMap[row.id] ?? { totalXp: 0, level: 1, levelName: 'Rookie Reader' })
+      ({
+        ...toAdminUserRow(row, xpMap[row.id] ?? { totalXp: 0, level: 1, levelName: 'Rookie Reader' }),
+        lastOnlineAt: lastOnlineMap[row.id] ?? row.createdAt,
+      })
     );
 
     return {

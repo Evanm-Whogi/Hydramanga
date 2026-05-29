@@ -142,6 +142,7 @@ export default function UsersClient() {
                 <th className="px-4 py-3 font-semibold text-muted">Level</th>
                 <th className="px-4 py-3 font-semibold text-muted">XP</th>
                 <th className="px-4 py-3 font-semibold text-muted">Joined</th>
+                <th className="px-4 py-3 font-semibold text-muted">Last Online</th>
                 <th className="px-4 py-3 font-semibold text-muted">Verified</th>
                 <th className="px-4 py-3 font-semibold text-muted">Status</th>
                 <th className="px-4 py-3 font-semibold text-muted w-12">
@@ -152,14 +153,14 @@ export default function UsersClient() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-muted">
+                  <td colSpan={10} className="px-4 py-12 text-center text-muted">
                     <Loader2 className="size-6 animate-spin inline-block mr-2" />
                     Loading users…
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-muted">
+                  <td colSpan={10} className="px-4 py-12 text-center text-muted">
                     No users found
                   </td>
                 </tr>
@@ -181,7 +182,7 @@ export default function UsersClient() {
                         <span className="font-medium text-primary truncate">{user.name}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-muted truncate max-w-[200px]">{user.email}</td>
+                    <td className="px-4 py-3 text-muted truncate max-w-50">{user.email}</td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
@@ -202,6 +203,9 @@ export default function UsersClient() {
                     <td className="px-4 py-3 text-primary">{user.xp.totalXp.toLocaleString()} karma</td>
                     <td className="px-4 py-3 text-muted whitespace-nowrap">
                       {formatDate(user.createdAt)}
+                    </td>
+                    <td className="px-4 py-3 text-muted whitespace-nowrap">
+                      {formatDate(user.lastOnlineAt ?? user.createdAt)}
                     </td>
                     <td className="px-4 py-3">
                       {user.emailVerified ? (

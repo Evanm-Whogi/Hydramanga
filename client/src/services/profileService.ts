@@ -9,6 +9,7 @@ export interface PublicProfile {
   bio?: string | null;
   role?: string;
   createdAt?: string;
+  lastOnlineAt?: string;
   karmaTotal?: number;
   isPrivate?: boolean;
   isOwner?: boolean;

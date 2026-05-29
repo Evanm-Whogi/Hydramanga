@@ -19,6 +19,7 @@ export interface AdminUser {
   banExpires: string | null;
   isBanned: boolean;
   createdAt: string;
+  lastOnlineAt: string | null;
   xp: AdminUserXp;
 }
 

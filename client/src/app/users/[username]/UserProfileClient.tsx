@@ -33,6 +33,12 @@ function KarmaCard({ karma }: { karma: UserKarma }) {
   );
 }
 
+function formatDate(value?: string | null) {
+  if (!value) return "Unknown";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "Unknown" : parsed.toDateString();
+}
+
 function PublicProfileView({ identifier }: { identifier: string }) {
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,7 +105,7 @@ function PublicProfileView({ identifier }: { identifier: string }) {
                 Account Created: <span className="ml-2 text-muted">{new Date(profile?.createdAt!).toDateString()}</span>
               </div>
               <div className="flex text-primary capitalize">
-                Last Online: <span className="ml-2 text-muted">{new Date(profile?.createdAt!).toDateString()}</span>
+                Last Online: <span className="ml-2 text-muted">{formatDate(profile?.lastOnlineAt ?? profile?.createdAt)}</span>
               </div>
             </div>
             {profile.stats?.karma && (

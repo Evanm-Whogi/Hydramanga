@@ -12,6 +12,7 @@ import { uploadProfilePicture, deleteProfilePicture } from "@/services/userServi
 import { getUserStats } from "@/services/mangaService";
 import type { UserKarma } from "@/types/stats";
 import ProfileShareCard from "@/app/profile/components/ProfileShareCard";
+import { getPublicProfile } from "@/services/profileService";
 
 
 const VIEWS: { [key: string]: React.FC<{ user: any; isOwner: boolean }> } = {
@@ -22,6 +23,12 @@ const VIEWS: { [key: string]: React.FC<{ user: any; isOwner: boolean }> } = {
 
 const tabButtonClass = (active: boolean) =>
   `${active ? "bg-foreground text-primary border border-borders" : "bg-foreground text-muted"} hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-base lg:text-lg cursor-pointer transition-colors`;
+
+function formatDate(value?: string | Date | null) {
+  if (!value) return "Unknown";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "Unknown" : parsed.toDateString();
+}
 
 function LevelCard() {
   const [karma, setKarma] = useState<UserKarma | null>(null);
@@ -113,8 +120,9 @@ function LevelCard() {
 export default function ProfileContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { user } = useUser()!;
+  const { user, session } = useUser()!;
   const [page, setPage] = useState(searchParams.get("tab") || "overview");
+  const [lastOnlineAt, setLastOnlineAt] = useState<string | null>(session?.updatedAt?.toISOString() ?? null);
   const ActiveView = VIEWS[page] || Overview;
   const verified = searchParams.get("verified");
   const tabParam = searchParams.get("tab");
@@ -195,6 +203,23 @@ export default function ProfileContent() {
     }
   }, [verified, searchParams, router]);
 
+  useEffect(() => {
+    let alive = true;
+
+    getPublicProfile("me")
+      .then(({ profile }) => {
+        if (!alive) return;
+        setLastOnlineAt(profile.lastOnlineAt ?? null);
+      })
+      .catch(() => {
+        if (alive) setLastOnlineAt(session?.updatedAt?.toISOString() ?? null);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [session?.updatedAt]);
+
   return (
     <>
       <div className="h-82 z-10 absolute lg:relative overflow-hidden before:content-[''] before:absolute before:inset-0 before:-z-10 before:bg-(image:--manga-cover) before:bg-cover before:bg-center before:brightness-[0.7] before:blur-[6px] before:scale-110"
@@ -226,7 +251,7 @@ export default function ProfileContent() {
                   Account Created: <span className="ml-2 text-muted">{new Date(user?.createdAt!).toDateString()}</span>
                 </div>
                 <div className="flex text-primary capitalize">
-                  Last Online: <span className="ml-2 text-muted">{new Date(user?.createdAt!).toDateString()}</span>
+                  Last Online: <span className="ml-2 text-muted">{formatDate(lastOnlineAt ?? session?.updatedAt?.toISOString() ?? user?.createdAt)}</span>
                 </div>
               </div>
             </div>

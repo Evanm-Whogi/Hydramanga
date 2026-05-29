@@ -1,5 +1,5 @@
 import { db, schema } from '@/db/index';
-import { eq, or } from 'drizzle-orm';
+import { eq, or, max } from 'drizzle-orm';
 import { userProgressService } from '@/services/userProgressService';
 import { getUserSettings } from '@/services/userSettingsService';
 
@@ -34,6 +34,10 @@ class ProfileService {
     const targetUserId = userRow.id;
     const isOwner = targetUserId === viewerUserId;
     const settings = await getUserSettings(targetUserId);
+    const [lastSession] = await db
+      .select({ lastOnlineAt: max(schema.session.updatedAt) })
+      .from(schema.session)
+      .where(eq(schema.session.userId, targetUserId));
 
     if (!isOwner && !settings.isProfilePublic) {
       return {
@@ -51,6 +55,7 @@ class ProfileService {
 
     return {
       ...publicFields,
+      lastOnlineAt: lastSession?.lastOnlineAt ?? userRow.createdAt,
       ...(isOwner ? { role } : {}),
       isPrivate: false,
       isOwner,

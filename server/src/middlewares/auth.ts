@@ -47,6 +47,13 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     req.user = session.user;
     req.session = session.session;
 
+    if (session.session?.id) {
+        await db
+            .update(schema.session)
+            .set({ updatedAt: new Date() })
+            .where(eq(schema.session.id, session.session.id));
+    }
+
     Sentry.setUser({
         id: session.user.id,
         email: session.user.email,
