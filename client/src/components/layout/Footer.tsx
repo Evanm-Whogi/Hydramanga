@@ -17,7 +17,7 @@ export default  function Footer() {
                         <Link href="/" className="hover:text-primary">Home</Link>
                         <Link href="/discover" className="hover:text-primary">Discover</Link>
                         <Link href="/lists" className="hover:text-primary">My Lists</Link>
-                        <Link href="/profile" className="hover:text-primary">My Profile</Link>
+                        <Link href="/users/me" className="hover:text-primary">My Profile</Link>
                         <Link href="/announcements" className="hover:text-primary">Announcements</Link>
                     </div>
                     {/* Reading */}

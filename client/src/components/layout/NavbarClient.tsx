@@ -133,7 +133,7 @@ export default function NavbarClient() {
                                                     <p className="text-xs text-muted-foreground truncate capitalize">{user.role}</p>
                                                     <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                                                 </div>
-                                                <Link href="/profile?tab=overview" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><UserIcon className="size-4" /> My Profile</Link>
+                                                <Link href="/users/me?tab=overview" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><UserIcon className="size-4" /> My Profile</Link>
                                                 <Link href="/lists" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><ListIcon className="size-4" /> My Lists</Link>
 
                                                 {user?.role === "admin" && (
@@ -142,7 +142,7 @@ export default function NavbarClient() {
                                                 
                                                 <hr className="my-1 border-borders" />
                                                 <div className="flex place-content-between w-fit">
-                                                    <Link href="/profile?tab=settings" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><SettingsIcon className="size-4" /> Settings</Link>
+                                                    <Link href="/users/me?tab=settings" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><SettingsIcon className="size-4" /> Settings</Link>
                                                     <div className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors cursor-pointer" onClick={openThemeModal}><PaletteIcon className="size-4" /> Theme</div>
                                                 </div>
                                                 <button className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-500 hover:bg-red-500/50 transition-colors hover:cursor-pointer" onClick={handleSignOut}><LogOutIcon className="size-4" /> Sign Out</button>
@@ -208,10 +208,10 @@ export default function NavbarClient() {
                                             <MegaphoneIcon className="size-4" /> Announcements
                                         </Link>
                                         <NotificationsMenu variant="link" />
-                                        <Link href="/profile?tab=overview" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/profile' ? 'text-primary' : 'text-muted'}`}>
+                                        <Link href="/users/me?tab=overview" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/users/me' ? 'text-primary' : 'text-muted'}`}>
                                             <UserIcon className="size-4" /> Profile
                                         </Link>
-                                        <Link href="/profile?tab=settings" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/profile' ? 'text-primary' : 'text-muted'}`}>
+                                        <Link href="/users/me?tab=settings" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/users/me' ? 'text-primary' : 'text-muted'}`}>
                                             <SettingsIcon className="size-4" /> Settings
                                         </Link>
                                         <Link href="/request" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/request' ? 'text-primary' : 'text-muted'}`}>

@@ -4,19 +4,20 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from 'react';
 import Overview from '@/app/profile/components/Overview';
 import Settings from '@/app/profile/components/Settings';
-import ActivityLog from '@/app/profile/components/ActivityLog';
+import Activity from '@/app/profile/components/Activity';
 import { toast } from 'react-toastify';
 import { useUser } from "@/providers/UserProvider";
 import { updateUser } from "@/lib/auth";
 import { uploadProfilePicture, deleteProfilePicture } from "@/services/userService";
 import { getUserStats } from "@/services/mangaService";
 import type { UserKarma } from "@/types/stats";
+import ProfileShareCard from "@/app/profile/components/ProfileShareCard";
 
 
 const VIEWS: { [key: string]: React.FC<{ user: any; isOwner: boolean }> } = {
   overview: Overview,
   settings: Settings,
-  activity: ActivityLog,
+  activity: Activity,
 };
 
 const tabButtonClass = (active: boolean) =>
@@ -190,7 +191,7 @@ export default function ProfileContent() {
       toast.success("Email verified successfully!");
       const params = new URLSearchParams(searchParams.toString());
       params.delete("verified");
-      router.replace(`/profile?${params.toString()}`, { scroll: false });
+      router.replace(`/users/me?${params.toString()}`, { scroll: false });
     }
   }, [verified, searchParams, router]);
 
@@ -233,6 +234,12 @@ export default function ProfileContent() {
             <div className="bg-foreground rounded-md p-5 w-full mt-5">
               <LevelCard />
             </div>
+
+            {(user?.username || user?.id) && (
+              <div className="w-full mt-5">
+                <ProfileShareCard username={user.username || user.id} />
+              </div>
+            )}
 
           </div>
           <div className="flex flex-col space-y-2 w-full lg:w-2/3 lg:ml-5 mt-5 lg:mt-0">

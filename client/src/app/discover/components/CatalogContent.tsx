@@ -154,7 +154,7 @@ export default function CatalogContent({ initialFilters: _initialFilters }: Cata
           <div className="flex items-center gap-2 text-sm text-primary pt-2">
             <Shield className="size-4 shrink-0 text-accent" aria-hidden />
             <span>NSFW content is hidden.</span>
-            <Link href="/profile?tab=settings" className="font-medium text-accent hover:underline underline-offset-2">
+            <Link href="/users/me?tab=settings" className="font-medium text-accent hover:underline underline-offset-2">
               Change in Settings
             </Link>
           </div>

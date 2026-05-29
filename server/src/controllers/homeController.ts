@@ -374,6 +374,8 @@ export const getTopCommenters = async (req: Request, res: Response) => {
             const query = db.select({
                 id: schema.user.id,
                 name: schema.user.name,
+                username: schema.user.username,
+                displayUsername: schema.user.displayUsername,
                 image: schema.user.image,
                 role: schema.user.role,
                 totalComments: sql<number>`count(${schema.comments.id})`.mapWith(Number),

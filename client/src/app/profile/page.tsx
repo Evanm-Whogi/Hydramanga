@@ -1,19 +1,14 @@
-import type { Metadata } from "next";
-import ProfileContent from "./components/ProfileContent";
-export const dynamic = 'force-dynamic';
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: `Profile - ${process.env.NEXT_PUBLIC_NAME}`,
-  description: "View and manage your profile on " + process.env.NEXT_PUBLIC_NAME,
-  openGraph: {
-    title: `Profile - ${process.env.NEXT_PUBLIC_NAME}`,
-    description: "Manage your manga reading lists and preferences",
-    type: "website",
-  },
-};
+export const dynamic = "force-dynamic";
 
-export default async function ProfilePage() {
-  return (
-      <ProfileContent />
-  );
+export default async function ProfilePage({searchParams}: {searchParams: Promise<Record<string, string | string[] | undefined>>}) {
+  const sp = await searchParams;
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(sp)) {
+    if (Array.isArray(value)) value.forEach((v) => qs.append(key, v));
+    else if (value !== undefined) qs.set(key, value);
+  }
+  const query = qs.toString();
+  redirect(`/users/me${query ? `?${query}` : ""}`);
 }

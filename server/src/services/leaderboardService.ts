@@ -41,6 +41,8 @@ class LeaderboardService {
         .select({
           id: schema.user.id,
           name: schema.user.name,
+          username: schema.user.username,
+          displayUsername: schema.user.displayUsername,
           image: schema.user.image,
           role: schema.user.role,
           commentCount: sql<number>`count(${schema.comments.id})`.mapWith(Number),
@@ -67,6 +69,8 @@ class LeaderboardService {
         .select({
           id: schema.user.id,
           name: schema.user.name,
+          username: schema.user.username,
+          displayUsername: schema.user.displayUsername,
           image: schema.user.image,
           role: schema.user.role,
           seriesRead: sql<number>`count(distinct ${schema.userReadingProgress.seriesId})`.mapWith(Number),
@@ -115,6 +119,8 @@ class LeaderboardService {
         .select({
           id: schema.user.id,
           name: schema.user.name,
+          username: schema.user.username,
+          displayUsername: schema.user.displayUsername,
           image: schema.user.image,
           role: schema.user.role,
         })
@@ -130,6 +136,8 @@ class LeaderboardService {
           rank: index + 1,
           id: entry.id,
           name: user?.name ?? 'Unknown',
+          username: user?.username,
+          displayUsername: user?.displayUsername,
           image: user?.image,
           role: user?.role,
           longestStreak: entry.longestStreak,

@@ -13,6 +13,8 @@ export interface ChatSocketEvent {
 export type ChatPresenceUser = {
   id: string;
   name: string;
+  username?: string | null;
+  displayUsername?: string | null;
   image: string | null;
   role: string;
 };
@@ -46,6 +48,8 @@ export function useChatSocket(onEvent: (event: ChatSocketEvent) => void, enabled
       socket.emit("join", {
         id: user.id,
         name: user.name ?? "User",
+        username: user.username ?? null,
+        displayUsername: (user as { displayUsername?: string }).displayUsername ?? null,
         image: user.image ?? null,
         role: user.role ?? "user",
       });

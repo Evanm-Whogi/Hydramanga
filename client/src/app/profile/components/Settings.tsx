@@ -1,20 +1,19 @@
 'use client';
 import InputField from "@/components/InputField";
 import { useEffect, useState } from "react";
-import { updateUser, changeEmail, changePassword, sendVerificationEmail, signOut, useSession, listSessions, revokeSession } from "@/lib/auth";
+import { updateUser, changeEmail, changePassword, sendVerificationEmail, signOut } from "@/lib/auth";
 import { getSettings, updateSettings } from "@/services/userService";
 import { toast } from "react-toastify";
 import { useRouter } from "next/navigation";
 import { getUserDisplayName } from "@/lib/userDisplay";
+import DataExportSection from "@/app/profile/components/DataExportSection";
 
 export default function Settings({ user }: { user: any }) {
   const router = useRouter();
-  const { data: activeSession } = useSession();
   const [username, setUsername] = useState(user.username ?? user.name ?? "");
   const [email, setEmail] = useState(user.email ?? "");
     const [oldPassword, setOldPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
-    const [sessions, setSessions] = useState<any[]>([]);
     const [hideNsfw, setHideNsfw] = useState(false);
     const [isProfilePublic, setIsProfilePublic] = useState(true);
     const [incognitoMode, setIncognitoMode] = useState(false);
@@ -86,24 +85,6 @@ export default function Settings({ user }: { user: any }) {
         }
     };
 
-  const fetchSessions = async () => {
-    const { data } = await listSessions();
-    if (data) setSessions(data);
-  };
-
-  useEffect(() => {
-    fetchSessions();
-  }, []);
-  const handleRevokeSession = async (token: string) => {
-    try {
-      const { error } = await revokeSession({ token });
-      if (error) throw new Error(error.message);
-      toast.success("Session revoked");
-      fetchSessions();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to revoke session");
-    }
-  };
   const handleUpdateInfo = async () => {
     try {
       const usernameChanged = username !== (user.username ?? user.name ?? "");
@@ -130,7 +111,7 @@ export default function Settings({ user }: { user: any }) {
     try {
       const { error } = await sendVerificationEmail({
         email,
-        callbackURL: `${window.location.origin}/profile?verified=true`,
+        callbackURL: `${window.location.origin}/users/me?verified=true`,
       });
       if (error) throw new Error(error.message);
       toast.success("Verification email resent! Please check your inbox.");
@@ -163,11 +144,11 @@ export default function Settings({ user }: { user: any }) {
     };
 
     return (
-        <div className="flex flex-col">
+        <div className="flex flex-col mb-12">
             <div className="flex flex-col md:flex-row w-full gap-6">
                 <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md">
                     <h1 className="text-xl font-bold">Basic Info</h1>
-                    <p className="text-sm text-gray-400">Update your basic profile information such as username and email address.</p>
+                    <p className="text-sm text-muted">Update your basic profile information such as username and email address.</p>
                     <div className="flex flex-col pt-5 grow">
                         <div className="flex flex-col space-y-3 grow">
                             <InputField label="Username" placeholder={getUserDisplayName(user)} value={username} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUsername(e.target.value)} />
@@ -184,7 +165,7 @@ export default function Settings({ user }: { user: any }) {
                 </div>
                 <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md">
                     <h1 className="text-xl font-bold">Change Password</h1>
-                    <p className="text-sm text-gray-400">Update your account password to keep your account secure.</p>
+                    <p className="text-sm text-muted">Update your account password to keep your account secure.</p>
                     <div className="flex flex-col pt-5 grow">
                         <div className="flex flex-col space-y-3 grow">
                             <InputField label="Old Password" placeholder="******" value={oldPassword} onChange={(e: any) => setOldPassword(e.target.value)} type="password" />
@@ -200,10 +181,10 @@ export default function Settings({ user }: { user: any }) {
                 </div>
             </div>
 
-            <div className="flex flex-col md:flex-row w-full gap-6 mt-5">
-                <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md">
+            <div className="flex flex-col md:flex-row gap-6 mt-5 w-full">
+                <div className="flex flex-col p-5 bg-foreground w-full rounded-md">
                     <h1 className="text-xl font-bold">Content</h1>
-                    <p className="text-sm text-gray-400 mb-4">Control what content appears across the site (home, discover, etc.).</p>
+                    <p className="text-sm text-muted mb-4">Control what content appears across the site (home, discover, etc.).</p>
                     <div className="flex items-center justify-between gap-4">
                         <div>
                             <p className="font-medium text-primary">Hide NSFW content</p>
@@ -253,52 +234,22 @@ export default function Settings({ user }: { user: any }) {
                         </button>
                     </div>
                 </div>
-                <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md space-y-3">
-                    <h1 className="text-xl font-bold">Danger Zone</h1>
-                        <p className="text-sm text-muted mb-4">Be careful with these actions. They cannot be undone.</p>
-                        <div className="flex items-center justify-between gap-4">
-                            <button onClick={handleResendVerification} className="bg-background hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-full">
+            </div>
+            <div className="flex flex-row gap-6 w-full mt-5">
+                    <DataExportSection />
+                    <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md">
+                        <h1 className="text-xl font-bold">Danger Zone</h1>
+                        <p className="text-sm text-muted">Be careful with these actions. They cannot be undone.</p>
+                        <div className="flex flex-col gap-3 pt-5">
+                             <button onClick={handleResendVerification} className="bg-background hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-full">
                                 Resend Email Verification
                             </button>
                             <button className="bg-background hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-full text-red-500">
                                 Delete Account
                             </button>
                         </div>
+                    </div>
                 </div>
-            </div>
-
-            <div className="flex flex-col w-full my-5 bg-foreground p-5 rounded-md">
-                <h1 className="text-xl font-bold">Active Sessions</h1>
-                <p className="text-sm text-gray-400 mb-4">Manage and revoke your active sessions across different devices.</p>
-                
-                <div className="flex flex-col space-y-3">
-                    {sessions.map((session) => (
-                        <div key={session.id} className="flex items-center justify-between bg-background/50 p-4 rounded-lg border border-white/5">
-                            <div className="flex items-center gap-4">
-                                <div className="p-2 bg-background rounded-full">
-                                    {/* Simple logic to show a generic icon or text */}
-                                    <span className="text-xs uppercase font-bold">{session.userAgent?.includes("Windows") ? "Win" : "Mob"}</span>
-                                </div>
-                                <div className="flex flex-col">
-                                    <span className="font-medium">
-                                        {session.userAgent || "Unknown Device"}
-                                        {session.id === activeSession?.session.id && (
-                                            <span className="ml-2 text-xs bg-green-500/20 text-green-500 px-2 py-0.5 rounded-full">Current</span>
-                                        )}
-                                    </span>
-                                    <div className="text-xs text-gray-400">
-                                        IP: {session.ipAddress || "Unknown"} &#8226; Last active: {new Date(session.updatedAt).toLocaleDateString()}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {session.id !== activeSession?.session.id && (
-                                <button onClick={() => handleRevokeSession(session.token)} className="text-sm text-red-500 hover:text-red-400 font-medium">Revoke</button>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            </div>
         </div>
     );
 }

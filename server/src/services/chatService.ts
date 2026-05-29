@@ -48,7 +48,7 @@ class ChatService {
     const messages = await db.query.chatMessages.findMany({
       where: and(...conditions),
       with: {
-        author: { columns: { id: true, name: true, image: true, role: true } },
+        author: { columns: { id: true, name: true, image: true, role: true, username: true, displayUsername: true } },
       },
       orderBy: [desc(schema.chatMessages.createdAt)],
       limit,
@@ -73,6 +73,8 @@ class ChatService {
       .select({
         id: schema.user.id,
         name: schema.user.name,
+        username: schema.user.username,
+        displayUsername: schema.user.displayUsername,
         image: schema.user.image,
         role: schema.user.role,
       })
@@ -138,6 +140,8 @@ class ChatService {
       .select({
         id: schema.user.id,
         name: schema.user.name,
+        username: schema.user.username,
+        displayUsername: schema.user.displayUsername,
         image: schema.user.image,
         role: schema.user.role,
       })

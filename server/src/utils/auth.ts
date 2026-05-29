@@ -138,7 +138,7 @@ export const auth = betterAuth({
             await emailService.sendEmail(user.email, "verifyEmail", "Verify your email address", { 
                 username: (user as { username?: string }).username || user.name,
                 verificationLink: url,
-                customUrl: `${PUBLIC_APP_URL}/api/auth/verify-email?token=${token}&callbackURL=${encodeURIComponent(`${PUBLIC_APP_URL}/profile?verified=true`)}`
+                customUrl: `${PUBLIC_APP_URL}/api/auth/verify-email?token=${token}&callbackURL=${encodeURIComponent(`${PUBLIC_APP_URL}/users/me?verified=true`)}`
             });
         }
     },

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   description: "View user profile",
 };
 
-export default async function UserProfilePage({ params }: { params: Promise<{ userId: string }> }) {
-  const { userId } = await params;
-  return <UserProfileClient userId={userId} />;
+export default async function UserProfilePage({ params }: { params: Promise<{ username: string }> }) {
+  const { username } = await params;
+  return <UserProfileClient identifier={decodeURIComponent(username)} />;
 }

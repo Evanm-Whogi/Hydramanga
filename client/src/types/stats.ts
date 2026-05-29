@@ -34,6 +34,7 @@ export interface UserStats {
   totalPagesRead: number;
   readingTimes: MangaReadingTime[];
   seriesSaved: number;
+  comments: number;
   streak: number;
   currentStreak?: number;
   karma: UserKarma;

@@ -24,12 +24,12 @@ export async function fetchComments(req: Request, res: Response, next: NextFunct
             ),
             with: {
                 author: {
-                    columns: { name: true, image: true, id: true, role: true }
+                    columns: { name: true, image: true, id: true, role: true, username: true, displayUsername: true }
                 },
                 votes: true,
                 replies: {
                     with: {
-                        author: { columns: { name: true, image: true, id: true, role: true } },
+                        author: { columns: { name: true, image: true, id: true, role: true, username: true, displayUsername: true } },
                         votes: true,
                     },
                     orderBy: (comments, { asc }) => [asc(comments.createdAt)],

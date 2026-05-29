@@ -1,14 +1,24 @@
 import { db, schema } from '@/db/index';
-import { eq } from 'drizzle-orm';
+import { eq, or } from 'drizzle-orm';
 import { userProgressService } from '@/services/userProgressService';
 import { getUserSettings } from '@/services/userSettingsService';
 
 class ProfileService {
-  async getPublicProfile(targetUserId: string, viewerUserId: string) {
+  /**
+   * Resolve a profile by `username`, `id`, or the literal `"me"` (the viewer).
+   * Accepting the id keeps older id-based links working after the username migration.
+   */
+  async getPublicProfile(identifier: string, viewerUserId: string) {
+    const where =
+      identifier === 'me'
+        ? eq(schema.user.id, viewerUserId)
+        : or(eq(schema.user.username, identifier), eq(schema.user.id, identifier));
+
     const [userRow] = await db
       .select({
         id: schema.user.id,
         name: schema.user.name,
+        username: schema.user.username,
         image: schema.user.image,
         bio: schema.user.bio,
         role: schema.user.role,
@@ -16,11 +26,12 @@ class ProfileService {
         karmaTotal: schema.user.karmaTotal,
       })
       .from(schema.user)
-      .where(eq(schema.user.id, targetUserId))
+      .where(where)
       .limit(1);
 
     if (!userRow) return null;
 
+    const targetUserId = userRow.id;
     const isOwner = targetUserId === viewerUserId;
     const settings = await getUserSettings(targetUserId);
 

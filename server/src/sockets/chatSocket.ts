@@ -7,18 +7,22 @@ import { CHAT_CHANNEL, CHAT_ROOM } from '@/services/chatService';
 export type ChatPresenceUser = {
   id: string;
   name: string;
+  username?: string | null;
+  displayUsername?: string | null;
   image: string | null;
   role: string;
 };
 
-type PresenceEntry = ChatPresenceUser & { connections: number };
+type PresenceEntry = ChatPresenceUser & { connections: number; username?: string | null; displayUsername?: string | null };
 
 const presenceByUserId = new Map<string, PresenceEntry>();
 
 function getPresenceList(): ChatPresenceUser[] {
-  return Array.from(presenceByUserId.values()).map(({ id, name, image, role }) => ({
+  return Array.from(presenceByUserId.values()).map(({ id, name, username, displayUsername, image, role }) => ({
     id,
     name,
+    username,
+    displayUsername,
     image,
     role,
   }));
@@ -36,6 +40,8 @@ function addPresence(user: ChatPresenceUser) {
   if (existing) {
     existing.connections += 1;
     existing.name = user.name;
+    existing.username = user.username;
+    existing.displayUsername = user.displayUsername;
     existing.image = user.image;
     existing.role = user.role;
   } else {
@@ -91,6 +97,8 @@ export function setupChatSocket(io: Server) {
       addPresence({
         id: user.id,
         name: user.name,
+        username: user.username ?? null,
+        displayUsername: user.displayUsername ?? null,
         image: user.image ?? null,
         role: user.role ?? 'user',
       });

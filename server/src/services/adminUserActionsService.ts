@@ -49,7 +49,7 @@ class AdminUserActionsService {
     await auth.api.sendVerificationEmail({
       body: {
         email: info.email,
-        callbackURL: `${PUBLIC_APP_URL}/profile?verified=true`,
+        callbackURL: `${PUBLIC_APP_URL}/users/me?verified=true`,
       },
     });
 

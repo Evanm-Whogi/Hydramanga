@@ -5,7 +5,9 @@ import Link from "next/link";
 import { getPublicProfile, type PublicProfile } from "@/services/profileService";
 import { useUser } from "@/providers/UserProvider";
 import Overview from "@/app/profile/components/Overview";
+import ProfileContent from "@/app/profile/components/ProfileContent";
 import type { UserKarma } from "@/types/stats";
+import { redirect } from "next/navigation";
 
 function KarmaCard({ karma }: { karma: UserKarma }) {
   const isMax = karma.karmaForNextLevel === 0 || karma.karmaToNextLevel === 0;
@@ -31,17 +33,16 @@ function KarmaCard({ karma }: { karma: UserKarma }) {
   );
 }
 
-export default function UserProfileClient({ userId }: { userId: string }) {
-  const { user: sessionUser } = useUser();
+function PublicProfileView({ identifier }: { identifier: string }) {
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getPublicProfile(userId)
+    getPublicProfile(identifier)
       .then((d) => setProfile(d.profile))
       .catch(() => setProfile(null))
       .finally(() => setLoading(false));
-  }, [userId]);
+  }, [identifier]);
 
   if (loading) {
     return (
@@ -52,11 +53,8 @@ export default function UserProfileClient({ userId }: { userId: string }) {
   }
 
   if (!profile) {
-    return (
-      <div className="container mx-auto py-20 text-center text-muted">
-        User not found.
-      </div>
-    );
+    redirect("/not-found");
+    return null;
   }
 
   if (profile.isPrivate) {
@@ -65,16 +63,14 @@ export default function UserProfileClient({ userId }: { userId: string }) {
         <img src={profile.image || "/default-avatar.jpg"} alt="" className="w-24 h-24 rounded-full mx-auto mb-4" />
         <h1 className="text-2xl font-bold text-primary">{profile.name}</h1>
         <p className="text-muted mt-2">This profile is private.</p>
-        {sessionUser?.id === userId && (
-          <Link href="/profile?tab=settings" className="text-accent mt-4 inline-block hover:underline">
+        {profile.isOwner && (
+          <Link href="/users/me?tab=settings" className="text-accent mt-4 inline-block hover:underline">
             Change visibility in settings
           </Link>
         )}
       </div>
     );
   }
-
-  const isOwner = profile.isOwner ?? sessionUser?.id === userId;
 
   return (
     <>
@@ -113,8 +109,8 @@ export default function UserProfileClient({ userId }: { userId: string }) {
             )}
           </div>
           <div className="flex flex-col w-full lg:w-2/3 lg:ml-5 mt-5 lg:mt-0 space-y-4">
-            {isOwner && (
-              <Link href="/profile" className="text-accent text-sm hover:underline">
+            {profile.isOwner && (
+              <Link href="/users/me" className="text-accent text-sm hover:underline">
                 Edit your profile →
               </Link>
             )}
@@ -126,4 +122,25 @@ export default function UserProfileClient({ userId }: { userId: string }) {
       </div>
     </>
   );
+}
+
+export default function UserProfileClient({ identifier }: { identifier: string }) {
+  const { user: sessionUser } = useUser();
+
+  const handle = sessionUser as
+    | { id: string; username?: string | null; displayUsername?: string | null }
+    | null;
+
+  const isSelf =
+    identifier === "me" ||
+    (!!handle &&
+      (identifier === handle.id ||
+        identifier === handle.username ||
+        identifier === handle.displayUsername));
+
+  if (isSelf) {
+    return <ProfileContent />;
+  }
+
+  return <PublicProfileView identifier={identifier} />;
 }
