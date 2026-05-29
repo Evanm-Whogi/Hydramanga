@@ -1,5 +1,6 @@
 import { db, schema } from '@/db/index';
 import { eq } from 'drizzle-orm';
+import { CONTENT_LIMITS } from '@/lib/securityLimits';
 
 export const DATA_EXPORT_VERSION = 1;
 
@@ -90,6 +91,21 @@ class DataExportService {
       totalPagesRead?: number;
     }[];
   }) {
+    if ((payload.bookmarks?.length ?? 0) > CONTENT_LIMITS.importMaxBookmarks) {
+      throw new Error('Too many bookmarks in import');
+    }
+    if ((payload.lists?.length ?? 0) > CONTENT_LIMITS.importMaxLists) {
+      throw new Error('Too many lists in import');
+    }
+    if ((payload.readingProgress?.length ?? 0) > CONTENT_LIMITS.importMaxProgressRows) {
+      throw new Error('Too much reading progress in import');
+    }
+    for (const list of payload.lists ?? []) {
+      if ((list.items?.length ?? 0) > CONTENT_LIMITS.importMaxListItemsPerList) {
+        throw new Error('Too many items in a list');
+      }
+    }
+
     if (payload.bookmarks?.length) {
       for (const b of payload.bookmarks) {
         if (!b.chapterId) continue;

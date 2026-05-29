@@ -227,12 +227,19 @@ export const auth = betterAuth({
                         user.id
                     );
 
-                    const result = await db
-                        .select({ count: sql<number>`count(*)` })
-                        .from(schema.user);
-                    const userCount = Number(result[0]?.count ?? 0);
+                    const bootstrapEmails = (process.env.BOOTSTRAP_ADMIN_EMAILS ?? '')
+                        .split(',')
+                        .map((e) => e.trim().toLowerCase())
+                        .filter(Boolean);
+                    const userEmail =
+                        typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
 
-                    if (userCount === 1 && user.role !== 'admin') {
+                    if (
+                        bootstrapEmails.length > 0 &&
+                        userEmail &&
+                        bootstrapEmails.includes(userEmail) &&
+                        user.role !== 'admin'
+                    ) {
                         await db
                             .update(schema.user)
                             .set({ role: 'admin' })

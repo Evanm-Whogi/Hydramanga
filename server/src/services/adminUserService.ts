@@ -2,6 +2,7 @@ import { db, schema } from '@/db/index';
 import { eq, or, ilike, desc, asc, count, and, ne, SQL, gt, lt, isNull, isNotNull } from 'drizzle-orm';
 import { userProgressService } from '@/services/userProgressService';
 import { isUserBanned } from '@/lib/banHelpers';
+import { isAllowedProfileImageUrl } from '@/lib/profileImagePath';
 
 const VALID_ROLES = ['user', 'admin'] as const;
 type UserRole = (typeof VALID_ROLES)[number];
@@ -277,7 +278,7 @@ class AdminUserService {
 
     if (updates.image !== undefined) {
       const image = updates.image?.trim() || null;
-      if (image && image.length > 500) {
+      if (image && !isAllowedProfileImageUrl(image, userId)) {
         return { error: 'invalid_image' as const };
       }
       patch.image = image ?? '/default-avatar.jpg';

@@ -47,8 +47,11 @@ class ProfileService {
 
     const stats = await userProgressService.getUserStats(targetUserId);
 
+    const { role, ...publicFields } = userRow;
+
     return {
-      ...userRow,
+      ...publicFields,
+      ...(isOwner ? { role } : {}),
       isPrivate: false,
       isOwner,
       isProfilePublic: settings.isProfilePublic,

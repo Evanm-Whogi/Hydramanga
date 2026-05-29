@@ -70,6 +70,7 @@ export function useWebSocketProgress(
       reconnectionDelayMax: 5000,
       reconnectionAttempts: Infinity,
       transports: ['websocket', 'polling'],
+      withCredentials: true,
     });
 
     socketRef.current = socket;

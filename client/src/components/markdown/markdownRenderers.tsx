@@ -17,13 +17,29 @@ const baseRehypePlugins: Pluggable[] = [
   [rehypeSanitize, markdownSanitizeSchema],
 ];
 
+function safeExternalLink(href: string | undefined): string | undefined {
+  if (!href) return undefined;
+  if (href.startsWith('https://') || href.startsWith('http://') || href.startsWith('/')) {
+    return href;
+  }
+  return undefined;
+}
+
 /** Block markdown (paragraphs, lists, etc.). */
 export const blockMarkdownComponents: Components = {
-  a: ({ href, children, ...props }) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
+  a: ({ href, children, ...props }) => {
+    const safeHref = safeExternalLink(href);
+    return (
+      <a
+        href={safeHref}
+        rel="noopener noreferrer"
+        target={safeHref?.startsWith('http') ? '_blank' : undefined}
+        {...props}
+      >
+        {children}
+      </a>
+    );
+  },
 };
 
 /** Inline-only: unwrap <p> and other block wrappers so content can live inside <p>. */
@@ -36,11 +52,20 @@ export const inlineMarkdownComponents: Components = {
   ul: ({ children }) => <span className="inline">{children}</span>,
   ol: ({ children }) => <span className="inline">{children}</span>,
   li: ({ children }) => <span className="inline"> {children}</span>,
-  a: ({ href, children, ...props }) => (
-    <a href={href} className="text-accent hover:underline" {...props}>
-      {children}
-    </a>
-  ),
+  a: ({ href, children, ...props }) => {
+    const safeHref = safeExternalLink(href);
+    return (
+      <a
+        href={safeHref}
+        className="text-accent hover:underline"
+        rel="noopener noreferrer"
+        target={safeHref?.startsWith('http') ? '_blank' : undefined}
+        {...props}
+      >
+        {children}
+      </a>
+    );
+  },
 };
 
 export function BlockMarkdown({ content }: { content: string }) {

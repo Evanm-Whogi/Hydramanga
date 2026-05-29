@@ -6,6 +6,7 @@ import { isAdminRole } from '@/lib/authHelpers';
 import { discordService } from '@/services/discordService';
 import { recordAuditFromRequest } from '@/audit/record';
 import { boardPostHref, contentAuditMeta } from '@/audit/metadataHelpers';
+import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
 
 export async function listBoardPosts(req: Request, res: Response, next: NextFunction) {
   try {
@@ -33,6 +34,12 @@ export async function createBoardPost(req: Request, res: Response, next: NextFun
     const { title, content } = req.body;
     if (!title?.trim() || !content?.trim()) {
       return res.status(400).json({ message: 'Title and content are required' });
+    }
+    if (exceedsLimit(title, CONTENT_LIMITS.boardTitle)) {
+      return res.status(400).json({ message: `Title must be at most ${CONTENT_LIMITS.boardTitle} characters` });
+    }
+    if (exceedsLimit(content, CONTENT_LIMITS.boardPost)) {
+      return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.boardPost} characters` });
     }
     const post = await boardService.createPost(req.user.id, title, content);
 
@@ -64,6 +71,9 @@ export async function createBoardReply(req: Request, res: Response, next: NextFu
     const postId = parseInt(req.params.postId, 10);
     const { content, parentId } = req.body;
     if (!content?.trim()) return res.status(400).json({ message: 'Content is required' });
+    if (exceedsLimit(content, CONTENT_LIMITS.boardReply)) {
+      return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.boardReply} characters` });
+    }
     const reply = await boardService.createReply(
       req.user.id,
       postId,

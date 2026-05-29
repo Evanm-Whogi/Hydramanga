@@ -1,6 +1,7 @@
 import express, { Express } from 'express';
 import 'tsconfig-paths/register';
 import cors from 'cors';
+import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { toNodeHandler } from "better-auth/node";
@@ -43,6 +44,12 @@ app.use(morgan(':method :url :status :response-time ms - :res[content-length] \n
 }));
 const corsOrigins = ['https://manga.chit.sh', process.env.PUBLIC_APP_URL].filter(Boolean) as string[];
 app.use(cors({ origin: corsOrigins, credentials: true }));
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: false,
+  })
+);
 app.set('trust proxy', 1);
 
 // Auth Routes (tracking for IP/UA on auth events)
@@ -52,7 +59,7 @@ app.use(['/auth/sign-in', '/auth/sign-up', '/auth/forget-password', '/auth/reset
 app.all("/auth/{*any}", auditAuthHandler(toNodeHandler(auth)));
 
 // Middlewares
-app.use(express.json());
+app.use(express.json({ limit: '256kb' }));
 app.use(isMaintenance);
 
 // Enable rate limiting only in production [Disabled]

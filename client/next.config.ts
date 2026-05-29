@@ -4,16 +4,24 @@ const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || 'http://localho
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['mangadev.chit.sh'],
-  async rewrites() {
+  async headers() {
     return [
       {
-        source: '/api/_analytics/static/:path*',
-        destination: 'https://us-assets.i.posthog.com/static/:path*',
+        source: '/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=()',
+          },
+        ],
       },
-      {
-        source: '/api/_analytics/:path*',
-        destination: 'https://us.i.posthog.com/:path*',
-      },
+    ];
+  },
+  async rewrites() {
+    return [
       // OAuth provider redirects land here; proxy to Better Auth on the backend
       {
         source: '/auth/callback/:path*',

@@ -6,6 +6,8 @@ import fs from 'fs-extra';
 import path from 'path';
 import logger from '@/services/loggerService';
 import { recordAuditFromRequest } from '@/audit/record';
+import { resolveSafeProfileImagePath } from '@/lib/profileImagePath';
+import { fileMatchesAllowedImageSignature } from '@/lib/imageMagicBytes';
 
 export const uploadProfilePicture = async (req: Request, res: Response) => {
   try {
@@ -14,8 +16,13 @@ export const uploadProfilePicture = async (req: Request, res: Response) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     
 
-    // Convert uploaded image to webp
     const originalPath = req.file.path;
+    if (!(await fileMatchesAllowedImageSignature(originalPath))) {
+      await fs.remove(originalPath).catch(() => {});
+      return res.status(400).json({ error: 'Invalid image file' });
+    }
+
+    // Convert uploaded image to webp
     const userDir = path.dirname(originalPath);
     const webpFilename = path.basename(req.file.filename, path.extname(req.file.filename)) + '.webp';
     const webpPath = path.join(userDir, webpFilename);
@@ -44,15 +51,15 @@ export const uploadProfilePicture = async (req: Request, res: Response) => {
       .where(eq(schema.user.id, userId))
       .limit(1);
 
-    if (userData.length > 0 && userData[0].image && !userData[0].image.startsWith('/default')) {
-      // Translate /media/pfp/ to actual filepath
-      const fileRelPath = userData[0].image.replace(/^\/media\/pfp\//, 'data/profile-pictures/');
-      const oldImagePath = path.join(process.cwd(), '..', fileRelPath);
-      try {
-        await fs.remove(oldImagePath);
-        logger.info(`Deleted old profile picture: ${oldImagePath}`);
-      } catch (err) {
-        logger.warn(`Failed to delete old profile picture: ${err}`);
+    if (userData.length > 0 && userData[0].image) {
+      const oldImagePath = resolveSafeProfileImagePath(userData[0].image, userId);
+      if (oldImagePath) {
+        try {
+          await fs.remove(oldImagePath);
+          logger.info(`Deleted old profile picture: ${oldImagePath}`);
+        } catch (err) {
+          logger.warn(`Failed to delete old profile picture: ${err}`);
+        }
       }
     }
 
@@ -77,7 +84,11 @@ export const uploadProfilePicture = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     logger.error(`Error uploading profile picture: ${error.message}`);
-    return res.status(500).json({ error: error.message || 'Failed to upload profile picture' });
+    const message =
+      process.env.NODE_ENV === 'production'
+        ? 'Failed to upload profile picture'
+        : error.message || 'Failed to upload profile picture';
+    return res.status(500).json({ error: message });
   }
 };
 
@@ -98,10 +109,8 @@ export const deleteProfilePicture = async (req: Request, res: Response) => {
     const currentImage = userData[0].image;
 
     // Only delete if not the default image
-    if (currentImage && !currentImage.startsWith('/default')) {
-      // Translate /media/pfp/ to actual filepath
-      const fileRelPath = currentImage.replace(/^\/media\/pfp\//, 'data/profile-pictures/');
-      const imagePath = path.join(process.cwd(), '..', fileRelPath);
+    const imagePath = resolveSafeProfileImagePath(currentImage, userId);
+    if (imagePath) {
       try {
         await fs.remove(imagePath);
         logger.info(`Deleted profile picture: ${imagePath}`);
@@ -132,6 +141,10 @@ export const deleteProfilePicture = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     logger.error(`Error deleting profile picture: ${error.message}`);
-    return res.status(500).json({ error: error.message || 'Failed to delete profile picture' });
+    const message =
+      process.env.NODE_ENV === 'production'
+        ? 'Failed to delete profile picture'
+        : error.message || 'Failed to delete profile picture';
+    return res.status(500).json({ error: message });
   }
 };

@@ -29,6 +29,9 @@ export async function submitContact(req: Request, res: Response, next: NextFunct
 
     if (!name || !email || !subject || !message) return res.status(400).json({ message: 'All fields are required.' });
     if (!isValidEmail(email)) return res.status(400).json({ message: 'Please provide a valid email address.' });
+    if (String(name).length > 200 || String(subject).length > 300) {
+      return res.status(400).json({ message: 'Name or subject is too long.' });
+    }
     if (String(message).length > 5000)  return res.status(400).json({ message: 'Message is too long.' });
     
     const recipient = getContactRecipient();

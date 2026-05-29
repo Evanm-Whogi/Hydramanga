@@ -6,6 +6,7 @@ import { enrichAuthors } from '@/lib/enrichAuthors';
 import { isAdminRole } from '@/lib/authHelpers';
 import { recordAuditFromRequest } from '@/audit/record';
 import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
+import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
 
 export async function fetchReviews(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const seriesId = parseInt(req.query.seriesId as string, 10);
@@ -39,6 +40,9 @@ export async function createReview(req: Request, res: Response, next: NextFuncti
     const userId = req.user.id;
 
     if (!content?.trim()) return res.status(400).json({ message: 'Content is required' });
+    if (exceedsLimit(content, CONTENT_LIMITS.review)) {
+        return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.review} characters` });
+    }
     if (!seriesId)        return res.status(400).json({ message: 'seriesId is required' });
     const ratingNum = parseInt(rating, 10);
     if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 10)
@@ -93,6 +97,9 @@ export async function updateReview(req: Request, res: Response, next: NextFuncti
     const ratingNum = parseInt(rating, 10);
     if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 10)
         return res.status(400).json({ message: 'Rating must be a number between 1 and 10' });
+    if (content != null && exceedsLimit(content, CONTENT_LIMITS.review)) {
+        return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.review} characters` });
+    }
 
     try {
         const existing = await db.query.reviews.findFirst({

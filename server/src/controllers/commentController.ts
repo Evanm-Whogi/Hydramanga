@@ -9,6 +9,7 @@ import { discordService } from '@/services/discordService';
 import { notificationService } from '@/services/notificationService';
 import { recordAuditFromRequest } from '@/audit/record';
 import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
+import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
 dotenv.config();
 
 // Fetch top-level comments with replies and votes for a manga series
@@ -51,6 +52,9 @@ export async function createComment(req: Request, res: Response, next: NextFunct
     const userId = req.user.id;
 
     if (!content?.trim()) return res.status(400).json({ message: 'Content is required' });
+    if (exceedsLimit(content, CONTENT_LIMITS.comment)) {
+        return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.comment} characters` });
+    }
     if (!seriesId)        return res.status(400).json({ message: 'seriesId is required' });
 
     try {
@@ -208,6 +212,9 @@ export async function updateComment(req: Request, res: Response, next: NextFunct
     const userId = req.user.id;
 
     if (!content?.trim()) return res.status(400).json({ message: 'Content is required' });
+    if (exceedsLimit(content, CONTENT_LIMITS.comment)) {
+        return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.comment} characters` });
+    }
 
     try {
         const comment = await db.query.comments.findFirst({

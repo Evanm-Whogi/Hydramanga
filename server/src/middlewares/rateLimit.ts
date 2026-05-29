@@ -26,3 +26,16 @@ export const authRateLimiter = rateLimit({
         res.status(429).json({ message: 'Too many attempts. Please try again later.' });
     },
 });
+
+/** Public contact / DMCA / manga-report forms (spam protection). */
+export const publicFormRateLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    statusCode: 429,
+    handler: (req: any, res: any) => {
+        logger.warn(`Public form rate limit for IP: ${req.ip} path=${req.originalUrl}`);
+        res.status(429).json({ message: 'Too many submissions. Please try again later.' });
+    },
+});

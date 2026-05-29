@@ -1,5 +1,8 @@
 import Redis from 'ioredis';
 import { Server, Socket } from 'socket.io';
+import { fromNodeHeaders } from 'better-auth/node';
+import { auth } from '@/utils/auth';
+import { isUserBanned } from '@/lib/banHelpers';
 import { mangaProgressService, MangaProgress } from '@/services/mangaProgressService';
 import logger from '@/services/loggerService';
 import { setIOInstance } from '@/sockets/socketManager';
@@ -68,6 +71,33 @@ export function setupProgressSocket(io: Server) {
   startProgressRedisSubscriber(io);
 
   const progressNamespace = io.of('/progress');
+
+  progressNamespace.use(async (socket: Socket, next: (err?: Error) => void) => {
+    try {
+      const session = await auth.api.getSession({
+        headers: fromNodeHeaders(socket.handshake.headers),
+      });
+
+      if (!session?.user) {
+        return next(new Error('Unauthorized'));
+      }
+
+      const sessionUser = session.user as {
+        banned?: boolean | null;
+        banReason?: string | null;
+        banExpires?: Date | string | null;
+      };
+
+      if (isUserBanned(sessionUser)) {
+        return next(new Error('Forbidden'));
+      }
+
+      next();
+    } catch (err) {
+      logger.error(`Progress socket auth error: ${err}`, { service: 'progressSocket' });
+      next(new Error('Unauthorized'));
+    }
+  });
 
   progressNamespace.on('connection', (socket: Socket) => {
     logger.info(`WebSocket client connected: ${socket.id}`, { service: 'progressSocket' });
