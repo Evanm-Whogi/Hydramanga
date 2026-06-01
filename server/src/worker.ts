@@ -19,6 +19,7 @@ async function main() {
     queueService.getQueue('mangaImportQueue');
     queueService.getQueue('mangaChapterImportQueue');
     queueService.getQueue('mangaChapterDownloadQueue');
+    queueService.getQueue('storageCleanupQueue');
     queueService.getQueue('emailQueue');
 
     initializeScrapers();

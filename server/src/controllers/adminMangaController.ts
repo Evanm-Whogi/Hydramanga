@@ -1,14 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { db } from '@/db';
 import { series, chapters, mangaImportProgress } from '@/db/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, and, count } from 'drizzle-orm';
 import { scraperManager } from '@/scrapers';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import logger from '@/services/loggerService';
-import { appConfig } from '@/config/appConfig';
-import path from 'path';
-import fs from 'fs-extra';
+import { queueService } from '@/services/queueService';
+import { cacheService } from '@/services/cacheService';
 
 function extractSecondaryTitleStrings(secondaryTitles: unknown): string[] {
     if (!secondaryTitles) return [];
@@ -272,56 +271,81 @@ export async function adminCancelScan(req: Request, res: Response, next: NextFun
     }
 }
 
-/** Admin: delete chapters by IDs. Requires confirmation via body.confirm. Deletes DB rows and storage files. */
+/** Admin: delete chapters by IDs or all chapters (deleteAll). Requires body.confirm. Deletes DB rows and enqueues storage cleanup. */
 export async function adminDeleteChapters(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
         const id = parseInt(req.params.id, 10);
         if (isNaN(id) || id <= 0) return res.status(400).json({ error: 'Invalid manga ID' });
 
-        const { chapterIds, confirm } = req.body || {};
-        if (!Array.isArray(chapterIds) || chapterIds.length === 0) {
-            return res.status(400).json({ error: 'chapterIds array is required' });
-        }
+        const { chapterIds, confirm, deleteAll } = req.body || {};
         if (confirm !== true) {
             return res.status(400).json({ error: 'confirm: true is required to delete chapters' });
         }
 
-        const validIds = chapterIds.map((x: unknown) => parseInt(String(x), 10)).filter((n: number) => !isNaN(n) && n > 0);
-        if (validIds.length === 0) return res.status(400).json({ error: 'No valid chapter IDs' });
+        let deletedCount = 0;
+        let storageCleanupQueued = false;
+        let cleanupPayload: { seriesId: number; prefixes: string[]; deleteSeriesFolder: boolean } | null = null;
 
-        const rows = await db
-            .select({ id: chapters.id, seriesId: chapters.seriesId, storagePrefix: chapters.storagePrefix })
-            .from(chapters)
-            .where(eq(chapters.seriesId, id));
-
-        const toDelete = rows.filter((r) => validIds.includes(r.id));
-        if (toDelete.length === 0) return res.status(404).json({ error: 'No matching chapters found for this series' });
-
-        const storageRoot = appConfig.scraper?.chapterStorageRoot;
-        const storageFailed: string[] = [];
-        if (storageRoot) {
-            for (const ch of toDelete) {
-                if (ch.storagePrefix) {
-                    const dir = path.join(storageRoot, ch.storagePrefix);
-                    try {
-                        await fs.remove(dir);
-                        logger.info(`Deleted chapter storage: ${dir}`, { service: 'adminMangaController' });
-                    } catch (err) {
-                        const msg = (err as Error).message;
-                        logger.warn(`Failed to delete chapter storage ${dir}: ${msg}`, { service: 'adminMangaController' });
-                        storageFailed.push(`${ch.storagePrefix}: ${msg}`);
-                    }
-                }
+        if (deleteAll === true) {
+            const existing = await db
+                .select({ id: chapters.id })
+                .from(chapters)
+                .where(eq(chapters.seriesId, id));
+            if (existing.length === 0) {
+                return res.status(404).json({ error: 'No chapters found for this series' });
             }
+
+            await db.delete(chapters).where(eq(chapters.seriesId, id));
+            deletedCount = existing.length;
+            cleanupPayload = { seriesId: id, prefixes: [], deleteSeriesFolder: true };
+        } else {
+            if (!Array.isArray(chapterIds) || chapterIds.length === 0) {
+                return res.status(400).json({ error: 'chapterIds array is required (or use deleteAll: true)' });
+            }
+
+            const validIds = chapterIds
+                .map((x: unknown) => parseInt(String(x), 10))
+                .filter((n: number) => !isNaN(n) && n > 0);
+            if (validIds.length === 0) return res.status(400).json({ error: 'No valid chapter IDs' });
+
+            const toDelete = await db
+                .select({ id: chapters.id, storagePrefix: chapters.storagePrefix })
+                .from(chapters)
+                .where(and(eq(chapters.seriesId, id), inArray(chapters.id, validIds)));
+
+            if (toDelete.length === 0) {
+                return res.status(404).json({ error: 'No matching chapters found for this series' });
+            }
+
+            const [{ total }] = await db
+                .select({ total: count() })
+                .from(chapters)
+                .where(eq(chapters.seriesId, id));
+            const deleteSeriesFolder = Number(total) === toDelete.length;
+
+            await db.delete(chapters).where(inArray(chapters.id, toDelete.map((c) => c.id)));
+            deletedCount = toDelete.length;
+            cleanupPayload = {
+                seriesId: id,
+                prefixes: toDelete.map((ch) => ch.storagePrefix),
+                deleteSeriesFolder,
+            };
         }
 
-        await db.delete(chapters).where(inArray(chapters.id, toDelete.map((c) => c.id)));
-        logger.info(`Deleted ${toDelete.length} chapters for series ${id}`, { service: 'adminMangaController' });
+        if (cleanupPayload) {
+            await queueService.addJob('storageCleanupQueue', 'cleanupChapterStorage', cleanupPayload);
+            storageCleanupQueued = true;
+        }
+
+        await cacheService.invalidatePattern(`manga:${id}:*`);
+        await cacheService.invalidatePattern(`series:${id}:*`);
+
+        logger.info(`Deleted ${deletedCount} chapters for series ${id}`, { service: 'adminMangaController' });
         return res.json({
             success: true,
             seriesId: id,
-            deletedCount: toDelete.length,
-            ...(storageFailed.length > 0 && { storageFailed, storageFailedCount: storageFailed.length }),
+            deletedCount,
+            storageCleanupQueued,
         });
     } catch (error) {
         logger.error(`Admin delete chapters failed: ${(error as Error).message}`, { service: 'adminMangaController' });

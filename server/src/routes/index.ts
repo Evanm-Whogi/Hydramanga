@@ -1,6 +1,7 @@
-import { Express } from 'express';
+import { Express, RequestHandler } from 'express';
 import { authMiddleware } from '@/middlewares/auth';
 import { trackingMiddleware } from '@/middlewares/tracking';
+import { getMangaAnalytics, getTrending } from '@/controllers/analyticsController';
 
 // Route modules
 import mangaRoutes from '@/routes/mangaRoutes';
@@ -34,7 +35,11 @@ module.exports = (app: Express) => {
     // List Management Routes
     app.use('/lists', authMiddleware, listRoutes);
 
-    // Analytics Routes
+    // Public read-only analytics (no auth — avoids session DB writes on manga page polls)
+    app.get('/analytics/trending', getTrending as RequestHandler);
+    app.get('/analytics/manga/:id', getMangaAnalytics as RequestHandler);
+
+    // Analytics Routes (authenticated)
     app.use('/analytics', authMiddleware, analyticsRoutes);
 
     // User Progress Routes (legacy, now under analytics)

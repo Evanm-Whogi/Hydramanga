@@ -7,6 +7,7 @@ import { EmailJobHandler } from './EmailJobHandler';
 import { MangaImportJobHandler } from './MangaImportJobHandler';
 import { MangaChapterImportJobHandler } from './MangaChapterImportJobHandler';
 import { MangaChapterDownloadJobHandler } from './MangaChapterDownloadJobHandler';
+import { ChapterStorageCleanupJobHandler } from './ChapterStorageCleanupJobHandler';
 import logger from '@/services/loggerService';
 
 export class JobHandlerRegistry {
@@ -18,6 +19,7 @@ export class JobHandlerRegistry {
     this.registerHandler(new MangaImportJobHandler());
     this.registerHandler(new MangaChapterImportJobHandler());
     this.registerHandler(new MangaChapterDownloadJobHandler());
+    this.registerHandler(new ChapterStorageCleanupJobHandler());
   }
 
   /**

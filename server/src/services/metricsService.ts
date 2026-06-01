@@ -24,6 +24,15 @@ interface ViewTrackingData {
   userId?: string;
 }
 
+export type SeriesChapterStatsRow = {
+  chapterId: number;
+  totalViews: number | null;
+  uniqueViews: number | null;
+  lastViewedAt: Date | null;
+  chapterNumber: string;
+  title: string | null;
+};
+
 class MetricsService {
   /**
    * Track a manga view (both unique and total)
@@ -350,8 +359,15 @@ class MetricsService {
    * Get all chapter stats for a manga series
    * @param seriesId - The manga series ID
    */
-  async getSeriesChapterStats(seriesId: number) {
+  async getSeriesChapterStats(seriesId: number): Promise<SeriesChapterStatsRow[]> {
     try {
+      const cacheKey = CACHE_KEYS.SERIES_CHAPTER_STATS(seriesId);
+      const cached = await cacheService.get<SeriesChapterStatsRow[]>(cacheKey);
+      if (cached) {
+        logger.debug(`Series chapter stats cache hit for ${seriesId}`, { service: 'metricsService' });
+        return cached;
+      }
+
       const chapterStats = await db
         .select({
           chapterId: schema.chapterViewStats.chapterId,
@@ -366,6 +382,7 @@ class MetricsService {
         .where(eq(schema.chapters.seriesId, seriesId))
         .orderBy(desc(schema.chapterViewStats.totalViews));
 
+      await cacheService.set(cacheKey, chapterStats, CACHE_TTL.STATS, ['series_stats']);
       return chapterStats;
     } catch (error) {
       logger.error(`Failed to get series chapter stats: ${error}`, { service: 'metricsService' });

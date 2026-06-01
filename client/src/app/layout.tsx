@@ -2,6 +2,7 @@ import { Bounce, ToastContainer, toast } from 'react-toastify';
 import type { Metadata } from "next";
 import "@/styles/globals.css";
 import { UserProvider } from '@/providers/UserProvider';
+import { NotificationsProvider } from '@/providers/NotificationsProvider';
 import { useSession } from '@/lib/useUser';
 import { cookies } from 'next/headers';
 
@@ -79,14 +80,16 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       </head>
       <body className="bg-background text-primary min-h-screen flex flex-col" suppressHydrationWarning={true}>
         <UserProvider initialSession={session}>
-          <ImpersonationBanner />
-          <BannedSessionGuard />
-          <Navbar />
-          <main className="flex-1">
-            {children}
-          </main>
-          <Footer />
-          <WelcomeModalGate />
+          <NotificationsProvider>
+            <ImpersonationBanner />
+            <BannedSessionGuard />
+            <Navbar />
+            <main className="flex-1">
+              {children}
+            </main>
+            <Footer />
+            <WelcomeModalGate />
+          </NotificationsProvider>
         </UserProvider>
         <ToastContainer
           position="bottom-right"

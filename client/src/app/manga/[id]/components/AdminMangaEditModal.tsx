@@ -198,17 +198,18 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
   };
 
   const handleDeleteChapters = async () => {
-    const ids = Array.from(deleteSelected);
-    if (ids.length === 0) return;
+    if (deleteSelected.size === 0) return;
+    const deleteAll = deleteSelected.size === chapters.length && chapters.length > 0;
     setDeleting(true);
     try {
-      const res = await adminDeleteChapters(mangaId, ids, true);
-      if (res.storageFailedCount && res.storageFailedCount > 0) {
-        toast.warning(
-          `Removed ${res.deletedCount} chapter(s) from database. ${res.storageFailedCount} storage folder(s) could not be deleted (check server permissions on data/manga).`
-        );
+      const res = await adminDeleteChapters(mangaId, {
+        confirm: true,
+        ...(deleteAll ? { deleteAll: true } : { chapterIds: Array.from(deleteSelected) }),
+      });
+      if (res.storageCleanupQueued) {
+        toast.success(`Deleted ${res.deletedCount} chapter(s). Storage cleanup is running in the background.`);
       } else {
-        toast.success(`Deleted ${ids.length} chapter(s).`);
+        toast.success(`Deleted ${res.deletedCount} chapter(s).`);
       }
       setDeleteSelected(new Set());
       setDeleteConfirmOpen(false);
@@ -720,7 +721,9 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
                   <div className="bg-background border border-borders rounded-lg p-4 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
                     <h4 className="font-semibold mb-2">Confirm delete</h4>
                     <p className="text-sm text-muted mb-4">
-                      Delete {deleteSelected.size} chapter(s)? This cannot be undone. Storage files will be removed.
+                      {deleteSelected.size === chapters.length && chapters.length > 0
+                        ? `Delete all ${chapters.length} chapters? The entire series storage folder will be removed. This cannot be undone.`
+                        : `Delete ${deleteSelected.size} chapter(s)? This cannot be undone. Storage files will be removed.`}
                     </p>
                     <div className="flex gap-2 justify-end">
                       <button

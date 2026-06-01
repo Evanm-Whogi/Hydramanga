@@ -55,6 +55,11 @@ export interface QueueConfig {
             duration: number;
         };
     };
+    storageCleanupQueue: {
+        concurrency: number;
+        timeout: number;
+        retries: number;
+    };
 }
 
 /**
@@ -281,6 +286,11 @@ export class AppConfigService {
                         max: parseEnvNumber('CHAPTER_DOWNLOAD_RATE_MAX', 3), // requests per duration window
                         duration: parseEnvNumber('CHAPTER_DOWNLOAD_RATE_DURATION', 1000), // ms
                     },
+                },
+                storageCleanupQueue: {
+                    concurrency: parseEnvNumber('STORAGE_CLEANUP_CONCURRENCY', 1),
+                    timeout: parseEnvNumber('STORAGE_CLEANUP_TIMEOUT', 30 * 60 * 1000),
+                    retries: parseEnvNumber('STORAGE_CLEANUP_RETRIES', 2),
                 },
             },
 

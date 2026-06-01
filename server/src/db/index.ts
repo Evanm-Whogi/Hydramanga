@@ -36,6 +36,9 @@ const originalQuery = Pool.prototype.query;
 // Initialize PG Pool
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  max: parseInt(process.env.DB_POOL_MAX || '20', 10),
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
 });
 
 // Initialize Drizzle with PG

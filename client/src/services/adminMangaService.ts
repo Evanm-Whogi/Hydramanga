@@ -53,7 +53,7 @@ export async function adminCancelScan(mangaId: number): Promise<{ success: boole
   return apiPost(`/admin/manga/${mangaId}/cancel-scan`);
 }
 
-/** Admin: delete chapters by IDs. Requires confirm: true. May return storageFailed if some dirs could not be removed. */
-export async function adminDeleteChapters(mangaId: number, chapterIds: number[], confirm: boolean): Promise<{success: boolean; seriesId: number; deletedCount: number; storageFailed?: string[]; storageFailedCount?: number;}> {
-  return apiDelete(`/admin/manga/${mangaId}/chapters`, { chapterIds, confirm });
+/** Admin: delete chapters by IDs or entire series chapter storage (deleteAll). Requires confirm: true. */
+export async function adminDeleteChapters(mangaId: number, options: { chapterIds?: number[]; deleteAll?: boolean; confirm: boolean }): Promise<{ success: boolean; seriesId: number; deletedCount: number; storageCleanupQueued?: boolean }> {
+  return apiDelete(`/admin/manga/${mangaId}/chapters`, options);
 }
