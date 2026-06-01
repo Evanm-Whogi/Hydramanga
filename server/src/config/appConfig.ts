@@ -45,12 +45,12 @@ export interface QueueConfig {
         timeout: number;
         retries: number;
     };
-    mangaChapterDownloadQueue: {
-        concurrency: number;
+    chapterDownload: {
         timeout: number;
         retries: number;
         previewCount: number;
-        limiter: {
+        defaultConcurrency: number;
+        defaultLimiter: {
             max: number;
             duration: number;
         };
@@ -233,7 +233,7 @@ function parseEnvBoolean(key: string, defaultValue: boolean = false): boolean {
  * 
  * // Access configuration
  * const redisHost = appConfig.redis.host;
- * const queueConcurrency = appConfig.queues.mangaChapterDownloadQueue.concurrency;
+ * const queueConcurrency = appConfig.queues.chapterDownload.defaultConcurrency;
  * 
  * // All values are type-safe with full IDE autocomplete
  * ```
@@ -277,14 +277,14 @@ export class AppConfigService {
                     timeout: parseEnvNumber('CHAPTER_SCAN_TIMEOUT', 30 * 60 * 1000), // 30 minutes
                     retries: parseEnvNumber('CHAPTER_SCAN_RETRIES', 1),
                 },
-                mangaChapterDownloadQueue: {
-                    concurrency: parseEnvNumber('CHAPTER_DOWNLOAD_CONCURRENCY', 2), // modest parallelism
+                chapterDownload: {
                     timeout: parseEnvNumber('CHAPTER_DOWNLOAD_TIMEOUT', 15 * 60 * 1000), // 15 minutes
                     retries: parseEnvNumber('CHAPTER_DOWNLOAD_RETRIES', 2),
                     previewCount: parseEnvNumber('CHAPTER_PREVIEW_COUNT', 10),
-                    limiter: {
-                        max: parseEnvNumber('CHAPTER_DOWNLOAD_RATE_MAX', 3), // requests per duration window
-                        duration: parseEnvNumber('CHAPTER_DOWNLOAD_RATE_DURATION', 1000), // ms
+                    defaultConcurrency: parseEnvNumber('CHAPTER_DOWNLOAD_CONCURRENCY', 2),
+                    defaultLimiter: {
+                        max: parseEnvNumber('CHAPTER_DOWNLOAD_RATE_MAX', 3),
+                        duration: parseEnvNumber('CHAPTER_DOWNLOAD_RATE_DURATION', 1000),
                     },
                 },
                 storageCleanupQueue: {
@@ -488,7 +488,7 @@ Application Configuration Summary:
     - Email: ${config.queues.emailQueue.concurrency}
     - Manga Import: ${config.queues.mangaImportQueue.concurrency}
     - Chapter Scan: ${config.queues.mangaChapterImportQueue.concurrency}
-    - Chapter Download: ${config.queues.mangaChapterDownloadQueue.concurrency}
+    - Chapter Download (default): ${config.queues.chapterDownload.defaultConcurrency} per scraper queue
   Cache TTL: ${config.cache.trendingTTL}s
   Chapter Storage: ${config.scraper.chapterStorageRoot}
   Logging Level: ${config.logging.level}

@@ -19,6 +19,7 @@ import { queueJobFunction } from '@/types/types'; // Import types
 import { jobHandlerRegistry } from '@/jobs/handlers/JobHandlerRegistry';
 import { appConfig } from '@/config/appConfig';
 import { discordService } from '@/services/discordService';
+import {chapterDownloadQueueName, getAllChapterDownloadQueueNames, isChapterDownloadJobQueue, isChapterDownloadQueue, resolveChapterDownloadQueueConfig, scraperIdFromChapterDownloadQueue} from '@/lib/chapterDownloadQueues';
 
 class QueueService {
     private queues: { [key: string]: Queue } = {};
@@ -64,21 +65,42 @@ class QueueService {
         
         // Compute default priority for chapter downloads, allowing callers to override via options
         let priority = 0;
-        if (queueName === 'mangaChapterDownloadQueue') {
+        if (isChapterDownloadJobQueue(queueName)) {
             priority = this.computeChapterPriority(jobData);
         }
         
+        const defaults = appConfig.queues;
+        const retries = isChapterDownloadJobQueue(queueName)
+            ? defaults.chapterDownload.retries
+            : 3;
+        const timeout = isChapterDownloadJobQueue(queueName)
+            ? defaults.chapterDownload.timeout
+            : 15 * 60 * 1000;
+
         // Default cleanup so queues do not bloat
         const job = await queue.add(jobName, jobData, {
             removeOnComplete: true,
             removeOnFail: 25,
-            attempts: 3,
+            attempts: retries,
             backoff: { type: 'exponential', delay: 30000 },
-            timeout: 15 * 60 * 1000, // 15 minute timeout per job (increased from 5 to allow retries)
+            timeout,
             priority: priority,
             ...options
         });
         return job;
+    }
+
+    /** Route chapter download jobs to the per-scraper queue for isolated concurrency/rate limits. */
+    public addChapterDownloadJob(jobName: string, jobData: Record<string, unknown>, options = {}) {
+        const scraperId = jobData.scraperId as string | null | undefined;
+        return this.addJob(chapterDownloadQueueName(scraperId), jobName, jobData, options);
+    }
+
+    /** Start workers for every known per-scraper chapter download queue. */
+    public ensureChapterDownloadQueues(): void {
+        for (const queueName of getAllChapterDownloadQueueNames()) {
+            this.getQueue(queueName);
+        }
     }
 
     // Create Worker
@@ -96,12 +118,15 @@ class QueueService {
         let timeout = 15 * 60 * 1000;
         
         const queueConfig = appConfig.queues[queueName as keyof typeof appConfig.queues];
-        if (queueConfig) {
+        if (isChapterDownloadQueue(queueName)) {
+            const scraperId = scraperIdFromChapterDownloadQueue(queueName) ?? 'unknown';
+            const dlConfig = resolveChapterDownloadQueueConfig(scraperId);
+            concurrency = dlConfig.concurrency;
+            timeout = dlConfig.timeout;
+            limiter = dlConfig.limiter;
+        } else if (queueConfig && 'concurrency' in queueConfig) {
             concurrency = queueConfig.concurrency;
             timeout = queueConfig.timeout;
-            if ((queueName === 'mangaChapterDownloadQueue') && (queueConfig as any).limiter) {
-                limiter = (queueConfig as any).limiter;
-            }
         }
 
         const worker = new Worker(queueName, async (job: any) => {
@@ -167,7 +192,7 @@ class QueueService {
             }
 
             // Only mark as failed if all retries are exhausted (for chapter downloads)
-            if (queueName === 'mangaChapterDownloadQueue' && allRetriesExhausted) {
+            if (isChapterDownloadJobQueue(queueName) && allRetriesExhausted) {
                 try {
                     const { mangaProgressService } = await import('@/services/mangaProgressService');
                     const jobData = job?.data;
@@ -334,7 +359,7 @@ class QueueService {
         const interval = appConfig.metrics.queueMetricsIntervalMs;
         this.metricsInterval = setInterval(async () => {
             try {
-                for (const queueName of Object.keys(appConfig.queues)) {
+                for (const queueName of this.getMonitoredQueueNames()) {
                     const queue = this.queues[queueName];
                     // Only report queues that have been instantiated
                     if (!queue) continue;
@@ -364,6 +389,13 @@ class QueueService {
             logger.warn(`Unable to read oldest waiting job: ${error}`, { service: 'queueService' });
             return null;
         }
+    }
+
+    private getMonitoredQueueNames(): string[] {
+        return [
+            ...Object.keys(appConfig.queues).filter((name) => name !== 'chapterDownload'),
+            ...getAllChapterDownloadQueueNames(),
+        ];
     }
 
     // Compute a bounded priority that favors preview chapters first, then spreads series to reduce starvation

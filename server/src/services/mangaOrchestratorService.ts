@@ -4,6 +4,7 @@ import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { cacheService } from '@/services/cacheService';
 import { queueService } from '@/services/queueService';
+import { getAllChapterDownloadQueueNames } from '@/lib/chapterDownloadQueues';
 import { mangaProgressService, isSourceOnlyProgress } from '@/services/mangaProgressService';
 
 // Constants
@@ -174,7 +175,7 @@ class MangaOrchestratorService {
   // Cancel active scan for a series: remove scan job and chapter download jobs from queues
   async cancelScan(seriesId: number): Promise<{ scanJobRemoved: boolean; chapterJobsRemoved: number }> {
     const scanQueue = queueService.getQueue('mangaChapterImportQueue');
-    const downloadQueue = queueService.getQueue('mangaChapterDownloadQueue');
+    const downloadQueueNames = getAllChapterDownloadQueueNames();
     const possibleScanJobIds = [`rescan-${seriesId}`, `ondemand-${seriesId}`, `trending-${seriesId}`, `monitored-${seriesId}`];
 
     let scanJobRemoved = false;
@@ -203,21 +204,23 @@ class MangaOrchestratorService {
 
     let chapterJobsRemoved = 0;
     try {
-      // Chapter download jobs use priority, so they live in 'prioritized' not 'waiting'. Include all relevant states.
-      const [waitingJobs, prioritizedJobs, activeJobs] = await Promise.all([
-        downloadQueue.getJobs(['waiting'], 0, 500, true),
-        downloadQueue.getJobs(['prioritized'], 0, 500, true),
-        downloadQueue.getJobs(['active'], 0, 500, true),
-      ]);
-      const allJobs = [...waitingJobs, ...prioritizedJobs, ...activeJobs];
       const seriesIdNum = Number(seriesId);
-      for (const job of allJobs) {
-        if (Number(job?.data?.seriesId) === seriesIdNum) {
-          try {
-            await job.remove();
-            chapterJobsRemoved++;
-          } catch (err) {
-            logger.warn(`Failed to remove chapter job ${job.id}: ${(err as Error).message}`, { service: 'mangaOrchestratorService' });
+      for (const downloadQueueName of downloadQueueNames) {
+        const downloadQueue = queueService.getQueue(downloadQueueName);
+        const [waitingJobs, prioritizedJobs, activeJobs] = await Promise.all([
+          downloadQueue.getJobs(['waiting'], 0, 500, true),
+          downloadQueue.getJobs(['prioritized'], 0, 500, true),
+          downloadQueue.getJobs(['active'], 0, 500, true),
+        ]);
+        const allJobs = [...waitingJobs, ...prioritizedJobs, ...activeJobs];
+        for (const job of allJobs) {
+          if (Number(job?.data?.seriesId) === seriesIdNum) {
+            try {
+              await job.remove();
+              chapterJobsRemoved++;
+            } catch (err) {
+              logger.warn(`Failed to remove chapter job ${job.id} from ${downloadQueueName}: ${(err as Error).message}`, { service: 'mangaOrchestratorService' });
+            }
           }
         }
       }
