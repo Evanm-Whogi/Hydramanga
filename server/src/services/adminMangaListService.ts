@@ -8,7 +8,8 @@ export interface AdminMangaListParams {
   search?: string;
   status?: string;
   scraperId?: string;
-  sort?: 'updated' | 'title' | 'chapters';
+  type?: string;
+  sort?: 'updated' | 'title' | 'chapters' | 'type';
   order?: 'asc' | 'desc';
 }
 
@@ -18,10 +19,16 @@ export interface AdminMangaScraperFilterOption {
   count: number;
 }
 
+export interface AdminMangaTypeFilterOption {
+  id: string;
+  count: number;
+}
+
 export interface AdminMangaListItem {
   id: number;
   title: string | null;
   status: string | null;
+  type: string | null;
   cover: unknown;
   lastUpdatedAt: Date | null;
   chapterCount: number;
@@ -33,7 +40,7 @@ export interface AdminMangaListItem {
 
 class AdminMangaListService {
   async listManga(params: AdminMangaListParams) {
-    const { page, limit, search, status, scraperId, sort = 'updated', order = 'desc' } = params;
+    const { page, limit, search, status, scraperId, type, sort = 'updated', order = 'desc' } = params;
     const offset = (page - 1) * limit;
 
     const filters: SQL[] = [];
@@ -65,6 +72,14 @@ class AdminMangaListService {
       }
     }
 
+    if (type && type !== 'all') {
+      if (type === 'none') {
+        filters.push(isNull(schema.series.type));
+      } else {
+        filters.push(eq(schema.series.type, type));
+      }
+    }
+
     const whereClause = filters.length > 0 ? and(...filters) : undefined;
 
     const chapterCountSq = db
@@ -79,17 +94,21 @@ class AdminMangaListService {
     const sortExpr =
       sort === 'title'
         ? schema.series.title
+        : sort === 'type'
+          ? sql`coalesce(${schema.series.type}, '')`
         : sort === 'chapters'
           ? sql`coalesce(${chapterCountSq.chapterCount}, 0)`
           : sql`coalesce(${schema.mangaImportProgress.updatedAt}, ${schema.series.lastUpdatedAt})`;
 
     const orderBy = order === 'asc' ? asc(sortExpr) : desc(sortExpr);
+    const tieBreak = desc(schema.series.id);
 
     const rows = await db
       .select({
         id: schema.series.id,
         title: schema.series.title,
         status: schema.series.status,
+        type: schema.series.type,
         cover: schema.series.cover,
         lastUpdatedAt: schema.series.lastUpdatedAt,
         chapterCount: sql<number>`coalesce(${chapterCountSq.chapterCount}, 0)`,
@@ -105,7 +124,7 @@ class AdminMangaListService {
       )
       .leftJoin(chapterCountSq, eq(schema.series.id, chapterCountSq.seriesId))
       .where(whereClause)
-      .orderBy(orderBy)
+      .orderBy(orderBy, tieBreak)
       .limit(limit)
       .offset(offset);
 
@@ -124,6 +143,7 @@ class AdminMangaListService {
       id: row.id,
       title: row.title,
       status: row.status,
+      type: row.type ?? null,
       cover: row.cover,
       lastUpdatedAt: row.lastUpdatedAt,
       chapterCount: Number(row.chapterCount ?? 0),
@@ -166,6 +186,22 @@ class AdminMangaListService {
         name: nameById.get(row.scraperId) ?? row.scraperId,
         count: Number(row.count),
       }));
+  }
+
+  async getTypeFilterOptions(): Promise<AdminMangaTypeFilterOption[]> {
+    const rows = await db
+      .select({
+        type: schema.series.type,
+        count: count(),
+      })
+      .from(schema.series)
+      .groupBy(schema.series.type)
+      .orderBy(desc(count()));
+
+    return rows.map((row) => ({
+      id: row.type ?? 'none',
+      count: Number(row.count),
+    }));
   }
 }
 

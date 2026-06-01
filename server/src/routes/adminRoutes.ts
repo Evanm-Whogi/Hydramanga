@@ -3,7 +3,7 @@ import { auditAdminMiddleware } from '@/middlewares/auditAdminMiddleware';
 import { listAdminAuditLogs } from '@/controllers/adminAuditController';
 import { triggerMangaSync, triggerMonitoredRescan, triggerTrendingRescan } from '@/controllers/mangaImportController';
 import { adminScraperSearch, adminSetSource, adminAddSecondaryTitle, adminTriggerRescan, adminGetSource, adminClearSource, adminCancelScan, adminDeleteChapters, adminUpdateSeries } from '@/controllers/adminMangaController';
-import { listAdminManga, listAdminMangaScraperFilters } from '@/controllers/adminMangaListController';
+import { listAdminManga, listAdminMangaScraperFilters, listAdminMangaTypeFilters } from '@/controllers/adminMangaListController';
 import { getAdminOverviewStats, getAdminTimeseries } from '@/controllers/adminStatsController';
 import { listAdminUsers, getAdminUser, patchAdminUser } from '@/controllers/adminUserController';
 import {sendAdminUserVerification, sendAdminUserPasswordReset} from '@/controllers/adminUserActionsController';
@@ -34,6 +34,7 @@ router.post('/users/:id/unban', requireRole('admin'), unbanAdminUser as RequestH
 
 router.get('/manga', requireRole('admin'), listAdminManga as RequestHandler);
 router.get('/manga/scraper-filters', requireRole('admin'), listAdminMangaScraperFilters as RequestHandler);
+router.get('/manga/type-filters', requireRole('admin'), listAdminMangaTypeFilters as RequestHandler);
 
 // Import requests
 router.get('/import-requests', requireRole('admin'), listAdminImportRequests as RequestHandler);
