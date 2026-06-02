@@ -92,7 +92,7 @@ export class ChapterScannerService {
     ): Promise<void> {
         let foundCount = 0;
         const newChapters: string[] = [];
-        let previewRemaining = isFirstScan ? appConfig.queues.mangaChapterDownloadQueue.previewCount : 0;
+        let previewRemaining = isFirstScan ? appConfig.queues.chapterDownload.previewCount : 0;
 
         // Determine how many chapters already exist before this scan (important for rescans)
         const existingChapters = await withSpan(
@@ -225,8 +225,7 @@ export class ChapterScannerService {
                     await withSpan(
                         `queue_chapter_${chapter.number}`,
                         async () => {
-                            return queueService.addJob(
-                                'mangaChapterDownloadQueue',
+                            return queueService.addChapterDownloadJob(
                                 `Download ${chapter.title}`,
                                 {
                                     seriesId,

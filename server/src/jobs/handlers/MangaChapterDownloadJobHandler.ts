@@ -7,10 +7,11 @@ import { ChapterDownloaderService, ChapterDownloadData } from '@/services/chapte
 import logger from '@/services/loggerService';
 import * as Sentry from "@sentry/node";
 import { withTransaction, setJobContext, captureError } from '@/utils/sentryHelper';
+import { isChapterDownloadJobQueue } from '@/lib/chapterDownloadQueues';
 
 export class MangaChapterDownloadJobHandler implements IJobHandler {
   canHandle(queueName: string): boolean {
-    return queueName === 'mangaChapterDownloadQueue';
+    return isChapterDownloadJobQueue(queueName);
   }
 
   async handle(data: any): Promise<void> {

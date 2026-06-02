@@ -11,8 +11,9 @@ export async function listAdminManga(req: Request, res: Response, next: NextFunc
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
     const scraperId = typeof req.query.scraperId === 'string' ? req.query.scraperId : undefined;
+    const type = typeof req.query.type === 'string' ? req.query.type : undefined;
     const sort =
-      req.query.sort === 'title' || req.query.sort === 'chapters' || req.query.sort === 'updated'
+      req.query.sort === 'title' || req.query.sort === 'chapters' || req.query.sort === 'updated' || req.query.sort === 'type'
         ? req.query.sort
         : 'updated';
     const order = req.query.order === 'asc' ? 'asc' : 'desc';
@@ -23,6 +24,7 @@ export async function listAdminManga(req: Request, res: Response, next: NextFunc
       search,
       status: status === 'all' ? undefined : status,
       scraperId: scraperId === 'all' ? undefined : scraperId,
+      type: type === 'all' ? undefined : type,
       sort,
       order,
     });
@@ -40,6 +42,16 @@ export async function listAdminMangaScraperFilters(req: Request, res: Response, 
     return res.json({ status: 200, filters });
   } catch (error) {
     logger.error(`Failed to list scraper filters: ${error}`, { service: 'adminMangaListController' });
+    return next(error);
+  }
+}
+
+export async function listAdminMangaTypeFilters(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const filters = await adminMangaListService.getTypeFilterOptions();
+    return res.json({ status: 200, filters });
+  } catch (error) {
+    logger.error(`Failed to list type filters: ${error}`, { service: 'adminMangaListController' });
     return next(error);
   }
 }

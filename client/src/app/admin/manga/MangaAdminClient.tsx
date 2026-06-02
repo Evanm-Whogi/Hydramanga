@@ -4,10 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {Search, ChevronLeft, ChevronRight, Loader2, EllipsisVertical, ExternalLink} from "lucide-react";
 import { toast } from "react-toastify";
-import { listAdminManga, listAdminMangaScraperFilters, fetchMangaForAdminEdit, type AdminMangaListItem, type ListAdminMangaParams, type AdminMangaScraperFilterOption } from "@/services/adminMangaListService";
+import { listAdminManga, listAdminMangaScraperFilters, listAdminMangaTypeFilters, fetchMangaForAdminEdit, type AdminMangaListItem, type ListAdminMangaParams, type AdminMangaScraperFilterOption, type AdminMangaTypeFilterOption } from "@/services/adminMangaListService";
 import { adminGetSource } from "@/services/adminMangaService";
 import { getCoverUrl } from "@/lib/historyUtils";
 import AdminMangaEditModal from "@/app/manga/[id]/components/AdminMangaEditModal";
+import IncrementalScanPanel from "./IncrementalScanPanel";
 
 const STATUS_FILTERS: { value: ListAdminMangaParams["status"]; label: string }[] = [
   { value: "all", label: "All" },
@@ -15,6 +16,7 @@ const STATUS_FILTERS: { value: ListAdminMangaParams["status"]; label: string }[]
   { value: "downloading", label: "Downloading" },
   { value: "completed", label: "Completed" },
   { value: "failed", label: "Failed" },
+  { value: "source_set", label: "Source set" },
   { value: "none", label: "Not Imported" },
 ];
 
@@ -34,6 +36,8 @@ function importStatusClass(status: string | null): string {
       return "bg-teal-500/20 text-teal-400";
     case "completed":
       return "bg-green-500/20 text-green-400";
+    case "source_set":
+      return "bg-sky-500/20 text-sky-400";
     case "failed":
       return "bg-red-500/20 text-red-400";
     default:
@@ -50,7 +54,11 @@ export default function MangaAdminClient() {
   const [searchInput, setSearchInput] = useState("");
   const [statusFilter, setStatusFilter] = useState<ListAdminMangaParams["status"]>("all");
   const [scraperFilter, setScraperFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [sort, setSort] = useState<NonNullable<ListAdminMangaParams["sort"]>>("updated");
+  const [order, setOrder] = useState<NonNullable<ListAdminMangaParams["order"]>>("desc");
   const [scraperFilterOptions, setScraperFilterOptions] = useState<AdminMangaScraperFilterOption[]>([]);
+  const [typeFilterOptions, setTypeFilterOptions] = useState<AdminMangaTypeFilterOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [openingId, setOpeningId] = useState<number | null>(null);
   const [editModal, setEditModal] = useState<{
@@ -71,6 +79,9 @@ export default function MangaAdminClient() {
         search: search || undefined,
         status: statusFilter,
         scraperId: scraperFilter,
+        type: typeFilter,
+        sort,
+        order,
       });
       setManga(result.manga);
       setTotalPages(result.pagination.totalPages);
@@ -81,7 +92,7 @@ export default function MangaAdminClient() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, statusFilter, scraperFilter]);
+  }, [page, search, statusFilter, scraperFilter, typeFilter, sort, order]);
 
   useEffect(() => {
     fetchManga();
@@ -94,12 +105,22 @@ export default function MangaAdminClient() {
   }, []);
 
   useEffect(() => {
+    listAdminMangaTypeFilters()
+      .then((res) => setTypeFilterOptions(res.filters))
+      .catch(() => setTypeFilterOptions([]));
+  }, []);
+
+  useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(searchInput);
       setPage(1);
     }, 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [sort]);
 
   const openEditModal = async (row: AdminMangaListItem) => {
     setOpeningId(row.id);
@@ -137,6 +158,7 @@ export default function MangaAdminClient() {
 
   return (
     <div className="space-y-4">
+      <IncrementalScanPanel />
       <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
         <div className="relative flex-1 max-w-md w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted" />
@@ -187,10 +209,54 @@ export default function MangaAdminClient() {
             </option>
           ))}
         </select>
+
+        <span className="text-sm text-muted ml-2">Type:</span>
+        <select
+          value={typeFilter}
+          onChange={(e) => {
+            setTypeFilter(e.target.value);
+            setPage(1);
+          }}
+          className="px-3 py-1.5 rounded-lg text-sm bg-foreground border border-borders text-primary focus:outline-none focus:ring-2 focus:ring-accent/50"
+        >
+          <option value="all">All types</option>
+          <option value="none">Type not set</option>
+          {typeFilterOptions
+            .filter((opt) => opt.id !== "none")
+            .map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.id} ({opt.count})
+              </option>
+            ))}
+        </select>
+
+        <span className="text-sm text-muted ml-2">Sort:</span>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as NonNullable<ListAdminMangaParams["sort"]>)}
+          className="px-3 py-1.5 rounded-lg text-sm bg-foreground border border-borders text-primary focus:outline-none focus:ring-2 focus:ring-accent/50"
+        >
+          <option value="updated">Latest activity</option>
+          <option value="title">Title</option>
+          <option value="chapters">Chapters</option>
+          <option value="type">Type</option>
+        </select>
+
+        <button
+          type="button"
+          onClick={() => {
+            setOrder((o) => (o === "asc" ? "desc" : "asc"));
+            setPage(1);
+          }}
+          className="px-3 py-1.5 rounded-lg text-sm bg-foreground border border-borders text-primary hover:bg-foreground/80"
+          title="Toggle sort order"
+        >
+          {order === "asc" ? "Asc" : "Desc"}
+        </button>
       </div>
 
       <p className="text-sm text-muted">
-        {total} series{scraperFilter !== "all" ? " matching filter" : ""} · sorted by latest import activity
+        {total} series · sorted {order === "asc" ? "A→Z" : "Z→A"}
       </p>
 
       <div className="bg-foreground rounded-lg overflow-hidden border border-borders">
@@ -199,6 +265,7 @@ export default function MangaAdminClient() {
             <thead>
               <tr className="border-b border-borders bg-background/50">
                 <th className="px-4 py-3 font-semibold text-muted">Manga</th>
+                <th className="px-4 py-3 font-semibold text-muted">Type</th>
                 <th className="px-4 py-3 font-semibold text-muted">Chapters</th>
                 <th className="px-4 py-3 font-semibold text-muted">Import</th>
                 <th className="px-4 py-3 font-semibold text-muted">Source</th>
@@ -211,14 +278,14 @@ export default function MangaAdminClient() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-muted">
+                  <td colSpan={7} className="px-4 py-12 text-center text-muted">
                     <Loader2 className="size-6 animate-spin inline-block mr-2" />
                     Loading manga…
                   </td>
                 </tr>
               ) : manga.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-muted">
+                  <td colSpan={7} className="px-4 py-12 text-center text-muted">
                     No manga found
                   </td>
                 </tr>
@@ -251,6 +318,7 @@ export default function MangaAdminClient() {
                         </div>
                       </div>
                     </td>
+                    <td className="px-4 py-3 text-muted text-xs capitalize">{row.type ?? "—"}</td>
                     <td className="px-4 py-3 text-primary">{row.chapterCount}</td>
                     <td className="px-4 py-3">
                       <span

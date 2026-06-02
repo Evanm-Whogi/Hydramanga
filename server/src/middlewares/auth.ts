@@ -3,6 +3,7 @@ import { Request, Response, NextFunction } from "express";
 import { fromNodeHeaders } from "better-auth/node";
 import { auth } from "@/utils/auth";
 import { isUserBanned } from "@/lib/banHelpers";
+import { shouldTouchSession } from "@/lib/sessionTouchCache";
 import { db, schema } from "@/db/index";
 import { eq } from "drizzle-orm";
 import * as Sentry from "@sentry/node";
@@ -47,7 +48,12 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     req.user = session.user;
     req.session = session.session;
 
-    if (session.session?.id) {
+    const trackingData = (req as Request & { trackingData?: { ipAddress: string; userAgent: string; userId?: string } }).trackingData;
+    if (trackingData) {
+        trackingData.userId = session.user.id;
+    }
+
+    if (session.session?.id && shouldTouchSession(session.session.id)) {
         await db
             .update(schema.session)
             .set({ updatedAt: new Date() })

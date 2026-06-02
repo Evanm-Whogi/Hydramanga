@@ -9,6 +9,7 @@ import RecommendedManga from './RecommendedManga';
 import { Eye, Bookmark, UserCheck, TriangleAlert, Star, Pencil, ShareIcon, StickyNote } from 'lucide-react';
 import { useMangaViewTracking } from '@/hooks/useViewTracking';
 import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
+import { useVisibilityAwareInterval } from '@/hooks/useVisibilityAwareInterval';
 import { useUser } from '@/providers/UserProvider';
 import { updateImportProgressToast, dismissImportProgressToast } from '@/components/ImportProgressToast';
 import AdminMangaEditModal from './AdminMangaEditModal';
@@ -147,6 +148,8 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
   const { user } = useUser();
   const isAdmin = user?.role === 'admin';
   const router = useRouter();
+  const isFetchingAnalytics = useRef(false);
+  const analyticsRefreshRef = useRef<() => void>(() => {});
 
   // Track sidebar height (lg only, when side-by-side)
   useEffect(() => {
@@ -281,6 +284,12 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
     }
   }, [progress, mangaId, manga.title, wasActiveOnLoad, initialProgressReceived]);
 
+  useEffect(() => {
+    if (progress?.status === 'completed') {
+      analyticsRefreshRef.current();
+    }
+  }, [progress?.status]);
+
   // Cleanup: dismiss toast when navigating away
   useEffect(() => {
     return () => {
@@ -288,14 +297,12 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
     };
   }, [mangaId]);
 
-  const isFetchingAnalytics = useRef(false);
-
   useEffect(() => {
     let isMounted = true;
-    
+
     const getAnalyticsData = async () => {
       if (isFetchingAnalytics.current) return;
-      
+
       isFetchingAnalytics.current = true;
       try {
         const analyticsData = await getMangaAnalytics(Number(manga.id)).catch(() => null);
@@ -309,15 +316,16 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
       }
     };
 
-    getAnalyticsData();
-    const intervalId = setInterval(getAnalyticsData, 60000);
+    analyticsRefreshRef.current = () => { void getAnalyticsData(); };
+    void getAnalyticsData();
 
     return () => {
       isMounted = false;
       isFetchingAnalytics.current = false;
-      clearInterval(intervalId);
     };
-  }, [mangaId, manga.chapters?.length, manga.title])
+  }, [mangaId]);
+
+  useVisibilityAwareInterval(() => analyticsRefreshRef.current(), 300_000, true);
 
   // Determine last chapter update date for analytics section
   const lastChapterDate = manga.chapters.length > 0 ? new Date(manga.chapters.reduce((latest: string, chapter: any) => {

@@ -99,8 +99,9 @@ export async function promoteAdminQueueJob(queueName: string, jobId: string): Pr
   await apiPost(`/admin/queues/${encodeURIComponent(queueName)}/jobs/${encodeURIComponent(jobId)}/promote`);
 }
 
-export async function removeAdminQueueJob(queueName: string, jobId: string): Promise<void> {
-  await apiDelete(`/admin/queues/${encodeURIComponent(queueName)}/jobs/${encodeURIComponent(jobId)}`);
+export async function removeAdminQueueJob(queueName: string, jobId: string, opts?: { force?: boolean }): Promise<void> {
+  const qs = opts?.force ? '?force=true' : '';
+  await apiDelete(`/admin/queues/${encodeURIComponent(queueName)}/jobs/${encodeURIComponent(jobId)}${qs}`);
 }
 
 export async function pauseAdminQueue(queueName: string): Promise<void> {

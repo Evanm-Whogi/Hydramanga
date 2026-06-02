@@ -4,8 +4,7 @@
 // This entire file is written by AI so should be interesting to review for quality assurance
 
 import fs from 'fs';
-import { Pool } from 'pg';
-import { from as copyFrom } from 'pg-copy-streams';
+import { pool } from '@/db/index';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import crypto from 'crypto';
@@ -17,10 +16,8 @@ import Database from 'better-sqlite3';
 import * as Sentry from "@sentry/node";
 import { withSpan, addBreadcrumb, captureError } from '@/utils/sentryHelper';
 import { invalidateCatalogCaches } from '@/lib/catalogCache';
+import { from as copyFrom } from 'pg-copy-streams';
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
-// Constants
 const SECONDARY_TITLE_LANGUAGES = ['en', 'ja', 'ja-ro', 'ko', 'ko-ro', 'zh', 'zh-ro', 'zh-hk', 'de', 'es', 'es-la', 'pt-br', 'pt', 'ru', 'vi', 'th', 'uk', 'fr'] as const;
 const RELATIONSHIP_TYPES = ['adaptation', 'alternative', 'side_story', 'prequel', 'sequel', 'spin_off', 'main_story', 'other'] as const;
 const SOURCE_PROVIDERS = ['anilist', 'anime_planet', 'shikimori', 'anime_news_network', 'manga_updates', 'my_anime_list', 'kitsu'] as const;

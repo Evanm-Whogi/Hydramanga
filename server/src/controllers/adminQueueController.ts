@@ -81,13 +81,14 @@ export async function removeAdminQueueJob(req: Request, res: Response, next: Nex
     const jobId = req.params.jobId;
     if (!queueName || !jobId) return res.status(400).json({ message: 'Queue name and job ID are required' });
 
-    const result = await adminQueueService.removeJob(queueName, jobId);
+    const force = req.query.force === 'true' || req.query.force === '1';
+    const result = await adminQueueService.removeJob(queueName, jobId, { force });
     if ('error' in result) {
       const errRes = handleQueueActionError(res, result);
       if (errRes) return errRes;
     }
 
-    return res.json({ status: 200, success: true });
+    return res.json({ status: 200, success: true, forced: 'forced' in result ? result.forced : false });
   } catch (error) {
     logger.error(`Failed to remove admin queue job: ${error}`, { service: 'adminQueueController' });
     return next(error);

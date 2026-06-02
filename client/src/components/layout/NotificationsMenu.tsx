@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BellRing, X } from 'lucide-react';
-import {clearAllNotifications, dismissNotification, getNotifications, type UserNotification} from '@/services/notificationService';
+import { useNotifications } from '@/providers/NotificationsProvider';
+import type { UserNotification } from '@/services/notificationService';
 
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -30,33 +31,14 @@ export default function NotificationsMenu({ variant = 'icon', onOpen }: Notifica
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
-  const [notifications, setNotifications] = useState<UserNotification[]>([]);
-  const [loading, setLoading] = useState(false);
   const [actingId, setActingId] = useState<number | null>(null);
   const [clearing, setClearing] = useState(false);
-
-  const loadNotifications = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await getNotifications();
-      setNotifications(data.notifications ?? []);
-    } catch {
-      setNotifications([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadNotifications();
-    const interval = setInterval(loadNotifications, 60000);
-    return () => clearInterval(interval);
-  }, [loadNotifications]);
+  const { notifications, loading, refresh, dismiss, clearAll } = useNotifications();
 
   useEffect(() => {
     if (!isOpen) return;
-    loadNotifications();
-  }, [isOpen, loadNotifications]);
+    void refresh();
+  }, [isOpen, refresh]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -72,10 +54,9 @@ export default function NotificationsMenu({ variant = 'icon', onOpen }: Notifica
     e.stopPropagation();
     setActingId(id);
     try {
-      const data = await dismissNotification(id);
-      setNotifications(data.notifications ?? []);
+      await dismiss(id);
     } catch {
-      await loadNotifications();
+      await refresh();
     } finally {
       setActingId(null);
     }
@@ -84,10 +65,9 @@ export default function NotificationsMenu({ variant = 'icon', onOpen }: Notifica
   const handleClearAll = async () => {
     setClearing(true);
     try {
-      const data = await clearAllNotifications();
-      setNotifications(data.notifications ?? []);
+      await clearAll();
     } catch {
-      await loadNotifications();
+      await refresh();
     } finally {
       setClearing(false);
     }
@@ -97,10 +77,9 @@ export default function NotificationsMenu({ variant = 'icon', onOpen }: Notifica
     setIsOpen(false);
     setActingId(notification.id);
     try {
-      const data = await dismissNotification(notification.id);
-      setNotifications(data.notifications ?? []);
+      await dismiss(notification.id);
     } catch {
-      await loadNotifications();
+      await refresh();
     } finally {
       setActingId(null);
     }

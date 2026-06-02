@@ -19,6 +19,7 @@ import { queueJobFunction } from '@/types/types'; // Import types
 import { jobHandlerRegistry } from '@/jobs/handlers/JobHandlerRegistry';
 import { appConfig } from '@/config/appConfig';
 import { discordService } from '@/services/discordService';
+import {chapterDownloadQueueName, getAllChapterDownloadQueueNames, isChapterDownloadJobQueue, isChapterDownloadQueue, resolveChapterDownloadQueueConfig, scraperIdFromChapterDownloadQueue} from '@/lib/chapterDownloadQueues';
 
 class QueueService {
     private queues: { [key: string]: Queue } = {};
@@ -64,21 +65,42 @@ class QueueService {
         
         // Compute default priority for chapter downloads, allowing callers to override via options
         let priority = 0;
-        if (queueName === 'mangaChapterDownloadQueue') {
+        if (isChapterDownloadJobQueue(queueName)) {
             priority = this.computeChapterPriority(jobData);
         }
         
+        const defaults = appConfig.queues;
+        const retries = isChapterDownloadJobQueue(queueName)
+            ? defaults.chapterDownload.retries
+            : 3;
+        const timeout = isChapterDownloadJobQueue(queueName)
+            ? defaults.chapterDownload.timeout
+            : 15 * 60 * 1000;
+
         // Default cleanup so queues do not bloat
         const job = await queue.add(jobName, jobData, {
             removeOnComplete: true,
             removeOnFail: 25,
-            attempts: 3,
+            attempts: retries,
             backoff: { type: 'exponential', delay: 30000 },
-            timeout: 15 * 60 * 1000, // 15 minute timeout per job (increased from 5 to allow retries)
+            timeout,
             priority: priority,
             ...options
         });
         return job;
+    }
+
+    /** Route chapter download jobs to the per-scraper queue for isolated concurrency/rate limits. */
+    public addChapterDownloadJob(jobName: string, jobData: Record<string, unknown>, options = {}) {
+        const scraperId = jobData.scraperId as string | null | undefined;
+        return this.addJob(chapterDownloadQueueName(scraperId), jobName, jobData, options);
+    }
+
+    /** Start workers for every known per-scraper chapter download queue. */
+    public ensureChapterDownloadQueues(): void {
+        for (const queueName of getAllChapterDownloadQueueNames()) {
+            this.getQueue(queueName);
+        }
     }
 
     // Create Worker
@@ -96,12 +118,15 @@ class QueueService {
         let timeout = 15 * 60 * 1000;
         
         const queueConfig = appConfig.queues[queueName as keyof typeof appConfig.queues];
-        if (queueConfig) {
+        if (isChapterDownloadQueue(queueName)) {
+            const scraperId = scraperIdFromChapterDownloadQueue(queueName) ?? 'unknown';
+            const dlConfig = resolveChapterDownloadQueueConfig(scraperId);
+            concurrency = dlConfig.concurrency;
+            timeout = dlConfig.timeout;
+            limiter = dlConfig.limiter;
+        } else if (queueConfig && 'concurrency' in queueConfig) {
             concurrency = queueConfig.concurrency;
             timeout = queueConfig.timeout;
-            if ((queueName === 'mangaChapterDownloadQueue') && (queueConfig as any).limiter) {
-                limiter = (queueConfig as any).limiter;
-            }
         }
 
         const worker = new Worker(queueName, async (job: any) => {
@@ -167,7 +192,7 @@ class QueueService {
             }
 
             // Only mark as failed if all retries are exhausted (for chapter downloads)
-            if (queueName === 'mangaChapterDownloadQueue' && allRetriesExhausted) {
+            if (isChapterDownloadJobQueue(queueName) && allRetriesExhausted) {
                 try {
                     const { mangaProgressService } = await import('@/services/mangaProgressService');
                     const jobData = job?.data;
@@ -252,10 +277,78 @@ class QueueService {
         await job.retry();
     }
 
-    public async removeJob(queueName: string, jobId: string): Promise<void> {
+    public async removeJob(queueName: string, jobId: string, opts?: { force?: boolean }): Promise<void> {
+        if (opts?.force) {
+            await this.forceRemoveJob(queueName, jobId);
+            return;
+        }
         const job = await this.getJob(queueName, jobId);
         if (!job) throw new Error('Job not found');
         await job.remove();
+    }
+
+    /** Remove a job even when BullMQ reports it is locked (stale worker, crashed process, etc.). */
+    public async forceRemoveJob(queueName: string, jobId: string): Promise<void> {
+        const queue = this.getQueue(queueName);
+        await queue.waitUntilReady();
+        const job = await this.getJob(queueName, jobId);
+        if (!job) throw new Error('Job not found');
+
+        try {
+            await job.remove();
+            return;
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            if (!message.includes('locked')) throw err;
+        }
+
+        logger.warn(`Force-removing locked job ${jobId} from queue ${queueName}`, { service: 'queueService' });
+
+        const state = await job.getState();
+        await this.clearJobLockAndLists(queue, jobId, state);
+
+        try {
+            await job.remove();
+            return;
+        } catch (secondErr) {
+            const message = secondErr instanceof Error ? secondErr.message : String(secondErr);
+            if (!message.includes('locked')) throw secondErr;
+        }
+
+        await this.deleteJobRedisRecords(queue, jobId);
+    }
+
+    private async clearJobLockAndLists(queue: Queue, jobId: string, state: string): Promise<void> {
+        const client = await queue.client;
+        const jobKey = queue.toKey(jobId);
+        await client.del(`${jobKey}:lock`);
+        await client.srem(queue.keys.stalled, jobId);
+        if (state === 'active') {
+            await client.lrem(queue.keys.active, 0, jobId);
+        }
+        await client.lrem(queue.keys.wait, 0, jobId);
+        await client.lrem(queue.keys.paused, 0, jobId);
+        await client.zrem(queue.keys.delayed, jobId);
+        await client.zrem(queue.keys.completed, jobId);
+        await client.zrem(queue.keys.failed, jobId);
+        await client.zrem(queue.keys.prioritized, jobId);
+        await client.zrem(queue.keys['waiting-children'], jobId);
+    }
+
+    private async deleteJobRedisRecords(queue: Queue, jobId: string): Promise<void> {
+        const client = await queue.client;
+        const jobKey = queue.toKey(jobId);
+        await client.del(
+            jobKey,
+            `${jobKey}:logs`,
+            `${jobKey}:dependencies`,
+            `${jobKey}:processed`,
+            `${jobKey}:failed`,
+            `${jobKey}:unsuccessful`,
+            `${jobKey}:lock`,
+        );
+        await client.srem(queue.keys.stalled, jobId);
+        logger.info(`Force-deleted Redis records for job ${jobId} in queue ${queue.name}`, { service: 'queueService' });
     }
 
     public async promoteJob(queueName: string, jobId: string): Promise<void> {
@@ -334,7 +427,7 @@ class QueueService {
         const interval = appConfig.metrics.queueMetricsIntervalMs;
         this.metricsInterval = setInterval(async () => {
             try {
-                for (const queueName of Object.keys(appConfig.queues)) {
+                for (const queueName of this.getMonitoredQueueNames()) {
                     const queue = this.queues[queueName];
                     // Only report queues that have been instantiated
                     if (!queue) continue;
@@ -364,6 +457,13 @@ class QueueService {
             logger.warn(`Unable to read oldest waiting job: ${error}`, { service: 'queueService' });
             return null;
         }
+    }
+
+    private getMonitoredQueueNames(): string[] {
+        return [
+            ...Object.keys(appConfig.queues).filter((name) => name !== 'chapterDownload'),
+            ...getAllChapterDownloadQueueNames(),
+        ];
     }
 
     // Compute a bounded priority that favors preview chapters first, then spreads series to reduce starvation

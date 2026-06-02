@@ -9,9 +9,6 @@ import {IChapterScraper, ScrapedChapter, DownloadedChapter, MangaSearchResult, S
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
-import { createWriteStream } from 'fs';
-import { pipeline } from 'stream/promises';
-
 const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const SITE_BASE = appConfig.scraper.comix.baseUrl;
 const SEARCH_API = appConfig.scraper.comix.searchApiUrl;
@@ -76,8 +73,24 @@ interface ComixPageAsset {
 }
 
 export class ComixScraper implements IChapterScraper {
+    /** Full-size canvas elements in the reader (portrait-oriented pages). */
     private static readonly MIN_CAPTURE_WIDTH = 700;
     private static readonly MIN_CAPTURE_HEIGHT = 900;
+    /** Accepts landscape pages (e.g. 1024×768) — long/short edge, not both ≥ portrait mins. */
+    private static readonly MIN_CHAPTER_LONG_EDGE = 700;
+    private static readonly MIN_CHAPTER_SHORT_EDGE = 400;
+    /** DOM readiness threshold (lower than capture min — reader thumbs load before full decode). */
+    private static readonly MIN_IMAGE_NATURAL_WIDTH = 320;
+    private static readonly MIN_IMAGE_NATURAL_HEIGHT = 400;
+    /** Placeholder/spinner assets from Comix CDN are ~1–2 KB; real chapter pages are much larger. */
+    private static readonly MIN_IMAGE_DOWNLOAD_BYTES = 10_000;
+
+    private static isValidChapterImageDimensions(width: number, height: number): boolean {
+        if (width <= 0 || height <= 0) return false;
+        const longEdge = Math.max(width, height);
+        const shortEdge = Math.min(width, height);
+        return longEdge >= ComixScraper.MIN_CHAPTER_LONG_EDGE && shortEdge >= ComixScraper.MIN_CHAPTER_SHORT_EDGE;
+    }
 
     private static readonly readerDefaultState = {
         readingDirection: 'ttb',
@@ -512,62 +525,60 @@ export class ComixScraper implements IChapterScraper {
         throw lastError || new Error(`[Comix] Failed to download chapter ${chapterNumber}`);
     }
 
-    private async collectPageAssetsFromReader(
-        page: any,
-        expectedPageCount: number,
-        contextLabel: string,
-    ): Promise<ComixPageAsset[]> {
-        await this.dismissReaderHint(page);
-        let scrolledAssets = await this.collectPageAssetsByScrolling(page, expectedPageCount, contextLabel);
-        if (expectedPageCount > 0 && scrolledAssets.length < expectedPageCount) {
-            const canvasAssets = await this.collectCanvasAssetsByPage(page, expectedPageCount, scrolledAssets, contextLabel);
-            if (canvasAssets.length) {
-                const merged = new Map<number, ComixPageAsset>(scrolledAssets.map(a => [a.page, a]));
-                for (const asset of canvasAssets) {
-                    const existing = merged.get(asset.page);
-                    if (!existing) {
-                        merged.set(asset.page, asset);
-                        continue;
-                    }
-                    if (!existing.dataUrl && asset.dataUrl) {
-                        merged.set(asset.page, { ...existing, dataUrl: asset.dataUrl });
-                    }
-                }
-                scrolledAssets = Array.from(merged.values()).sort((a, b) => a.page - b.page);
-            }
-        }
-
-        if (scrolledAssets.length > 0) {
-            logger.info(
-                `[Comix] [${contextLabel}] Scroll extraction captured ${scrolledAssets.length} page(s)`,
-                { service: 'comixScraper' },
-            );
-            if (expectedPageCount <= 0 || scrolledAssets.length >= expectedPageCount) {
-                return scrolledAssets;
-            }
-        }
-
-        const progressAssets = await this.collectPageAssetsFromProgressButtons(page, expectedPageCount, contextLabel);
-        if (!scrolledAssets.length) {
-            return progressAssets;
-        }
-
-        const merged = new Map<number, ComixPageAsset>(scrolledAssets.map(a => [a.page, a]));
-        for (const asset of progressAssets) {
+    private mergePageAssets(base: ComixPageAsset[], incoming: ComixPageAsset[]): ComixPageAsset[] {
+        const merged = new Map<number, ComixPageAsset>(base.map(a => [a.page, a]));
+        for (const asset of incoming) {
             const existing = merged.get(asset.page);
             if (!existing) {
                 merged.set(asset.page, asset);
                 continue;
             }
             if (!existing.dataUrl && asset.dataUrl) {
-                merged.set(asset.page, asset);
+                merged.set(asset.page, { ...existing, dataUrl: asset.dataUrl, width: asset.width, height: asset.height, source: asset.source });
                 continue;
             }
             if (!existing.imageUrl && asset.imageUrl) {
-                merged.set(asset.page, { ...existing, imageUrl: asset.imageUrl });
+                merged.set(asset.page, { ...existing, imageUrl: asset.imageUrl, source: asset.source || existing.source });
             }
         }
         return Array.from(merged.values()).sort((a, b) => a.page - b.page);
+    }
+
+    private hasCompleteAsset(asset: ComixPageAsset): boolean {
+        return !!(asset.imageUrl || asset.dataUrl);
+    }
+
+    private async collectPageAssetsFromReader(
+        page: any,
+        expectedPageCount: number,
+        contextLabel: string,
+    ): Promise<ComixPageAsset[]> {
+        await this.dismissReaderHint(page);
+        let assets = await this.collectPageAssetsByScrolling(page, expectedPageCount, contextLabel);
+        logger.info(
+            `[Comix] [${contextLabel}] Scroll extraction captured ${assets.length} page slot(s), ${assets.filter(a => this.hasCompleteAsset(a)).length} with image data`,
+            { service: 'comixScraper' },
+        );
+
+        let missingPages = this.getMissingPages(assets, expectedPageCount);
+        if (missingPages.length > 0) {
+            const canvasAssets = await this.collectCanvasAssetsByPage(page, expectedPageCount, assets, contextLabel, missingPages);
+            if (canvasAssets.length) {
+                assets = this.mergePageAssets(assets, canvasAssets);
+            }
+            missingPages = this.getMissingPages(assets, expectedPageCount);
+        }
+
+        if (expectedPageCount <= 0 || missingPages.length === 0) {
+            return assets;
+        }
+
+        logger.info(
+            `[Comix] [${contextLabel}] Filling ${missingPages.length} missing page(s) via progress: ${missingPages.join(', ')}`,
+            { service: 'comixScraper' },
+        );
+        const progressAssets = await this.collectPageAssetsFromProgressButtons(page, expectedPageCount, contextLabel, missingPages);
+        return this.mergePageAssets(assets, progressAssets);
     }
 
     private async collectPageAssetsByScrolling(
@@ -577,8 +588,10 @@ export class ComixScraper implements IChapterScraper {
     ): Promise<ComixPageAsset[]> {
         const pageMap = new Map<number, ComixPageAsset>();
         const maxSteps = Math.max(expectedPageCount > 0 ? expectedPageCount * 8 : 420, 160);
-        const minCaptureWidth = ComixScraper.MIN_CAPTURE_WIDTH;
-        const minCaptureHeight = ComixScraper.MIN_CAPTURE_HEIGHT;
+        const minCaptureWidth = ComixScraper.MIN_IMAGE_NATURAL_WIDTH;
+        const minCaptureHeight = ComixScraper.MIN_IMAGE_NATURAL_HEIGHT;
+        const minCanvasWidth = ComixScraper.MIN_CAPTURE_WIDTH;
+        const minCanvasHeight = ComixScraper.MIN_CAPTURE_HEIGHT;
         let stagnantSteps = 0;
         let reachedEnd = false;
 
@@ -588,7 +601,7 @@ export class ComixScraper implements IChapterScraper {
         for (let step = 1; step <= maxSteps; step++) {
             const beforeSize = pageMap.size;
             const snapshot = await page.evaluate(
-                ({ minW, minH }: { minW: number; minH: number }) => {
+                ({ minW, minH, canvasMinW, canvasMinH }: { minW: number; minH: number; canvasMinW: number; canvasMinH: number }) => {
                 const nodes = Array.from(document.querySelectorAll<HTMLElement>('.rpage-page[data-page], div.rpage-page'));
                 const out: Array<{
                     page: number;
@@ -603,12 +616,18 @@ export class ComixScraper implements IChapterScraper {
                     const rect = node.getBoundingClientRect();
                     const visible = rect.bottom >= 0 && rect.top <= window.innerHeight;
                     const img = node.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
-                    const src = img?.getAttribute('src') || img?.getAttribute('data-src') || '';
+                    const src = img?.currentSrc || img?.getAttribute('src') || img?.getAttribute('data-src') || '';
                     const srcMatch = src.match(/\/(\d{1,4})\.(webp|jpg|jpeg|png)(\?|$)/i);
                     const dataPage = Number(node.getAttribute('data-page') || '');
                     const inferredPage = srcMatch ? Number(srcMatch[1]) : NaN;
                     const pageNum = Number.isFinite(dataPage) && dataPage > 0 ? dataPage : inferredPage;
                     if (!Number.isFinite(pageNum) || pageNum < 1) continue;
+
+                    const imgReady =
+                        !!img &&
+                        img.complete &&
+                        img.naturalWidth >= minW &&
+                        img.naturalHeight >= minH;
 
                     const canvas = node.querySelector('canvas.rpage-page__img, canvas') as HTMLCanvasElement | null;
                     const canvasWidth = canvas?.width || 0;
@@ -616,10 +635,10 @@ export class ComixScraper implements IChapterScraper {
                     const hasCanvas =
                         !!canvas &&
                         visible &&
-                        canvasWidth >= minW &&
-                        canvasHeight >= minH;
+                        canvasWidth >= canvasMinW &&
+                        canvasHeight >= canvasMinH;
 
-                    if (src && src.startsWith('http') && /\.(webp|jpg|jpeg|png)(\?|$)/i.test(src)) {
+                    if (imgReady && src && src.startsWith('http') && /\.(webp|jpg|jpeg|png)(\?|$)/i.test(src)) {
                         if (!srcMatch || Number(srcMatch[1]) === pageNum) {
                             out.push({ page: pageNum, imageUrl: src, visible, hasCanvas, canvasWidth, canvasHeight });
                             continue;
@@ -634,7 +653,7 @@ export class ComixScraper implements IChapterScraper {
                 const hasEndMarker = !!document.querySelector('div.rpage-chap-ending__nav');
                 return { out, hasEndMarker };
                 },
-                { minW: minCaptureWidth, minH: minCaptureHeight },
+                { minW: minCaptureWidth, minH: minCaptureHeight, canvasMinW: minCanvasWidth, canvasMinH: minCanvasHeight },
             );
 
             for (const asset of snapshot.out) {
@@ -695,31 +714,40 @@ export class ComixScraper implements IChapterScraper {
 
         // Final settle at end and full DOM sweep for lazy-loaded img URLs.
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        await page.waitForTimeout(1600);
+        await page.waitForTimeout(900);
         await page.evaluate(() => window.scrollTo(0, 0));
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(300);
 
-        const finalSweep = await page.evaluate(() => {
-            const nodes = Array.from(document.querySelectorAll<HTMLElement>('.rpage-page[data-page], div.rpage-page'));
-            const out: ComixPageAsset[] = [];
+        const finalSweep = await page.evaluate(
+            ({ minW, minH }: { minW: number; minH: number }) => {
+                const nodes = Array.from(document.querySelectorAll<HTMLElement>('.rpage-page[data-page], div.rpage-page'));
+                const out: ComixPageAsset[] = [];
 
-            for (const node of nodes) {
-                const dataPage = Number(node.getAttribute('data-page') || '');
-                const img = node.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
-                const src = img?.currentSrc || img?.getAttribute('src') || img?.getAttribute('data-src') || '';
-                const srcMatch = src.match(/\/(\d{1,4})\.(webp|jpg|jpeg|png)(\?|$)/i);
-                const inferredPage = srcMatch ? Number(srcMatch[1]) : NaN;
-                const pageNum = Number.isFinite(dataPage) && dataPage > 0 ? dataPage : inferredPage;
-                if (!Number.isFinite(pageNum) || pageNum < 1) continue;
+                for (const node of nodes) {
+                    const dataPage = Number(node.getAttribute('data-page') || '');
+                    const img = node.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
+                    const src = img?.currentSrc || img?.getAttribute('src') || img?.getAttribute('data-src') || '';
+                    const srcMatch = src.match(/\/(\d{1,4})\.(webp|jpg|jpeg|png)(\?|$)/i);
+                    const inferredPage = srcMatch ? Number(srcMatch[1]) : NaN;
+                    const pageNum = Number.isFinite(dataPage) && dataPage > 0 ? dataPage : inferredPage;
+                    if (!Number.isFinite(pageNum) || pageNum < 1) continue;
 
-                if (src && src.startsWith('http') && /\.(webp|jpg|jpeg|png)(\?|$)/i.test(src)) {
-                    if (!srcMatch || Number(srcMatch[1]) === pageNum) {
-                        out.push({ page: pageNum, imageUrl: src });
+                    const imgReady =
+                        !!img &&
+                        img.complete &&
+                        img.naturalWidth >= minW &&
+                        img.naturalHeight >= minH;
+
+                    if (imgReady && src && src.startsWith('http') && /\.(webp|jpg|jpeg|png)(\?|$)/i.test(src)) {
+                        if (!srcMatch || Number(srcMatch[1]) === pageNum) {
+                            out.push({ page: pageNum, imageUrl: src });
+                        }
                     }
                 }
-            }
-            return out;
-        });
+                return out;
+            },
+            { minW: minCaptureWidth, minH: minCaptureHeight },
+        );
 
         for (const asset of finalSweep) {
             const existing = pageMap.get(asset.page);
@@ -748,8 +776,10 @@ export class ComixScraper implements IChapterScraper {
         expectedPageCount: number,
         currentAssets: ComixPageAsset[],
         contextLabel: string,
+        onlyPages?: number[],
     ): Promise<ComixPageAsset[]> {
-        const existingPages = new Set(currentAssets.map(a => a.page));
+        const existingPages = new Set(currentAssets.filter(a => this.hasCompleteAsset(a)).map(a => a.page));
+        const onlyPageSet = onlyPages?.length ? new Set(onlyPages) : null;
         const canvasPages: number[] = await page.evaluate((expected: number) => {
             const nodes = Array.from(document.querySelectorAll<HTMLElement>('.rpage-page[data-page], div.rpage-page'));
             return nodes
@@ -763,19 +793,23 @@ export class ComixScraper implements IChapterScraper {
                 .sort((a, b) => a - b);
         }, expectedPageCount);
 
-        if (!canvasPages.length) return [];
+        const targetPages = canvasPages.filter((pageNum) => {
+            if (existingPages.has(pageNum)) return false;
+            if (onlyPageSet && !onlyPageSet.has(pageNum)) return false;
+            return true;
+        });
+        if (!targetPages.length) return [];
 
         await this.dismissReaderHint(page);
         const captured: ComixPageAsset[] = [];
-        for (const pageNum of canvasPages) {
-            if (existingPages.has(pageNum)) continue;
+        for (const pageNum of targetPages) {
             const selector = `.rpage-page[data-page="${pageNum}"]`;
             const node = page.locator(selector).first();
             if (!(await node.count())) continue;
 
-            for (let attempt = 1; attempt <= 5; attempt++) {
+            for (let attempt = 1; attempt <= 2; attempt++) {
                 await node.scrollIntoViewIfNeeded().catch(() => {});
-                await page.waitForTimeout(300);
+                await page.waitForTimeout(200);
                 await this.dismissReaderHint(page);
                 const asset = await this.captureCanvasPageViaScreenshot(page, pageNum, contextLabel);
                 if (asset) {
@@ -787,7 +821,7 @@ export class ComixScraper implements IChapterScraper {
         }
 
         logger.info(
-            `[Comix] [${contextLabel}] Canvas page pass: found=${canvasPages.length}, captured=${captured.length} (min=${ComixScraper.MIN_CAPTURE_WIDTH}x${ComixScraper.MIN_CAPTURE_HEIGHT})`,
+            `[Comix] [${contextLabel}] Canvas page pass: targets=${targetPages.length}, captured=${captured.length} (min=${ComixScraper.MIN_CAPTURE_WIDTH}x${ComixScraper.MIN_CAPTURE_HEIGHT})`,
             { service: 'comixScraper' },
         );
         return captured;
@@ -797,39 +831,40 @@ export class ComixScraper implements IChapterScraper {
         page: any,
         expectedPageCount: number,
         contextLabel: string,
+        onlyPages?: number[],
     ): Promise<ComixPageAsset[]> {
         const pageMap = new Map<number, ComixPageAsset>();
 
         const progressButtons = page.locator('div.rpage-progress.rpage-progress--left button.rpage-progress__seg');
         const buttonCount = await progressButtons.count();
         const totalPages = expectedPageCount > 0 ? expectedPageCount : buttonCount;
+        const pagesToVisit =
+            onlyPages?.length
+                ? onlyPages.filter((n) => n >= 1 && (totalPages <= 0 || n <= totalPages))
+                : Array.from({ length: totalPages }, (_, i) => i + 1);
         logger.info(
-            `[Comix] [${contextLabel}] Progress traversal setup: expected=${expectedPageCount}, buttonsFound=${buttonCount}, iterating=${totalPages}`,
+            `[Comix] [${contextLabel}] Progress traversal: expected=${expectedPageCount}, buttonsFound=${buttonCount}, visiting=${pagesToVisit.length} page(s)`,
             { service: 'comixScraper' },
         );
 
-        if (buttonCount > 0 && totalPages > 0) {
-            for (let i = 0; i < totalPages; i++) {
-                const pageNum = i + 1;
-                const button = progressButtons.nth(Math.min(i, buttonCount - 1));
+        if (buttonCount > 0 && pagesToVisit.length > 0) {
+            for (const pageNum of pagesToVisit) {
+                const button = progressButtons.nth(Math.min(pageNum - 1, buttonCount - 1));
                 if (!(await button.count())) continue;
                 const clicked = await button.click({ force: true }).then(() => true).catch(() => false);
                 await this.waitForReaderPageIndex(page, pageNum);
 
-                const asset = await this.captureAssetForActivePage(page, pageNum);
+                let asset = await this.captureAssetForActivePage(page, pageNum);
+                if (!asset) {
+                    asset = await this.captureCanvasPageViaScreenshot(page, pageNum, contextLabel);
+                }
                 if (asset) {
                     pageMap.set(pageNum, asset);
                 }
 
                 const source = asset?.imageUrl ? 'url' : asset?.dataUrl ? 'canvas' : 'none';
-                const dims = await page.evaluate(() => {
-                    const canvas = document.querySelector(
-                        '.swiper-slide.rpage-slide.swiper-slide-active canvas.rpage-page__img, .swiper-slide.rpage-slide.swiper-slide-active canvas',
-                    ) as HTMLCanvasElement | null;
-                    return canvas ? `${canvas.width}x${canvas.height}` : '';
-                });
-                logger.info(
-                    `[Comix] [${contextLabel}] Progress page ${pageNum}/${totalPages}: clicked=${clicked} source=${source} dims=${dims || 'n/a'} cumulativeAssets=${pageMap.size}`,
+                logger.debug(
+                    `[Comix] [${contextLabel}] Progress page ${pageNum}: clicked=${clicked} source=${source} cumulativeAssets=${pageMap.size}`,
                     { service: 'comixScraper' },
                 );
             }
@@ -868,14 +903,53 @@ export class ComixScraper implements IChapterScraper {
                 pageNum,
                 { timeout: 12000 },
             );
-            await page.waitForTimeout(400);
+            await page.waitForTimeout(200);
         } catch {
-            await page.waitForTimeout(1000);
+            await page.waitForTimeout(400);
+        }
+    }
+
+    private async waitForReaderPageImageLoaded(page: any, pageNum: number, timeoutMs = 8000): Promise<boolean> {
+        const minW = ComixScraper.MIN_IMAGE_NATURAL_WIDTH;
+        const minH = ComixScraper.MIN_IMAGE_NATURAL_HEIGHT;
+        try {
+            await page.waitForFunction(
+                ({ n, minW, minH }: { n: number; minW: number; minH: number }) => {
+                    const findImg = (): HTMLImageElement | null => {
+                        const slide = document.querySelector('.swiper-slide.rpage-slide.swiper-slide-active');
+                        if (slide) {
+                            const pageEl = slide.querySelector('.rpage-page');
+                            const dp = pageEl?.getAttribute('data-page');
+                            if (dp != null && Number(dp) === n) {
+                                return slide.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
+                            }
+                        }
+                        const node = document.querySelector(`.rpage-page[data-page="${n}"]`);
+                        return node?.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
+                    };
+                    const img = findImg();
+                    if (!img) return false;
+                    const src = img.currentSrc || img.src || img.getAttribute('data-src') || '';
+                    if (!src || !/^https?:\/\//i.test(src)) return false;
+                    if (!/\.(webp|jpg|jpeg|png)(\?|$)/i.test(src)) return false;
+                    if (!img.complete) return false;
+                    if (img.naturalWidth < minW || img.naturalHeight < minH) return false;
+                    return true;
+                },
+                { n: pageNum, minW, minH },
+                { timeout: timeoutMs },
+            );
+            return true;
+        } catch {
+            return false;
         }
     }
 
     private async captureAssetForActivePage(page: any, pageNum: number): Promise<ComixPageAsset | null> {
-        return page.evaluate((n: number) => {
+        await this.waitForReaderPageImageLoaded(page, pageNum, 6000);
+        const minW = ComixScraper.MIN_IMAGE_NATURAL_WIDTH;
+        const minH = ComixScraper.MIN_IMAGE_NATURAL_HEIGHT;
+        return page.evaluate(({ n, minW, minH }: { n: number; minW: number; minH: number }) => {
             const slide = document.querySelector('.swiper-slide.rpage-slide.swiper-slide-active');
             const root = slide || document.querySelector('.rpage-page');
             if (!root) return null;
@@ -887,8 +961,16 @@ export class ComixScraper implements IChapterScraper {
             if (dataPage != null && Number(dataPage) !== n) return null;
 
             const img = root.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
-            const src = img?.getAttribute('src') || img?.getAttribute('data-src') || '';
-            if (src && src.startsWith('http') && /\.(webp|jpg|jpeg|png)(\?|$)/i.test(src)) {
+            const src = img?.currentSrc || img?.getAttribute('src') || img?.getAttribute('data-src') || '';
+            if (
+                img &&
+                img.complete &&
+                img.naturalWidth >= minW &&
+                img.naturalHeight >= minH &&
+                src &&
+                src.startsWith('http') &&
+                /\.(webp|jpg|jpeg|png)(\?|$)/i.test(src)
+            ) {
                 const m = src.match(/\/(\d{1,4})\.(webp|jpg|jpeg|png)(\?|$)/i);
                 if (!m || Number(m[1]) === n) {
                     return { page: n, imageUrl: src };
@@ -896,7 +978,7 @@ export class ComixScraper implements IChapterScraper {
             }
 
             return null;
-        }, pageNum);
+        }, { n: pageNum, minW, minH });
     }
 
     private async captureCanvasPageViaScreenshot(
@@ -909,7 +991,7 @@ export class ComixScraper implements IChapterScraper {
             const node = page.locator(`.rpage-page[data-page="${pageNum}"]`).first();
             if (!(await node.count())) return null;
             await node.scrollIntoViewIfNeeded().catch(() => {});
-            await page.waitForTimeout(180);
+            await page.waitForTimeout(120);
             await page.evaluate((styleId: string) => {
                 let style = document.getElementById(styleId) as HTMLStyleElement | null;
                 if (!style) {
@@ -940,9 +1022,9 @@ export class ComixScraper implements IChapterScraper {
             const metadata = await sharp(buffer, { failOn: 'none' }).metadata();
             const width = metadata.width || 0;
             const height = metadata.height || 0;
-            if (width < ComixScraper.MIN_CAPTURE_WIDTH || height < ComixScraper.MIN_CAPTURE_HEIGHT) {
+            if (!ComixScraper.isValidChapterImageDimensions(width, height)) {
                 logger.debug(
-                    `[Comix] [${contextLabel}] Rejecting canvas screenshot page ${pageNum} due to size ${width}x${height} (min=${ComixScraper.MIN_CAPTURE_WIDTH}x${ComixScraper.MIN_CAPTURE_HEIGHT})`,
+                    `[Comix] [${contextLabel}] Rejecting canvas screenshot page ${pageNum} due to size ${width}x${height}`,
                     { service: 'comixScraper' },
                 );
                 return null;
@@ -968,7 +1050,8 @@ export class ComixScraper implements IChapterScraper {
     }
 
     private getMissingPages(assets: ComixPageAsset[], expectedPageCount: number): number[] {
-        const have = new Set<number>(assets.map(a => a.page));
+        if (expectedPageCount <= 0) return [];
+        const have = new Set<number>(assets.filter(a => this.hasCompleteAsset(a)).map(a => a.page));
         const missing: number[] = [];
         for (let i = 1; i <= expectedPageCount; i++) {
             if (!have.has(i)) missing.push(i);
@@ -1320,16 +1403,30 @@ export class ComixScraper implements IChapterScraper {
                         fs.writeFileSync(filePath, out);
                     } else if (asset.imageUrl) {
                         const response = await ComixScraper.axiosInstance.get(asset.imageUrl, {
-                            responseType: 'stream',
-                            timeout: 15000,
+                            responseType: 'arraybuffer',
+                            timeout: 30000,
                             headers: {
                                 Referer: referer,
                                 Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
                                 'User-Agent': appConfig.scraper.comix.userAgent,
                             },
                         });
+                        const buffer = Buffer.from(response.data as ArrayBuffer);
+                        if (buffer.length < ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES) {
+                            throw new Error(
+                                `Downloaded image too small for page ${asset.page}: ${buffer.length}/${ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES} bytes`,
+                            );
+                        }
+                        const metadata = await sharp(buffer, { failOn: 'none' }).metadata();
+                        const width = metadata.width || 0;
+                        const height = metadata.height || 0;
+                        if (!ComixScraper.isValidChapterImageDimensions(width, height)) {
+                            throw new Error(
+                                `Downloaded image dimensions too small for page ${asset.page}: ${width}x${height} (need long edge ≥${ComixScraper.MIN_CHAPTER_LONG_EDGE}, short edge ≥${ComixScraper.MIN_CHAPTER_SHORT_EDGE})`,
+                            );
+                        }
                         // Comix CDN image URLs are already webp; avoid expensive no-op transcode.
-                        await pipeline(response.data, createWriteStream(filePath));
+                        fs.writeFileSync(filePath, buffer);
                     } else {
                         throw new Error(`No imageUrl or dataUrl captured for page ${asset.page}`);
                     }

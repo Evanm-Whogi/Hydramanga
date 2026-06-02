@@ -28,9 +28,7 @@ import {
 import logger from '@/services/loggerService';
 import { titleSearchSemaphore } from '@/services/titleSearchSemaphore';
 import { cacheService } from '@/services/cacheService';
-import { db } from '@/db';
-import { mangaImportProgress } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { mangaProgressService } from '@/services/mangaProgressService';
 
 /**
  * Scraper attempt result (for logging and debugging)
@@ -401,13 +399,7 @@ export class ScraperManager {
                 // Persist URL and scraper on import progress so future cron jobs can skip findBestMatch
                 if (seriesId != null) {
                     try {
-                        await db
-                            .update(mangaImportProgress)
-                            .set({
-                                scraperUrl: result.href,
-                                scraperId: meta.id,
-                            })
-                            .where(eq(mangaImportProgress.seriesId, seriesId));
+                        await mangaProgressService.persistScraperSource(seriesId, meta.id, result.href);
                         logger.info(
                             `Saved scraper URL for series ${seriesId} (${meta.id})`,
                             { service: 'scraperManager' }

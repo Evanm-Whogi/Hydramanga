@@ -1,11 +1,7 @@
 import { Router, RequestHandler } from 'express';
-import { getTrending, getMangaAnalytics, getMyProgress, getMangaProgress, updateProgress, deleteProgress, getMyStats, getSeriesChapterProgress, markChapterAsRead, markChapterAsUnread, recordReadingTime, clearAllProgress, getMyViewHistory, deleteViewHistory, clearAllViewHistory } from '@/controllers/analyticsController';
+import { getMyProgress, getMangaProgress, updateProgress, deleteProgress, getMyStats, getSeriesChapterProgress, markChapterAsRead, markChapterAsUnread, recordReadingTime, clearAllProgress, getMyViewHistory, deleteViewHistory, clearAllViewHistory } from '@/controllers/analyticsController';
 
 const router = Router();
-
-// Trending and Manga Analytics
-router.get('/trending', getTrending as RequestHandler);
-router.get('/manga/:id', getMangaAnalytics as RequestHandler);
 
 // User Progress
 router.get('/progress', getMyProgress as RequestHandler);

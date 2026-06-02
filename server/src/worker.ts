@@ -15,13 +15,14 @@ if (process.env.ENABLE_SENTRY === 'true') {
 }
 
 async function main() {
+    initializeScrapers();
+
     // Eagerly create all queues so workers start (RUN_WORKERS=true in worker container)
     queueService.getQueue('mangaImportQueue');
     queueService.getQueue('mangaChapterImportQueue');
-    queueService.getQueue('mangaChapterDownloadQueue');
+    queueService.ensureChapterDownloadQueues();
+    queueService.getQueue('storageCleanupQueue');
     queueService.getQueue('emailQueue');
-
-    initializeScrapers();
 
     try {
         await mangaRecoveryService.recoverIncompleteDownloads();

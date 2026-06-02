@@ -39,9 +39,13 @@ initializeScrapers();
 // Constants
 const app: Express = express();
 
-app.use(morgan(':method :url :status :response-time ms - :res[content-length] \n', {
+// Morgan
+morgan.token("username", (req) => {return (req as any).user?.username || "Unknown"});
+morgan.token("ip", (req) => {return (req as any).ip || "Unknown"});
+app.use(morgan(':username [:ip] :\n:method :url :status :response-time ms\n', {
     skip: (req, res) => req.originalUrl.includes('/heartbeat') || req.originalUrl.includes('/socket.io')
 }));
+
 const corsOrigins = ['https://manga.chit.sh', process.env.PUBLIC_APP_URL].filter(Boolean) as string[];
 app.use(cors({ origin: corsOrigins, credentials: true }));
 app.use(
@@ -54,18 +58,12 @@ app.set('trust proxy', 1);
 
 // Auth Routes (tracking for IP/UA on auth events)
 app.use('/auth', trackingMiddleware);
-// Brute-force protection on sensitive auth endpoints only (get-session etc. stay unthrottled)
 app.use(['/auth/sign-in', '/auth/sign-up', '/auth/forget-password', '/auth/reset-password', '/auth/request-password-reset'], authRateLimiter);
 app.all("/auth/{*any}", auditAuthHandler(toNodeHandler(auth)));
 
 // Middlewares
 app.use(express.json({ limit: '256kb' }));
 app.use(isMaintenance);
-
-// Enable rate limiting only in production [Disabled]
-// if (process.env.NODE_ENV === 'production') {
-//     app.use(rateLimiter);
-// }
 
 // Routes
 require('@/routes')(app);

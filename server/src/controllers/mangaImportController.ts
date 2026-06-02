@@ -171,3 +171,56 @@ export const triggerTrendingRescan = async (req: Request, res: Response, next: N
         return res.status(500).json({ error: 'Internal Server Error' });
     }
 }
+
+function parseRankedScanQuery(req: Request): { start: number; end: number; skipWithChapters: boolean; autoSelectSource: boolean; type?: string } | { error: string } {
+    const start = Number(req.query.start);
+    const end = Number(req.query.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 1 || end < start) {
+        return { error: 'Query params start and end are required (1-based inclusive ranks, e.g. start=100&end=200)' };
+    }
+    const skipWithChapters = req.query.skipWithChapters === 'true' || req.query.skipWithChapters === '1';
+    const autoSelectSource = req.query.autoSelectSource !== 'false' && req.query.autoSelectSource !== '0';
+    const type = typeof req.query.type === 'string' && req.query.type.trim() ? req.query.type.trim() : undefined;
+    return { start: Math.floor(start), end: Math.floor(end), skipWithChapters, autoSelectSource, type };
+}
+
+export const triggerRankedScan = async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
+    try {
+        const parsed = parseRankedScanQuery(req);
+        if ('error' in parsed) {
+            return res.status(400).json({ error: parsed.error });
+        }
+
+        const { start, end, skipWithChapters, autoSelectSource, type } = parsed;
+        if (end - start + 1 > 500) {
+            return res.status(400).json({ error: 'Maximum 500 ranks per batch (end - start + 1 <= 500)' });
+        }
+
+        logger.info(
+            `Ranked chapter scan triggered via admin API (ranks ${start}-${end}, skipWithChapters=${skipWithChapters}, autoSelectSource=${autoSelectSource}${type ? `, type=${type}` : ''})`,
+            { service: 'mangaImportController' }
+        );
+
+        mangaOrchestratorService.enqueueRankedChapterScans({ start, end, skipWithChapters, autoSelectSource, type }).then((result) => {
+            logger.info(
+                `Ranked scan batch ${start}-${end} finished: ${result.queued} queued, ${result.sourcesSelected} sources selected`,
+                { service: 'mangaImportController' }
+            );
+        }).catch((error) => {
+            logger.error(`Error during ranked scan ${start}-${end}: ${error.message}`, { service: 'mangaImportController' });
+        });
+
+        return res.status(202).json({
+            message: `Ranked scan accepted for global ranks ${start}-${end}`,
+            description: 'Queues chapter scans for the global weighted-score rank range. skipWithChapters skips individual titles but does not shift ranks. When autoSelectSource is on, each queued title gets a scraper source via cross-scraper title matching (score + priority) before its scan job runs.',
+            start,
+            end,
+            skipWithChapters,
+            autoSelectSource,
+            type: type ?? 'all',
+        });
+    } catch (error: any) {
+        logger.error(`Failed to trigger ranked scan: ${error.message}`, { service: 'mangaImportController' });
+        return res.status(500).json({ error: 'Internal Server Error' });
+    }
+}

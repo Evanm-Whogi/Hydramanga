@@ -1,22 +1,46 @@
 import type { JobType } from 'bullmq';
 import { appConfig } from '@/config/appConfig';
 import { queueService } from '@/services/queueService';
+import {getAdminQueueDisplayOrder, getChapterDownloadQueueDescription, getChapterDownloadQueueLabel, isChapterDownloadJobQueue, isChapterDownloadQueue, resolveChapterDownloadQueueConfig, scraperIdFromChapterDownloadQueue} from '@/lib/chapterDownloadQueues';
 
-const QUEUE_NAMES = Object.keys(appConfig.queues) as (keyof typeof appConfig.queues)[];
+const STATIC_QUEUE_NAMES = (Object.keys(appConfig.queues) as (keyof typeof appConfig.queues)[]).filter(
+  (name): name is Exclude<keyof typeof appConfig.queues, 'chapterDownload'> => name !== 'chapterDownload'
+);
 
 const QUEUE_LABELS: Record<string, string> = {
   emailQueue: 'Email',
   mangaImportQueue: 'Manga Import',
   mangaChapterImportQueue: 'Chapter Scan',
-  mangaChapterDownloadQueue: 'Chapter Download',
 };
 
 const QUEUE_DESCRIPTIONS: Record<string, string> = {
   emailQueue: 'Transactional and notification emails',
   mangaImportQueue: 'Full series import and metadata sync',
   mangaChapterImportQueue: 'Scraper chapter list discovery',
-  mangaChapterDownloadQueue: 'Chapter image downloads from sources',
 };
+
+function getAllAdminQueueNames(): string[] {
+  return getAdminQueueDisplayOrder();
+}
+
+function getQueueLabel(name: string): string {
+  if (isChapterDownloadQueue(name)) return getChapterDownloadQueueLabel(name);
+  return QUEUE_LABELS[name] ?? name;
+}
+
+function getQueueDescription(name: string): string {
+  if (isChapterDownloadQueue(name)) return getChapterDownloadQueueDescription(name);
+  return QUEUE_DESCRIPTIONS[name] ?? '';
+}
+
+function getQueueConcurrency(name: string): number {
+  if (isChapterDownloadQueue(name)) {
+    const scraperId = scraperIdFromChapterDownloadQueue(name);
+    if (scraperId) return resolveChapterDownloadQueueConfig(scraperId).concurrency;
+  }
+  const config = appConfig.queues[name as keyof typeof appConfig.queues];
+  return config && 'concurrency' in config ? config.concurrency : 1;
+}
 
 export interface AdminQueueRow {
   name: string;
@@ -60,8 +84,8 @@ export interface AdminQueueJobRow {
   data: Record<string, unknown>;
 }
 
-function isValidQueueName(name: string): name is keyof typeof appConfig.queues {
-  return QUEUE_NAMES.includes(name as keyof typeof appConfig.queues);
+function isValidQueueName(name: string): boolean {
+  return STATIC_QUEUE_NAMES.includes(name as (typeof STATIC_QUEUE_NAMES)[number]) || isChapterDownloadJobQueue(name);
 }
 
 function summarizeJobData(jobName: string, data: unknown): string {
@@ -138,10 +162,10 @@ class AdminQueueService {
   async listQueues(): Promise<{ queues: AdminQueueRow[]; totals: AdminQueueTotals; redisAvailable: boolean }> {
     const queues: AdminQueueRow[] = [];
     let redisAvailable = true;
+    const queueNames = getAllAdminQueueNames();
 
     await Promise.all(
-      QUEUE_NAMES.map(async (name) => {
-        const config = appConfig.queues[name];
+      queueNames.map(async (name) => {
         try {
           const [status, snapshot] = await Promise.race([
             Promise.all([queueService.getQueueStatus(name), queueService.getQueueSnapshot(name)]),
@@ -152,8 +176,8 @@ class AdminQueueService {
 
           queues.push({
             name,
-            label: QUEUE_LABELS[name] ?? name,
-            description: QUEUE_DESCRIPTIONS[name] ?? '',
+            label: getQueueLabel(name),
+            description: getQueueDescription(name),
             status: status.status === 'Paused' ? 'Paused' : 'Active',
             waiting: status.waiting,
             active: status.active,
@@ -161,14 +185,14 @@ class AdminQueueService {
             failed: status.failed,
             delayed: status.delayed,
             oldestWaitingMs: snapshot.oldestWaitingMs,
-            concurrency: config.concurrency,
+            concurrency: getQueueConcurrency(name),
           });
         } catch (err) {
           redisAvailable = false;
           queues.push({
             name,
-            label: QUEUE_LABELS[name] ?? name,
-            description: QUEUE_DESCRIPTIONS[name] ?? '',
+            label: getQueueLabel(name),
+            description: getQueueDescription(name),
             status: 'Unavailable',
             waiting: 0,
             active: 0,
@@ -176,14 +200,21 @@ class AdminQueueService {
             failed: 0,
             delayed: 0,
             oldestWaitingMs: null,
-            concurrency: config.concurrency,
+            concurrency: getQueueConcurrency(name),
             error: err instanceof Error ? err.message : 'Failed to read queue',
           });
         }
       })
     );
 
-    queues.sort((a, b) => a.label.localeCompare(b.label));
+    const order = getAdminQueueDisplayOrder();
+    queues.sort((a, b) => {
+      const aIdx = order.indexOf(a.name);
+      const bIdx = order.indexOf(b.name);
+      const aOrder = aIdx >= 0 ? aIdx : order.length;
+      const bOrder = bIdx >= 0 ? bIdx : order.length;
+      return aOrder - bOrder || a.label.localeCompare(b.label);
+    });
 
     const totals = queues.reduce<AdminQueueTotals>(
       (acc, q) => ({
@@ -245,8 +276,8 @@ class AdminQueueService {
       return {
         queue: {
           name: queueName,
-          label: QUEUE_LABELS[queueName] ?? queueName,
-          description: QUEUE_DESCRIPTIONS[queueName] ?? '',
+          label: getQueueLabel(queueName),
+          description: getQueueDescription(queueName),
         },
         state,
         counts: stateCounts,
@@ -279,11 +310,11 @@ class AdminQueueService {
     }
   }
 
-  async removeJob(queueName: string, jobId: string) {
+  async removeJob(queueName: string, jobId: string, opts?: { force?: boolean }) {
     if (!isValidQueueName(queueName)) return { error: 'not_found' as const };
     try {
-      await queueService.removeJob(queueName, jobId);
-      return { success: true as const };
+      await queueService.removeJob(queueName, jobId, opts);
+      return { success: true as const, forced: !!opts?.force };
     } catch (err) {
       return {
         error: 'bad_request' as const,

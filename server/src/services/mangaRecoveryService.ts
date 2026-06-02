@@ -114,7 +114,7 @@ class MangaRecoveryService {
           await db
             .update(mangaImportProgress)
             .set({
-              status: 'completed',
+              status: 'source_set',
               totalChapters: 0,
               downloadedChapters: 0,
               errorMessage: null,
