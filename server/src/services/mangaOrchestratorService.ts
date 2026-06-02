@@ -216,10 +216,20 @@ class MangaOrchestratorService {
         for (const job of allJobs) {
           if (Number(job?.data?.seriesId) === seriesIdNum) {
             try {
-              await job.remove();
+              await queueService.removeJob(downloadQueueName, String(job.id));
               chapterJobsRemoved++;
             } catch (err) {
-              logger.warn(`Failed to remove chapter job ${job.id} from ${downloadQueueName}: ${(err as Error).message}`, { service: 'mangaOrchestratorService' });
+              const message = (err as Error).message || String(err);
+              if (!message.includes('locked')) {
+                logger.warn(`Failed to remove chapter job ${job.id} from ${downloadQueueName}: ${message}`, { service: 'mangaOrchestratorService' });
+                continue;
+              }
+              try {
+                await queueService.forceRemoveJob(downloadQueueName, String(job.id));
+                chapterJobsRemoved++;
+              } catch (forceErr) {
+                logger.warn(`Failed to force-remove chapter job ${job.id} from ${downloadQueueName}: ${(forceErr as Error).message}`, { service: 'mangaOrchestratorService' });
+              }
             }
           }
         }

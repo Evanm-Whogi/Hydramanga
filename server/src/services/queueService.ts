@@ -277,10 +277,78 @@ class QueueService {
         await job.retry();
     }
 
-    public async removeJob(queueName: string, jobId: string): Promise<void> {
+    public async removeJob(queueName: string, jobId: string, opts?: { force?: boolean }): Promise<void> {
+        if (opts?.force) {
+            await this.forceRemoveJob(queueName, jobId);
+            return;
+        }
         const job = await this.getJob(queueName, jobId);
         if (!job) throw new Error('Job not found');
         await job.remove();
+    }
+
+    /** Remove a job even when BullMQ reports it is locked (stale worker, crashed process, etc.). */
+    public async forceRemoveJob(queueName: string, jobId: string): Promise<void> {
+        const queue = this.getQueue(queueName);
+        await queue.waitUntilReady();
+        const job = await this.getJob(queueName, jobId);
+        if (!job) throw new Error('Job not found');
+
+        try {
+            await job.remove();
+            return;
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            if (!message.includes('locked')) throw err;
+        }
+
+        logger.warn(`Force-removing locked job ${jobId} from queue ${queueName}`, { service: 'queueService' });
+
+        const state = await job.getState();
+        await this.clearJobLockAndLists(queue, jobId, state);
+
+        try {
+            await job.remove();
+            return;
+        } catch (secondErr) {
+            const message = secondErr instanceof Error ? secondErr.message : String(secondErr);
+            if (!message.includes('locked')) throw secondErr;
+        }
+
+        await this.deleteJobRedisRecords(queue, jobId);
+    }
+
+    private async clearJobLockAndLists(queue: Queue, jobId: string, state: string): Promise<void> {
+        const client = await queue.client;
+        const jobKey = queue.toKey(jobId);
+        await client.del(`${jobKey}:lock`);
+        await client.srem(queue.keys.stalled, jobId);
+        if (state === 'active') {
+            await client.lrem(queue.keys.active, 0, jobId);
+        }
+        await client.lrem(queue.keys.wait, 0, jobId);
+        await client.lrem(queue.keys.paused, 0, jobId);
+        await client.zrem(queue.keys.delayed, jobId);
+        await client.zrem(queue.keys.completed, jobId);
+        await client.zrem(queue.keys.failed, jobId);
+        await client.zrem(queue.keys.prioritized, jobId);
+        await client.zrem(queue.keys['waiting-children'], jobId);
+    }
+
+    private async deleteJobRedisRecords(queue: Queue, jobId: string): Promise<void> {
+        const client = await queue.client;
+        const jobKey = queue.toKey(jobId);
+        await client.del(
+            jobKey,
+            `${jobKey}:logs`,
+            `${jobKey}:dependencies`,
+            `${jobKey}:processed`,
+            `${jobKey}:failed`,
+            `${jobKey}:unsuccessful`,
+            `${jobKey}:lock`,
+        );
+        await client.srem(queue.keys.stalled, jobId);
+        logger.info(`Force-deleted Redis records for job ${jobId} in queue ${queue.name}`, { service: 'queueService' });
     }
 
     public async promoteJob(queueName: string, jobId: string): Promise<void> {

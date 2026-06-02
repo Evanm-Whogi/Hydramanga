@@ -310,11 +310,11 @@ class AdminQueueService {
     }
   }
 
-  async removeJob(queueName: string, jobId: string) {
+  async removeJob(queueName: string, jobId: string, opts?: { force?: boolean }) {
     if (!isValidQueueName(queueName)) return { error: 'not_found' as const };
     try {
-      await queueService.removeJob(queueName, jobId);
-      return { success: true as const };
+      await queueService.removeJob(queueName, jobId, opts);
+      return { success: true as const, forced: !!opts?.force };
     } catch (err) {
       return {
         error: 'bad_request' as const,

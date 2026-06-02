@@ -205,16 +205,15 @@ export const discordService = {
     },
 
     async notifyScanCompleted(mangaTitle: string, seriesId: number, foundCount: number, isFirstScan: boolean, coverUrl?: string) {
-        const hasNew = foundCount > 0;
+        if (foundCount <= 0) return;
+
         const scanType = isFirstScan ? 'First scan' : 'Rescan';
 
         await sendEmbed('admin', buildEmbed({
                 title: 'Chapter Scan Completed',
-                description: hasNew
-                    ? `**${mangaTitle}** — found **${foundCount}** new chapter${foundCount !== 1 ? 's' : ''}.`
-                    : `**${mangaTitle}** — no new chapters found.`,
+                description: `**${mangaTitle}** — found **${foundCount}** new chapter${foundCount !== 1 ? 's' : ''}.`,
                 url: mangaUrl(seriesId),
-                color: hasNew ? COLORS.info : COLORS.muted,
+                color: COLORS.info,
                 thumbnailUrl: coverUrl,
                 fields: [
                     { name: 'Scan Type', value: scanType, inline: true },

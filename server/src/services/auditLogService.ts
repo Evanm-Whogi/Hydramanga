@@ -1,6 +1,6 @@
 import { Request } from 'express';
 import { db, schema } from '@/db/index';
-import {and, count, desc, eq, gte, ilike, isNull, lte, or, sql, type SQL} from 'drizzle-orm';
+import {and, count, desc, eq, gte, ilike, isNull, lte, notInArray, or, sql, type SQL} from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { redactMetadata } from '@/audit/redact';
 import { buildAuditBaseFromRequest } from '@/audit/fromRequest';
@@ -238,6 +238,8 @@ class AuditLogService {
     const conditions: SQL[] = [
       eq(schema.auditLogs.actorId, userId),
       eq(schema.auditLogs.category, 'auth'),
+      isNull(schema.auditLogs.impersonatorId),
+      notInArray(schema.auditLogs.action, ['auth.impersonation_start', 'auth.impersonation_end']),
     ];
 
     if (params.dateFrom) {

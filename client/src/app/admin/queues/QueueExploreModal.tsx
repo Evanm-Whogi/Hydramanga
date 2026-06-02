@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import {X, Loader2, ChevronLeft, ChevronRight, RefreshCw, ExternalLink, RotateCcw, Trash2, FastForward} from "lucide-react";
+import {X, Loader2, ChevronLeft, ChevronRight, RefreshCw, ExternalLink, RotateCcw, Trash2, FastForward, OctagonX} from "lucide-react";
 import { toast } from "react-toastify";
 import { getAdminQueueJobs, retryAdminQueueJob, promoteAdminQueueJob, removeAdminQueueJob, type AdminQueueJobCounts, type AdminQueueJobRow, type AdminQueueJobState, type AdminQueueRow } from "@/services/adminQueueService";
 
@@ -92,8 +92,9 @@ export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: Qu
 
   const runJobAction = async (
     jobId: string,
-    action: "retry" | "promote" | "remove",
-    confirmMessage?: string
+    action: "retry" | "promote" | "remove" | "forceRemove",
+    confirmMessage?: string,
+    opts?: { force?: boolean }
   ) => {
     if (confirmMessage && !window.confirm(confirmMessage)) return;
 
@@ -105,9 +106,12 @@ export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: Qu
       } else if (action === "promote") {
         await promoteAdminQueueJob(queue.name, jobId);
         toast.success("Job promoted to waiting");
+      } else if (action === "forceRemove") {
+        await removeAdminQueueJob(queue.name, jobId, { force: true });
+        toast.success("Job force-cancelled");
       } else {
-        await removeAdminQueueJob(queue.name, jobId);
-        toast.success("Job removed");
+        await removeAdminQueueJob(queue.name, jobId, opts?.force ? { force: true } : undefined);
+        toast.success(opts?.force ? "Job force-cancelled" : "Job removed");
       }
       await fetchJobs(true);
       onQueueUpdated?.();
@@ -208,6 +212,7 @@ export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: Qu
                     const busy = actionJobId === job.id;
                     const canRetry = job.state === "failed" || state === "failed";
                     const canPromote = job.state === "delayed" || state === "delayed";
+                    const canForceRemove = job.state === "active" || state === "active";
                     return (
                       <Fragment key={job.id}>
                         <tr
@@ -269,15 +274,39 @@ export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: Qu
                                   <FastForward className="size-4" />
                                 </button>
                               )}
+                              {canForceRemove && (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  title="Force cancel (clears worker lock)"
+                                  onClick={() =>
+                                    runJobAction(
+                                      job.id,
+                                      "forceRemove",
+                                      `Force-cancel job ${job.id}? Use this when the job is stuck active or locked by a dead worker. A running worker process may still finish its current work until it exits.`
+                                    )
+                                  }
+                                  className="p-1.5 rounded text-muted hover:text-orange-400 hover:bg-foreground disabled:opacity-50"
+                                >
+                                  {busy ? (
+                                    <Loader2 className="size-4 animate-spin" />
+                                  ) : (
+                                    <OctagonX className="size-4" />
+                                  )}
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 disabled={busy}
-                                title="Remove job"
+                                title={canForceRemove ? "Remove job (may fail if locked)" : "Remove job"}
                                 onClick={() =>
                                   runJobAction(
                                     job.id,
                                     "remove",
-                                    `Remove job ${job.id}? This cannot be undone.`
+                                    canForceRemove
+                                      ? `Force-cancel job ${job.id}? Clears the worker lock if the job is stuck active.`
+                                      : `Remove job ${job.id}? This cannot be undone.`,
+                                    canForceRemove ? { force: true } : undefined
                                   )
                                 }
                                 className="p-1.5 rounded text-muted hover:text-red-400 hover:bg-foreground disabled:opacity-50"
