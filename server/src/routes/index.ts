@@ -62,4 +62,9 @@ module.exports = (app: Express) => {
 
     // Admin Routes
     app.use('/admin', authMiddleware, adminRoutes);
+
+    // Health check (public)
+    app.get('/heartbeat', (req, res) => {
+        res.json({ status: 200, message: 'Service is healthy' });
+    });
 };

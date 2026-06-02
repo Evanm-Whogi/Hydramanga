@@ -40,7 +40,7 @@ initializeScrapers();
 const app: Express = express();
 
 app.use(morgan(':method :url :status :response-time ms - :res[content-length] \n', {
-    skip: (req, res) => req.originalUrl.includes('/admin/heartbeat') || req.originalUrl.includes('/socket.io')
+    skip: (req, res) => req.originalUrl.includes('/heartbeat') || req.originalUrl.includes('/socket.io')
 }));
 const corsOrigins = ['https://manga.chit.sh', process.env.PUBLIC_APP_URL].filter(Boolean) as string[];
 app.use(cors({ origin: corsOrigins, credentials: true }));
