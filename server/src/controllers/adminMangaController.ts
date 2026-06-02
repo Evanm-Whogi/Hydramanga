@@ -8,48 +8,7 @@ import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import logger from '@/services/loggerService';
 import { queueService } from '@/services/queueService';
 import { cacheService } from '@/services/cacheService';
-
-function extractSecondaryTitleStrings(secondaryTitles: unknown): string[] {
-    if (!secondaryTitles) return [];
-    let parsed: unknown = secondaryTitles;
-    if (typeof secondaryTitles === 'string') {
-        try {
-            parsed = JSON.parse(secondaryTitles);
-        } catch {
-            parsed = secondaryTitles;
-        }
-    }
-    const titles: string[] = [];
-    const visit = (value: unknown) => {
-        if (!value) return;
-        if (typeof value === 'string') {
-            const t = (value as string).trim();
-            if (t) titles.push(t);
-            return;
-        }
-        if (Array.isArray(value)) {
-            for (const item of value) visit(item);
-            return;
-        }
-        if (typeof value === 'object') {
-            const record = value as Record<string, unknown>;
-            if (typeof record.title === 'string') {
-                const t = (record.title as string).trim();
-                if (t) titles.push(t);
-                return;
-            }
-            for (const nested of Object.values(record)) visit(nested);
-        }
-    };
-    visit(parsed);
-    const seen = new Set<string>();
-    return titles.filter((title) => {
-        const key = title.toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-    });
-}
+import { extractSecondaryTitleStrings } from '@/lib/secondaryTitles';
 
 export async function adminScraperSearch(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {

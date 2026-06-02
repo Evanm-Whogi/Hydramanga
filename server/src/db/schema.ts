@@ -497,7 +497,7 @@ export const bookmarks = pgTable('bookmarks', {
 }));
 
 // Manga Import Progress (for real-time progress tracking)
-export const importStatusEnum = pgEnum('import_status', ['scanning', 'downloading', 'completed', 'failed']);
+export const importStatusEnum = pgEnum('import_status', ['scanning', 'downloading', 'completed', 'failed', 'source_set']);
 export const mangaImportProgress = pgTable('manga_import_progress', {
   seriesId: integer('series_id').primaryKey().references(() => series.id, { onDelete: 'cascade' }),
   totalChapters: integer('total_chapters').notNull().default(0),

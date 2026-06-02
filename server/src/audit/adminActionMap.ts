@@ -91,6 +91,9 @@ export function resolveAdminAuditAction(method: string, path: string, params: Re
   if (normalized === '/admin/manga/rescan-trending') {
     return { action: 'admin.manga.rescan_trending', category: 'admin', resourceType: 'system' };
   }
+  if (normalized === '/admin/manga/scan-ranked') {
+    return { action: 'admin.manga.scan_ranked', category: 'admin', resourceType: 'system' };
+  }
   if (normalized.match(/^\/admin\/manga\/[^/]+\/source$/) && method === 'DELETE') {
     return {
       action: 'admin.manga.source.clear',

@@ -8,6 +8,7 @@ import { listAdminManga, listAdminMangaScraperFilters, listAdminMangaTypeFilters
 import { adminGetSource } from "@/services/adminMangaService";
 import { getCoverUrl } from "@/lib/historyUtils";
 import AdminMangaEditModal from "@/app/manga/[id]/components/AdminMangaEditModal";
+import IncrementalScanPanel from "./IncrementalScanPanel";
 
 const STATUS_FILTERS: { value: ListAdminMangaParams["status"]; label: string }[] = [
   { value: "all", label: "All" },
@@ -15,6 +16,7 @@ const STATUS_FILTERS: { value: ListAdminMangaParams["status"]; label: string }[]
   { value: "downloading", label: "Downloading" },
   { value: "completed", label: "Completed" },
   { value: "failed", label: "Failed" },
+  { value: "source_set", label: "Source set" },
   { value: "none", label: "Not Imported" },
 ];
 
@@ -34,6 +36,8 @@ function importStatusClass(status: string | null): string {
       return "bg-teal-500/20 text-teal-400";
     case "completed":
       return "bg-green-500/20 text-green-400";
+    case "source_set":
+      return "bg-sky-500/20 text-sky-400";
     case "failed":
       return "bg-red-500/20 text-red-400";
     default:
@@ -154,6 +158,7 @@ export default function MangaAdminClient() {
 
   return (
     <div className="space-y-4">
+      <IncrementalScanPanel />
       <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
         <div className="relative flex-1 max-w-md w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted" />

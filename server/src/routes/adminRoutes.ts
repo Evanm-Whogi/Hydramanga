@@ -1,7 +1,7 @@
 import { Router, RequestHandler } from 'express';
 import { auditAdminMiddleware } from '@/middlewares/auditAdminMiddleware';
 import { listAdminAuditLogs } from '@/controllers/adminAuditController';
-import { triggerMangaSync, triggerMonitoredRescan, triggerTrendingRescan } from '@/controllers/mangaImportController';
+import { triggerMangaSync, triggerMonitoredRescan, triggerTrendingRescan, triggerRankedScan } from '@/controllers/mangaImportController';
 import { adminScraperSearch, adminSetSource, adminAddSecondaryTitle, adminTriggerRescan, adminGetSource, adminClearSource, adminCancelScan, adminDeleteChapters, adminUpdateSeries } from '@/controllers/adminMangaController';
 import { listAdminManga, listAdminMangaScraperFilters, listAdminMangaTypeFilters } from '@/controllers/adminMangaListController';
 import { getAdminOverviewStats, getAdminTimeseries } from '@/controllers/adminStatsController';
@@ -53,6 +53,7 @@ router.delete('/queues/:name/jobs/:jobId', requireRole('admin'), removeAdminQueu
 router.get('/manga/sync', requireRole('admin'), triggerMangaSync as RequestHandler);
 router.get('/manga/rescan-monitored', requireRole('admin'), triggerMonitoredRescan as RequestHandler);
 router.get('/manga/rescan-trending', requireRole('admin'), triggerTrendingRescan as RequestHandler);
+router.post('/manga/scan-ranked', requireRole('admin'), triggerRankedScan as RequestHandler);
 router.get('/manga/:id/scraper-search', requireRole('admin'), adminScraperSearch as RequestHandler);
 router.get('/manga/:id/source', requireRole('admin'), adminGetSource as RequestHandler);
 router.delete('/manga/:id/source', requireRole('admin'), adminClearSource as RequestHandler);

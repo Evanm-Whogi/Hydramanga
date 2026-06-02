@@ -8,10 +8,14 @@ import logger from '@/services/loggerService';
 const PROGRESS_CHANNEL_PREFIX = 'manga:progress:';
 const PROGRESS_TTL = 3600; // 1 hour in seconds
 
-export type ProgressStatus = 'scanning' | 'downloading' | 'completed' | 'failed';
+export type ProgressStatus = 'scanning' | 'downloading' | 'completed' | 'failed' | 'source_set';
 
-/** Progress row created when admin saves a source but has not started a scan yet. */
+/** Progress row with a scraper source saved but no chapter import started yet. */
 export function isSourceOnlyProgress(progress: {status: string; totalChapters: number; downloadedChapters: number; scraperId?: string | null; scraperUrl?: string | null;}): boolean {
+  if (progress.status === 'source_set') {
+    return !!(progress.scraperId || progress.scraperUrl);
+  }
+  // Legacy rows before source_set enum value
   return (
     progress.status === 'completed' &&
     progress.totalChapters === 0 &&
@@ -52,6 +56,7 @@ class ProgressStateMachine {
     'downloading': ['completed', 'failed'],
     'completed': [], // terminal state
     'failed': ['scanning'], // can retry after failure
+    'source_set': ['scanning', 'failed'],
   };
 
   static canTransition(fromState: ProgressStatus, toState: ProgressStatus): boolean {
@@ -519,7 +524,7 @@ class MangaProgressService {
         status: dbProgress.status,
         percentage: dbProgress.totalChapters > 0
           ? Math.round((dbProgress.downloadedChapters / dbProgress.totalChapters) * 100)
-          : (dbProgress.status === 'completed' ? 100 : 0), // Show 100% if completed with 0 chapters, 0% if still scanning
+          : (dbProgress.status === 'completed' ? 100 : 0),
         startedAt: dbProgress.startedAt,
         updatedAt: dbProgress.updatedAt,
         completedAt: dbProgress.completedAt,
@@ -623,6 +628,47 @@ class MangaProgressService {
   }
 
   /**
+   * Save scraper source without changing import status (for in-flight scans).
+   * Only updates scraper fields on an existing progress row; callers must run initializeProgress first.
+   */
+  async persistScraperSource(seriesId: number, scraperId: string, scraperUrl: string): Promise<void> {
+    try {
+      const updated = await db
+        .update(mangaImportProgress)
+        .set({ scraperId, scraperUrl, updatedAt: new Date() })
+        .where(eq(mangaImportProgress.seriesId, seriesId))
+        .returning({ seriesId: mangaImportProgress.seriesId });
+
+      if (updated.length === 0) {
+        logger.warn(
+          `persistScraperSource: no progress row for series ${seriesId}; scraper source not saved (initializeProgress should run first)`,
+          { service: 'mangaProgressService' }
+        );
+        return;
+      }
+
+      await this.getRedis().del(`${PROGRESS_CHANNEL_PREFIX}${seriesId}`);
+    } catch (error) {
+      logger.error(`Failed to persist scraper source for series ${seriesId}: ${error}`, { service: 'mangaProgressService' });
+      throw error;
+    }
+  }
+
+  private async insertSourceOnlyProgress(seriesId: number, scraperId: string, scraperUrl: string): Promise<void> {
+    await db.insert(mangaImportProgress).values({
+      seriesId,
+      totalChapters: 0,
+      downloadedChapters: 0,
+      status: 'source_set',
+      scraperId,
+      scraperUrl,
+      startedAt: new Date(),
+      updatedAt: new Date(),
+      completedAt: null,
+    });
+  }
+
+  /**
    * Set the scraper source for a series (admin override).
    * Updates manga_import_progress.scraperId and scraperUrl so the next scan uses this source.
    */
@@ -638,7 +684,8 @@ class MangaProgressService {
         const fixFalseScanning =
           existing.status === 'scanning' &&
           existing.totalChapters === 0 &&
-          existing.downloadedChapters === 0;
+          existing.downloadedChapters === 0 &&
+          !existing.scraperUrl;
         await db
           .update(mangaImportProgress)
           .set({
@@ -646,23 +693,12 @@ class MangaProgressService {
             scraperUrl,
             updatedAt: new Date(),
             ...(fixFalseScanning
-              ? { status: 'completed' as const, completedAt: null, errorMessage: null }
+              ? { status: 'source_set' as const, completedAt: null, errorMessage: null }
               : {}),
           })
           .where(eq(mangaImportProgress.seriesId, seriesId));
       } else {
-        // Source saved only — do not mark as scanning (that blocks rescan and triggers recovery).
-        await db.insert(mangaImportProgress).values({
-          seriesId,
-          totalChapters: 0,
-          downloadedChapters: 0,
-          status: 'completed',
-          scraperId,
-          scraperUrl,
-          startedAt: new Date(),
-          updatedAt: new Date(),
-          completedAt: null,
-        });
+        await this.insertSourceOnlyProgress(seriesId, scraperId, scraperUrl);
       }
 
       await this.getRedis().del(`${PROGRESS_CHANNEL_PREFIX}${seriesId}`);

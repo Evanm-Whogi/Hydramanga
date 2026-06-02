@@ -28,7 +28,7 @@ export interface ListAdminMangaParams {
   page?: number;
   limit?: number;
   search?: string;
-  status?: 'all' | 'none' | 'scanning' | 'downloading' | 'completed' | 'failed';
+  status?: 'all' | 'none' | 'scanning' | 'downloading' | 'completed' | 'failed' | 'source_set';
   scraperId?: string;
   type?: string;
   sort?: 'updated' | 'title' | 'chapters' | 'type';

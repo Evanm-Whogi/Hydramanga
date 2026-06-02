@@ -60,7 +60,7 @@ class AdminMangaListService {
       if (status === 'none') {
         filters.push(isNull(schema.mangaImportProgress.seriesId));
       } else {
-        filters.push(eq(schema.mangaImportProgress.status, status as 'scanning' | 'downloading' | 'completed' | 'failed'));
+        filters.push(eq(schema.mangaImportProgress.status, status as 'scanning' | 'downloading' | 'completed' | 'failed' | 'source_set'));
       }
     }
 

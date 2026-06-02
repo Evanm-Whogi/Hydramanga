@@ -6,6 +6,7 @@ import { cacheService } from '@/services/cacheService';
 import { queueService } from '@/services/queueService';
 import { getAllChapterDownloadQueueNames } from '@/lib/chapterDownloadQueues';
 import { mangaProgressService, isSourceOnlyProgress } from '@/services/mangaProgressService';
+import { autoSelectScraperSource } from '@/services/scraperSourceService';
 
 // Constants
 const TRENDING_CACHE_KEY = 'trending:top100';
@@ -14,6 +15,36 @@ const TRENDING_CACHE_TTL = 60 * 60; // 1 hour
 // Ignored manga titles
 const IGNORED_TITLES = new Set(['one piece', "hajime no ippo: fighting spirit!"]); // Add more titles as needed
 const isIgnored = (title: string | null | undefined) => IGNORED_TITLES.has((title || '').trim().toLowerCase());
+const MAX_RANKED_SCAN_BATCH = 500;
+const notMergedCondition = or(isNull(series.state), ne(series.state, 'merged'));
+const CHAPTER_SCAN_JOB_PREFIXES = ['rescan', 'ondemand', 'trending', 'ranked', 'monitored'] as const;
+
+function chapterScanJobIds(seriesId: number): string[] {
+  return CHAPTER_SCAN_JOB_PREFIXES.map((prefix) => `${prefix}-${seriesId}`);
+}
+
+export type RankedChapterScanOptions = {
+  start: number;
+  end: number;
+  skipWithChapters?: boolean;
+  type?: string;
+  autoSelectSource?: boolean;
+  /** BullMQ job id prefix; use `trending` for cron top-N, `ranked` for admin incremental batches. */
+  jobIdPrefix?: 'ranked' | 'trending';
+};
+
+export type RankedChapterScanResult = {
+  start: number;
+  end: number;
+  matched: number;
+  queued: number;
+  skippedIgnored: number;
+  skippedWithChapters: number;
+  sourcesSelected: number;
+  sourcesAlreadySet: number;
+  sourcesNotFound: number;
+  sourcesLowScore: number;
+};
 
 class MangaOrchestratorService {
   // Fetch top N trending series by weighted score (cached)
@@ -46,25 +77,124 @@ class MangaOrchestratorService {
     return trending.some((t) => t.id === seriesId);
   }
 
-  // Schedule scans for the top trending manga (idempotent via jobId)
-  async enqueueTrendingChapterScans(limit = 100) {
-    logger.info(`[CRON] Enqueuing trending chapter scans (top ${limit})`, { service: 'mangaOrchestratorService' });
-    const trending = await db
-      .select({ id: series.id, title: series.title, romanizedTitle: series.romanizedTitle, cover: series.cover })
-      .from(series)
-      .orderBy(desc(series.weightedScore), desc(series.lastUpdatedAt))
-      .limit(limit);
-    
-    const filtered = trending.filter((r) => !isIgnored(r.title));
-    
-    for (const row of filtered) {
-      const coverUrl = row.cover ? (row.cover as any)?.x350?.x1 || (row.cover as any)?.x250?.x1 || (row.cover as any)?.raw?.url || undefined : undefined;
-      await queueService.addJob('mangaChapterImportQueue', `Trending sync ${row.title}`,
-        { mangaTitle: row.title, seriesId: row.id, romanizedTitle: row.romanizedTitle, coverUrl },
-        { jobId: `trending-${row.id}`, attempts: 3 }
-      );
+  // Schedule chapter scans for a 1-based global rank range (by weightedScore).
+  async enqueueRankedChapterScans(options: RankedChapterScanOptions): Promise<RankedChapterScanResult> {
+    const start = Math.max(1, Math.floor(options.start));
+    const end = Math.max(start, Math.floor(options.end));
+    if (end - start + 1 > MAX_RANKED_SCAN_BATCH) {
+      throw new Error(`Rank range too large (max ${MAX_RANKED_SCAN_BATCH} per batch)`);
     }
-    logger.info(`Queued trending scans for ${filtered.length} series`, { service: 'mangaOrchestratorService' });
+
+    const offset = start - 1;
+    const limit = end - start + 1;
+    const skipWithChapters = options.skipWithChapters === true;
+    const autoSelectSource = options.autoSelectSource !== false;
+    const jobIdPrefix = options.jobIdPrefix === 'trending' ? 'trending' : 'ranked';
+    const typeFilter = options.type?.trim().toLowerCase();
+
+    const conditions = [notMergedCondition];
+    if (typeFilter && typeFilter !== 'all') {
+      conditions.push(eq(series.type, typeFilter));
+    }
+
+    const rows = await db
+      .select({
+        id: series.id,
+        title: series.title,
+        romanizedTitle: series.romanizedTitle,
+        cover: series.cover,
+      })
+      .from(series)
+      .where(and(...conditions))
+      .orderBy(desc(series.weightedScore), desc(series.lastUpdatedAt))
+      .offset(offset)
+      .limit(limit);
+
+    const seriesIdsWithChapters = new Set<number>();
+    if (skipWithChapters && rows.length > 0) {
+      const ids = rows.map((r) => r.id);
+      const chapterRows = await db
+        .selectDistinct({ seriesId: chapters.seriesId })
+        .from(chapters)
+        .where(inArray(chapters.seriesId, ids));
+      for (const r of chapterRows) seriesIdsWithChapters.add(r.seriesId);
+    }
+
+    let skippedIgnored = 0;
+    let skippedWithChapters = 0;
+    let queued = 0;
+    let sourcesSelected = 0;
+    let sourcesAlreadySet = 0;
+    let sourcesNotFound = 0;
+    let sourcesLowScore = 0;
+    for (const row of rows) {
+      if (!row.title || isIgnored(row.title)) {
+        skippedIgnored++;
+        continue;
+      }
+      if (skipWithChapters && seriesIdsWithChapters.has(row.id)) {
+        skippedWithChapters++;
+        continue;
+      }
+      if (autoSelectSource) {
+        try {
+          const sourceResult = await autoSelectScraperSource(row.id);
+          if (sourceResult.selected) {
+            sourcesSelected++;
+          } else if (sourceResult.reason === 'already_set') {
+            sourcesAlreadySet++;
+          } else if (sourceResult.reason === 'score_too_low') {
+            sourcesLowScore++;
+          } else if (sourceResult.reason === 'no_match' || sourceResult.reason === 'no_title') {
+            sourcesNotFound++;
+          }
+        } catch (err) {
+          logger.warn(
+            `Auto source selection failed for series ${row.id}: ${(err as Error).message}`,
+            { service: 'mangaOrchestratorService' }
+          );
+          sourcesNotFound++;
+        }
+      }
+      const coverUrl = row.cover ? (row.cover as any)?.x350?.x1 || (row.cover as any)?.x250?.x1 || (row.cover as any)?.raw?.url || undefined : undefined;
+      await queueService.addJob(
+        'mangaChapterImportQueue',
+        `Ranked sync ${row.title} (#${start}-${end})`,
+        { mangaTitle: row.title, seriesId: row.id, romanizedTitle: row.romanizedTitle, coverUrl },
+        { jobId: `${jobIdPrefix}-${row.id}`, attempts: 3 }
+      );
+      queued++;
+    }
+
+    const result: RankedChapterScanResult = {
+      start,
+      end,
+      matched: rows.length,
+      queued,
+      skippedIgnored,
+      skippedWithChapters,
+      sourcesSelected,
+      sourcesAlreadySet,
+      sourcesNotFound,
+      sourcesLowScore,
+    };
+    logger.info(
+      `Queued ranked chapter scans ranks ${start}-${end}: ${queued} queued, ${sourcesSelected} sources auto-selected, ${sourcesAlreadySet} already had source, ${sourcesNotFound} no match, ${sourcesLowScore} low score, ${skippedWithChapters} skipped (has chapters), ${skippedIgnored} ignored titles`,
+      { service: 'mangaOrchestratorService' }
+    );
+    return result;
+  }
+
+  // Schedule scans for the top trending manga (idempotent via jobId)
+  async enqueueTrendingChapterScans(limit = 100, options?: { autoSelectSource?: boolean }) {
+    logger.info(`[CRON] Enqueuing trending chapter scans (top ${limit})`, { service: 'mangaOrchestratorService' });
+    const result = await this.enqueueRankedChapterScans({
+      start: 1,
+      end: limit,
+      autoSelectSource: options?.autoSelectSource ?? false,
+      jobIdPrefix: 'trending',
+    });
+    logger.info(`Queued trending scans for ${result.queued} series`, { service: 'mangaOrchestratorService' });
   }
 
   // On-demand scan when a title is first visited (idempotent via jobId)
@@ -155,8 +285,7 @@ class MangaOrchestratorService {
       return { scanStatus: progress.status, isQueued: false };
     }
     const scanQueue = queueService.getQueue('mangaChapterImportQueue');
-    const possibleScanJobIds = [`rescan-${seriesId}`, `ondemand-${seriesId}`, `trending-${seriesId}`, `monitored-${seriesId}`];
-    for (const jobId of possibleScanJobIds) {
+    for (const jobId of chapterScanJobIds(seriesId)) {
       try {
         const job = await scanQueue.getJob(jobId);
         if (job) {
@@ -176,7 +305,7 @@ class MangaOrchestratorService {
   async cancelScan(seriesId: number): Promise<{ scanJobRemoved: boolean; chapterJobsRemoved: number }> {
     const scanQueue = queueService.getQueue('mangaChapterImportQueue');
     const downloadQueueNames = getAllChapterDownloadQueueNames();
-    const possibleScanJobIds = [`rescan-${seriesId}`, `ondemand-${seriesId}`, `trending-${seriesId}`, `monitored-${seriesId}`];
+    const possibleScanJobIds = chapterScanJobIds(seriesId);
 
     let scanJobRemoved = false;
     for (const jobId of possibleScanJobIds) {
