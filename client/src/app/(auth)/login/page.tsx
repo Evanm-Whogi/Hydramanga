@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import LoginContent from "./components/LoginContent";
+import { getSiteSettings } from "@/services/siteSettingsService";
 
 export const metadata: Metadata = {
   title: `Login - ${process.env.NEXT_PUBLIC_NAME}`,
@@ -11,6 +12,12 @@ export const metadata: Metadata = {
   },
 };
 
-export default function LoginPage() {
-  return <LoginContent />;
+export default async function LoginPage() {
+  const siteSettings = await getSiteSettings();
+  return (
+    <LoginContent
+      oauthGoogleEnabled={siteSettings.oauthGoogleEnabled}
+      oauthDiscordEnabled={siteSettings.oauthDiscordEnabled}
+    />
+  );
 }

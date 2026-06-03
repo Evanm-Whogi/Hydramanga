@@ -231,11 +231,47 @@ class QueueService {
         const queue = this.getQueue(queueName);
         const time = appConfig.cache.redisCleanupInterval;
 
-        queue.clean(time, 'completed' as any).then((jobs) => {
-            logger.info(`Cleared ${jobs} completed jobs from Queue: ${queueName}`, { service: 'queueService' });
+        queue.clean(time, 1000, 'completed').then((jobs) => {
+            logger.info(`Cleared ${jobs.length} completed jobs from Queue: ${queueName}`, { service: 'queueService' });
         }).catch((error) => {
             logger.error(`Error clearing Queue: ${queueName}: ${error}`, { service: 'queueService' });
         });
+    }
+
+    /** Remove all jobs in one state, or every state when `state` is omitted. Returns count removed. */
+    public async clearQueueJobs(queueName: string, state?: 'waiting' | 'active' | 'delayed' | 'failed' | 'completed'): Promise<number> {
+        const queue = this.getQueue(queueName);
+        await queue.waitUntilReady();
+
+        const typesByState: Record<'waiting' | 'active' | 'delayed' | 'failed' | 'completed', ('waiting' | 'prioritized' | 'active' | 'delayed' | 'failed' | 'completed')[]> = {
+            waiting: ['waiting', 'prioritized'],
+            active: ['active'],
+            delayed: ['delayed'],
+            failed: ['failed'],
+            completed: ['completed'],
+        };
+
+        const types = state ? typesByState[state] : Object.values(typesByState).flat();
+        let removed = 0;
+        for (const type of types) {
+            removed += await this.cleanAllJobsOfType(queue, type);
+        }
+
+        logger.info(
+            `Cleared ${removed} jobs from queue ${queueName}${state ? ` (${state})` : ' (all states)'}`,
+            { service: 'queueService' }
+        );
+        return removed;
+    }
+
+    private async cleanAllJobsOfType(queue: Queue, type: 'waiting' | 'prioritized' | 'active' | 'delayed' | 'failed' | 'completed'): Promise<number> {
+        let removed = 0;
+        for (;;) {
+            const batch = await queue.clean(0, 10_000, type);
+            removed += batch.length;
+            if (batch.length === 0) break;
+        }
+        return removed;
     }
 
     // Stop (Pause) all workers for a specific queue

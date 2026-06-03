@@ -12,6 +12,8 @@ import WelcomeModalGate from "@/components/WelcomeModalGate";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import BannedSessionGuard from "@/components/BannedSessionGuard";
 import DevToolsGuardScript from "@/components/DevToolsGuardScript";
+import MaintenanceGate from "@/components/MaintenanceGate";
+import { getSiteSettings } from "@/services/siteSettingsService";
 
 export async function generateMetadata(): Promise<Metadata> {
   const siteConfig = {
@@ -66,8 +68,9 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode; }>) {
-  const session = await useSession();
+  const [session, siteSettings] = await Promise.all([useSession(), getSiteSettings()]);
   const cookieStore = await cookies();
+  const isAdmin = session?.user?.role === 'admin';
   const themeMode = cookieStore.get('theme-mode')?.value || 'theme-dark';
   const themeAccent = cookieStore.get('theme-accent')?.value;
 
@@ -83,12 +86,12 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           <NotificationsProvider>
             <ImpersonationBanner />
             <BannedSessionGuard />
-            <Navbar />
-            <main className="flex-1">
-              {children}
-            </main>
-            <Footer />
-            <WelcomeModalGate />
+            <MaintenanceGate maintenanceMode={siteSettings.maintenanceMode} maintenanceMessage={siteSettings.maintenanceMessage} isAdmin={isAdmin}>
+              <Navbar />
+              <main className="flex-1">{children}</main>
+              <Footer />
+              <WelcomeModalGate siteSettings={siteSettings} />
+            </MaintenanceGate>
           </NotificationsProvider>
         </UserProvider>
         <ToastContainer

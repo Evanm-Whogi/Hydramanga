@@ -345,6 +345,22 @@ export const userChapterProgress = pgTable('user_chapter_progress', {
   isReadIdx: index('idx_user_chapter_progress_is_read').on(t.isRead),
 }));
 
+/** Singleton row (id = 1) — global site configuration edited from admin Settings. */
+export const siteSettings = pgTable('site_settings', {
+  id: integer('id').primaryKey(),
+  registrationEnabled: boolean('registration_enabled').notNull().default(true),
+  maintenanceMode: boolean('maintenance_mode').notNull().default(false),
+  maintenanceMessage: text('maintenance_message'),
+  importRequestsEnabled: boolean('import_requests_enabled').notNull().default(true),
+  oauthGoogleEnabled: boolean('oauth_google_enabled').notNull().default(true),
+  oauthDiscordEnabled: boolean('oauth_discord_enabled').notNull().default(true),
+  welcomeModalEnabled: boolean('welcome_modal_enabled').notNull().default(true),
+  welcomeModalTitle: text('welcome_modal_title'),
+  welcomeModalDescription: text('welcome_modal_description'),
+  welcomeModalBody: text('welcome_modal_body'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 // User Settings (e.g. content preferences)
 export const userSettings = pgTable('user_settings', {
   userId: text('user_id').primaryKey().references(() => user.id, { onDelete: 'cascade' }),

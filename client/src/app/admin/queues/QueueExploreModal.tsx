@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {X, Loader2, ChevronLeft, ChevronRight, RefreshCw, ExternalLink, RotateCcw, Trash2, FastForward, OctagonX} from "lucide-react";
 import { toast } from "react-toastify";
-import { getAdminQueueJobs, retryAdminQueueJob, promoteAdminQueueJob, removeAdminQueueJob, type AdminQueueJobCounts, type AdminQueueJobRow, type AdminQueueJobState, type AdminQueueRow } from "@/services/adminQueueService";
+import { getAdminQueueJobs, retryAdminQueueJob, promoteAdminQueueJob, removeAdminQueueJob, clearAdminQueue, type AdminQueueJobCounts, type AdminQueueJobRow, type AdminQueueJobState, type AdminQueueRow } from "@/services/adminQueueService";
 
 const STATE_TABS: { value: AdminQueueJobState; label: string }[] = [
   { value: "waiting", label: "Waiting" },
@@ -57,8 +57,71 @@ export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: Qu
   const [refreshing, setRefreshing] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [actionJobId, setActionJobId] = useState<string | null>(null);
+  const [clearing, setClearing] = useState<"state" | "all" | null>(null);
 
   const countForState = (s: AdminQueueJobState): number => counts[s];
+
+  const stateLabel = STATE_TABS.find((tab) => tab.value === state)?.label ?? state;
+  const stateCount = countForState(state);
+  const totalInQueue = counts.waiting + counts.active + counts.delayed + counts.failed + counts.completed;
+
+  const handleClearState = async () => {
+    if (stateCount === 0) {
+      toast.info(`No ${stateLabel.toLowerCase()} jobs to clear`);
+      return;
+    }
+    const activeWarning =
+      state === "active"
+        ? " Active jobs may still finish on a running worker until it exits."
+        : "";
+    if (
+      !window.confirm(
+        `Clear all ${stateCount} ${stateLabel.toLowerCase()} jobs from "${queue.label}"?${activeWarning}\n\nThis cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    setClearing("state");
+    try {
+      const { removed } = await clearAdminQueue(queue.name, state);
+      toast.success(`Cleared ${removed} ${stateLabel.toLowerCase()} job${removed !== 1 ? "s" : ""}`);
+      await fetchJobs(true);
+      onQueueUpdated?.();
+    } catch (err) {
+      console.error(err);
+      toast.error(`Failed to clear ${stateLabel.toLowerCase()} jobs`);
+    } finally {
+      setClearing(null);
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (totalInQueue === 0) {
+      toast.info(`${queue.label} has no jobs to clear`);
+      return;
+    }
+    if (
+      !window.confirm(
+        `Clear all jobs from "${queue.label}"?\n\nThis removes waiting, active, delayed, failed, and completed jobs (${totalInQueue} total). Active jobs may still finish on a running worker until it exits.\n\nThis cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    setClearing("all");
+    try {
+      const { removed } = await clearAdminQueue(queue.name);
+      toast.success(`Cleared ${removed} jobs from ${queue.label}`);
+      await fetchJobs(true);
+      onQueueUpdated?.();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to clear queue");
+    } finally {
+      setClearing(null);
+    }
+  };
 
   const fetchJobs = useCallback(
     async (silent = false) => {
@@ -145,8 +208,18 @@ export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: Qu
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
+              onClick={handleClearAll}
+              disabled={loading || clearing !== null || totalInQueue === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-muted hover:text-red-400 hover:bg-foreground border border-borders disabled:opacity-50"
+              title="Clear entire queue"
+            >
+              {clearing === "all" ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              Clear all
+            </button>
+            <button
+              type="button"
               onClick={() => fetchJobs(true)}
-              disabled={loading || refreshing}
+              disabled={loading || refreshing || clearing !== null}
               className="p-2 rounded-lg text-muted hover:text-primary hover:bg-foreground border border-borders disabled:opacity-50"
               aria-label="Refresh jobs"
             >
@@ -163,18 +236,30 @@ export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: Qu
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 p-4 border-b border-borders shrink-0">
-          {STATE_TABS.map(({ value, label }) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setState(value)}
-              className={stateTabClass(state === value)}
-            >
-              {label}
-              <span className="ml-1.5 opacity-80 tabular-nums">({countForState(value)})</span>
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-b border-borders shrink-0">
+          <div className="flex flex-wrap gap-2">
+            {STATE_TABS.map(({ value, label }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setState(value)}
+                className={stateTabClass(state === value)}
+              >
+                {label}
+                <span className="ml-1.5 opacity-80 tabular-nums">({countForState(value)})</span>
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={handleClearState}
+            disabled={loading || clearing !== null || stateCount === 0}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-muted hover:text-red-400 hover:bg-foreground border border-borders disabled:opacity-50 shrink-0"
+            title={`Clear all ${stateLabel.toLowerCase()} jobs`}
+          >
+            {clearing === "state" ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+            Clear {stateLabel.toLowerCase()}
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto min-h-0">

@@ -13,7 +13,7 @@ import MasonryGrid from "@/components/MasonryGrid";
 const DEFAULT_BAN_MESSAGE =
   "Your account has been suspended. Contact support if you believe this is an error.";
 
-export default function LoginContent() {
+export default function LoginContent({ oauthGoogleEnabled = true, oauthDiscordEnabled = true }: { oauthGoogleEnabled?: boolean; oauthDiscordEnabled?: boolean }) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -172,7 +172,7 @@ export default function LoginContent() {
                 <button onClick={handleLogin} disabled={loading} className="p-3 mt-2 bg-foreground text-primary hover:bg-foreground/50 hover:cursor-pointer rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
                   {loading ? "Logging in..." : "Login"}
                 </button>
-                <OAuthButtons disabled={loading} />
+                <OAuthButtons disabled={loading} oauthGoogleEnabled={oauthGoogleEnabled} oauthDiscordEnabled={oauthDiscordEnabled} />
               </>
             )}
 

@@ -9,13 +9,16 @@ import InputField from '@/components/InputField';
 import OAuthButtons from "@/components/auth/OAuthButtons";
 import MasonryGrid from "@/components/MasonryGrid";
 
-export default function RegisterContent() {
+export default function RegisterContent({ registrationEnabled = true, oauthGoogleEnabled = true, oauthDiscordEnabled = true }: { registrationEnabled?: boolean; oauthGoogleEnabled?: boolean; oauthDiscordEnabled?: boolean }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
   const [isRegistering, setIsRegistering] = useState(false);
+  const registrationDisabled = !registrationEnabled;
+  const fieldsDisabled = registrationDisabled || isRegistering;
 
   const handleRegister = async () => {
+    if (registrationDisabled) return;
     if (!username.trim() || !email.trim() || !password.trim()) {
       return toast.error("Please fill in all fields");
     }
@@ -49,7 +52,7 @@ export default function RegisterContent() {
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !isRegistering) {
+    if (e.key === 'Enter' && !fieldsDisabled) {
       handleRegister();
     }
   };
@@ -65,15 +68,22 @@ export default function RegisterContent() {
             <Image src="/logo.png" width="192" height="192" alt="Register Logo" className="mx-auto"/>
             <h1 className="text-4xl font-bold text-center">{process.env.NEXT_PUBLIC_NAME}</h1>
             <h2 className="text-muted text-center">Your one stop spot for endless Manga.</h2>
-            <div className="flex flex-col space-y-3 mt-5">
-              <InputField label="Username" placeholder="Username" value={username} onChange={(e: any) => setUsername(e.target.value)} onKeyPress={handleKeyPress} disabled={isRegistering} />
-              <InputField label="Email" placeholder="Email" value={email} onChange={(e: any) => setEmail(e.target.value)} onKeyPress={handleKeyPress} disabled={isRegistering} />
-              <InputField label="Password" placeholder="Password" type="password" value={password} onChange={(e: any) => setPassword(e.target.value)} onKeyPress={handleKeyPress} disabled={isRegistering} />
+            {registrationDisabled && (
+              <div className="mt-5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-primary" role="status">
+                Registration is currently disabled. Please check back later or contact an administrator.
+              </div>
+            )}
+            <div className={`flex flex-col space-y-3 mt-5 ${registrationDisabled ? 'opacity-50 pointer-events-none' : ''}`}>
+              <InputField label="Username" placeholder="Username" value={username} onChange={(e: any) => setUsername(e.target.value)} onKeyPress={handleKeyPress} disabled={fieldsDisabled} />
+              <InputField label="Email" placeholder="Email" value={email} onChange={(e: any) => setEmail(e.target.value)} onKeyPress={handleKeyPress} disabled={fieldsDisabled} />
+              <InputField label="Password" placeholder="Password" type="password" value={password} onChange={(e: any) => setPassword(e.target.value)} onKeyPress={handleKeyPress} disabled={fieldsDisabled} />
             </div>
-            <button onClick={handleRegister} disabled={isRegistering} className="p-3 mt-5 bg-foreground text-primary hover:bg-foreground/50 hover:cursor-pointer rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
+            <button onClick={handleRegister} disabled={fieldsDisabled} className="p-3 mt-5 bg-foreground text-primary hover:bg-foreground/50 hover:cursor-pointer rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
               {isRegistering ? "Creating account..." : "Create Account"}
             </button>
-            <OAuthButtons disabled={isRegistering} />
+            <div className={registrationDisabled ? 'opacity-50 pointer-events-none' : ''}>
+              <OAuthButtons disabled={fieldsDisabled} oauthGoogleEnabled={oauthGoogleEnabled} oauthDiscordEnabled={oauthDiscordEnabled} />
+            </div>
             <span className="text-center pt-5">
               Already have an account?{" "}
               <Link href="/login" className="text-accent hover:text-accent/50">Log in</Link>

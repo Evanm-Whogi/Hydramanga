@@ -149,3 +149,26 @@ export async function resumeAdminQueue(req: Request, res: Response, next: NextFu
     return next(error);
   }
 }
+
+export async function clearAdminQueue(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const queueName = req.params.name;
+    if (!queueName) return res.status(400).json({ message: 'Queue name is required' });
+
+    const stateParam = typeof req.body?.state === 'string' ? req.body.state : undefined;
+    const state = stateParam && ADMIN_QUEUE_JOB_STATES.includes(stateParam as (typeof ADMIN_QUEUE_JOB_STATES)[number])
+      ? (stateParam as (typeof ADMIN_QUEUE_JOB_STATES)[number])
+      : undefined;
+
+    const result = await adminQueueService.clearQueue(queueName, state);
+    if ('error' in result) {
+      const errRes = handleQueueActionError(res, result);
+      if (errRes) return errRes;
+    }
+
+    return res.json({ status: 200, success: true, removed: result.removed, state: result.state });
+  } catch (error) {
+    logger.error(`Failed to clear admin queue: ${error}`, { service: 'adminQueueController' });
+    return next(error);
+  }
+}

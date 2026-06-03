@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { importRequestService } from '@/services/importRequestService';
+import { siteSettingsService } from '@/services/siteSettingsService';
 import logger from '@/services/loggerService';
 import { discordService } from '@/services/discordService';
 import { recordAuditFromRequest } from '@/audit/record';
@@ -10,6 +11,14 @@ export async function createImportRequest(req: Request, res: Response, next: Nex
     const userId = req.user?.id;
     const userName = req.user?.name;
     if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+    const siteSettings = await siteSettingsService.getSettings();
+    if (!siteSettings.importRequestsEnabled) {
+      return res.status(503).json({
+        message: 'Import requests are temporarily paused. Please try again later.',
+        code: 'IMPORT_REQUESTS_PAUSED',
+      });
+    }
 
     const { requestedTitle, requestedUrl, notes, seriesId } = req.body ?? {};
     const result = await importRequestService.createRequest(userId, {

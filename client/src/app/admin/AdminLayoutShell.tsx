@@ -2,14 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-    LayoutDashboard,
-    Users,
-    BookOpen,
-    Inbox,
-    ListOrdered,
-    ScrollText,
-} from "lucide-react";
+import { LayoutDashboard, Users, BookOpen, Inbox, ListOrdered, ScrollText, Settings } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 
 const NAV_ITEMS = [
@@ -19,6 +12,7 @@ const NAV_ITEMS = [
     { href: "/admin/imports", label: "Imports", icon: Inbox },
     { href: "/admin/queues", label: "Queues", icon: ListOrdered },
     { href: "/admin/audit", label: "Audit", icon: ScrollText },
+    { href: "/admin/settings", label: "Settings", icon: Settings },
 ] as const;
 
 const PAGE_HEADERS: Record<string, { title: string; description: string }> = {
@@ -45,6 +39,10 @@ const PAGE_HEADERS: Record<string, { title: string; description: string }> = {
     "/admin/audit": {
         title: "Audit Log",
         description: "System-wide activity from users and admins",
+    },
+    "/admin/settings": {
+        title: "Settings",
+        description: "Registration, maintenance, imports, and welcome modal",
     },
 };
 

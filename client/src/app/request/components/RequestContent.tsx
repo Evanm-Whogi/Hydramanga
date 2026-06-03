@@ -42,7 +42,8 @@ function statusClass(status: string): string {
   }
 }
 
-function RequestForm() {
+function RequestForm({ importRequestsEnabled = true }: { importRequestsEnabled?: boolean }) {
+  const importPaused = !importRequestsEnabled;
   const searchParams = useSearchParams();
   const seriesIdParam = searchParams.get("seriesId");
   const titleParam = searchParams.get("title");
@@ -160,6 +161,7 @@ function RequestForm() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (importPaused) return;
     setSubmitting(true);
     try {
       await createImportRequest({
@@ -192,7 +194,13 @@ function RequestForm() {
           Optionally link an existing page on this site by searching its title.
         </p>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        {importPaused && (
+          <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-primary" role="status">
+            Import requests are temporarily paused. You can still view your past requests below.
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className={`flex flex-col gap-4 ${importPaused ? 'opacity-50 pointer-events-none' : ''}`}>
           <div className="rounded-lg bg-background/40 p-4 space-y-3">
 
             {linkedSeries ? (
@@ -324,10 +332,10 @@ function RequestForm() {
   );
 }
 
-export default function RequestContent() {
+export default function RequestContent({ importRequestsEnabled = true }: { importRequestsEnabled?: boolean }) {
   return (
     <Suspense fallback={<p className="text-muted">Loading…</p>}>
-      <RequestForm />
+      <RequestForm importRequestsEnabled={importRequestsEnabled} />
     </Suspense>
   );
 }

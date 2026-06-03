@@ -6,6 +6,8 @@ import { emailService } from "@/services/emailService";
 import { discordService } from "@/services/discordService";
 import { eq, sql } from "drizzle-orm";
 import { auditLogService } from "@/services/auditLogService";
+import { siteSettingsService } from "@/services/siteSettingsService";
+import { fromNodeHeaders } from "better-auth/node";
 
 function getRequestMeta(context: { request?: Request } | null | undefined) {
     const headers = context?.request?.headers;
@@ -147,6 +149,20 @@ export const auth = betterAuth({
             create: {
                 before: async (user: any, context) => {
                     const path = context?.path as string | undefined;
+                    const settings = await siteSettingsService.getSettings();
+                    if (!settings.registrationEnabled) {
+                        const rawHeaders = context?.request?.headers as Headers | undefined;
+                        let isAdminActor = false;
+                        if (rawHeaders) {
+                            const nodeHeaders = Object.fromEntries(rawHeaders.entries());
+                            const actorSession = await auth.api.getSession({ headers: fromNodeHeaders(nodeHeaders) });
+                            isAdminActor = (actorSession?.user as { role?: string } | undefined)?.role === 'admin';
+                        }
+                        if (!isAdminActor) {
+                            throw new Error('Registration is currently disabled.');
+                        }
+                    }
+
                     let nextUser = { ...user, role: 'user' as const };
 
                     if (path === '/sign-up/email') {

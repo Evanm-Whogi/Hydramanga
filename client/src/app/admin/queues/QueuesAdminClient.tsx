@@ -1,9 +1,9 @@
 "use client";
 
 import {useCallback, useEffect, useState } from "react";
-import {ListOrdered, Loader2, RefreshCw, Clock, Play, Pause, AlertTriangle, CheckCircle2, XCircle, Timer, EllipsisVertical} from "lucide-react";
+import {ListOrdered, Loader2, RefreshCw, Clock, Play, Pause, AlertTriangle, CheckCircle2, XCircle, Timer, EllipsisVertical, Trash2} from "lucide-react";
 import {toast } from "react-toastify";
-import {getAdminQueues, pauseAdminQueue, resumeAdminQueue, type AdminQueueRow, type AdminQueueTotals} from "@/services/adminQueueService";
+import {getAdminQueues, pauseAdminQueue, resumeAdminQueue, clearAdminQueue, type AdminQueueRow, type AdminQueueTotals} from "@/services/adminQueueService";
 import AdminStatCard from "../components/AdminStatCard";
 import QueueExploreModal from "./QueueExploreModal";
 import { formatCompactNumber as formatNumber } from "@/lib/utils";
@@ -40,6 +40,10 @@ function healthHint(row: AdminQueueRow): string | null {
   if (row.active > 0) return "Processing jobs now";
   if (row.waiting === 0 && row.active === 0) return "Idle";
   return null;
+}
+
+function totalJobs(row: AdminQueueRow): number {
+  return row.waiting + row.active + row.delayed + row.failed + row.completed;
 }
 
 export default function QueuesAdminClient() {
@@ -85,7 +89,7 @@ export default function QueuesAdminClient() {
     const action = isPaused ? "resume" : "pause";
     if (!window.confirm(`${isPaused ? "Resume" : "Pause"} queue "${row.label}"?`)) return;
 
-    setQueueAction(row.name);
+    setQueueAction(`${row.name}:pause`);
     try {
       if (isPaused) {
         await resumeAdminQueue(row.name);
@@ -98,6 +102,33 @@ export default function QueuesAdminClient() {
     } catch (err) {
       console.error(err);
       toast.error(`Failed to ${action} queue`);
+    } finally {
+      setQueueAction(null);
+    }
+  };
+
+  const handleClearQueue = async (row: AdminQueueRow) => {
+    const count = totalJobs(row);
+    if (count === 0) {
+      toast.info(`${row.label} has no jobs to clear`);
+      return;
+    }
+    if (
+      !window.confirm(
+        `Clear all jobs from "${row.label}"?\n\nThis removes waiting, active, delayed, failed, and completed jobs (${formatNumber(count)} total). Active jobs may still finish on a running worker until it exits.\n\nThis cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    setQueueAction(`${row.name}:clear`);
+    try {
+      const { removed } = await clearAdminQueue(row.name);
+      toast.success(`Cleared ${formatNumber(removed)} jobs from ${row.label}`);
+      await fetchQueues(true);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to clear queue");
     } finally {
       setQueueAction(null);
     }
@@ -260,13 +291,29 @@ export default function QueuesAdminClient() {
                           {row.status !== "Unavailable" && (
                             <button
                               type="button"
+                              onClick={() => handleClearQueue(row)}
+                              disabled={queueAction === `${row.name}:clear` || totalJobs(row) === 0}
+                              className="p-2 rounded-lg text-muted hover:text-red-400 hover:bg-background border border-transparent hover:border-borders transition-colors disabled:opacity-50"
+                              aria-label={`Clear ${row.label}`}
+                              title="Clear entire queue"
+                            >
+                              {queueAction === `${row.name}:clear` ? (
+                                <Loader2 className="size-5 animate-spin" />
+                              ) : (
+                                <Trash2 className="size-5" />
+                              )}
+                            </button>
+                          )}
+                          {row.status !== "Unavailable" && (
+                            <button
+                              type="button"
                               onClick={() => handlePauseResume(row)}
-                              disabled={queueAction === row.name}
+                              disabled={queueAction === `${row.name}:pause`}
                               className="p-2 rounded-lg text-muted hover:text-primary hover:bg-background border border-transparent hover:border-borders transition-colors disabled:opacity-50"
                               aria-label={row.status === "Paused" ? `Resume ${row.label}` : `Pause ${row.label}`}
                               title={row.status === "Paused" ? "Resume queue" : "Pause queue"}
                             >
-                              {queueAction === row.name ? (
+                              {queueAction === `${row.name}:pause` ? (
                                 <Loader2 className="size-5 animate-spin" />
                               ) : row.status === "Paused" ? (
                                 <Play className="size-5" />

@@ -111,3 +111,8 @@ export async function pauseAdminQueue(queueName: string): Promise<void> {
 export async function resumeAdminQueue(queueName: string): Promise<void> {
   await apiPost(`/admin/queues/${encodeURIComponent(queueName)}/resume`);
 }
+
+export async function clearAdminQueue(queueName: string, state?: AdminQueueJobState): Promise<{ removed: number }> {
+  const data = await apiPost(`/admin/queues/${encodeURIComponent(queueName)}/clear`, state ? { state } : undefined);
+  return { removed: (data as { removed?: number }).removed ?? 0 };
+}

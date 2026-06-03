@@ -26,6 +26,7 @@ if (process.env.ENABLE_SENTRY === 'true') {
 // Middlewares
 import { rateLimiter, authRateLimiter } from '@/middlewares/rateLimit';
 import { isMaintenance } from '@/middlewares/maintenance';
+import { oauthSettingsMiddleware } from '@/middlewares/oauthSettingsMiddleware';
 // Services
 import '@/services/loggerService';
 import '@/services/queueService';
@@ -58,6 +59,7 @@ app.set('trust proxy', 1);
 
 // Auth Routes (tracking for IP/UA on auth events)
 app.use('/auth', trackingMiddleware);
+app.use('/auth', oauthSettingsMiddleware);
 app.use(['/auth/sign-in', '/auth/sign-up', '/auth/forget-password', '/auth/reset-password', '/auth/request-password-reset'], authRateLimiter);
 app.all("/auth/{*any}", auditAuthHandler(toNodeHandler(auth)));
 

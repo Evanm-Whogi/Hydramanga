@@ -20,6 +20,8 @@ import leaderboardRoutes from '@/routes/leaderboardRoutes';
 import boardRoutes from '@/routes/boardRoutes';
 import chatRoutes from '@/routes/chatRoutes';
 import notificationRoutes from '@/routes/notificationRoutes';
+import { getPublicSiteSettings } from '@/controllers/siteSettingsController';
+
 
 module.exports = (app: Express) => {
 
@@ -67,4 +69,7 @@ module.exports = (app: Express) => {
 
     // Admin Routes
     app.use('/admin', authMiddleware, adminRoutes);
+
+    // Site settings (public)
+    app.get('/site-settings', getPublicSiteSettings as RequestHandler);
 };

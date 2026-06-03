@@ -1,13 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "react-toastify";
 import { signIn } from "@/lib/auth";
 
 type OAuthProvider = "google" | "discord";
 
-const providers: { id: OAuthProvider; label: string; icon: string }[] = [
+const ALL_PROVIDERS: { id: OAuthProvider; label: string; icon: string }[] = [
   { id: "google", label: "Google", icon: "/oauthIcons/googleLogo.png" },
   { id: "discord", label: "Discord", icon: "/oauthIcons/discord.webp" },
 ];
@@ -15,10 +15,17 @@ const providers: { id: OAuthProvider; label: string; icon: string }[] = [
 type OAuthButtonsProps = {
   disabled?: boolean;
   callbackURL?: string;
+  oauthGoogleEnabled?: boolean;
+  oauthDiscordEnabled?: boolean;
 };
 
-export default function OAuthButtons({disabled = false, callbackURL = "/home"}: OAuthButtonsProps) {
+export default function OAuthButtons({disabled = false, callbackURL = "/home", oauthGoogleEnabled = true, oauthDiscordEnabled = true}: OAuthButtonsProps) {
   const [loadingProvider, setLoadingProvider] = useState<OAuthProvider | null>(null);
+
+  const providers = useMemo(
+    () => ALL_PROVIDERS.filter((p) => (p.id === 'google' ? oauthGoogleEnabled : oauthDiscordEnabled)),
+    [oauthGoogleEnabled, oauthDiscordEnabled],
+  );
 
   const handleOAuth = async (provider: OAuthProvider) => {
     if (disabled || loadingProvider) return;
@@ -40,6 +47,8 @@ export default function OAuthButtons({disabled = false, callbackURL = "/home"}: 
       setLoadingProvider(null);
     }
   };
+
+  if (providers.length === 0) return null;
 
   return (
     <div className="flex flex-col gap-3 mt-5 w-full">

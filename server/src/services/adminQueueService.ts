@@ -361,6 +361,19 @@ class AdminQueueService {
       };
     }
   }
+
+  async clearQueue(queueName: string, state?: AdminQueueJobState) {
+    if (!isValidQueueName(queueName)) return { error: 'not_found' as const };
+    try {
+      const removed = await queueService.clearQueueJobs(queueName, state);
+      return { success: true as const, removed, state: state ?? null };
+    } catch (err) {
+      return {
+        error: 'unavailable' as const,
+        message: err instanceof Error ? err.message : 'Failed to clear queue',
+      };
+    }
+  }
 }
 
 export const adminQueueService = new AdminQueueService();

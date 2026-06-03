@@ -26,10 +26,20 @@ export function resolveAdminAuditAction(method: string, path: string, params: Re
       normalized === '/admin/import-requests' ||
       normalized === '/admin/queues' ||
       normalized.match(/^\/admin\/queues\/[^/]+\/jobs$/) ||
-      normalized === '/admin/audit'
+      normalized === '/admin/audit' ||
+      normalized === '/admin/settings'
     ) {
       return null;
     }
+  }
+
+  if (normalized === '/admin/settings' && method === 'PATCH') {
+    return {
+      action: 'admin.settings.update',
+      category: 'admin',
+      resourceType: 'site_settings',
+      resourceId: '1',
+    };
   }
 
   if (normalized.match(/^\/admin\/import-requests\/[^/]+$/) && method === 'PATCH') {

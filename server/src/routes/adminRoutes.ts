@@ -9,12 +9,17 @@ import { listAdminUsers, getAdminUser, patchAdminUser } from '@/controllers/admi
 import {sendAdminUserVerification, sendAdminUserPasswordReset} from '@/controllers/adminUserActionsController';
 import { banAdminUser, unbanAdminUser } from '@/controllers/adminUserBanController';
 import { listAdminImportRequests, patchAdminImportRequest } from '@/controllers/importRequestController';
-import {listAdminQueues, listAdminQueueJobs, pauseAdminQueue, resumeAdminQueue, promoteAdminQueueJob, removeAdminQueueJob, retryAdminQueueJob} from '@/controllers/adminQueueController';
+import {listAdminQueues, listAdminQueueJobs, pauseAdminQueue, resumeAdminQueue, promoteAdminQueueJob, removeAdminQueueJob, retryAdminQueueJob, clearAdminQueue} from '@/controllers/adminQueueController';
+import { getAdminSiteSettings, patchAdminSiteSettings } from '@/controllers/adminSiteSettingsController';
 import { requireRole } from '@/middlewares/requireRole';
 
 const router = Router();
 
 router.use(auditAdminMiddleware);
+
+// Site settings
+router.get('/settings', requireRole('admin'), getAdminSiteSettings as RequestHandler);
+router.patch('/settings', requireRole('admin'), patchAdminSiteSettings as RequestHandler);
 
 // Audit log
 router.get('/audit', requireRole('admin'), listAdminAuditLogs as RequestHandler);
@@ -44,6 +49,7 @@ router.patch('/import-requests/:id', requireRole('admin'), patchAdminImportReque
 router.get('/queues', requireRole('admin'), listAdminQueues as RequestHandler);
 router.post('/queues/:name/pause', requireRole('admin'), pauseAdminQueue as RequestHandler);
 router.post('/queues/:name/resume', requireRole('admin'), resumeAdminQueue as RequestHandler);
+router.post('/queues/:name/clear', requireRole('admin'), clearAdminQueue as RequestHandler);
 router.get('/queues/:name/jobs', requireRole('admin'), listAdminQueueJobs as RequestHandler);
 router.post('/queues/:name/jobs/:jobId/retry', requireRole('admin'), retryAdminQueueJob as RequestHandler);
 router.post('/queues/:name/jobs/:jobId/promote', requireRole('admin'), promoteAdminQueueJob as RequestHandler);

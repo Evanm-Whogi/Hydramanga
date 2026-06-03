@@ -117,6 +117,8 @@ export function buildAdminMutationSummary(action: string, params: Record<string,
       return `Retried job ${params.jobId} on ${params.name}`;
     case 'admin.queue.job.delete':
       return `Removed job ${params.jobId} from ${params.name}`;
+    case 'admin.settings.update':
+      return 'Updated site settings';
     default:
       return action.replace(/\./g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
@@ -127,5 +129,6 @@ export function adminMutationHref(action: string, params: Record<string, string>
   if (action.startsWith('admin.user')) return adminUsersHref();
   if (action.startsWith('admin.manga') && params.id) return `/manga/${params.id}`;
   if (action.startsWith('admin.queue')) return '/admin/queues';
+  if (action === 'admin.settings.update') return '/admin/settings';
   return '/admin';
 }

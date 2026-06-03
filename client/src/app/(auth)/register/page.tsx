@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import RegisterContent from "./components/RegisterContent";
+import { getSiteSettings } from "@/services/siteSettingsService";
 
 export const metadata: Metadata = {
   title: `Sign Up - ${process.env.NEXT_PUBLIC_NAME}`,
@@ -11,6 +12,13 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RegisterPage() {
-  return <RegisterContent />;
+export default async function RegisterPage() {
+  const siteSettings = await getSiteSettings();
+  return (
+    <RegisterContent
+      registrationEnabled={siteSettings.registrationEnabled}
+      oauthGoogleEnabled={siteSettings.oauthGoogleEnabled}
+      oauthDiscordEnabled={siteSettings.oauthDiscordEnabled}
+    />
+  );
 }
