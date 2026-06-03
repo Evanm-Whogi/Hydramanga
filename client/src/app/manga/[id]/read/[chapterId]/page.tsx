@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { fetchOne } from '@/services/mangaService';
+import { useSession } from '@/lib/useUser';
 import ReadContent from './components/ReadContent';
 
 interface Props {
@@ -36,12 +38,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function ReadPage({ params }: Props) {
-  const { id } = await params;
-  
+  const session = await useSession();
+  const { id, chapterId } = await params;
+
+  if (!session?.user) {
+    redirect(`/login?returnTo=${encodeURIComponent(`/manga/${id}/read/${chapterId}`)}`);
+  }
+
   const data = await fetchOne(id);
   const manga = data.manga;
 
-  // If no chapters (bot received minimal data), show fallback
   if (!manga.chapters) {
     return (
       <div className="min-h-screen flex items-center justify-center">

@@ -1,12 +1,11 @@
 import { Request, Response, NextFunction } from "express";
 import { attachAuthSessionToRequest, checkAndClearBan, clearSentryUser, getClientIp, resolveAuthSession } from "@/middlewares/sessionHelpers";
 
-export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+export const optionalAuthMiddleware = async (req: Request, res: Response, next: NextFunction) => {
     const resolved = await resolveAuthSession(req);
-
     if (!resolved) {
         clearSentryUser();
-        return res.status(401).json({ message: "Unauthorized" });
+        return next();
     }
 
     const banResult = await checkAndClearBan(resolved.user);

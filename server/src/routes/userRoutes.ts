@@ -13,16 +13,13 @@ router.get('/me/audit', authMiddleware, listMyAuthAuditLogs as RequestHandler);
 router.get('/me/export', authMiddleware, exportMyData as RequestHandler);
 router.post('/me/import', authMiddleware, importMyData as RequestHandler);
 
-// User settings (e.g. hide NSFW)
-router.get('/settings', getSettings as RequestHandler);
-router.patch('/settings', patchSettings as RequestHandler);
+router.get('/settings', authMiddleware, getSettings as RequestHandler);
+router.patch('/settings', authMiddleware, patchSettings as RequestHandler);
 
 router.get('/:identifier/public', getPublicProfile as RequestHandler);
 
-// Upload profile picture
 router.post('/profile-picture', authMiddleware, profilePictureUpload.single('profilePicture'), uploadProfilePicture as RequestHandler);
 
-// Delete profile picture
 router.delete('/profile-picture', authMiddleware, deleteProfilePicture as RequestHandler);
 
 export default router;

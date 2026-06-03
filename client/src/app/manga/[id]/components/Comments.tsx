@@ -11,6 +11,7 @@ import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
 import { requireTrimmed } from "@/lib/requireContent";
 import { useSubmitRateLimit } from "@/hooks/useSubmitRateLimit";
 import { isAdminUser } from "@/lib/contentMenu";
+import { requireAuth } from "@/lib/requireAuth";
 
 function CommentOverflowMenu({
   id,
@@ -73,6 +74,7 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
     : undefined;
 
   const handleSubmit = async (content: string, parentId: number | null = null) => {
+    if (!requireAuth(user, `/manga/${manga.id}`)) return;
     if (isSubmitting || isCommentRateLimited) return;
     if (!requireTrimmed(content, parentId ? "Please write a reply." : "Please write a comment.")) return;
     setIsSubmitting(true);
@@ -104,6 +106,7 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
   };
 
   const handleVote = async (commentId: number, type: "like" | "dislike") => {
+    if (!requireAuth(user, `/manga/${manga.id}`)) return;
     try {
       await voteComment(commentId, type);
       router.refresh();
@@ -155,7 +158,10 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
         itemId={comment.id}
         userId={user?.id}
         onVote={handleVote}
-        onReply={nested ? undefined : () => setReplyingTo(replyingTo === comment.id ? null : comment.id)}
+        onReply={!nested ? () => {
+          if (!requireAuth(user, `/manga/${manga.id}`)) return;
+          setReplyingTo(replyingTo === comment.id ? null : comment.id);
+        } : undefined}
         replyActive={!nested && replyingTo === comment.id}
         repliesToggle={
           !nested && (comment.replies?.length ?? 0) > 0
@@ -188,6 +194,7 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
 
   return (
     <>
+      {user && (
       <ContentComposer
         heading="Leave a Comment"
         value={text}
@@ -204,9 +211,13 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
         layout="card"
         className="mb-5"
       />
+      )}
 
+      {!comments?.length ? (
+        <p className="text-muted text-sm">No comments yet. Be the first!</p>
+      ) : (
       <div className="flex flex-col gap-4">
-        {comments?.map((comment) => {
+        {comments.map((comment) => {
           const repliesExpanded = expandedComments.includes(comment.id);
           const replyCount = comment.replies?.length ?? 0;
 
@@ -247,6 +258,7 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
           );
         })}
       </div>
+      )}
     </>
   );
 }

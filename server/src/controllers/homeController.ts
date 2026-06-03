@@ -32,7 +32,9 @@ export const getThreshold = (period: string) => {
 
 // RECENTLY READ (No caching)
 export const getRecentlyRead = async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id || (req as any).session?.userId;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
     const limit = parseInt(req.query.limit as string) || 20;
     const maxLimit = 20;
 
@@ -278,8 +280,8 @@ export const getMostFollowed = async (req: Request, res: Response) => {
 };
 
 export const getRecentChaptersFromUserList = async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id || (req as any).session?.userId;
-    if (!userId) return res.json([]);
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 30);
     const { hideNsfw } = await getUserSettings(userId);

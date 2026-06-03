@@ -11,6 +11,7 @@ import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
 import { requireTrimmed } from "@/lib/requireContent";
 import { useSubmitRateLimit } from "@/hooks/useSubmitRateLimit";
 import { boardPostAdminItems, isAdminUser } from "@/lib/contentMenu";
+import { requireAuth } from "@/lib/requireAuth";
 
 export default function BoardClient() {
   const { user } = useUser();
@@ -42,6 +43,7 @@ export default function BoardClient() {
   }, []);
 
   const handleCreate = async () => {
+    if (!requireAuth(user, '/board')) return;
     if (isPostRateLimited) return;
     if (!requireTrimmed(title, "Please enter a title.")) return;
     if (!requireTrimmed(content, "Please write your post.")) return;
@@ -57,6 +59,7 @@ export default function BoardClient() {
   };
 
   const handleReply = async (postId: number) => {
+    if (!requireAuth(user, '/board')) return;
     if (isReplyRateLimited) return;
     const replyText = replyTextByPostId[postId] ?? "";
     if (!requireTrimmed(replyText, "Please write a reply.")) return;
@@ -84,6 +87,7 @@ export default function BoardClient() {
 
   return (
     <div className="container mx-auto px-4 xl:px-0 py-8 flex flex-col gap-6 w-full md:w-2/3">
+      {user && (
       <ContentComposer
         title={title}
         onTitleChange={setTitle}
@@ -101,6 +105,7 @@ export default function BoardClient() {
             : undefined
         }
       />
+      )}
 
       <div className="space-y-4">
         {loading ? (
@@ -116,17 +121,19 @@ export default function BoardClient() {
             <BoardPostCard
               key={post.id}
               post={post}
-              userId={user?.id}
+              user={user}
               isAdmin={isAdmin}
               menuOpenKey={menuOpenKey}
               setMenuOpenKey={setMenuOpenKey}
               onAdmin={handleAdmin}
               refreshVersion={refreshVersions[post.id] ?? 0}
               onVotePost={async (id, type) => {
+                if (!requireAuth(user, '/board')) return;
                 await voteBoardPost(id, type);
                 bumpPostRefresh(id);
               }}
               onVoteReply={async (postId, replyId, type) => {
+                if (!requireAuth(user, '/board')) return;
                 await voteBoardReply(replyId, type);
                 bumpPostRefresh(postId);
               }}
@@ -149,7 +156,7 @@ export default function BoardClient() {
   );
 }
 
-function BoardPostCard({post, refreshVersion, userId, isAdmin, menuOpenKey, setMenuOpenKey, onAdmin, onVotePost, onVoteReply, onReply, replyText, setReplyText, onPostUpdated, isReplyRateLimited, replyRateLimitSecondsLeft}: {post: any, refreshVersion: number, userId?: string, isAdmin: boolean, menuOpenKey: string | null, setMenuOpenKey: (key: string | null) => void, onAdmin: (postId: number, updates: Record<string, boolean>) => Promise<void>, onVotePost: (postId: number, type: "like" | "dislike") => Promise<void>, onVoteReply: (postId: number, replyId: number, type: "like" | "dislike") => Promise<void>, onReply: (postId: number) => Promise<void>, replyText: string, setReplyText: (value: string) => void, onPostUpdated: () => void, isReplyRateLimited: boolean, replyRateLimitSecondsLeft: number}) {
+function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMenuOpenKey, onAdmin, onVotePost, onVoteReply, onReply, replyText, setReplyText, onPostUpdated, isReplyRateLimited, replyRateLimitSecondsLeft}: {post: any, refreshVersion: number, user: ReturnType<typeof useUser>['user'], isAdmin: boolean, menuOpenKey: string | null, setMenuOpenKey: (key: string | null) => void, onAdmin: (postId: number, updates: Record<string, boolean>) => Promise<void>, onVotePost: (postId: number, type: "like" | "dislike") => Promise<void>, onVoteReply: (postId: number, replyId: number, type: "like" | "dislike") => Promise<void>, onReply: (postId: number) => Promise<void>, replyText: string, setReplyText: (value: string) => void, onPostUpdated: () => void, isReplyRateLimited: boolean, replyRateLimitSecondsLeft: number}) {
   const [detail, setDetail] = useState<{ post: any; replies: any[] } | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(true);
   const [replyOpen, setReplyOpen] = useState(false);
@@ -193,7 +200,7 @@ function BoardPostCard({post, refreshVersion, userId, isAdmin, menuOpenKey, setM
   const current = detail?.post ?? post;
   const isLocked = Boolean(current.isLocked);
   const replies = detail?.replies ?? [];
-  const isOwner = current.author?.id === userId;
+  const isOwner = current.author?.id === user?.id;
   const postMenuKey = `post-${current.id}`;
 
   const handleSubmitReply = async () => {
@@ -315,9 +322,12 @@ function BoardPostCard({post, refreshVersion, userId, isAdmin, menuOpenKey, setM
       overflowMenu={overflowMenu}
       votes={current.votes ?? []}
       itemId={current.id}
-      userId={userId}
+      userId={user?.id}
       onVote={(id, type) => void onVotePost(id, type)}
-      onReply={!isLocked ? () => setReplyOpen((open) => !open) : undefined}
+      onReply={!isLocked ? () => {
+        if (!requireAuth(user, '/board')) return;
+        setReplyOpen((open) => !open);
+      } : undefined}
       replyActive={replyOpen}
       repliesToggle={
         !loadingDetail && replyCount > 0
@@ -357,7 +367,7 @@ function BoardPostCard({post, refreshVersion, userId, isAdmin, menuOpenKey, setM
       {repliesExpanded && !loadingDetail && replyCount > 0 && (
         <div className="space-y-3 pt-3 mt-1 border-t border-borders">
           {replies.map((reply: any) => {
-            const replyOwner = reply.author?.id === userId;
+            const replyOwner = reply.author?.id === user?.id;
             const replyMenuKey = `reply-${reply.id}`;
 
             if (editingReplyId === reply.id) {
@@ -385,7 +395,7 @@ function BoardPostCard({post, refreshVersion, userId, isAdmin, menuOpenKey, setM
                 content={reply.content}
                 votes={reply.votes ?? []}
                 itemId={reply.id}
-                userId={userId}
+                userId={user?.id}
                 onVote={(id, type) => void onVoteReply(current.id, id, type)}
                 overflowMenu={
                   replyOwner || isAdmin ? (

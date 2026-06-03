@@ -4,8 +4,11 @@ import { useState, useEffect } from 'react';
 import { HeartIcon, ChevronDownIcon, Trash2Icon, CheckCircle2 } from 'lucide-react';
 import { fetchUserLists, addToList, removeFromList as removeFromListService, UserList } from '@/services/listService';
 import { toast } from 'react-toastify';
+import { useUser } from '@/providers/UserProvider';
+import { requireAuth } from '@/lib/requireAuth';
 
 export default function ListDropdown({ seriesId, initialListName, mangaTitle }: { seriesId: number, initialListName: string | null, mangaTitle?: string }) {
+    const { user } = useUser();
     const [open, setOpen] = useState(false);
     const [status, setStatus] = useState(initialListName || 'Add to List');
     const [loading, setLoading] = useState(false);
@@ -38,8 +41,8 @@ export default function ListDropdown({ seriesId, initialListName, mangaTitle }: 
     };
 
     useEffect(() => {
-        loadLists();
-    }, []);
+        if (user) loadLists();
+    }, [user]);
 
     const handleCreateList = async () => {
         const name = prompt('Enter a name for your new list:');
@@ -87,7 +90,7 @@ export default function ListDropdown({ seriesId, initialListName, mangaTitle }: 
     return (
         <div className="relative inline-flex items-center gap-3">
             <div className="relative">
-                <button onClick={() => setOpen(!open)} disabled={loading} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none text-primary transition-all ${loading ? 'animate-manga-pulse' : ''}`}>
+                <button onClick={() => { if (!requireAuth(user, `/manga/${seriesId}`)) return; setOpen(!open); }} disabled={loading} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none text-primary transition-all ${loading ? 'animate-manga-pulse' : ''}`}>
                     <HeartIcon className={`size-6 mr-2 transition-colors ${isAdded ? 'fill-red-500 text-red-500' : ''}`} />
                     <span className="capitalize">{status}</span>
                     <ChevronDownIcon className={`ml-2 size-4 transition-transform ${open ? 'rotate-180' : ''}`} />

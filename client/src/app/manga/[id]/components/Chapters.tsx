@@ -6,6 +6,8 @@ import { getSeriesBookmarks, removeBookmark, addBookmark } from "@/services/book
 import BookmarkModal from "@/components/BookmarkModal";
 import { toast } from "react-toastify";
 import Link from "next/link";
+import { useUser } from "@/providers/UserProvider";
+import { requireAuth } from "@/lib/requireAuth";
 
 type FilterOption = "all" | "unread" | "read" | "bookmarked";
 type SortOption = "chapterNumber" | "uploadDate" | "name";
@@ -56,6 +58,7 @@ interface ChaptersProps {
 }
 
 export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) {
+    const { user } = useUser();
     const [searchQuery, setSearchQuery] = useState("");
     const [sortBy, setSortBy] = useState<SortOption>("chapterNumber");
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
@@ -163,8 +166,14 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
         return chapters
     }, [chapters]);
 
-    useEffect(() => { fetchProgress(); }, [fetchProgress]);
-    useEffect(() => { fetchBookmarks(); }, [fetchBookmarks]);
+    useEffect(() => {
+        if (!user) return;
+        fetchProgress();
+    }, [fetchProgress, user]);
+    useEffect(() => {
+        if (!user) return;
+        fetchBookmarks();
+    }, [fetchBookmarks, user]);
 
     const toggleSelect = useCallback((chapterId: number) => {
         setSelectedIds((prev) => {
@@ -287,6 +296,7 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
 
     const handleMarkAsRead = useCallback(
         async (e: React.MouseEvent, chapterId: number) => {
+            if (!requireAuth(user, `/manga/${manga.id}`)) return;
             if (isOperating) return;
             e.preventDefault();
             e.stopPropagation();
@@ -306,11 +316,12 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                 setIsOperating(false);
             }
         },
-        [manga.id, chapters, isOperating]
+        [manga.id, chapters, isOperating, user]
     );
 
     const handleMarkAsUnread = useCallback(
         async (e: React.MouseEvent, chapterId: number) => {
+            if (!requireAuth(user, `/manga/${manga.id}`)) return;
             if (isOperating) return;
             e.preventDefault();
             e.stopPropagation();
@@ -329,17 +340,19 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                 setIsOperating(false);
             }
         },
-        [isOperating]
+        [isOperating, user, manga.id]
     );
 
     const handleBookmarkClick = useCallback((e: React.MouseEvent, chapterId: number) => {
+        if (!requireAuth(user, `/manga/${manga.id}`)) return;
         e.preventDefault();
         e.stopPropagation();
         setBookmarkModal({ isOpen: true, chapterId });
-    }, []);
+    }, [user, manga.id]);
 
     const handleRemoveBookmark = useCallback(
         async (e: React.MouseEvent, chapterId: number) => {
+            if (!requireAuth(user, `/manga/${manga.id}`)) return;
             if (isOperating) return;
             e.preventDefault();
             e.stopPropagation();
@@ -357,7 +370,7 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                 setIsOperating(false);
             }
         },
-        [manga.id, isOperating]
+        [manga.id, isOperating, user]
     );
 
     const handleBookmarkSuccess = useCallback(() => { fetchBookmarks(); }, [fetchBookmarks]);
@@ -378,6 +391,7 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                     />
                 </div>
                 <div className="flex flex-row flex-wrap gap-2 items-center">
+                    {user && (
                     <button
                         type="button"
                         onClick={() => (selectModeEnabled ? exitSelectMode() : setSelectModeEnabled(true))}
@@ -385,6 +399,7 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                     >
                         {selectModeEnabled ? "Done" : "Select Mode"}
                     </button>
+                    )}
                     <div ref={filterRef} className="relative shrink-0">
                         <button
                             type="button"
@@ -534,7 +549,14 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                                 href={href}
                                 className="flex-1 min-w-0"
                                 onClick={(e) => {
-                                    if (selectModeEnabled) e.preventDefault();
+                                    if (selectModeEnabled) {
+                                        e.preventDefault();
+                                        return;
+                                    }
+                                    if (!user) {
+                                        e.preventDefault();
+                                        requireAuth(user, href);
+                                    }
                                 }}
                             >
                             <div className="flex justify-between items-center">

@@ -9,7 +9,7 @@ export function requireRole(role: string): RequireRoleMiddleware {
         const sessionUser = req.user as { id?: string } | undefined;
 
         if (!sessionUser?.id) {
-            res.status(403).json({ message: `Forbidden: ${role} Role Required` });
+            res.status(401).json({ message: 'Unauthorized' });
             return;
         }
 

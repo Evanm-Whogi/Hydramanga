@@ -6,14 +6,13 @@ import { getClientApiBase } from '@/lib/env';
  * Hook to track manga view on client-side page mount
  * Only tracks once per component mount to avoid duplicate tracking
  */
-export function useMangaViewTracking(mangaId: string | number, mangaTitle?: string) {
+export function useMangaViewTracking(mangaId: string | number, mangaTitle?: string, enabled = true) {
   const tracked = useRef(false);
 
   useEffect(() => {
-    if (tracked.current) return;
+    if (!enabled || tracked.current) return;
     tracked.current = true;
 
-    // Track view via client-side API call - await to ensure cache is invalidated before stats are fetched
     (async () => {
       try {
         await fetch(`${getClientApiBase()}/manga/${mangaId}/track-view`, {
@@ -25,21 +24,20 @@ export function useMangaViewTracking(mangaId: string | number, mangaTitle?: stri
       }
     })();
     
-  }, [mangaId, mangaTitle]);
+  }, [mangaId, mangaTitle, enabled]);
 }
 
 /**
  * Hook to track chapter view on client-side page mount
  * Only tracks once per component mount to avoid duplicate tracking
  */
-export function useChapterViewTracking(mangaId: string | number, chapterId: string | number, mangaTitle?: string, chapterNumber?: string | number) {
+export function useChapterViewTracking(mangaId: string | number, chapterId: string | number, mangaTitle?: string, chapterNumber?: string | number, enabled = true) {
   const tracked = useRef(false);
 
   useEffect(() => {
-    if (tracked.current || !chapterNumber) return;
+    if (!enabled || tracked.current || !chapterNumber) return;
     tracked.current = true;
 
-    // Track view via client-side API call - await to ensure cache is invalidated before stats are fetched
     (async () => {
       try {
         await fetch(`${getClientApiBase()}/manga/${mangaId}/chapter/${chapterId}/track-view`, {
@@ -51,5 +49,5 @@ export function useChapterViewTracking(mangaId: string | number, chapterId: stri
       }
     })();
     
-  }, [mangaId, chapterId, mangaTitle, chapterNumber]);
+  }, [mangaId, chapterId, mangaTitle, chapterNumber, enabled]);
 }

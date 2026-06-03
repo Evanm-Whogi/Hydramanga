@@ -6,6 +6,7 @@ import Comments from "./Comments";
 import Gallery from "./Gallery";
 import Reviews from "./Reviews";
 import ListDropdown from "./ListDropdown";
+import { useUser } from "@/providers/UserProvider";
 
 type MangaActionsPage = "chapters" | "comments" | "reviews" | "gallery";
 
@@ -21,13 +22,14 @@ interface MangaActionsProps {
 
 export default function MangaActions({ manga, chapters, comments, gallery, initialListName, importProgress, chaptersMaxHeight }: MangaActionsProps) {
     const [page, setPage] = useState<MangaActionsPage>("chapters");
+    const { user } = useUser();
 
     return (
         <>
         <div className="grid grid-cols-1 xl:grid-cols-3 w-full pt-10 items-center space-y-4 xl:space-y-0">
 
             <div className="flex justify-start">
-                <ListDropdown seriesId={manga.id} initialListName={initialListName} mangaTitle={manga.title}/>
+                {user && <ListDropdown seriesId={manga.id} initialListName={initialListName} mangaTitle={manga.title} />}
             </div>
 
             <div className="flex flex-col xl:flex-row justify-end gap-2 my-5 md:my-0">

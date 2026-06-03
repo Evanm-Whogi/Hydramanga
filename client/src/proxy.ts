@@ -13,18 +13,9 @@ const GUEST_PATHS = ["/login", "/register", "/reset-password"] as const;
 
 const PROTECTED_PATHS = [
     "/admin",
-    "/announcements",
-    "/discover",
-    "/home",
-    "/manga",
     "/profile",
     "/lists",
     "/history",
-    "/leaderboard",
-    "/board",
-    "/chat",
-    "/users",
-    "/contact",
     "/request",
 ] as const;
 
@@ -40,6 +31,21 @@ function matchesPath(pathname: string, paths: readonly string[]): boolean {
     return paths.some(
         (path) => pathname === path || pathname.startsWith(`${path}/`)
     );
+}
+
+function isMangaReaderPath(pathname: string): boolean {
+    return /^\/manga\/[^/]+\/read(?:\/|$)/.test(pathname);
+}
+
+function isUsersMePath(pathname: string): boolean {
+    return pathname === "/users/me" || pathname.startsWith("/users/me/");
+}
+
+export function requiresAuth(pathname: string): boolean {
+    if (matchesPath(pathname, PROTECTED_PATHS)) return true;
+    if (isMangaReaderPath(pathname)) return true;
+    if (isUsersMePath(pathname)) return true;
+    return false;
 }
 
 function hasSessionToken(request: NextRequest): boolean {
@@ -65,6 +71,12 @@ async function getCachedAuth(request: NextRequest): Promise<CachedAuth> {
     }
 }
 
+function buildLoginRedirect(request: NextRequest, pathname: string): NextResponse {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("returnTo", pathname);
+    return NextResponse.redirect(loginUrl);
+}
+
 /**
  * UX redirects only — not the security boundary.
  * Real validation: admin/layout.tsx (server getSession) + Express authMiddleware.
@@ -75,24 +87,21 @@ export default async function proxy(request: NextRequest) {
     const isGuestRoute = matchesPath(pathname, GUEST_PATHS);
     const isAdminRoute =
         pathname === "/admin" || pathname.startsWith("/admin/");
-    const isProtectedRoute = matchesPath(pathname, PROTECTED_PATHS);
+    const isProtectedRoute = requiresAuth(pathname);
 
-    // Matcher is broad (static regex); skip auth logic on public routes.
     if (!isGuestRoute && !isAdminRoute && !isProtectedRoute) {
         return NextResponse.next();
     }
 
     const hasSession = hasSessionToken(request);
 
-    // Fast path — no cookie at all.
     if (!hasSession) {
         if (isProtectedRoute || isAdminRoute) {
-            return NextResponse.redirect(new URL("/login", request.url));
+            return buildLoginRedirect(request, pathname);
         }
         return NextResponse.next();
     }
 
-    // One cache read for the rest of the request.
     const auth = await getCachedAuth(request);
 
     if (isGuestRoute) {
@@ -103,24 +112,19 @@ export default async function proxy(request: NextRequest) {
     }
 
     if (isAdminRoute) {
-        // Fail closed when cache proves a non-admin user.
         if (auth.verified && auth.role !== "admin") {
             return NextResponse.redirect(new URL("/home", request.url));
         }
-        // Token present but cache missing/stale → server layout validates via getSession.
         return NextResponse.next();
     }
 
     if (isProtectedRoute) {
-        // Session cookie present; root layout validates with backend on render.
         return NextResponse.next();
     }
 
     return NextResponse.next();
 }
 
-// Static literal required by Next.js/Turbopack. Path lists above control which routes
-// actually run auth logic; this regex only decides when the proxy function is invoked.
 export const config = {
     matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };

@@ -8,10 +8,12 @@ class ProfileService {
    * Resolve a profile by `username`, `id`, or the literal `"me"` (the viewer).
    * Accepting the id keeps older id-based links working after the username migration.
    */
-  async getPublicProfile(identifier: string, viewerUserId: string) {
+  async getPublicProfile(identifier: string, viewerUserId: string | null) {
+    if (identifier === 'me' && !viewerUserId) return null;
+
     const where =
       identifier === 'me'
-        ? eq(schema.user.id, viewerUserId)
+        ? eq(schema.user.id, viewerUserId!)
         : or(eq(schema.user.username, identifier), eq(schema.user.id, identifier));
 
     const [userRow] = await db
@@ -32,7 +34,7 @@ class ProfileService {
     if (!userRow) return null;
 
     const targetUserId = userRow.id;
-    const isOwner = targetUserId === viewerUserId;
+    const isOwner = viewerUserId !== null && targetUserId === viewerUserId;
     const settings = await getUserSettings(targetUserId);
     const [lastSession] = await db
       .select({ lastOnlineAt: max(schema.session.updatedAt) })

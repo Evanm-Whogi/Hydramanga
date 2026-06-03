@@ -117,35 +117,37 @@ export default function NavbarClient() {
                             <h1 className="text-2xl font-bold text-primary flex">Manga <span className="text-accent">Scrolls</span></h1>
                         </Link>
                         <nav className="hidden xl:flex items-center space-x-6 text-md text-muted ml-6">
-                            {user ? (
+                            <NavItem href='/home' icon={<HouseIcon className="size-4 inline" />} label='Home' />
+                            <NavItem href='/discover' icon={<BookOpenIcon className="size-4 inline" />} label='Discover' />
+                            <NavItem href='/collections' icon={<LibraryBig className="size-4 inline" />} label='Collections' />
+                            {user && (
                                 <>
-                                    <NavItem href='/home' icon={<HouseIcon className="size-4 inline" />} label='Home' />
-                                    <NavItem href='/discover' icon={<BookOpenIcon className="size-4 inline" />} label='Discover' />
-                                    <NavItem href='/collections' icon={<LibraryBig className="size-4 inline" />} label='Collections' />
                                     <NavItem href='/lists' icon={<BookTextIcon className="size-4 inline" />} label='My Lists' />
-                                    <NavItem href='/leaderboard' icon={<TrophyIcon className="size-4 inline" />} label='Leaderboard' />
-                                    <NavItem href='/board' icon={<MessagesSquareIcon className="size-4 inline" />} label='Board' />
-                                    <NavItem href='/chat' icon={<MessageCircleIcon className="size-4 inline" />} label='Chat' />
                                     <NavItem href='/history' icon={<ChartBarDecreasingIcon className="size-4 inline" />} label='History' />
                                 </>
-                            ) : (<></>)}
+                            )}
+                            <NavItem href='/leaderboard' icon={<TrophyIcon className="size-4 inline" />} label='Leaderboard' />
+                            <NavItem href='/board' icon={<MessagesSquareIcon className="size-4 inline" />} label='Board' />
+                            <NavItem href='/chat' icon={<MessageCircleIcon className="size-4 inline" />} label='Chat' />
                         </nav>
                     </div>
 
                     {/* Right Section */}
                     <div className="flex items-center gap-6">
                         <div className="hidden xl:flex items-center gap-3">
+                            <div className="hidden min-[1700px]:flex items-center gap-3">
+                                {user && (
+                                    <Link href="/request" className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><CirclePlusIcon className="size-4" /> Request</Link>
+                                )}
+                                <div onClick={toggleRandomManga} className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><DicesIcon className="size-4" />Random</div>
+                                <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer" className="size-11" ><img src="/oauthIcons/discord.webp" alt="discord" /></a>
+                                <Link href="/discover" className="bg-background hover:bg-background/50 p-3 rounded-full"><SearchIcon className="size-5 hover:cursor-pointer" /></Link>
+                                <Link href="/announcements" className="bg-background hover:bg-background/50 p-3 rounded-full" aria-label="Announcements"><MegaphoneIcon className="size-5 hover:cursor-pointer" /></Link>
+                                {user && <NotificationsMenu />}
+                            </div>
+
                             {user ? (
                                 <>
-                                    <div className="hidden min-[1700px]:flex items-center gap-3">
-                                        <Link href="/request" className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><CirclePlusIcon className="size-4" /> Request</Link>
-                                        <div onClick={toggleRandomManga} className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><DicesIcon className="size-4" />Random</div>
-                                        <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer" className="size-11" ><img src="/oauthIcons/discord.webp" alt="discord" /></a>
-                                        <Link href="/discover" className="bg-background hover:bg-background/50 p-3 rounded-full"><SearchIcon className="size-5 hover:cursor-pointer" /></Link>
-                                        <Link href="/announcements" className="bg-background hover:bg-background/50 p-3 rounded-full" aria-label="Announcements"><MegaphoneIcon className="size-5 hover:cursor-pointer" /></Link>
-                                        <NotificationsMenu />
-                                    </div>
-
                                     <div className="relative" ref={profileRef}>
                                         <button onClick={() => setIsProfileOpen(!isProfileOpen)} className="block focus:outline-none focus:ring-2 focus:ring-borders rounded-full">
                                             <img src={user.image || "/default-avatar.jpg"} alt="ProfileImage" width={44} height={44} className="rounded-full border-2 border-transparent hover:border-borders transition-all" /></button>
@@ -176,7 +178,8 @@ export default function NavbarClient() {
                                     </div>
                                 </>
                             ) : (
-                                <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-3">
+                                    <button type="button" onClick={openThemeModal} className="bg-background hover:bg-background/50 p-3 rounded-full" aria-label="Theme"><PaletteIcon className="size-5" /></button>
                                     <Link href="/login" className="px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 bg-foreground hover:bg-foreground/50">Login</Link>
                                     <Link href="/register" className="px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 bg-foreground hover:bg-foreground/50">Sign Up</Link>
                                 </div>
@@ -255,6 +258,35 @@ export default function NavbarClient() {
                                 </>
                             ) : (
                                 <div className="space-y-3">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <Link href="/home" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/home' ? 'text-primary' : 'text-muted'}`}>
+                                            <HouseIcon className="size-4" /> Home
+                                        </Link>
+                                        <Link href="/discover" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/discover' ? 'text-primary' : 'text-muted'}`}>
+                                            <BookOpenIcon className="size-4" /> Discover
+                                        </Link>
+                                        <Link href="/collections" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/collections' ? 'text-primary' : 'text-muted'}`}>
+                                            <LibraryBig className="size-4" /> Collections
+                                        </Link>
+                                        <Link href="/leaderboard" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/leaderboard' ? 'text-primary' : 'text-muted'}`}>
+                                            <TrophyIcon className="size-4" /> Leaderboard
+                                        </Link>
+                                        <Link href="/board" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/board' ? 'text-primary' : 'text-muted'}`}>
+                                            <MessagesSquareIcon className="size-4" /> Board
+                                        </Link>
+                                        <Link href="/chat" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/chat' ? 'text-primary' : 'text-muted'}`}>
+                                            <MessageCircleIcon className="size-4" /> Chat
+                                        </Link>
+                                        <Link href="/announcements" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/announcements' ? 'text-primary' : 'text-muted'}`}>
+                                            <MegaphoneIcon className="size-4" /> Announcements
+                                        </Link>
+                                        <button onClick={openRandomManga} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 text-left">
+                                            <DicesIcon className="size-4" /> Random
+                                        </button>
+                                        <button onClick={openThemeModal} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 text-left">
+                                            <PaletteIcon className="size-4" /> Theme
+                                        </button>
+                                    </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <Link href="/login" onClick={() => setIsOpen(false)} className="w-full text-center rounded-lg bg-background px-4 py-2 text-sm font-medium hover:bg-foreground/80">Login</Link>
                                         <Link href="/register" onClick={() => setIsOpen(false)} className="w-full text-center rounded-lg bg-background px-4 py-2 text-sm font-medium hover:bg-foreground/80">Sign Up</Link>

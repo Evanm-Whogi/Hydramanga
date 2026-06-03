@@ -12,6 +12,7 @@ import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
 import { requireTrimmed } from "@/lib/requireContent";
 import { useSubmitRateLimit } from "@/hooks/useSubmitRateLimit";
 import { isAdminUser } from "@/lib/contentMenu";
+import { requireAuth } from "@/lib/requireAuth";
 
 function RatingPicker({value, onChange, disabled = false}: {
     value: number;
@@ -100,6 +101,7 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
         : undefined;
 
     const handleSubmit = async () => {
+        if (!requireAuth(user, `/manga/${seriesId}`)) return;
         if (isReviewRateLimited) return;
         if (!requireTrimmed(text, "Please write your review.")) return;
         if (rating === 0) {
@@ -148,6 +150,7 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
     };
 
     const handleVote = async (reviewId: number, type: "like" | "dislike") => {
+        if (!requireAuth(user, `/manga/${seriesId}`)) return;
         try {
             await voteReview(reviewId, type);
             await loadReviews();

@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 import { signIn, requestPasswordReset } from "@/lib/auth";
 import { getUserDisplayName, isEmailIdentifier } from "@/lib/userDisplay";
 import { consumeAuthRedirectMessage } from "@/lib/authSession";
+import { sanitizeReturnTo } from "@/lib/requireAuth";
 import InputField from '@/components/InputField';
 import OAuthButtons from "@/components/auth/OAuthButtons";
 import MasonryGrid from "@/components/MasonryGrid";
@@ -65,8 +66,10 @@ export default function LoginContent({ oauthGoogleEnabled = true, oauthDiscordEn
       }
 
       toast(`Welcome Back!`, { type: "success" });
-      
-      window.location.href = "/home";
+
+      const params = new URLSearchParams(window.location.search);
+      const returnTo = sanitizeReturnTo(params.get("returnTo"));
+      window.location.href = returnTo || "/home";
     } catch (error: any) {
       toast(error?.message || "Login failed", { type: "error" });
       setLoading(false);

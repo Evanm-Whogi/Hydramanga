@@ -14,6 +14,7 @@ import AuthorByline from "@/components/social/AuthorByline";
 import MarkdownView from "@/components/markdown/MarkdownView";
 import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
 import { isAdminUser } from "@/lib/contentMenu";
+import { requireAuth } from "@/lib/requireAuth";
 
 interface ChatMsg {
   id: number;
@@ -97,6 +98,7 @@ export default function ChatClient() {
   useChatSocket(onSocketEvent);
 
   const handleSend = async () => {
+    if (!requireAuth(user, '/chat')) return;
     if (isSendRateLimited) return;
     if (!requireTrimmed(text, "Please enter a message.")) return;
     stickToBottomRef.current = true;
@@ -242,6 +244,7 @@ export default function ChatClient() {
           </div>
 
           <div className="shrink-0 border-t border-borders p-2">
+            {user ? (
             <ContentComposer
               value={text}
               onChange={setText}
@@ -261,6 +264,9 @@ export default function ChatClient() {
                   : undefined
               }
             />
+            ) : (
+              <p className="text-sm text-muted text-center py-2">Log in to send messages.</p>
+            )}
           </div>
         </div>
 

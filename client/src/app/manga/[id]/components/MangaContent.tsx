@@ -217,13 +217,13 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
   }, [mangaId]);
 
   // Track manga views
-  useMangaViewTracking(mangaId, manga.title);
+  useMangaViewTracking(mangaId, manga.title, Boolean(user));
 
   // Always track import progress for this manga (works for all users)
   const { progress } = useMangaImportProgress(
     mangaId,
     {
-      enabled: true,
+      enabled: Boolean(user),
       mangaTitle: manga.title,
       onProgress: (progressData) => {
         // If progress includes newly downloaded chapter info, add it to local state
@@ -513,9 +513,11 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
                 </div>
                 <div className="flex justify-between text-muted">
                   <div className="w-full flex gap-2">
+                    {user && (
                     <button type="button" onClick={() => setReportModalOpen(true)} className="px-4 py-2 bg-background text-primary rounded-lg w-full text-sm hover:bg-background/50 hover:cursor-pointer disabled:opacity-50">
                       Report Issue
                     </button>
+                    )}
                     <button onClick={() => handleShareClick(manga.id, manga.title)} type="button" className="flex items-center justify-center gap-2 px-4 py-2 bg-background text-primary rounded-lg w-full text-sm hover:bg-background/50 hover:cursor-pointer disabled:opacity-50">
                       <ShareIcon className="size-4" /> Share
                     </button>

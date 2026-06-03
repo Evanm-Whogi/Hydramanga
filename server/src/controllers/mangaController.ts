@@ -389,93 +389,131 @@ export async function getMangaTags(req: Request, res: Response, next: NextFuncti
     }
 }
 
+function isSeriesHiddenByUserNsfw(manga: { contentRating?: string | null; genres?: string[] | null }, hideNsfw: boolean): boolean {
+    if (!hideNsfw) return false;
+    if (manga.contentRating === 'pornographic') return true;
+    if (!manga.genres?.length) return false;
+    return manga.genres.some((genre) => {
+        const normalized = genre.toLowerCase().trim();
+        return (['hentai', 'lolicon', 'shotacon', 'smut'] as const).some((blocked) => normalized === blocked);
+    });
+}
+
 export async function getOne(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const id = parseInt(req.params.id, 10);
     const userId = req.user?.id;
 
-    // Validate ID before any operations
     if (isNaN(id) || id <= 0) {
         return res.status(400).json({ status: 400, message: "Invalid manga ID" });
     }
 
-    // For unauthenticated users/bots, return only public data for metadata
-    if (!userId) {
-        const publicData = await db.query.series.findFirst({
-            where: (series, { eq }) => eq(series.id, id),
-            columns: {
-                id: true,
-                title: true,
-                romanizedTitle: true,
-                description: true,
-                cover: true,
+    const mangaData = userId
+        ? await db.query.series.findFirst({
+            where: (seriesTable, { eq: eqFn }) => eqFn(seriesTable.id, id),
+            with: {
+            chapters: {
+                columns: {
+                    id: true,
+                    seriesId: true,
+                    title: true,
+                    chapterNumber: true,
+                    createdAt: true,
+                    updatedAt: true,
+                    pageCount: true,
+                    scraperId: true,
+                },
+                orderBy: (chaptersTable, { asc }) => [asc(chaptersTable.chapterNumber)],
+            },
+            comments: {
+                where: (comments, { isNull }) => isNull(comments.parentId),
+                with: {
+                    author: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            image: true,
+                            role: true,
+                        },
+                    },
+                    votes: true,
+                    replies: {
+                        with: {
+                            author: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    image: true,
+                                    role: true,
+                                },
+                            },
+                            votes: true,
+                        },
+                        orderBy: (comments, { asc }) => [asc(comments.createdAt)],
+                    },
+                },
+                orderBy: (comments, { desc }) => [desc(comments.createdAt)],
+            },
+            usersTracking: { where: (ut, { eq: eqFn }) => eqFn(ut.userId, userId) },
+            },
+        })
+        : await db.query.series.findFirst({
+            where: (seriesTable, { eq: eqFn }) => eqFn(seriesTable.id, id),
+            with: {
+            chapters: {
+                columns: {
+                    id: true,
+                    seriesId: true,
+                    title: true,
+                    chapterNumber: true,
+                    createdAt: true,
+                    updatedAt: true,
+                    pageCount: true,
+                    scraperId: true,
+                },
+                orderBy: (chaptersTable, { asc }) => [asc(chaptersTable.chapterNumber)],
+            },
+            comments: {
+                where: (comments, { isNull }) => isNull(comments.parentId),
+                with: {
+                    author: {
+                        columns: {
+                            id: true,
+                            name: true,
+                            image: true,
+                            role: true,
+                        },
+                    },
+                    votes: true,
+                    replies: {
+                        with: {
+                            author: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    image: true,
+                                    role: true,
+                                },
+                            },
+                            votes: true,
+                        },
+                        orderBy: (comments, { asc }) => [asc(comments.createdAt)],
+                    },
+                },
+                orderBy: (comments, { desc }) => [desc(comments.createdAt)],
+            },
             },
         });
+    if (!mangaData) return res.status(404).json({ status: 404, message: "Not found" });
 
-        if (!publicData) {
-            return res.status(404).json({ status: 404, message: "Not found" });
-        }
-
-        return res.json({
-            status: 200,
-            manga: publicData,
-            userStatus: null
-        });
+    const { hideNsfw } = await getUserSettings(userId);
+    const mangaGenres = Array.isArray(mangaData.genres) ? mangaData.genres as string[] : null;
+    if (shouldFilterManga(mangaGenres) || isSeriesHiddenByUserNsfw({ contentRating: mangaData.contentRating as string | null, genres: mangaGenres }, hideNsfw)) {
+        return res.status(404).json({ status: 404, message: "Not found" });
     }
 
-    // For authenticated users, return full data with user-specific info
-    const mangaData = await db.query.series.findFirst({
-        where: (series, { eq }) => eq(series.id, id),
-        with: {
-        chapters: {
-            columns: {
-                id: true,
-                seriesId: true,
-                title: true,
-                chapterNumber: true,
-                createdAt: true,
-                updatedAt: true,
-                pageCount: true,
-                scraperId: true,
-            },
-            orderBy: (chapters, { asc }) => [asc(chapters.chapterNumber)],
-
-        },
-        comments: {
-            where: (comments, { isNull }) => isNull(comments.parentId),
-            with: {
-                author: {
-                    columns: {
-                        id: true,
-                        name: true,
-                        image: true,
-                        role: true,
-                    },
-                },
-                votes: true,
-                replies: {
-                    with: {
-                        author: {
-                            columns: {
-                                id: true,
-                                name: true,
-                                image: true,
-                                role: true,
-                            },
-                        },
-                        votes: true,
-                    },
-                    orderBy: (comments, { asc }) => [asc(comments.createdAt)],
-                },
-            },
-            orderBy: (comments, { desc }) => [desc(comments.createdAt)],
-        },
-        usersTracking: { where: (ut, { eq }) => eq(ut.userId, userId) },
-        },
-    });
-    if(!mangaData) return res.json({status: 404, message: "Not found"});
-
     // Get user's list information if they're tracking this manga
-    const userListInfo = mangaData.usersTracking?.[0];
+    const mangaWithTracking = mangaData as typeof mangaData & { usersTracking?: { listId: number }[] };
+    const userListInfo = mangaWithTracking.usersTracking?.[0];
     let userStatus = null;
     if (userListInfo?.listId) {
         const userList = await db.query.userLists.findFirst({
@@ -483,7 +521,7 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
         });
         userStatus = userList ? { listId: userList.id, listName: userList.name, listSlug: userList.slug } : null;
     }
-    const { usersTracking, ...manga } = mangaData;
+    const { usersTracking, ...manga } = mangaWithTracking;
 
     // Fetch chapter view stats for all chapters
     const chapterViewStats = await metricsService.getSeriesChapterStats(id);
@@ -608,6 +646,10 @@ export async function getAllLists(req: Request, res: Response) {
 }
 
 export async function getPages(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+    if (!req.user?.id) {
+        return res.status(401).json({ message: 'Unauthorized' });
+    }
+
     const { id, chapterId } = req.params;
 
     try {

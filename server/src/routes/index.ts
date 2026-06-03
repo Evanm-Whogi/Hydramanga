@@ -1,5 +1,6 @@
 import { Express, RequestHandler } from 'express';
 import { authMiddleware } from '@/middlewares/auth';
+import { optionalAuthMiddleware } from '@/middlewares/optionalAuth';
 import { trackingMiddleware } from '@/middlewares/tracking';
 import { getMangaAnalytics, getTrending } from '@/controllers/analyticsController';
 
@@ -28,49 +29,37 @@ module.exports = (app: Express) => {
     // Apply tracking middleware globally to track views
     app.use(trackingMiddleware);
 
-    // User Routes (profile pictures)
-    app.use('/users', authMiddleware, userRoutes);
+    app.use('/users', optionalAuthMiddleware, userRoutes);
 
-    app.use('/manga', authMiddleware, mangaRoutes);
+    app.use('/manga', optionalAuthMiddleware, mangaRoutes);
     app.use('/manga/progress', authMiddleware, progressRoutes);
 
-    // List Management Routes
     app.use('/lists', authMiddleware, listRoutes);
 
-    // Public read-only analytics (no auth — avoids session DB writes on manga page polls)
     app.get('/analytics/trending', getTrending as RequestHandler);
     app.get('/analytics/manga/:id', getMangaAnalytics as RequestHandler);
 
-    // Analytics Routes (authenticated)
     app.use('/analytics', authMiddleware, analyticsRoutes);
 
-    // User Progress Routes (legacy, now under analytics)
     app.use('/progress', authMiddleware, analyticsRoutes);
 
-    // Content Routes
-    app.use('/comments', authMiddleware, commentRoutes);
-    app.use('/reviews', authMiddleware, reviewRoutes);
-    app.use('/announcements', authMiddleware, announcementRoutes);
+    app.use('/comments', optionalAuthMiddleware, commentRoutes);
+    app.use('/reviews', optionalAuthMiddleware, reviewRoutes);
+    app.use('/announcements', optionalAuthMiddleware, announcementRoutes);
     app.use('/notifications', authMiddleware, notificationRoutes);
 
-    // Contact and DMCA Routes (public)
     app.use('/', contactRoutes);
 
-    // Page Aggregator Routes
-    app.use('/', pageRoutes); 
+    app.use('/', pageRoutes);
 
-    // Import requests (user)
     app.use('/import-requests', authMiddleware, importRequestRoutes);
 
-    // Community
-    app.use('/leaderboard', authMiddleware, leaderboardRoutes);
-    app.use('/board', authMiddleware, boardRoutes);
-    app.use('/chat', authMiddleware, chatRoutes);
+    app.use('/leaderboard', optionalAuthMiddleware, leaderboardRoutes);
+    app.use('/board', optionalAuthMiddleware, boardRoutes);
+    app.use('/chat', optionalAuthMiddleware, chatRoutes);
 
-    // Admin Routes
     app.use('/admin', authMiddleware, adminRoutes);
 
-    // Public Endpoints
     app.get('/heartbeat', (req, res) => {
         res.json({ status: 200, message: 'Service is healthy' });
     });

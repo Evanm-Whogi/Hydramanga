@@ -45,17 +45,7 @@ export default async function MangaPage({ params }: Props) {
     const { id } = await params;
     const data = await fetchOne(id);
     const gallery = await fetchGallery(id);
-    
-    // If no chapters (bot received minimal data), show fallback
-    if (!data.manga.chapters) {
-      return (
-        <div className="min-h-screen flex items-center justify-center">
-          <p className="text-muted">Content unavailable</p>
-        </div>
-      );
-    }
-    
-    // Map server-side list info to a simple display name for the client dropdown
+
     const initialListName = data.userStatus?.listName ?? null;
     return <MangaContent manga={data.manga} gallery={gallery} initialListName={initialListName} />;
 }

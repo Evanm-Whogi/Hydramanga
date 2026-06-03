@@ -14,6 +14,7 @@ import RecentChapterFromListCard from "@/app/home/components/cards/RecentChapter
 import { getCollections } from "@/services/mangaService";
 
 import CarouselSection from "@/app/home/components/CarouselSection"
+import { useUser } from "@/providers/UserProvider";
 
 function usePaginatedManga(fetchFn: any, limit = 14) {
     const [data, setData] = useState<any[]>([]);
@@ -90,6 +91,7 @@ function useFilteredManga(fetchFn: any, initialFilter: string = 'all') {
 
 
 export default function Lists() {
+    const { user } = useUser();
     const { data: recentlyAdded, fetchMore: fetchMoreRecentlyAdded, loading, hasMore } = usePaginatedManga(homeService.getRecentlyAdded, 14);
     const { data: popularChapters, filter: chapPeriod, setFilter: setChapPeriod, loading: loadingChaps } = useFilteredManga(homeService.getPopularChapters, 'week');
     const { data: popularManga, filter: mangaPeriod, setFilter: setMangaPeriod, loading: loadingPopManga } = useFilteredManga(homeService.getPopularManga, 'month');
@@ -101,9 +103,13 @@ export default function Lists() {
     const [recentChaptersFromList, setRecentChaptersFromList] = useState<any[]>([]);
 
     useEffect(() => {
+        if (!user) return;
         homeService.getRecentlyRead().then(setRecentlyRead).catch(() => {});
-        getCollections().then(setCollections).catch(() => {});
         homeService.getRecentChaptersFromUserList(30).then(setRecentChaptersFromList).catch(() => setRecentChaptersFromList([]));
+    }, [user]);
+
+    useEffect(() => {
+        getCollections().then(setCollections).catch(() => {});
     }, []);
 
     return (
