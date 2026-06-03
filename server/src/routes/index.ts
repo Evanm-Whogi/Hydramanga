@@ -70,6 +70,10 @@ module.exports = (app: Express) => {
     // Admin Routes
     app.use('/admin', authMiddleware, adminRoutes);
 
-    // Site settings (public)
+    // Public Endpoints
+    app.get('/heartbeat', (req, res) => {
+        res.json({ status: 200, message: 'Service is healthy' });
+    });
+
     app.get('/site-settings', getPublicSiteSettings as RequestHandler);
 };

@@ -37,13 +37,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install Playwright system dependencies (no browser yet)
 RUN npx -y playwright@latest install-deps
 
-# Install cloudflared for tunnel (pinned URL avoids redirect; retries and timeouts for flaky networks)
-ARG CLOUDFLARED_VERSION=2024.11.0
-RUN curl -L --fail --connect-timeout 30 --max-time 120 --retry 3 --retry-delay 5 \
-    -o /usr/local/bin/cloudflared \
-    "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64" && \
-    chmod +x /usr/local/bin/cloudflared
-
 # Only copy needed artifacts
 COPY --from=base /app/package.json ./package.json
 COPY --from=base /app/tsconfig.json ./tsconfig.json
@@ -58,8 +51,6 @@ RUN chmod +x ./entrypoint.sh
 
 # Use cached Chromium from dedicated stage (no download on rebuild unless PLAYWRIGHT_VERSION changes)
 COPY --from=playwright-browsers /pw-browsers /pw-browsers
-
-# Note: cloudflared config will be mounted as a volume in docker-compose
 
 EXPOSE 4000
 CMD ["./entrypoint.sh"]
