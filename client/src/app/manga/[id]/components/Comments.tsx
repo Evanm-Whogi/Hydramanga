@@ -10,6 +10,7 @@ import SocialPostCard from "@/components/social/SocialPostCard";
 import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
 import { requireTrimmed } from "@/lib/requireContent";
 import { useSubmitRateLimit } from "@/hooks/useSubmitRateLimit";
+import { toastApiError } from "@/lib/rateLimit";
 import { isAdminUser } from "@/lib/contentMenu";
 import { requireAuth } from "@/lib/requireAuth";
 
@@ -87,7 +88,7 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
       toast.success(parentId ? "Reply posted" : "Comment posted");
       router.refresh();
     } catch (err: unknown) {
-      if (!applyCommentRateLimit(err)) toast.error("Failed to post.");
+      if (!applyCommentRateLimit(err)) toastApiError(err, "Failed to post.");
     } finally {
       setIsSubmitting(false);
     }
@@ -100,8 +101,8 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
       setEditingId(null);
       toast.success("Comment updated");
       router.refresh();
-    } catch {
-      toast.error("Failed to update.");
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to update.");
     }
   };
 
@@ -110,8 +111,8 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
     try {
       await voteComment(commentId, type);
       router.refresh();
-    } catch {
-      toast.error("Failed to vote.");
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to vote.");
     }
   };
 
@@ -119,8 +120,8 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
     try {
       await deleteComment(commentId);
       router.refresh();
-    } catch {
-      toast.error("Failed to delete.");
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to delete.");
     }
   };
 

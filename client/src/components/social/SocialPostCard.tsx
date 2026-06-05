@@ -38,7 +38,7 @@ export default function SocialPostCard({
   votes?: { userId: string; type: string }[];
   itemId: number;
   userId?: string;
-  onVote?: (id: number, type: "like" | "dislike") => void;
+  onVote?: (id: number, type: "like" | "dislike") => void | Promise<void>;
   onReply?: () => void;
   replyActive?: boolean;
   replyDisabled?: boolean;

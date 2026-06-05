@@ -1,8 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { toast } from 'react-toastify';
-import { isRateLimitError } from '@/lib/rateLimit';
+import { isRateLimited as isRateLimitSignal } from '@/lib/rateLimit';
 
 export function useSubmitRateLimit() {
   const [rateLimitedUntil, setRateLimitedUntil] = useState<number | null>(null);
@@ -22,9 +21,8 @@ export function useSubmitRateLimit() {
   }, [rateLimitedUntil]);
 
   const applyRateLimitFromError = useCallback((error: unknown): boolean => {
-    if (!isRateLimitError(error)) return false;
+    if (!isRateLimitSignal(error)) return false;
     setRateLimitedUntil(Date.now() + error.retryAfterMs);
-    toast.warning(error.message);
     return true;
   }, []);
 

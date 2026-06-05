@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Search, X, Loader2, ExternalLink } from "lucide-react";
 import { toast } from "react-toastify";
+import { isRateLimited, toastApiError } from "@/lib/rateLimit";
 import InputField from "@/components/InputField";
 import {createImportRequest, listMyImportRequests, type UserImportRequest,} from "@/services/importRequestService";
 import { fetchMangaById, searchMangaByTitle } from "@/services/mangaService";
@@ -123,7 +124,7 @@ function RequestForm({ importRequestsEnabled = true }: { importRequestsEnabled?:
         setSearchResults(items);
         setSearchOpen(items.length > 0);
       } catch (err) {
-        console.error(err);
+        if (!isRateLimited(err)) console.error(err);
         setSearchResults([]);
         setSearchOpen(false);
       } finally {
@@ -179,8 +180,7 @@ function RequestForm({ importRequestsEnabled = true }: { importRequestsEnabled?:
       }
       await loadRequests();
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Failed to submit request";
-      toast.error(message);
+      toastApiError(error, "Failed to submit request");
     } finally {
       setSubmitting(false);
     }

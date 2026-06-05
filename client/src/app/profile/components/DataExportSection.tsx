@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { Download, Upload } from "lucide-react";
 import { toast } from "react-toastify";
 import { exportMyData, importMyData } from "@/services/profileService";
+import { toastApiError } from "@/lib/rateLimit";
 
 const actionButtonClass =
   "bg-background hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center justify-center gap-2 text-lg hover:cursor-pointer w-full";
@@ -23,8 +24,8 @@ export default function DataExportSection() {
       a.click();
       URL.revokeObjectURL(url);
       toast.success("Export downloaded");
-    } catch {
-      toast.error("Export failed");
+    } catch (error) {
+      toastApiError(error, "Export failed");
     }
   };
 
@@ -35,8 +36,8 @@ export default function DataExportSection() {
       const payload = JSON.parse(text);
       await importMyData(payload);
       toast.success("Data imported successfully");
-    } catch {
-      toast.error("Import failed — check the file format");
+    } catch (error) {
+      toastApiError(error, "Import failed — check the file format");
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = "";

@@ -12,6 +12,7 @@ import { requireTrimmed } from "@/lib/requireContent";
 import { useSubmitRateLimit } from "@/hooks/useSubmitRateLimit";
 import { boardPostAdminItems, isAdminUser } from "@/lib/contentMenu";
 import { requireAuth } from "@/lib/requireAuth";
+import { toastApiError } from "@/lib/rateLimit";
 
 export default function BoardClient() {
   const { user } = useUser();
@@ -54,7 +55,7 @@ export default function BoardClient() {
       loadPosts();
       toast.success("Post created");
     } catch (err: unknown) {
-      if (!applyPostRateLimit(err)) toast.error("Failed to create post");
+      if (!applyPostRateLimit(err)) toastApiError(err, "Failed to create post");
     }
   };
 
@@ -69,7 +70,7 @@ export default function BoardClient() {
       bumpPostRefresh(postId);
       toast.success("Reply posted");
     } catch (err: unknown) {
-      if (!applyReplyRateLimit(err)) toast.error("Failed to reply");
+      if (!applyReplyRateLimit(err)) toastApiError(err, "Failed to reply");
     }
   };
 
@@ -80,8 +81,8 @@ export default function BoardClient() {
       loadPosts();
       bumpPostRefresh(postId);
       toast.success("Updated");
-    } catch {
-      toast.error("Failed to update");
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to update");
     }
   };
 
@@ -217,8 +218,8 @@ function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMen
       setEditingPost(false);
       onPostUpdated();
       toast.success("Post updated");
-    } catch {
-      toast.error("Failed to update post");
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to update post");
     }
   };
 
@@ -227,8 +228,8 @@ function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMen
       await deleteBoardPost(current.id);
       onPostUpdated();
       toast.success("Post deleted");
-    } catch {
-      toast.error("Failed to delete post");
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to delete post");
     }
   };
 
@@ -239,8 +240,8 @@ function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMen
       setEditingReplyId(null);
       onPostUpdated();
       toast.success("Reply updated");
-    } catch {
-      toast.error("Failed to update reply");
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to update reply");
     }
   };
 
@@ -249,8 +250,8 @@ function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMen
       await deleteBoardReply(replyId);
       onPostUpdated();
       toast.success("Reply deleted");
-    } catch {
-      toast.error("Failed to delete reply");
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to delete reply");
     }
   };
 
@@ -323,7 +324,7 @@ function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMen
       votes={current.votes ?? []}
       itemId={current.id}
       userId={user?.id}
-      onVote={(id, type) => void onVotePost(id, type)}
+      onVote={(id, type) => onVotePost(id, type)}
       onReply={!isLocked ? () => {
         if (!requireAuth(user, '/board')) return;
         setReplyOpen((open) => !open);
@@ -396,7 +397,7 @@ function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMen
                 votes={reply.votes ?? []}
                 itemId={reply.id}
                 userId={user?.id}
-                onVote={(id, type) => void onVoteReply(current.id, id, type)}
+                onVote={(id, type) => onVoteReply(current.id, id, type)}
                 overflowMenu={
                   replyOwner || isAdmin ? (
                     <ContentOverflowMenu

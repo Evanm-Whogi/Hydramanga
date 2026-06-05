@@ -11,6 +11,7 @@ import SocialPostCard from "@/components/social/SocialPostCard";
 import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
 import { requireTrimmed } from "@/lib/requireContent";
 import { useSubmitRateLimit } from "@/hooks/useSubmitRateLimit";
+import { toastApiError } from "@/lib/rateLimit";
 import { isAdminUser } from "@/lib/contentMenu";
 import { requireAuth } from "@/lib/requireAuth";
 
@@ -117,7 +118,7 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
             await loadReviews();
         } catch (e: unknown) {
             if (!applyReviewRateLimit(e)) {
-                toast.error(e instanceof Error ? e.message : "Failed to post review.");
+                toastApiError(e, "Failed to post review.");
             }
         } finally {
             setSubmitting(false);
@@ -135,8 +136,8 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
             setEditingId(null);
             toast.success("Review updated");
             await loadReviews();
-        } catch {
-            toast.error("Failed to update review.");
+        } catch (err: unknown) {
+            toastApiError(err, "Failed to update review.");
         }
     };
 
@@ -144,8 +145,8 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
         try {
             await deleteReview(reviewId);
             await loadReviews();
-        } catch {
-            toast.error("Failed to delete review.");
+        } catch (err: unknown) {
+            toastApiError(err, "Failed to delete review.");
         }
     };
 
@@ -154,8 +155,8 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
         try {
             await voteReview(reviewId, type);
             await loadReviews();
-        } catch {
-            toast.error("Failed to vote.");
+        } catch (err: unknown) {
+            toastApiError(err, "Failed to vote.");
         }
     };
 

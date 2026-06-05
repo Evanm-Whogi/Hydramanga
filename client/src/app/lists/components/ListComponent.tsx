@@ -13,6 +13,7 @@ import FiltersPanel from '@/components/FiltersPanel';
 import { FILTER_OPTIONS } from '@/constants/filters';
 import { UserList } from '@/services/listService';
 import { toast } from 'react-toastify';
+import { toastApiError } from '@/lib/rateLimit';
 import { getSettings } from '@/services/userService';
 
 interface ListComponentProps {
@@ -156,7 +157,7 @@ export default function ListComponent({ lists: listsData, onUpdate }: ListCompon
       if (onUpdate) onUpdate();
       toast.success(`Manga moved to "${toList.name}"`);
     } catch (err) {
-      toast.error('Failed to move manga');
+      toastApiError(err, 'Failed to move manga');
     } finally {
       setIsMoving(false);
     }

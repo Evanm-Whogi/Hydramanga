@@ -5,6 +5,7 @@ import type { FormEvent } from "react";
 import { toast } from "react-toastify";
 import InputField from "@/components/InputField";
 import { sendContactMessage, sendDmcaNotice } from "@/services/contactService";
+import { toastApiError } from "@/lib/rateLimit";
 
 const initialContactState = {
   name: "",
@@ -34,8 +35,8 @@ export default function ContactContent() {
       await sendContactMessage(contactForm);
       toast.success("Message sent! We will get back to you soon.");
       setContactForm(initialContactState);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to send message.");
+    } catch (error: unknown) {
+      toastApiError(error, "Failed to send message.");
     } finally {
       setIsContactSubmitting(false);
     }
@@ -49,8 +50,8 @@ export default function ContactContent() {
       await sendDmcaNotice(dmcaForm);
       toast.success("DMCA notice submitted. Our legal team will review it.");
       setDmcaForm(initialDmcaState);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to submit DMCA notice.");
+    } catch (error: unknown) {
+      toastApiError(error, "Failed to submit DMCA notice.");
     } finally {
       setIsDmcaSubmitting(false);
     }

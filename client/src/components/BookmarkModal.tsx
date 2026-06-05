@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { addBookmark } from '@/services/bookmarkService';
+import { isRateLimited, toastApiError } from '@/lib/rateLimit';
 
 interface BookmarkModalProps {
   isOpen: boolean;
@@ -48,8 +49,13 @@ export default function BookmarkModal({
       onSuccess?.();
       onClose();
     } catch (err) {
-      setError('Failed to save bookmark. Please try again.');
-      console.error('Bookmark error:', err);
+      if (isRateLimited(err)) {
+        setError(err.message);
+      } else {
+        toastApiError(err, 'Failed to save bookmark. Please try again.');
+        setError('Failed to save bookmark. Please try again.');
+        console.error('Bookmark error:', err);
+      }
     } finally {
       setIsLoading(false);
     }

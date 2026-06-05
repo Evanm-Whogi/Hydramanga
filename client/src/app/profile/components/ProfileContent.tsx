@@ -6,6 +6,7 @@ import Overview from '@/app/profile/components/Overview';
 import Settings from '@/app/profile/components/Settings';
 import Activity from '@/app/profile/components/Activity';
 import { toast } from 'react-toastify';
+import { toastApiError } from '@/lib/rateLimit';
 import { useUser } from "@/providers/UserProvider";
 import { updateUser } from "@/lib/auth";
 import { uploadProfilePicture, deleteProfilePicture } from "@/services/userService";
@@ -158,8 +159,8 @@ export default function ProfileContent() {
       await updateUser({ image: data.image });
       setShowAvatarModal(false);
       router.refresh();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to upload profile picture');
+    } catch (err: unknown) {
+      toastApiError(err, 'Failed to upload profile picture');
     } finally {
       setUploading(false);
     }
@@ -176,8 +177,8 @@ export default function ProfileContent() {
       await updateUser({ image: data.image });
       setShowAvatarModal(false);
       router.refresh();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete profile picture');
+    } catch (err: unknown) {
+      toastApiError(err, 'Failed to delete profile picture');
     }
   };
 

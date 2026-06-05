@@ -18,6 +18,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useEffect } from 'react';
 import { reorderLists } from '@/services/listService';
 import { toast } from 'react-toastify';
+import { rateLimitToastMessage, toastApiError } from '@/lib/rateLimit';
 import { UserList, createList, deleteList, updateList } from '@/services/listService';
 import { Trash2, Eye, EyeOff, Plus, Edit2, Check, X, GripVertical } from 'lucide-react';
 
@@ -53,8 +54,8 @@ export default function ListManager({ lists, onUpdate }: ListManagerProps) {
       setIsCreating(false);
       toast.success('List created!');
       onUpdate();
-    } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to create list');
+    } catch (err: unknown) {
+      setError(rateLimitToastMessage(err, 'Failed to create list'));
     } finally {
       setIsLoading(false);
     }
@@ -73,8 +74,8 @@ export default function ListManager({ lists, onUpdate }: ListManagerProps) {
       await deleteList(listId);
       toast.success('List deleted!');
       onUpdate();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to delete list');
+    } catch (err: unknown) {
+      setError(rateLimitToastMessage(err, 'Failed to delete list'));
     } finally {
       setIsLoading(false);
     }
@@ -89,8 +90,8 @@ export default function ListManager({ lists, onUpdate }: ListManagerProps) {
       await updateList(list.id, { isVisible: !list.isVisible });
       toast.success(`List "${list.name}" is now ${list.isVisible ? 'hidden' : 'visible'}`);
       onUpdate();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to update list');
+    } catch (err: unknown) {
+      setError(rateLimitToastMessage(err, 'Failed to update list'));
     } finally {
       setIsLoading(false);
     }
@@ -120,8 +121,8 @@ export default function ListManager({ lists, onUpdate }: ListManagerProps) {
       setEditingName('');
       toast.success('List renamed!');
       onUpdate();
-    } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to update list');
+    } catch (err: unknown) {
+      setError(rateLimitToastMessage(err, 'Failed to update list'));
     } finally {
       setIsLoading(false);
     }
@@ -159,8 +160,8 @@ export default function ListManager({ lists, onUpdate }: ListManagerProps) {
       await reorderLists(listOrders);
       toast.success('List order updated!');
       onUpdate();
-    } catch (err: any) {
-      toast.error('Failed to update order');
+    } catch (err: unknown) {
+      toastApiError(err, 'Failed to update order');
     }
   };
 

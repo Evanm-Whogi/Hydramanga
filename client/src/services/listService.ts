@@ -1,5 +1,6 @@
 import { apiGet, apiPost, apiPut, apiDelete} from '@/lib/api';
 import { isServer, getClientApiBase } from '@/lib/env';
+import { parseRateLimitedResponse } from '@/lib/rateLimit';
 
 const clientRequest = async (path: string, options: RequestInit) => {
   const res = await fetch(`${getClientApiBase()}${path}`, {
@@ -7,11 +8,13 @@ const clientRequest = async (path: string, options: RequestInit) => {
     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
     ...options,
   });
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || 'Request failed');
+    const rateLimited = parseRateLimitedResponse(res, data);
+    if (rateLimited) return Promise.reject(rateLimited);
+    throw new Error(data?.message || 'Request failed');
   }
-  return res.json();
+  return data;
 };
 
 export interface UserList {

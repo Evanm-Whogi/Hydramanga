@@ -4,6 +4,7 @@ import { useState } from "react";
 import { X, Flag, Loader2 } from "lucide-react";
 import { sendMangaReport } from "@/services/contactService";
 import { toast } from "react-toastify";
+import { toastApiError } from "@/lib/rateLimit";
 
 interface ReportMangaModalProps {
   mangaId: number;
@@ -31,7 +32,7 @@ export default function ReportMangaModal({ mangaId, mangaTitle, onClose }: Repor
       toast.success("Report submitted. Thank you for helping improve our catalog.");
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to submit report");
+      toastApiError(err, "Failed to submit report");
     } finally {
       setIsSubmitting(false);
     }

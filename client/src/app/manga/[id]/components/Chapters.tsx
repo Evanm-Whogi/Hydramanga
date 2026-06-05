@@ -5,6 +5,7 @@ import { getSeriesChapterProgress, markChapterAsRead, markChapterAsUnread } from
 import { getSeriesBookmarks, removeBookmark, addBookmark } from "@/services/bookmarkService";
 import BookmarkModal from "@/components/BookmarkModal";
 import { toast } from "react-toastify";
+import { toastApiError } from "@/lib/rateLimit";
 import Link from "next/link";
 import { useUser } from "@/providers/UserProvider";
 import { requireAuth } from "@/lib/requireAuth";
@@ -239,10 +240,12 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                     toast.success(successMsg);
                     clearSelection();
                 } else {
-                    toast.warning(`${count - failed} done, ${failed} failed`);
+                    const firstReject = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+                    if (firstReject) toastApiError(firstReject.reason, errorMsg);
+                    else toast.warning(`${count - failed} done, ${failed} failed`);
                 }
-            } catch {
-                toast.error(errorMsg);
+            } catch (err) {
+                toastApiError(err, errorMsg);
             } finally {
                 setBulkOperating(false);
             }
@@ -366,6 +369,7 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                 });
             } catch (error) {
                 console.error("Failed to remove bookmark:", error);
+                toastApiError(error, "Failed to remove bookmark");
             } finally {
                 setIsOperating(false);
             }

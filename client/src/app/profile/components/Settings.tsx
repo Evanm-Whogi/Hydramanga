@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { updateUser, changeEmail, changePassword, sendVerificationEmail, signOut } from "@/lib/auth";
 import { getSettings, updateSettings } from "@/services/userService";
 import { toast } from "react-toastify";
+import { toastApiError } from "@/lib/rateLimit";
 import { useRouter } from "next/navigation";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import DataExportSection from "@/app/profile/components/DataExportSection";
@@ -44,8 +45,8 @@ export default function Settings({ user }: { user: any }) {
             setHideNsfw(newValue);
             toast.success(newValue ? "NSFW content hidden" : "NSFW content visible");
             router.refresh();
-        } catch {
-            toast.error("Failed to update setting");
+        } catch (error) {
+            toastApiError(error, "Failed to update setting");
         } finally {
             setSettingsLoading(false);
         }
@@ -59,8 +60,8 @@ export default function Settings({ user }: { user: any }) {
             setIsProfilePublic(newValue);
             toast.success(newValue ? "Profile is now public" : "Profile is now private");
             router.refresh();
-        } catch {
-            toast.error("Failed to update setting");
+        } catch (error) {
+            toastApiError(error, "Failed to update setting");
         } finally {
             setSettingsLoading(false);
         }
@@ -78,8 +79,8 @@ export default function Settings({ user }: { user: any }) {
                 : "Incognito mode disabled. History tracking resumed."
             );
             router.refresh();
-        } catch {
-            toast.error("Failed to update setting");
+        } catch (error) {
+            toastApiError(error, "Failed to update setting");
         } finally {
             setSettingsLoading(false);
         }

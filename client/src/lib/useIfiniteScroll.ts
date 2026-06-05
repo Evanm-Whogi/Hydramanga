@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { isRateLimited, parseRateLimitedResponse } from '@/lib/rateLimit';
 
 export function useInfiniteScroll(filters: any) {
   const [items, setItems] = useState<any[]>([]);
@@ -11,10 +12,12 @@ export function useInfiniteScroll(filters: any) {
   const lastTrackedSearch = useRef<string>('');
   const previousFilters = useRef<any>({});
   const isFetchingRef = useRef(false);
+  const fetchGenerationRef = useRef(0);
 
   const fetchData = useCallback(async (isInitial = false) => {
     if (isFetchingRef.current || (!isInitial && !hasMore)) return;
     
+    const generation = fetchGenerationRef.current;
     isFetchingRef.current = true;
     setLoading(true);
 
@@ -37,8 +40,15 @@ export function useInfiniteScroll(filters: any) {
       if (currentCursor) params.append('cursor', String(currentCursor));
 
       const response = await fetch(`/api/manga/search?${params.toString()}`);
-      if (!response.ok) throw new Error('Network response was not ok');
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
+      if (generation !== fetchGenerationRef.current) return;
+      if (!response.ok) {
+        if (parseRateLimitedResponse(response, data)) {
+          setHasMore(false);
+          return;
+        }
+        throw new Error(data?.message || 'Network response was not ok');
+      }
 
       if (data && data.items) {
         setItems(prev => isInitial ? data.items : [...prev, ...data.items]);
@@ -72,20 +82,29 @@ export function useInfiniteScroll(filters: any) {
         }
       }
     } catch (err) {
-      console.error("Fetch error:", err);
+      if (generation !== fetchGenerationRef.current) return;
+      if (isRateLimited(err)) {
+        setHasMore(false);
+        return;
+      }
+      console.error('Fetch error:', err);
       setHasMore(false);
     } finally {
-      setLoading(false);
-      isFetchingRef.current = false;
+      if (generation === fetchGenerationRef.current) {
+        setLoading(false);
+        isFetchingRef.current = false;
+      }
     }
   }, [filters, hasMore]); 
 
   // Reset logic when filters change
   useEffect(() => {
+    fetchGenerationRef.current += 1;
+    isFetchingRef.current = false;
     setItems([]);
     setHasMore(true);
-    cursorRef.current = null; // Reset the ref
-    fetchData(true);
+    cursorRef.current = null;
+    void fetchData(true);
   }, [
     filters.search, 
     filters.genres?.sort().join(','), // Added sort to prevent accidental triggers

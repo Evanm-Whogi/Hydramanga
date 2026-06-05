@@ -7,6 +7,7 @@ import HistoryList from './HistoryList';
 import { deleteProgress, clearAllProgress, deleteViewHistory, clearAllViewHistory } from '@/services/mangaService';
 import { BookOpen, Eye, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { toastApiError } from '@/lib/rateLimit';
 import type { HistoryItem, HistoryPageClientProps } from '@/types/history';
 
 export default function HistoryPageClient({initialReadingHistory, initialViewHistory, stats}: HistoryPageClientProps) {
@@ -46,7 +47,7 @@ export default function HistoryPageClient({initialReadingHistory, initialViewHis
             toast.success('History deleted successfully');
         } catch (error) {
             console.error('Failed to delete history:', error);
-            toast.error('Failed to delete history');
+            toastApiError(error, 'Failed to delete history');
         } finally {
             setIsDeleting(false);
         }
@@ -69,7 +70,7 @@ export default function HistoryPageClient({initialReadingHistory, initialViewHis
             toast.success(`All ${historyType} history cleared`);
         } catch (error) {
             console.error('Failed to clear history:', error);
-            toast.error('Failed to clear history');
+            toastApiError(error, 'Failed to clear history');
         } finally {
             setIsClearing(false);
         }

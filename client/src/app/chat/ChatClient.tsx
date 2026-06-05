@@ -9,6 +9,7 @@ import { useChatSocket, type ChatPresenceUser } from "@/hooks/useChatSocket";
 import { useUser } from "@/providers/UserProvider";
 import { requireTrimmed } from "@/lib/requireContent";
 import { useSubmitRateLimit } from "@/hooks/useSubmitRateLimit";
+import { toastApiError } from "@/lib/rateLimit";
 import ContentComposer from "@/components/content/ContentComposer";
 import AuthorByline from "@/components/social/AuthorByline";
 import MarkdownView from "@/components/markdown/MarkdownView";
@@ -110,9 +111,7 @@ export default function ChatClient() {
         return [...prev, message];
       });
     } catch (err: unknown) {
-      if (!applySendRateLimit(err)) {
-        toast.error(err instanceof Error ? err.message : "Failed to send");
-      }
+      if (!applySendRateLimit(err)) toastApiError(err, "Failed to send");
     }
   };
 
@@ -120,8 +119,8 @@ export default function ChatClient() {
     try {
       await deleteChatMessage(id);
       setMessages((prev) => prev.filter((m) => m.id !== id));
-    } catch {
-      toast.error("Failed to delete");
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to delete");
     }
   };
 
@@ -134,7 +133,7 @@ export default function ChatClient() {
       setEditText("");
       toast.success("Message updated");
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to update");
+      toastApiError(err, "Failed to update");
     }
   };
 

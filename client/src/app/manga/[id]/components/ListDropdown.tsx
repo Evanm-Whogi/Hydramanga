@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { HeartIcon, ChevronDownIcon, Trash2Icon, CheckCircle2 } from 'lucide-react';
 import { fetchUserLists, addToList, removeFromList as removeFromListService, UserList } from '@/services/listService';
 import { toast } from 'react-toastify';
+import { toastApiError } from '@/lib/rateLimit';
 import { useUser } from '@/providers/UserProvider';
 import { requireAuth } from '@/lib/requireAuth';
 
@@ -59,7 +60,7 @@ export default function ListDropdown({ seriesId, initialListName, mangaTitle }: 
             }
         } catch (error) {
             console.error('Failed to create list:', error);
-            toast.error('Could not create list');
+            toastApiError(error, 'Could not create list');
         }
     };
 
@@ -79,7 +80,7 @@ export default function ListDropdown({ seriesId, initialListName, mangaTitle }: 
             }
         } catch (error) {
             console.error("Failed to update manga list:", error);
-            toast.error('Failed to update list');
+            toastApiError(error, 'Failed to update list');
         } finally {
             setLoading(false);
         }

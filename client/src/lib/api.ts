@@ -1,6 +1,6 @@
 import axios, { InternalAxiosRequestConfig } from 'axios';
 import { getServerApiBase, getClientApiBase } from './env';
-import { RateLimitError, parseRetryAfterMs } from './rateLimit';
+import { parseRateLimitedResponse } from './rateLimit';
 import { handleBannedApiResponse, handleUnauthorizedApiResponse } from './authSession';
 
 let serverInstance: ReturnType<typeof axios.create> | null = null;
@@ -98,12 +98,8 @@ const clientFetch = async (url: string, options: RequestInit & { timeoutMs?: num
         if (res.status === 401) {
             await handleUnauthorizedApiResponse();
         }
-        if (res.status === 429) {
-            throw new RateLimitError(
-                data?.message || 'Too many requests. Please wait before trying again.',
-                parseRetryAfterMs(res, data)
-            );
-        }
+        const rateLimited = parseRateLimitedResponse(res, data);
+        if (rateLimited) return Promise.reject(rateLimited);
         throw new Error(data?.message || 'Request failed');
     }
     return data;
@@ -208,6 +204,8 @@ export const apiPostFormData = async (url: string, formData: FormData) => {
             if (res.status === 401) {
                 await handleUnauthorizedApiResponse();
             }
+            const rateLimited = parseRateLimitedResponse(res, data);
+            if (rateLimited) return Promise.reject(rateLimited);
             throw new Error(data?.error || data?.message || 'Request failed');
         }
         return data;

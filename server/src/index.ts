@@ -24,7 +24,7 @@ if (process.env.ENABLE_SENTRY === 'true') {
 }
 
 // Middlewares
-import { rateLimiter, authRateLimiter } from '@/middlewares/rateLimit';
+import { authRateLimiter } from '@/middlewares/rateLimit';
 import { isMaintenance } from '@/middlewares/maintenance';
 import { oauthSettingsMiddleware } from '@/middlewares/oauthSettingsMiddleware';
 // Services
