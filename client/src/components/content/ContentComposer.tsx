@@ -4,7 +4,7 @@ import type { FormEvent, ReactNode } from "react";
 import MarkdownEditor from "@/components/markdown/MarkdownEditor";
 
 const titleInputClass =
-  "w-full bg-background rounded-lg px-3 py-2 text-primary border border-borders placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent";
+  "w-full min-w-0 max-w-full box-border bg-background rounded-lg px-3 py-2 text-primary border border-borders placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent overflow-x-hidden";
 
 export function ComposerPrimaryButton({
   children,
@@ -101,7 +101,7 @@ type ContentComposerProps = {
 function shellClass(layout: ContentComposerProps["layout"], className: string) {
   const base =
     layout === "card"
-      ? "p-2 space-y-3 border border-borders bg-foreground rounded-md"
+      ? "p-2 space-y-3 border border-borders bg-foreground rounded-md min-w-0 overflow-x-hidden"
       : layout === "reply"
         ? "mt-3 space-y-2 pl-[52px]"
         : layout === "bar"

@@ -6,6 +6,7 @@ import { enrichAuthors } from '@/lib/enrichAuthors';
 import { isAdminRole } from '@/lib/authHelpers';
 import { recordAuditFromRequest } from '@/audit/record';
 import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
+import { normalizeUserContent } from '@/lib/normalizeUserContent';
 import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
 
 export async function fetchReviews(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
@@ -39,8 +40,9 @@ export async function createReview(req: Request, res: Response, next: NextFuncti
     const { content, seriesId, rating } = req.body;
     const userId = req.user.id;
 
-    if (!content?.trim()) return res.status(400).json({ message: 'Content is required' });
-    if (exceedsLimit(content, CONTENT_LIMITS.review)) {
+    const normalizedContent = typeof content === 'string' ? normalizeUserContent(content) : '';
+    if (!normalizedContent) return res.status(400).json({ message: 'Content is required' });
+    if (exceedsLimit(normalizedContent, CONTENT_LIMITS.review)) {
         return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.review} characters` });
     }
     if (!seriesId)        return res.status(400).json({ message: 'seriesId is required' });
@@ -56,7 +58,7 @@ export async function createReview(req: Request, res: Response, next: NextFuncti
         if (existing) return res.status(409).json({ message: 'You have already reviewed this series' });
 
         const [review] = await db.insert(schema.reviews).values({
-            content: content.trim(),
+            content: normalizedContent,
             rating: ratingNum,
             userId,
             seriesId,
@@ -78,7 +80,7 @@ export async function createReview(req: Request, res: Response, next: NextFuncti
             metadata: contentAuditMeta({
                 href: mangaPageHref(seriesId),
                 summary: `Posted a review (${ratingNum}/10)`,
-                content: content.trim(),
+                content: normalizedContent,
                 extra: { seriesId, rating: ratingNum },
             }),
         });
@@ -97,7 +99,9 @@ export async function updateReview(req: Request, res: Response, next: NextFuncti
     const ratingNum = parseInt(rating, 10);
     if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 10)
         return res.status(400).json({ message: 'Rating must be a number between 1 and 10' });
-    if (content != null && exceedsLimit(content, CONTENT_LIMITS.review)) {
+    const normalizedContent = typeof content === 'string' ? normalizeUserContent(content) : null;
+    if (normalizedContent != null && !normalizedContent) return res.status(400).json({ message: 'Content is required' });
+    if (normalizedContent != null && exceedsLimit(normalizedContent, CONTENT_LIMITS.review)) {
         return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.review} characters` });
     }
 
@@ -108,7 +112,7 @@ export async function updateReview(req: Request, res: Response, next: NextFuncti
         if (!existing) return res.status(403).json({ message: 'Review not found or not yours' });
 
         const [updated] = await db.update(schema.reviews)
-            .set({ content: content?.trim() ?? existing.content, rating: ratingNum, updatedAt: new Date() })
+            .set({ content: normalizedContent ?? existing.content, rating: ratingNum, updatedAt: new Date() })
             .where(eq(schema.reviews.id, reviewId))
             .returning();
 

@@ -2,6 +2,8 @@
 
 import { useRef, useState } from "react";
 import MarkdownBlock from "./MarkdownBlock";
+import ContentMediaPicker from "@/components/content/ContentMediaPicker";
+import ContentImagePreviews from "@/components/content/ContentImagePreviews";
 import {
   Bold,
   Italic,
@@ -104,6 +106,7 @@ export default function MarkdownEditor({
   maxLength,
   onEnterSubmit = false,
   onSubmit,
+  showMediaPicker = true,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -115,6 +118,7 @@ export default function MarkdownEditor({
   /** Enter submits; Shift+Enter inserts a newline. */
   onEnterSubmit?: boolean;
   onSubmit?: () => void;
+  showMediaPicker?: boolean;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [preview, setPreview] = useState(false);
@@ -182,6 +186,22 @@ export default function MarkdownEditor({
           <ToolButton onClick={() => insert("ul")} title="Bullet list" icon={<List className="size-4" />} />
           <ToolButton onClick={() => insert("ol")} title="Numbered list" icon={<ListOrdered className="size-4" />} />
           <ToolButton onClick={() => insert("spoiler")} title="Spoiler ||text||" icon={<EyeClosed className="size-4" />} />
+          {showMediaPicker && (
+            <ContentMediaPicker
+              value={value}
+              onChange={onChange}
+              getSelection={() => {
+                const ta = textareaRef.current;
+                return { start: ta?.selectionStart ?? value.length, end: ta?.selectionEnd ?? value.length };
+              }}
+              setSelection={(start, end) => {
+                const ta = textareaRef.current;
+                if (!ta) return;
+                ta.focus();
+                ta.setSelectionRange(start, end);
+              }}
+            />
+          )}
         </div>
         {showPreviewToggle && (
           <button
@@ -217,6 +237,7 @@ export default function MarkdownEditor({
           className={`w-full rounded-lg border border-borders bg-background px-3 py-2 text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent resize-y ${minHeight}`}
         />
       )}
+      {!preview && showMediaPicker && <ContentImagePreviews content={value} />}
     </div>
   );
 }

@@ -59,13 +59,13 @@ export default function SocialPostCard({
   const showTopRightAbsolute = topRight && !title;
 
   const body = (
-    <div className="prose prose-invert max-w-none text-primary">
+    <div className="prose prose-invert max-w-none min-w-0 break-words overflow-x-hidden text-primary">
       <MarkdownView content={content} />
     </div>
   );
 
   return (
-    <div id={anchorId} className={`${shell} relative scroll-mt-24 ${className}`}>
+    <div id={anchorId} className={`${shell} relative scroll-mt-24 min-w-0 overflow-x-hidden ${className}`}>
       {showTopRightAbsolute && (
         <div className={`absolute ${isNested ? "top-3 right-3" : "top-4 right-4"} flex items-center gap-2 z-10`}>
           {headerRight}
@@ -74,10 +74,12 @@ export default function SocialPostCard({
       )}
 
       {title && (
-        <div className="flex justify-between items-start gap-3 mb-4">
-          <div className="flex items-center gap-1 min-w-0 flex-1">
-            {titlePrefix}
-            <h2 className="text-2xl font-bold text-primary leading-tight">{title}</h2>
+        <div className="flex justify-between items-start gap-3 mb-4 min-w-0 overflow-x-hidden">
+          <div className="flex items-start gap-2 min-w-0 flex-1 overflow-hidden">
+            {titlePrefix ? (
+              <div className="flex shrink-0 items-center gap-1 pt-1">{titlePrefix}</div>
+            ) : null}
+            <h2 className="min-w-0 flex-1 text-2xl font-bold text-primary leading-tight break-words overflow-x-hidden">{title}</h2>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {headerRight}

@@ -9,6 +9,7 @@ import { discordService } from '@/services/discordService';
 import { notificationService } from '@/services/notificationService';
 import { recordAuditFromRequest } from '@/audit/record';
 import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
+import { normalizeUserContent } from '@/lib/normalizeUserContent';
 import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
 dotenv.config();
 
@@ -51,15 +52,16 @@ export async function createComment(req: Request, res: Response, next: NextFunct
     const { content, seriesId, parentId, isSpoiler } = req.body;
     const userId = req.user.id;
 
-    if (!content?.trim()) return res.status(400).json({ message: 'Content is required' });
-    if (exceedsLimit(content, CONTENT_LIMITS.comment)) {
+    const normalizedContent = typeof content === 'string' ? normalizeUserContent(content) : '';
+    if (!normalizedContent) return res.status(400).json({ message: 'Content is required' });
+    if (exceedsLimit(normalizedContent, CONTENT_LIMITS.comment)) {
         return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.comment} characters` });
     }
     if (!seriesId)        return res.status(400).json({ message: 'seriesId is required' });
 
     try {
         const newComment = await db.insert(schema.comments).values({
-            content: content.trim(),
+            content: normalizedContent,
             userId,
             seriesId,
             parentId: parentId || null,
@@ -86,7 +88,7 @@ export async function createComment(req: Request, res: Response, next: NextFunct
                     req.user.name || 'Unknown',
                     seriesId,
                     seriesRow.title,
-                    content.trim(),
+                    normalizedContent,
                     newComment[0].id,
                     !!parentId
                 )
@@ -121,7 +123,7 @@ export async function createComment(req: Request, res: Response, next: NextFunct
             metadata: contentAuditMeta({
                 href: mangaPageHref(seriesId),
                 summary: `Posted a comment${seriesRow?.title ? ` on ${seriesRow.title}` : ''}`,
-                content: content.trim(),
+                content: normalizedContent,
                 extra: { seriesId, seriesTitle: seriesRow?.title ?? null, parentId: parentId ?? null },
             }),
         });
@@ -211,8 +213,9 @@ export async function updateComment(req: Request, res: Response, next: NextFunct
     const { content } = req.body;
     const userId = req.user.id;
 
-    if (!content?.trim()) return res.status(400).json({ message: 'Content is required' });
-    if (exceedsLimit(content, CONTENT_LIMITS.comment)) {
+    const normalizedContent = typeof content === 'string' ? normalizeUserContent(content) : '';
+    if (!normalizedContent) return res.status(400).json({ message: 'Content is required' });
+    if (exceedsLimit(normalizedContent, CONTENT_LIMITS.comment)) {
         return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.comment} characters` });
     }
 
@@ -226,7 +229,7 @@ export async function updateComment(req: Request, res: Response, next: NextFunct
 
         const [updated] = await db
             .update(schema.comments)
-            .set({ content: content.trim(), updatedAt: new Date() })
+            .set({ content: normalizedContent, updatedAt: new Date() })
             .where(eq(schema.comments.id, commentId))
             .returning();
 
@@ -238,7 +241,7 @@ export async function updateComment(req: Request, res: Response, next: NextFunct
             metadata: contentAuditMeta({
                 href: mangaPageHref(comment.seriesId),
                 summary: 'Edited a comment',
-                content: content.trim(),
+                content: normalizedContent,
                 extra: { seriesId: comment.seriesId },
             }),
         });

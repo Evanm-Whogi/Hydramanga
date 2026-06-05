@@ -13,6 +13,7 @@ import { useSubmitRateLimit } from "@/hooks/useSubmitRateLimit";
 import { boardPostAdminItems, isAdminUser } from "@/lib/contentMenu";
 import { requireAuth } from "@/lib/requireAuth";
 import { toastApiError } from "@/lib/rateLimit";
+import { CONTENT_LIMITS } from "@/lib/contentLimits";
 
 export default function BoardClient() {
   const { user } = useUser();
@@ -93,9 +94,11 @@ export default function BoardClient() {
         title={title}
         onTitleChange={setTitle}
         titlePlaceholder="Title"
+        titleMaxLength={CONTENT_LIMITS.boardTitle}
         value={content}
         onChange={setContent}
         placeholder="Write your post…"
+        maxLength={CONTENT_LIMITS.boardPost}
         onSubmit={handleCreate}
         submitLabel="Post"
         layout="card"
@@ -108,7 +111,7 @@ export default function BoardClient() {
       />
       )}
 
-      <div className="space-y-4">
+      <div className="space-y-4 min-w-0 overflow-x-hidden">
         {loading ? (
           <div className="bg-foreground rounded-lg p-4 border border-borders">
             <p className="text-muted">Loading…</p>
@@ -287,17 +290,19 @@ function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMen
 
   if (editingPost) {
     return (
-      <div className="bg-foreground rounded-lg p-4 border border-borders space-y-3">
+      <div className="bg-foreground rounded-lg p-4 border border-borders space-y-3 min-w-0 overflow-x-hidden">
         <input
           value={editTitle}
           onChange={(e) => setEditTitle(e.target.value)}
           placeholder="Title"
-          className="w-full bg-background rounded-lg px-3 py-2 text-primary border border-borders"
+          maxLength={CONTENT_LIMITS.boardTitle}
+          className="w-full min-w-0 max-w-full box-border bg-background rounded-lg px-3 py-2 text-primary border border-borders overflow-x-hidden"
         />
         <ContentComposer
           value={editContent}
           onChange={setEditContent}
           placeholder="Edit your post…"
+          maxLength={CONTENT_LIMITS.boardPost}
           onSubmit={handleSavePost}
           submitLabel="Save"
           layout="embedded"
@@ -345,6 +350,7 @@ function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMen
           value={replyText}
           onChange={setReplyText}
           placeholder="Write a reply…"
+          maxLength={CONTENT_LIMITS.boardReply}
           onSubmit={handleSubmitReply}
           submitLabel="Post reply"
           layout="reply"
@@ -378,6 +384,7 @@ function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMen
                     value={editReplyText}
                     onChange={setEditReplyText}
                     placeholder="Edit reply…"
+                    maxLength={CONTENT_LIMITS.boardReply}
                     onSubmit={() => void handleSaveReply(reply.id)}
                     submitLabel="Save"
                     layout="embedded"

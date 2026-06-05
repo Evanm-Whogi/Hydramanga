@@ -6,6 +6,7 @@ import { isAdminRole } from '@/lib/authHelpers';
 import { discordService } from '@/services/discordService';
 import { recordAuditFromRequest } from '@/audit/record';
 import { boardPostHref, contentAuditMeta } from '@/audit/metadataHelpers';
+import { normalizeUserContent } from '@/lib/normalizeUserContent';
 import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
 
 export async function listBoardPosts(req: Request, res: Response, next: NextFunction) {
@@ -32,16 +33,18 @@ export async function getBoardPost(req: Request, res: Response, next: NextFuncti
 export async function createBoardPost(req: Request, res: Response, next: NextFunction) {
   try {
     const { title, content } = req.body;
-    if (!title?.trim() || !content?.trim()) {
+    const normalizedTitle = typeof title === 'string' ? normalizeUserContent(title) : '';
+    const normalizedContent = typeof content === 'string' ? normalizeUserContent(content) : '';
+    if (!normalizedTitle || !normalizedContent) {
       return res.status(400).json({ message: 'Title and content are required' });
     }
-    if (exceedsLimit(title, CONTENT_LIMITS.boardTitle)) {
+    if (exceedsLimit(normalizedTitle, CONTENT_LIMITS.boardTitle)) {
       return res.status(400).json({ message: `Title must be at most ${CONTENT_LIMITS.boardTitle} characters` });
     }
-    if (exceedsLimit(content, CONTENT_LIMITS.boardPost)) {
+    if (exceedsLimit(normalizedContent, CONTENT_LIMITS.boardPost)) {
       return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.boardPost} characters` });
     }
-    const post = await boardService.createPost(req.user.id, title, content);
+    const post = await boardService.createPost(req.user.id, normalizedTitle, normalizedContent);
 
     discordService
       .notifyBoardThread(req.user.name || 'Unknown', post.id, post.title, post.content)
@@ -54,9 +57,9 @@ export async function createBoardPost(req: Request, res: Response, next: NextFun
       resourceId: String(post.id),
       metadata: contentAuditMeta({
         href: boardPostHref(post.id),
-        summary: `Created board post: ${title.trim()}`,
-        title: title.trim(),
-        content: content.trim(),
+        summary: `Created board post: ${normalizedTitle}`,
+        title: normalizedTitle,
+        content: normalizedContent,
       }),
     });
 
@@ -70,14 +73,15 @@ export async function createBoardReply(req: Request, res: Response, next: NextFu
   try {
     const postId = parseInt(req.params.postId, 10);
     const { content, parentId } = req.body;
-    if (!content?.trim()) return res.status(400).json({ message: 'Content is required' });
-    if (exceedsLimit(content, CONTENT_LIMITS.boardReply)) {
+    const normalizedContent = typeof content === 'string' ? normalizeUserContent(content) : '';
+    if (!normalizedContent) return res.status(400).json({ message: 'Content is required' });
+    if (exceedsLimit(normalizedContent, CONTENT_LIMITS.boardReply)) {
       return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.boardReply} characters` });
     }
     const reply = await boardService.createReply(
       req.user.id,
       postId,
-      content,
+      normalizedContent,
       parentId ? parseInt(parentId, 10) : undefined
     );
     recordAuditFromRequest(req, {
@@ -88,7 +92,7 @@ export async function createBoardReply(req: Request, res: Response, next: NextFu
       metadata: contentAuditMeta({
         href: boardPostHref(postId),
         summary: 'Replied on a board post',
-        content: content.trim(),
+        content: normalizedContent,
         extra: { postId, parentId: parentId ?? null },
       }),
     });
@@ -175,7 +179,21 @@ export async function updateBoardPost(req: Request, res: Response, next: NextFun
   try {
     const postId = parseInt(req.params.postId, 10);
     const { title, content } = req.body;
-    const post = await boardService.updatePost(req.user.id, postId, { title, content });
+    const normalizedTitle = typeof title === 'string' ? normalizeUserContent(title) : undefined;
+    const normalizedContent = typeof content === 'string' ? normalizeUserContent(content) : undefined;
+    if (normalizedTitle !== undefined && !normalizedTitle) {
+      return res.status(400).json({ message: 'Title is required' });
+    }
+    if (normalizedContent !== undefined && !normalizedContent) {
+      return res.status(400).json({ message: 'Content is required' });
+    }
+    if (normalizedTitle != null && exceedsLimit(normalizedTitle, CONTENT_LIMITS.boardTitle)) {
+      return res.status(400).json({ message: `Title must be at most ${CONTENT_LIMITS.boardTitle} characters` });
+    }
+    if (normalizedContent != null && exceedsLimit(normalizedContent, CONTENT_LIMITS.boardPost)) {
+      return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.boardPost} characters` });
+    }
+    const post = await boardService.updatePost(req.user.id, postId, { title: normalizedTitle, content: normalizedContent });
     recordAuditFromRequest(req, {
       action: 'board.post.update',
       category: 'community',
@@ -225,8 +243,12 @@ export async function updateBoardReply(req: Request, res: Response, next: NextFu
   try {
     const replyId = parseInt(req.params.replyId, 10);
     const { content } = req.body;
-    if (!content?.trim()) return res.status(400).json({ message: 'Content is required' });
-    const reply = await boardService.updateReply(req.user.id, replyId, content);
+    const normalizedContent = typeof content === 'string' ? normalizeUserContent(content) : '';
+    if (!normalizedContent) return res.status(400).json({ message: 'Content is required' });
+    if (exceedsLimit(normalizedContent, CONTENT_LIMITS.boardReply)) {
+      return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.boardReply} characters` });
+    }
+    const reply = await boardService.updateReply(req.user.id, replyId, normalizedContent);
     recordAuditFromRequest(req, {
       action: 'board.reply.update',
       category: 'community',
@@ -235,7 +257,7 @@ export async function updateBoardReply(req: Request, res: Response, next: NextFu
       metadata: contentAuditMeta({
         href: boardPostHref(reply.postId),
         summary: 'Edited a board reply',
-        content: content.trim(),
+        content: normalizedContent,
         extra: { postId: reply.postId },
       }),
     });

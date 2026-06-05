@@ -13,6 +13,7 @@ import { useSubmitRateLimit } from "@/hooks/useSubmitRateLimit";
 import { toastApiError } from "@/lib/rateLimit";
 import { isAdminUser } from "@/lib/contentMenu";
 import { requireAuth } from "@/lib/requireAuth";
+import { CONTENT_LIMITS } from "@/lib/contentLimits";
 
 function CommentOverflowMenu({
   id,
@@ -140,6 +141,7 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
             placeholder="Edit comment…"
             rows={nested ? 3 : 5}
             minHeight={nested ? "min-h-[80px]" : "min-h-[100px]"}
+            maxLength={CONTENT_LIMITS.comment}
             onSubmit={() => void handleUpdate(comment.id)}
             submitLabel="Save"
             layout="embedded"
@@ -203,6 +205,7 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
         placeholder="Write your comment…"
         rows={5}
         minHeight="min-h-[100px]"
+        maxLength={CONTENT_LIMITS.comment}
         onSubmit={() => handleSubmit(text)}
         submitLabel="Post comment"
         submitting={isSubmitting}
@@ -233,6 +236,7 @@ export default function Comments({ manga, comments }: { manga: any; comments: an
                   placeholder="Write a reply…"
                   rows={3}
                   minHeight="min-h-[80px]"
+                  maxLength={CONTENT_LIMITS.comment}
                   onSubmit={() => handleSubmit(replyText, comment.id)}
                   submitLabel="Post reply"
                   submitting={isSubmitting}

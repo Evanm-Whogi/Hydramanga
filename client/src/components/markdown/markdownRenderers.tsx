@@ -3,14 +3,35 @@
 import type { Components } from "react-markdown";
 import type { Pluggable } from "unified";
 import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import { embedImageUrlsForMarkdown, isAllowedImageUrl } from "@/lib/contentImages";
 
 export const markdownSanitizeSchema = {
   ...defaultSchema,
-  tagNames: [...(defaultSchema.tagNames || []), "u"],
+  tagNames: [...(defaultSchema.tagNames || []), "u", "img"],
+  attributes: {
+    ...defaultSchema.attributes,
+    img: [...(defaultSchema.attributes?.img || []), "src", "alt", "loading", "className"],
+  },
 };
+
+const embeddedImageClass = "max-w-full max-h-64 max-w-64 rounded-md my-2 object-contain";
+
+const imageComponent: Pick<Components, "img"> = {
+  img: ({ src, alt, ...props }) => {
+    const url = typeof src === "string" ? src : undefined;
+    if (!url || !isAllowedImageUrl(url)) return null;
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={url} alt={alt || ""} loading="lazy" className={embeddedImageClass} {...props} />
+    );
+  },
+};
+
+const baseRemarkPlugins: Pluggable[] = [remarkGfm, remarkBreaks];
 
 const baseRehypePlugins: Pluggable[] = [
   rehypeRaw,
@@ -27,6 +48,7 @@ function safeExternalLink(href: string | undefined): string | undefined {
 
 /** Block markdown (paragraphs, lists, etc.). */
 export const blockMarkdownComponents: Components = {
+  ...imageComponent,
   a: ({ href, children, ...props }) => {
     const safeHref = safeExternalLink(href);
     return (
@@ -44,6 +66,7 @@ export const blockMarkdownComponents: Components = {
 
 /** Inline-only: unwrap <p> and other block wrappers so content can live inside <p>. */
 export const inlineMarkdownComponents: Components = {
+  ...imageComponent,
   p: ({ children }) => <>{children}</>,
   div: ({ children }) => <>{children}</>,
   h1: ({ children }) => <strong className="text-lg">{children}</strong>,
@@ -70,26 +93,28 @@ export const inlineMarkdownComponents: Components = {
 
 export function BlockMarkdown({ content }: { content: string }) {
   if (!content) return null;
+  const prepared = embedImageUrlsForMarkdown(content);
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={baseRemarkPlugins}
       rehypePlugins={baseRehypePlugins}
       components={blockMarkdownComponents}
     >
-      {content}
+      {prepared}
     </ReactMarkdown>
   );
 }
 
 export function InlineMarkdown({ content }: { content: string }) {
   if (!content) return null;
+  const prepared = embedImageUrlsForMarkdown(content);
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={baseRemarkPlugins}
       rehypePlugins={baseRehypePlugins}
       components={inlineMarkdownComponents}
     >
-      {content}
+      {prepared}
     </ReactMarkdown>
   );
 }

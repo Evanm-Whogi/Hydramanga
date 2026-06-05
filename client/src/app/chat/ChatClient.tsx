@@ -16,6 +16,7 @@ import MarkdownView from "@/components/markdown/MarkdownView";
 import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
 import { isAdminUser } from "@/lib/contentMenu";
 import { requireAuth } from "@/lib/requireAuth";
+import { CONTENT_LIMITS } from "@/lib/contentLimits";
 
 interface ChatMsg {
   id: number;
@@ -184,7 +185,7 @@ export default function ChatClient() {
                         variant="markdown"
                         rows={2}
                         minHeight="min-h-[72px]"
-                        maxLength={2000}
+                        maxLength={CONTENT_LIMITS.chatMessage}
                         onEnterSubmit
                         onSubmit={() => void handleUpdate(msg.id)}
                         submitLabel="Save"
@@ -211,7 +212,7 @@ export default function ChatClient() {
                     </Link>
                     <div className="min-w-0 flex-1 pr-8">
                       <AuthorByline author={msg.author} createdAt={msg.createdAt} />
-                      <div className="prose prose-invert prose-sm max-w-none text-primary mt-1">
+                      <div className="prose prose-invert prose-sm max-w-none min-w-0 break-words overflow-x-hidden text-primary mt-1">
                         <MarkdownView content={msg.content} />
                       </div>
                     </div>
@@ -251,7 +252,7 @@ export default function ChatClient() {
               variant="markdown"
               rows={2}
               minHeight="min-h-[72px]"
-              maxLength={2000}
+              maxLength={CONTENT_LIMITS.chatMessage}
               onEnterSubmit
               onSubmit={handleSend}
               submitLabel="Send"

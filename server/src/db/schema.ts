@@ -346,6 +346,18 @@ export const userChapterProgress = pgTable('user_chapter_progress', {
 }));
 
 /** Singleton row (id = 1) — global site configuration edited from admin Settings. */
+export const contentStickers = pgTable('content_stickers', {
+  id: serial('id').primaryKey(),
+  label: varchar('label', { length: 120 }),
+  imageUrl: text('image_url').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  activeSortIdx: index('idx_content_stickers_active_sort').on(t.isActive, t.sortOrder, t.id),
+}));
+
 export const siteSettings = pgTable('site_settings', {
   id: integer('id').primaryKey(),
   registrationEnabled: boolean('registration_enabled').notNull().default(true),

@@ -22,6 +22,8 @@ export interface ChatMessagePayload {
 }
 
 import { enrichAuthors } from '@/lib/enrichAuthors';
+import { normalizeUserContent } from '@/lib/normalizeUserContent';
+import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
 
 class ChatService {
   async isUserMuted(userId: string): Promise<{ muted: boolean; reason?: string }> {
@@ -58,8 +60,11 @@ class ChatService {
   }
 
   async createMessage(userId: string, content: string): Promise<ChatMessagePayload> {
-    const trimmed = content.trim().slice(0, 2000);
+    const trimmed = normalizeUserContent(content);
     if (!trimmed) throw new Error('Message cannot be empty');
+    if (exceedsLimit(trimmed, CONTENT_LIMITS.chatMessage)) {
+      throw new Error(`Message must be at most ${CONTENT_LIMITS.chatMessage} characters`);
+    }
 
     const mute = await this.isUserMuted(userId);
     if (mute.muted) throw new Error(mute.reason ?? 'You are muted from chat');
@@ -121,8 +126,11 @@ class ChatService {
   }
 
   async updateMessage(messageId: number, userId: string, content: string) {
-    const trimmed = content.trim().slice(0, 2000);
+    const trimmed = normalizeUserContent(content);
     if (!trimmed) throw new Error('Message cannot be empty');
+    if (exceedsLimit(trimmed, CONTENT_LIMITS.chatMessage)) {
+      throw new Error(`Message must be at most ${CONTENT_LIMITS.chatMessage} characters`);
+    }
 
     const msg = await db.query.chatMessages.findFirst({
       where: and(eq(schema.chatMessages.id, messageId), eq(schema.chatMessages.isDeleted, false)),

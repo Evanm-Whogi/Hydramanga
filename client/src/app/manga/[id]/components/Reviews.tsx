@@ -14,6 +14,7 @@ import { useSubmitRateLimit } from "@/hooks/useSubmitRateLimit";
 import { toastApiError } from "@/lib/rateLimit";
 import { isAdminUser } from "@/lib/contentMenu";
 import { requireAuth } from "@/lib/requireAuth";
+import { CONTENT_LIMITS } from "@/lib/contentLimits";
 
 function RatingPicker({value, onChange, disabled = false}: {
     value: number;
@@ -206,6 +207,7 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
                     placeholder="Share your thoughts…"
                     rows={6}
                     minHeight="min-h-[120px]"
+                    maxLength={CONTENT_LIMITS.review}
                     onSubmit={handleSubmit}
                     submitLabel="Post review"
                     submitting={submitting}
@@ -242,6 +244,7 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
                                         placeholder="Edit your review…"
                                         rows={5}
                                         minHeight="min-h-[100px]"
+                                        maxLength={CONTENT_LIMITS.review}
                                         onSubmit={() => handleUpdate(review.id)}
                                         submitLabel="Save"
                                         layout="embedded"

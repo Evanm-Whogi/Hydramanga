@@ -37,6 +37,9 @@ export async function postChatMessage(req: Request, res: Response, next: NextFun
     if (error.message?.includes('muted') || error.message?.includes('empty')) {
       return res.status(403).json({ message: error.message });
     }
+    if (error.message?.includes('at most')) {
+      return res.status(400).json({ message: error.message });
+    }
     return next(error);
   }
 }
@@ -87,7 +90,7 @@ export async function updateChatMessage(req: Request, res: Response, next: NextF
   } catch (error: any) {
     if (error.message === 'Message not found') return res.status(404).json({ message: error.message });
     if (error.message === 'Forbidden') return res.status(403).json({ message: error.message });
-    if (error.message?.includes('empty')) return res.status(400).json({ message: error.message });
+    if (error.message?.includes('empty') || error.message?.includes('at most')) return res.status(400).json({ message: error.message });
     return next(error);
   }
 }
