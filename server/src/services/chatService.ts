@@ -24,6 +24,7 @@ export interface ChatMessagePayload {
 import { enrichAuthors } from '@/lib/enrichAuthors';
 import { normalizeUserContent } from '@/lib/normalizeUserContent';
 import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
+import { validateContentImagesAsync } from '@/lib/externalImageValidation';
 
 class ChatService {
   async isUserMuted(userId: string): Promise<{ muted: boolean; reason?: string }> {
@@ -65,6 +66,8 @@ class ChatService {
     if (exceedsLimit(trimmed, CONTENT_LIMITS.chatMessage)) {
       throw new Error(`Message must be at most ${CONTENT_LIMITS.chatMessage} characters`);
     }
+    const imageError = await validateContentImagesAsync(trimmed);
+    if (imageError) throw new Error(imageError);
 
     const mute = await this.isUserMuted(userId);
     if (mute.muted) throw new Error(mute.reason ?? 'You are muted from chat');
@@ -131,6 +134,8 @@ class ChatService {
     if (exceedsLimit(trimmed, CONTENT_LIMITS.chatMessage)) {
       throw new Error(`Message must be at most ${CONTENT_LIMITS.chatMessage} characters`);
     }
+    const imageError = await validateContentImagesAsync(trimmed);
+    if (imageError) throw new Error(imageError);
 
     const msg = await db.query.chatMessages.findFirst({
       where: and(eq(schema.chatMessages.id, messageId), eq(schema.chatMessages.isDeleted, false)),

@@ -124,8 +124,8 @@ export default function SettingsAdminClient() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex gap-4">
-        <div className={`${cardClass} space-y-4 w-1/2`}>
+      <div className="flex flex-col md:flex-row gap-4">
+        <div className={`${cardClass} space-y-4 w-full md:w-1/2`}>
           <h2 className="text-lg font-semibold text-primary">Maintenance mode</h2>
           <p className="text-sm text-muted">When on, only administrators can use the site. Login stays available so admins can sign in.</p>
           <SettingsToggle
@@ -149,7 +149,7 @@ export default function SettingsAdminClient() {
           </div>
         </div>
 
-        <div className={`${cardClass} space-y-6 w-1/2`}>
+        <div className={`${cardClass} space-y-6 w-full md:w-1/2`}>
           <div>
             <h2 className="text-lg font-semibold text-primary">Registration &amp; OAuth</h2>
             <p className="text-sm text-muted mt-1">Control sign-up and social login on the login and register pages.</p>
@@ -163,8 +163,8 @@ export default function SettingsAdminClient() {
             />
             <div className="border-t border-borders/30 pt-6 space-y-6">
               <p className="text-sm text-muted">OAuth providers can be disabled individually. Env credentials must still be configured.</p>
-              <div className="flex gap-4 justify-between">
-                <div className="w-1/2 bg-background rounded-md p-3">
+              <div className="flex flex-col md:flex-row gap-4 justify-between">
+                <div className="w-full md:w-1/2 bg-background rounded-md p-3">
                   <SettingsToggle
                     label="Google"
                     description="Allow Continue with Google on login and register."
@@ -173,7 +173,7 @@ export default function SettingsAdminClient() {
                     onChange={setOauthGoogleEnabled}
                   />
                 </div>
-                <div className="w-1/2 bg-background rounded-md p-3 ">
+                <div className="w-full md:w-1/2 bg-background rounded-md p-3 ">
                   <SettingsToggle
                     label="Discord"
                     description="Allow Continue with Discord on login and register."
@@ -217,7 +217,7 @@ export default function SettingsAdminClient() {
           </button>
         </div>
         <div className={welcomeModalEnabled ? 'space-y-4' : 'space-y-4 opacity-50 pointer-events-none'}>
-          <div className="flex flex-row gap-4">
+          <div className="flex flex-col md:flex-row gap-4">
             <div className="w-full">
               <label className="text-sm font-medium text-primary">Title</label>
               <p className="text-xs text-muted mb-1">Leave empty for default: {DEFAULT_WELCOME_MODAL_TITLE}</p>

@@ -6,6 +6,10 @@ export const CONTENT_LIMITS = {
   boardPost: 50_000, // 50,000 characters
   boardReply: 20_000, // 20,000 characters
   chatMessage: 2_000, // 2,000 characters
+  contentMaxImages: 3, // max embedded image URLs per post/message
+  contentImageUrlMaxLength: 500, // max characters per image URL
+  contentMaxImageBytes: 10_000_000, // 10 MB max per embedded external image
+  stickerMaxFileBytes: 10_000_000, // 10 MB per sticker file on disk
   importMaxBookmarks: 5_000, // 5,000 bookmarks
   importMaxLists: 100, // 100 lists
   importMaxListItemsPerList: 2_000, // 2,000 items per list

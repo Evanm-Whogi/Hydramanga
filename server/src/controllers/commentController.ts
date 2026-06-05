@@ -11,6 +11,7 @@ import { recordAuditFromRequest } from '@/audit/record';
 import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
 import { normalizeUserContent } from '@/lib/normalizeUserContent';
 import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
+import { validateContentImagesAsync } from '@/lib/externalImageValidation';
 dotenv.config();
 
 // Fetch top-level comments with replies and votes for a manga series
@@ -57,6 +58,8 @@ export async function createComment(req: Request, res: Response, next: NextFunct
     if (exceedsLimit(normalizedContent, CONTENT_LIMITS.comment)) {
         return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.comment} characters` });
     }
+    const imageError = await validateContentImagesAsync(normalizedContent);
+    if (imageError) return res.status(400).json({ message: imageError });
     if (!seriesId)        return res.status(400).json({ message: 'seriesId is required' });
 
     try {
@@ -218,6 +221,8 @@ export async function updateComment(req: Request, res: Response, next: NextFunct
     if (exceedsLimit(normalizedContent, CONTENT_LIMITS.comment)) {
         return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.comment} characters` });
     }
+    const imageError = await validateContentImagesAsync(normalizedContent);
+    if (imageError) return res.status(400).json({ message: imageError });
 
     try {
         const comment = await db.query.comments.findFirst({

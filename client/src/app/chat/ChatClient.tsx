@@ -46,7 +46,6 @@ export default function ChatClient() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
-  const stickToBottomRef = useRef(true);
   const isAdmin = isAdminUser(user?.role);
   const {isRateLimited: isSendRateLimited, applyRateLimitFromError: applySendRateLimit, rateLimitSecondsLeft: sendRateLimitSecondsLeft} = useSubmitRateLimit();
 
@@ -54,7 +53,6 @@ export default function ChatClient() {
     getChatMessages(80)
       .then((d) => {
         setMessages(d.messages ?? []);
-        stickToBottomRef.current = true;
       })
       .catch(() => toast.error("Failed to load chat"));
   }, []);
@@ -64,16 +62,16 @@ export default function ChatClient() {
   }, [loadMessages]);
 
   useLayoutEffect(() => {
-    if (!stickToBottomRef.current) return;
     scrollToBottom(listRef.current);
   }, [messages]);
 
-  const handleListScroll = () => {
+  useEffect(() => {
     const el = listRef.current;
     if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    stickToBottomRef.current = distanceFromBottom < 80;
-  };
+    const observer = new ResizeObserver(() => scrollToBottom(el));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const onSocketEvent = useCallback((event: { type: string; data?: unknown }) => {
     if (event.type === "message" && event.data) {
@@ -103,7 +101,6 @@ export default function ChatClient() {
     if (!requireAuth(user, '/chat')) return;
     if (isSendRateLimited) return;
     if (!requireTrimmed(text, "Please enter a message.")) return;
-    stickToBottomRef.current = true;
     try {
       const { message } = await postChatMessage(text);
       setText("");
@@ -163,11 +160,7 @@ export default function ChatClient() {
     <div className="container mx-auto px-4 xl:px-0 py-8 w-full md:w-2/3">
       <div className="flex flex-col lg:flex-row gap-4 items-stretch">
         <div className="flex-1 min-w-0 flex flex-col bg-foreground rounded-lg border border-borders h-[70vh] min-h-[420px]">
-          <div
-            ref={listRef}
-            onScroll={handleListScroll}
-            className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-4"
-          >
+          <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-4">
             {messages.length === 0 ? (
               <p className="text-sm text-muted text-center py-8">No messages yet. Say hello!</p>
             ) : (

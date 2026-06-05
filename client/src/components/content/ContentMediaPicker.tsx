@@ -2,15 +2,55 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "react-toastify";
 import { Sticker } from "lucide-react";
 import { fetchStickers, type ContentSticker } from "@/services/stickerService";
-import { insertTextAtSelection } from "@/lib/contentImages";
+import { getContentImageValidationError, insertTextAtSelection } from "@/lib/contentImages";
 
 let stickersCache: ContentSticker[] | null = null;
 let stickersPromise: Promise<ContentSticker[]> | null = null;
 
 const PANEL_WIDTH = 520;
 const PANEL_MAX_HEIGHT = 420;
+const MOBILE_BREAKPOINT = 768;
+
+function getViewportSize(): { width: number; height: number } {
+  if (typeof window === "undefined") return { width: PANEL_WIDTH, height: PANEL_MAX_HEIGHT };
+  return {
+    width: window.visualViewport?.width ?? window.innerWidth,
+    height: window.visualViewport?.height ?? window.innerHeight,
+  };
+}
+
+function computePanelLayout(anchor: DOMRect): { top: number; left: number; width: number; maxHeight: number } {
+  const margin = 8;
+  const { width: vw, height: vh } = getViewportSize();
+  const isMobile = vw < MOBILE_BREAKPOINT;
+
+  if (isMobile) {
+    const width = vw - margin * 2;
+    const maxHeight = Math.min(PANEL_MAX_HEIGHT, vh - margin * 2);
+    return { top: vh - maxHeight - margin, left: margin, width, maxHeight };
+  }
+
+  const width = Math.min(PANEL_WIDTH, vw - margin * 2);
+  let left = anchor.left;
+  let top = anchor.bottom + margin;
+  if (left + width > vw - margin) left = Math.max(margin, vw - width - margin);
+  if (left < margin) left = margin;
+
+  let maxHeight = Math.min(PANEL_MAX_HEIGHT, vh - top - margin);
+  if (top + maxHeight > vh - margin) {
+    top = Math.max(margin, anchor.top - maxHeight - margin);
+    maxHeight = Math.min(PANEL_MAX_HEIGHT, vh - top - margin);
+  }
+  if (maxHeight < 160) {
+    top = margin;
+    maxHeight = Math.min(PANEL_MAX_HEIGHT, vh - margin * 2);
+  }
+
+  return { top, left, width, maxHeight };
+}
 
 function loadStickers(): Promise<ContentSticker[]> {
   if (stickersCache) return Promise.resolve(stickersCache);
@@ -30,17 +70,6 @@ export function invalidateStickersCache() {
   stickersPromise = null;
 }
 
-function computePanelPosition(anchor: DOMRect): { top: number; left: number } {
-  const margin = 8;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  let left = anchor.left;
-  let top = anchor.bottom + margin;
-  if (left + PANEL_WIDTH > vw - margin) left = Math.max(margin, vw - PANEL_WIDTH - margin);
-  if (top + PANEL_MAX_HEIGHT > vh - margin) top = Math.max(margin, anchor.top - PANEL_MAX_HEIGHT - margin);
-  return { top, left };
-}
-
 export default function ContentMediaPicker({
   value,
   onChange,
@@ -55,7 +84,7 @@ export default function ContentMediaPicker({
   const [stickersOpen, setStickersOpen] = useState(false);
   const [stickers, setStickers] = useState<ContentSticker[]>(stickersCache ?? []);
   const [loadingStickers, setLoadingStickers] = useState(false);
-  const [panelPos, setPanelPos] = useState({ top: 0, left: 0 });
+  const [panelLayout, setPanelLayout] = useState({ top: 0, left: 0, width: PANEL_WIDTH, maxHeight: PANEL_MAX_HEIGHT });
   const [mounted, setMounted] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -64,9 +93,9 @@ export default function ContentMediaPicker({
     setMounted(true);
   }, []);
 
-  const updatePanelPosition = () => {
+  const updatePanelLayout = () => {
     if (!buttonRef.current) return;
-    setPanelPos(computePanelPosition(buttonRef.current.getBoundingClientRect()));
+    setPanelLayout(computePanelLayout(buttonRef.current.getBoundingClientRect()));
   };
 
   useEffect(() => {
@@ -87,13 +116,17 @@ export default function ContentMediaPicker({
 
   useEffect(() => {
     if (!stickersOpen) return;
-    updatePanelPosition();
-    const onReposition = () => updatePanelPosition();
+    updatePanelLayout();
+    const onReposition = () => updatePanelLayout();
     window.addEventListener("resize", onReposition);
     window.addEventListener("scroll", onReposition, true);
+    window.visualViewport?.addEventListener("resize", onReposition);
+    window.visualViewport?.addEventListener("scroll", onReposition);
     return () => {
       window.removeEventListener("resize", onReposition);
       window.removeEventListener("scroll", onReposition, true);
+      window.visualViewport?.removeEventListener("resize", onReposition);
+      window.visualViewport?.removeEventListener("scroll", onReposition);
     };
   }, [stickersOpen]);
 
@@ -111,6 +144,12 @@ export default function ContentMediaPicker({
   const handleStickerClick = (sticker: ContentSticker) => {
     const { start, end } = getSelection();
     const { value: next, cursor } = insertTextAtSelection(value, sticker.imageUrl, start, end);
+    const imageError = getContentImageValidationError(next);
+    if (imageError) {
+      toast.warning(imageError);
+      setStickersOpen(false);
+      return;
+    }
     onChange(next);
     setSelection(cursor, cursor);
     setStickersOpen(false);
@@ -118,7 +157,7 @@ export default function ContentMediaPicker({
 
   const toggleOpen = () => {
     setStickersOpen((open) => {
-      if (!open) updatePanelPosition();
+      if (!open) updatePanelLayout();
       return !open;
     });
   };
@@ -128,15 +167,20 @@ export default function ContentMediaPicker({
       ? createPortal(
           <div
             ref={panelRef}
-            style={{ top: panelPos.top, left: panelPos.left, width: PANEL_WIDTH, maxHeight: PANEL_MAX_HEIGHT }}
-            className="fixed z-200 overflow-y-auto rounded-xl border border-borders bg-foreground shadow-2xl"
+            style={{
+              top: panelLayout.top,
+              left: panelLayout.left,
+              width: panelLayout.width,
+              maxHeight: panelLayout.maxHeight,
+            }}
+            className="fixed z-200 overflow-y-auto overscroll-contain rounded-xl border border-borders bg-foreground shadow-2xl"
           >
             {loadingStickers ? (
               <p className="p-4 text-sm text-muted">Loading stickers…</p>
             ) : stickers.length === 0 ? (
               <p className="p-4 text-sm text-muted">No stickers available.</p>
             ) : (
-              <div className="grid gap-2 p-2" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-2">
                 {stickers.map((sticker) => (
                   <button
                     key={sticker.id}

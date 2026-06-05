@@ -179,7 +179,6 @@ export default function MarkdownEditor({
           <ToolButton onClick={() => insert("italic")} title="Italic" icon={<Italic className="size-4" />} />
           <ToolButton onClick={() => insert("underline")} title="Underline" icon={<UnderlineIcon className="size-4" />} />
           <ToolButton onClick={() => insert("code")} title="Inline code" icon={<Code className="size-4" />} />
-          <ToolButton onClick={() => insert("codeBlock")} title="Code block" icon={<SquareCode className="size-4" />} />
           <ToolButton onClick={() => insert("h1")} title="Heading 1" icon={<Heading1 className="size-4" />} />
           <ToolButton onClick={() => insert("h2")} title="Heading 2" icon={<Heading2 className="size-4" />} />
           <ToolButton onClick={() => insert("h3")} title="Heading 3" icon={<Heading3 className="size-4" />} />

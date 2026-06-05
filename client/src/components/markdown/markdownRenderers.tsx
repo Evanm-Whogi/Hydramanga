@@ -7,7 +7,7 @@ import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
-import { embedImageUrlsForMarkdown, isAllowedImageUrl } from "@/lib/contentImages";
+import { embedImageUrlsForMarkdown, isAllowedImageUrl, toContentImageDisplayUrl } from "@/lib/contentImages";
 
 export const markdownSanitizeSchema = {
   ...defaultSchema,
@@ -26,7 +26,7 @@ const imageComponent: Pick<Components, "img"> = {
     if (!url || !isAllowedImageUrl(url)) return null;
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={url} alt={alt || ""} loading="lazy" className={embeddedImageClass} {...props} />
+      <img src={toContentImageDisplayUrl(url)} alt={alt || ""} loading="lazy" className={embeddedImageClass} {...props} />
     );
   },
 };
