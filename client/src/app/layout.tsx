@@ -5,6 +5,7 @@ import { UserProvider } from '@/providers/UserProvider';
 import { NotificationsProvider } from '@/providers/NotificationsProvider';
 import { useSession } from '@/lib/useUser';
 import { cookies } from 'next/headers';
+import { GoogleAnalytics } from '@next/third-parties/google'
 
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
@@ -82,6 +83,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <link rel="preconnect" href="https://images.mangabaka.dev" crossOrigin="anonymous" />
       </head>
       <body className="bg-background text-primary min-h-screen flex flex-col" suppressHydrationWarning={true}>
+        <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID as string} />
         <UserProvider initialSession={session}>
           <NotificationsProvider>
             <ImpersonationBanner />
