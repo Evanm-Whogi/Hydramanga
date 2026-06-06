@@ -12,7 +12,7 @@ import { listAdminImportRequests, patchAdminImportRequest } from '@/controllers/
 import {listAdminQueues, listAdminQueueJobs, pauseAdminQueue, resumeAdminQueue, promoteAdminQueueJob, removeAdminQueueJob, retryAdminQueueJob, clearAdminQueue} from '@/controllers/adminQueueController';
 import { getAdminSiteSettings, patchAdminSiteSettings } from '@/controllers/adminSiteSettingsController';
 import { requireRole } from '@/middlewares/requireRole';
-import { listAdminStickers, createAdminSticker, updateAdminSticker, deleteAdminSticker } from '@/controllers/adminStickerController';
+import { listAdminStickers, createAdminSticker, updateAdminSticker, deleteAdminSticker, scanAdminStickers } from '@/controllers/adminStickerController';
 
 const router = Router();
 
@@ -20,6 +20,7 @@ router.use(auditAdminMiddleware);
 
 // Content stickers
 router.get('/stickers', requireRole('admin'), listAdminStickers as RequestHandler);
+router.post('/stickers/scan', requireRole('admin'), scanAdminStickers as RequestHandler);
 router.post('/stickers', requireRole('admin'), createAdminSticker as RequestHandler);
 router.patch('/stickers/:stickerId', requireRole('admin'), updateAdminSticker as RequestHandler);
 router.delete('/stickers/:stickerId', requireRole('admin'), deleteAdminSticker as RequestHandler);

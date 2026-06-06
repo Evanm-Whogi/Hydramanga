@@ -1,6 +1,6 @@
 "use client";
 
-import { extractImageUrls } from "@/lib/contentImages";
+import { extractImageUrls, toContentImageDisplayUrl } from "@/lib/contentImages";
 
 export default function ContentImagePreviews({ content }: { content: string }) {
   const urls = extractImageUrls(content);
@@ -14,7 +14,7 @@ export default function ContentImagePreviews({ content }: { content: string }) {
           <div key={url} className="rounded border border-borders bg-background overflow-hidden shrink-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={url}
+              src={toContentImageDisplayUrl(url)}
               alt=""
               className="block object-contain w-64 h-64"
               loading="lazy"

@@ -8,6 +8,7 @@ import { recordAuditFromRequest } from '@/audit/record';
 import { boardPostHref, contentAuditMeta } from '@/audit/metadataHelpers';
 import { normalizeUserContent } from '@/lib/normalizeUserContent';
 import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
+import { validateContentImagesAsync } from '@/lib/externalImageValidation';
 
 export async function listBoardPosts(req: Request, res: Response, next: NextFunction) {
   try {
@@ -44,6 +45,8 @@ export async function createBoardPost(req: Request, res: Response, next: NextFun
     if (exceedsLimit(normalizedContent, CONTENT_LIMITS.boardPost)) {
       return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.boardPost} characters` });
     }
+    const imageError = await validateContentImagesAsync(normalizedContent);
+    if (imageError) return res.status(400).json({ message: imageError });
     const post = await boardService.createPost(req.user.id, normalizedTitle, normalizedContent);
 
     discordService
@@ -78,6 +81,8 @@ export async function createBoardReply(req: Request, res: Response, next: NextFu
     if (exceedsLimit(normalizedContent, CONTENT_LIMITS.boardReply)) {
       return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.boardReply} characters` });
     }
+    const imageError = await validateContentImagesAsync(normalizedContent);
+    if (imageError) return res.status(400).json({ message: imageError });
     const reply = await boardService.createReply(
       req.user.id,
       postId,
@@ -193,6 +198,10 @@ export async function updateBoardPost(req: Request, res: Response, next: NextFun
     if (normalizedContent != null && exceedsLimit(normalizedContent, CONTENT_LIMITS.boardPost)) {
       return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.boardPost} characters` });
     }
+    if (normalizedContent != null) {
+      const imageError = await validateContentImagesAsync(normalizedContent);
+      if (imageError) return res.status(400).json({ message: imageError });
+    }
     const post = await boardService.updatePost(req.user.id, postId, { title: normalizedTitle, content: normalizedContent });
     recordAuditFromRequest(req, {
       action: 'board.post.update',
@@ -248,6 +257,8 @@ export async function updateBoardReply(req: Request, res: Response, next: NextFu
     if (exceedsLimit(normalizedContent, CONTENT_LIMITS.boardReply)) {
       return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.boardReply} characters` });
     }
+    const imageError = await validateContentImagesAsync(normalizedContent);
+    if (imageError) return res.status(400).json({ message: imageError });
     const reply = await boardService.updateReply(req.user.id, replyId, normalizedContent);
     recordAuditFromRequest(req, {
       action: 'board.reply.update',

@@ -44,3 +44,7 @@ export async function updateAdminSticker(id: number, payload: { label?: string; 
 export async function deleteAdminSticker(id: number) {
   await apiDelete(`/admin/stickers/${id}`);
 }
+
+export async function scanAdminStickers(): Promise<{ added: number; skipped: number; addedFiles: string[] }> {
+  return apiPost("/admin/stickers/scan", {});
+}

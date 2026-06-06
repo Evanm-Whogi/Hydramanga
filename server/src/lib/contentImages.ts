@@ -1,19 +1,53 @@
+import { CONTENT_LIMITS } from '@/lib/securityLimits';
+import { isAllowedStickerImageUrl } from '@/lib/stickerImagePath';
+
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i;
 const CODE_RE = /(```[\s\S]*?```|`[^`\n]+`)/g;
 const BARE_IMAGE_REF_RE = /(?:https?:\/\/[^\s<>"'()]+|\/[^\s<>"'()]+)/gi;
 const MARKDOWN_IMAGE_REF_RE = /!\[[^\]]*]\(([^)]+)\)/gi;
 
-export function isAllowedImageUrl(url: string): boolean {
+function hasTraversalSegments(value: string): boolean {
+  const lower = value.toLowerCase();
+  return lower.includes('..') || lower.includes('\\') || lower.includes('\0') || lower.includes('%2e%2e');
+}
+
+function looksLikeImageReference(url: string): boolean {
+  if (url.startsWith('/')) return true;
+  try {
+    return IMAGE_EXT_RE.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+}
+
+export function isExternalImageUrl(url: string): boolean {
   const trimmed = url.trim();
-  if (!trimmed) return false;
-  if (trimmed.startsWith('/')) return IMAGE_EXT_RE.test(trimmed.split('?')[0]);
+  return trimmed.startsWith('http://') || trimmed.startsWith('https://');
+}
+
+export function isAllowedExternalImageUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.length > CONTENT_LIMITS.contentImageUrlMaxLength) return false;
+  if (hasTraversalSegments(trimmed)) return false;
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    if (hasTraversalSegments(parsed.pathname)) return false;
     return IMAGE_EXT_RE.test(parsed.pathname);
   } catch {
     return false;
   }
+}
+
+export function isAllowedImageUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.length > CONTENT_LIMITS.contentImageUrlMaxLength) return false;
+  if (hasTraversalSegments(trimmed)) return false;
+  if (trimmed.startsWith('/')) {
+    const pathOnly = trimmed.split('?')[0].split('#')[0];
+    return isAllowedStickerImageUrl(pathOnly);
+  }
+  return isAllowedExternalImageUrl(trimmed);
 }
 
 type TextChunk = { text: string; skip: boolean };
@@ -53,6 +87,32 @@ export function extractImageUrls(content: string): string[] {
     }
   }
   return [...new Set(urls)];
+}
+
+export function getContentImageValidationError(content: string): string | null {
+  const urls = extractImageUrls(content);
+  if (urls.length > CONTENT_LIMITS.contentMaxImages) {
+    return `Content may include at most ${CONTENT_LIMITS.contentMaxImages} images`;
+  }
+  for (const chunk of splitSkippingCode(content)) {
+    if (chunk.skip) continue;
+    let match: RegExpExecArray | null;
+    const mdRe = new RegExp(MARKDOWN_IMAGE_REF_RE.source, 'gi');
+    while ((match = mdRe.exec(chunk.text)) !== null) {
+      const url = stripTrailingPunct(match[1].trim());
+      if (url && looksLikeImageReference(url) && !isAllowedImageUrl(url)) {
+        return 'Content includes a disallowed image URL';
+      }
+    }
+    const bareRe = new RegExp(BARE_IMAGE_REF_RE.source, 'gi');
+    while ((match = bareRe.exec(chunk.text)) !== null) {
+      const url = stripTrailingPunct(match[0]);
+      if (url && looksLikeImageReference(url) && !isAllowedImageUrl(url)) {
+        return 'Content includes a disallowed image URL';
+      }
+    }
+  }
+  return null;
 }
 
 export function embedImageUrlsForMarkdown(content: string): string {

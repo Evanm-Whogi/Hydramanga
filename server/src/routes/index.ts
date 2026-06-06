@@ -22,6 +22,7 @@ import boardRoutes from '@/routes/boardRoutes';
 import chatRoutes from '@/routes/chatRoutes';
 import notificationRoutes from '@/routes/notificationRoutes';
 import { getPublicSiteSettings } from '@/controllers/siteSettingsController';
+import contentImageRoutes from '@/routes/contentImageRoutes';
 import stickerRoutes from '@/routes/stickerRoutes';
 
 
@@ -66,5 +67,6 @@ module.exports = (app: Express) => {
     });
 
     app.get('/site-settings', getPublicSiteSettings as RequestHandler);
+    app.use('/content-images', contentImageRoutes);
     app.use('/stickers', stickerRoutes);
 };

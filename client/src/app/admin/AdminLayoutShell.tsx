@@ -12,8 +12,8 @@ const NAV_ITEMS = [
     { href: "/admin/imports", label: "Imports", icon: Inbox },
     { href: "/admin/queues", label: "Queues", icon: ListOrdered },
     { href: "/admin/audit", label: "Audit", icon: ScrollText },
-    { href: "/admin/settings", label: "Settings", icon: Settings },
     { href: "/admin/stickers", label: "Stickers", icon: Sticker },
+    { href: "/admin/settings", label: "Settings", icon: Settings },
 ] as const;
 
 const PAGE_HEADERS: Record<string, { title: string; description: string }> = {
@@ -41,14 +41,14 @@ const PAGE_HEADERS: Record<string, { title: string; description: string }> = {
         title: "Audit Log",
         description: "System-wide activity from users and admins",
     },
-    "/admin/settings": {
-        title: "Settings",
-        description: "Registration, maintenance, imports, and welcome modal",
-    },
     "/admin/stickers": {
         title: "Stickers",
         description: "Manage stickers users can insert into comments, reviews, board posts, and chat",
     },
+    "/admin/settings": {
+        title: "Settings",
+        description: "Registration, maintenance, imports, and welcome modal",
+    }
 };
 
 const tabClass = (active: boolean) =>

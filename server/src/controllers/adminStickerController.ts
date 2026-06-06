@@ -11,6 +11,21 @@ export async function listAdminStickers(req: Request, res: Response, next: NextF
   }
 }
 
+export async function scanAdminStickers(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await stickerService.scanAndImportFromDisk();
+    recordAuditFromRequest(req, {
+      action: 'sticker.scan',
+      category: 'admin',
+      resourceType: 'content_sticker',
+      metadata: { added: result.added, skipped: result.skipped, addedFiles: result.addedFiles },
+    });
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
+}
+
 export async function createAdminSticker(req: Request, res: Response, next: NextFunction) {
   try {
     const { label, imageUrl, sortOrder, isActive } = req.body;

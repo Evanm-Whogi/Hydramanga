@@ -8,6 +8,7 @@ import { recordAuditFromRequest } from '@/audit/record';
 import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
 import { normalizeUserContent } from '@/lib/normalizeUserContent';
 import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
+import { validateContentImagesAsync } from '@/lib/externalImageValidation';
 
 export async function fetchReviews(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const seriesId = parseInt(req.query.seriesId as string, 10);
@@ -45,6 +46,8 @@ export async function createReview(req: Request, res: Response, next: NextFuncti
     if (exceedsLimit(normalizedContent, CONTENT_LIMITS.review)) {
         return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.review} characters` });
     }
+    const imageError = await validateContentImagesAsync(normalizedContent);
+    if (imageError) return res.status(400).json({ message: imageError });
     if (!seriesId)        return res.status(400).json({ message: 'seriesId is required' });
     const ratingNum = parseInt(rating, 10);
     if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 10)
@@ -103,6 +106,10 @@ export async function updateReview(req: Request, res: Response, next: NextFuncti
     if (normalizedContent != null && !normalizedContent) return res.status(400).json({ message: 'Content is required' });
     if (normalizedContent != null && exceedsLimit(normalizedContent, CONTENT_LIMITS.review)) {
         return res.status(400).json({ message: `Content must be at most ${CONTENT_LIMITS.review} characters` });
+    }
+    if (normalizedContent != null) {
+        const imageError = await validateContentImagesAsync(normalizedContent);
+        if (imageError) return res.status(400).json({ message: imageError });
     }
 
     try {
