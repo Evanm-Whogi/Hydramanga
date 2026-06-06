@@ -1,6 +1,14 @@
 import PageHeader from "@/components/PageHeader";
 import Link from "next/link";
+import type { Metadata } from "next";
 import { getCollections } from "@/services/mangaService";
+import { buildPageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = buildPageMetadata({
+  title: 'Collections',
+  description: 'Browse curated manga, manhwa, and manhua collections by genre and theme on HydraManga.',
+  path: '/collections',
+});
 
 export default async function CollectionsPage() {
     const collections = await getCollections();

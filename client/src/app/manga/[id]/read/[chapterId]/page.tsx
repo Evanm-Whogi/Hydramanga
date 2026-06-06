@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { fetchOne } from '@/services/mangaService';
 import { useSession } from '@/lib/useUser';
 import ReadContent from './components/ReadContent';
+import { buildPageMetadata, getSiteConfig } from '@/lib/seo';
 
 interface Props {
   params: Promise<{ id: string; chapterId: string }>;
@@ -13,27 +14,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const { id, chapterId } = await params;
     const data = await fetchOne(id);
     const manga = data.manga;
+    const coverUrl = manga.cover?.raw?.url || manga.cover?.x350?.x3 || undefined;
 
-    return {
-      title: `Chapter ${chapterId} - ${manga.title} - ${process.env.NEXT_PUBLIC_NAME}`,
-      description: `Read Chapter ${chapterId} of ${manga.title} on ${process.env.NEXT_PUBLIC_NAME}`,
-      openGraph: {
-        title: `Chapter ${chapterId} - ${manga.title}`,
-        description: `Reading ${manga.title} Chapter ${chapterId}`,
-        images: [
-          {
-            url: manga.cover?.raw?.url || manga.cover?.x350?.x3 || '',
-            alt: manga.title,
-          },
-        ],
-        type: "website",
-      },
-    };
-  } catch (error) {
-    return {
-      title: `Read Manga - ${process.env.NEXT_PUBLIC_NAME}`,
-      description: "Read manga chapters on " + process.env.NEXT_PUBLIC_NAME,
-    };
+    return buildPageMetadata({
+      title: `Chapter ${chapterId} - ${manga.title}`,
+      description: `Read Chapter ${chapterId} of ${manga.title} on ${getSiteConfig().name}`,
+      path: `/manga/${id}/read/${chapterId}`,
+      noIndex: true,
+      images: coverUrl ? [{ url: coverUrl, alt: manga.title }] : undefined,
+    });
+  } catch {
+    return buildPageMetadata({
+      title: 'Read Manga',
+      description: `Read manga chapters on ${getSiteConfig().name}`,
+      path: '/discover',
+      noIndex: true,
+    });
   }
 }
 

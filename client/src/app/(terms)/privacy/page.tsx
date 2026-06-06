@@ -1,5 +1,13 @@
+import type { Metadata } from "next";
 import PageHeader from "@/components/PageHeader";
 import Link from "next/link";
+import { buildPageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = buildPageMetadata({
+  title: 'Privacy Policy',
+  description: 'Learn how HydraManga collects, uses, and protects your personal information.',
+  path: '/privacy',
+});
 
 export default function PrivacyPage() {
     return (

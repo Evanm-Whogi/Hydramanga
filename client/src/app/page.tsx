@@ -1,19 +1,15 @@
 import type { Metadata } from "next";
 import { getIndex } from "@/services/mangaService";
+import { buildPageMetadata, getSiteConfig } from "@/lib/seo";
 import { Star, TrendingUp, PlayIcon, BookMarkedIcon, UsersIcon, MessageCircleIcon } from "lucide-react";
 import Link from "next/link";
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-  title: process.env.NEXT_PUBLIC_NAME || "Manga Scrolls",
-  description: process.env.NEXT_PUBLIC_DESC || "Your ultimate destination for manga. Discover, read, and share thousands of titles from your favorite genres.",
-  openGraph: {
-    title: process.env.NEXT_PUBLIC_NAME || "Manga Scrolls",
-    description: process.env.NEXT_PUBLIC_SLOGAN || "Read. Enjoy. Repeat.",
-    type: "website",
-    url: process.env.NEXT_PUBLIC_URL || "http://localhost:3000",
-  },
-};
+export const metadata: Metadata = buildPageMetadata({
+  title: getSiteConfig().name,
+  description: getSiteConfig().description,
+  path: '/',
+});
 
 export default async function Index() {
   const indexData = await getIndex();

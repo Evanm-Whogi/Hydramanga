@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import PageHeader from "@/components/PageHeader";
 import ChatClient from "./ChatClient";
+import { buildPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: `Community Chat - ${process.env.NEXT_PUBLIC_NAME}`,
-  description: "Real-time community chat",
-};
+export const metadata: Metadata = buildPageMetadata({
+  title: 'Community Chat',
+  description: 'Chat with other manga readers in real time on HydraManga.',
+  path: '/chat',
+});
 
 export default function ChatPage() {
   return (

@@ -27,14 +27,23 @@ export default  function Footer() {
                         <Link href="/discover?type=manhua" className="hover:text-primary">Trending Manhua</Link>
                         <Link href="/discover?type=manhwa" className="hover:text-primary">Trending Manhwa</Link>
                         <Link href="/discover?years=2025&sort=lastUpdatedAt" className="hover:text-primary">New Releases</Link>
+                        <Link href="/request" className="hover:text-primary">Request Manga</Link>
+                    </div>
+                    {/* Community */}
+                    <div className="flex flex-col w-full md:w-1/6 space-y-4 text-muted">
+                        <h1 className="text-2xl text-primary">Community</h1>
+                        <Link href="/leaderboard" className="hover:text-primary">Leaderboard</Link>
+                        <Link href="/board" className="hover:text-primary">Board</Link>
+                        <Link href="/chat" className="hover:text-primary">Chat</Link>
+                        <a href={DISCORD_URL} className="hover:text-primary">Join our Discord</a>
                     </div>
                     {/* Information Links */}
                     <div className="flex flex-col w-full md:w-1/6 space-y-4 text-muted">
                         <h1 className="text-2xl text-primary">Information</h1>
+                        <Link href="/community-guidelines" className="hover:text-primary">Community Guidelines</Link>
                         <Link href="/contact" className="hover:text-primary">Contact/DMCA Notice</Link>
                         <Link href="/privacy" className="hover:text-primary">Privacy Policy</Link>
                         <Link href="/pwa" className="hover:text-primary">Progressive Web App</Link>
-                        <a href={DISCORD_URL} className="hover:text-primary">Join our Discord</a>
                     </div>
                 </div>
                 <div className="flex flex-col text-primary">

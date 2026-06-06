@@ -1,6 +1,7 @@
 import { Bounce, ToastContainer, toast } from 'react-toastify';
-import type { Metadata } from "next";
 import "@/styles/globals.css";
+import JsonLd from '@/components/JsonLd';
+import { buildRootMetadata, buildWebsiteJsonLd } from '@/lib/seo';
 import { UserProvider } from '@/providers/UserProvider';
 import { NotificationsProvider } from '@/providers/NotificationsProvider';
 import { useSession } from '@/lib/useUser';
@@ -16,56 +17,8 @@ import DevToolsGuardScript from "@/components/DevToolsGuardScript";
 import MaintenanceGate from "@/components/MaintenanceGate";
 import { getSiteSettings } from "@/services/siteSettingsService";
 
-export async function generateMetadata(): Promise<Metadata> {
-  const siteConfig = {
-    name: process.env.NEXT_PUBLIC_NAME,
-    slogan: process.env.NEXT_PUBLIC_SLOGAN,
-    description: process.env.NEXT_PUBLIC_DESC,
-    url: process.env.NEXT_PUBLIC_URL,
-  };
-
-  return {
-    title: `${siteConfig.name} - ${siteConfig.slogan}`,
-    description: siteConfig.description,
-    keywords: ["manga", "reader", "anime", "comics", "webtoons", "mangaplus", "mangadex", "free manga", "online manga", "manga library", "weebcentral"],
-    openGraph: {
-      title: `${siteConfig.name} - ${siteConfig.slogan}`,
-      description: siteConfig.description,
-      url: siteConfig.url,
-      siteName: siteConfig.name,
-      images: [
-        {
-          url: `${siteConfig.url}/logo.png`,
-          width: 1200,
-          height: 630,
-          alt: siteConfig.name,
-        }
-      ],
-      type: "website",
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: siteConfig.name,
-      description: siteConfig.description,
-      images: [`${siteConfig.url}/logo.png`],
-    },
-    authors: [{ name: "Whogi" }],
-    appleWebApp: {
-      capable: true,
-      title: siteConfig.name,
-      statusBarStyle: "black-translucent",
-    },
-    icons: {
-      icon: '/favicon.ico',
-      shortcut: '/favicon.ico',
-      apple: [
-        { url: '/pwa/ios/180.png', sizes: '180x180', type: 'image/png' },
-        { url: '/pwa/ios/152.png', sizes: '152x152', type: 'image/png' },
-        { url: '/pwa/ios/120.png', sizes: '120x120', type: 'image/png' },
-      ],
-    },
-    manifest: '/manifest.json',
-  };
+export async function generateMetadata() {
+  return buildRootMetadata();
 }
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode; }>) {
@@ -79,6 +32,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     <html lang="en" suppressHydrationWarning={true} className={themeMode} style={themeAccent ? { '--color-accent': themeAccent } as React.CSSProperties : undefined}>
       <head>
         <DevToolsGuardScript />
+        <JsonLd data={buildWebsiteJsonLd()} />
         <link rel="preconnect" href="https://cdn.mangabaka.dev" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://images.mangabaka.dev" crossOrigin="anonymous" />
       </head>

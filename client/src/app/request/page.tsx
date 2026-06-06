@@ -2,16 +2,13 @@ import type { Metadata } from "next";
 import PageHeader from "@/components/PageHeader";
 import RequestContent from "./components/RequestContent";
 import { getSiteSettings } from "@/services/siteSettingsService";
+import { buildPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: `Request Import - ${process.env.NEXT_PUBLIC_NAME}`,
-  description: "Request a manga series to be imported.",
-  openGraph: {
-    title: `Request Import - ${process.env.NEXT_PUBLIC_NAME}`,
-    description: "Request a manga series to be imported.",
-    type: "website",
-  },
-};
+export const metadata: Metadata = buildPageMetadata({
+  title: 'Request Import',
+  description: 'Request a manga, manhwa, or manhua series to be added to the HydraManga catalog.',
+  path: '/request',
+});
 
 export default async function RequestPage() {
   const siteSettings = await getSiteSettings();

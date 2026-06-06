@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import PageHeader from "@/components/PageHeader";
 import LeaderboardClient from "./LeaderboardClient";
+import { buildPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: `Leaderboard - ${process.env.NEXT_PUBLIC_NAME}`,
-  description: "Top commenters, readers, and reading streaks",
-};
+export const metadata: Metadata = buildPageMetadata({
+  title: 'Leaderboard',
+  description: 'See top readers, reviewers, commenters, and streak leaders on HydraManga.',
+  path: '/leaderboard',
+});
 
 export default function LeaderboardPage() {
   return (

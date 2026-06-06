@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import PageHeader from "@/components/PageHeader";
 import BoardClient from "./BoardClient";
+import { buildPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: `Community Board - ${process.env.NEXT_PUBLIC_NAME}`,
-  description: "Discuss manga and more with the community",
-};
+export const metadata: Metadata = buildPageMetadata({
+  title: 'Community Board',
+  description: 'Discuss manga, share theories, and join community conversations on the HydraManga board.',
+  path: '/board',
+});
 
 export default function BoardPage() {
   return (

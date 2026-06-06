@@ -1,8 +1,8 @@
-export const DEFAULT_WELCOME_MODAL_TITLE = `Welcome to ${process.env.NEXT_PUBLIC_NAME ?? 'Manga Scrolls'}`;
+export const DEFAULT_WELCOME_MODAL_TITLE = `Welcome to ${process.env.NEXT_PUBLIC_NAME ?? 'HydraManga'}`;
 
 export const DEFAULT_WELCOME_MODAL_DESCRIPTION =
   process.env.NEXT_PUBLIC_DESC ??
-  'Your ultimate destination for manga. Discover, read, and share thousands of titles from your favorite genres.';
+  'HydraManga gives you total control over how you discover and read. Earn badges, climb the leaderboards, and join a community that never sleeps. Are you ready to read?';
 
 export const DEFAULT_WELCOME_MODAL_BODY = `A little bit of information before you get started:
 

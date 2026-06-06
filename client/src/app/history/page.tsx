@@ -1,7 +1,9 @@
 import { Suspense } from 'react';
+import type { Metadata } from 'next';
 import PageHeader from '@/components/PageHeader';
 import { getMyProgress, getUserStats, getMyViewHistory } from '@/services/mangaService';
 import HistoryPageClient from './components/HistoryPageClient';
+import { buildPageMetadata } from '@/lib/seo';
 
 function HistorySkeleton() {
     return (
@@ -58,10 +60,12 @@ async function HistoryContent() {
     }
 }
 
-export const metadata = {
-    title: 'Reading History',
-    description: 'View your manga reading history and analytics.',
-};
+export const metadata: Metadata = buildPageMetadata({
+  title: 'Reading History',
+  description: 'View your manga reading history and analytics on HydraManga.',
+  path: '/history',
+  noIndex: true,
+});
 
 export default async function HistoryPage() {
     return (

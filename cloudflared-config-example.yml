@@ -1,4 +1,4 @@
-# Cloudflared Tunnel Configuration for Manga Scrolls
+# Cloudflared Tunnel Configuration for HydraManga
 
 tunnel: <your-tunnel-id>
 credentials-file: /etc/cloudflared/creds.json

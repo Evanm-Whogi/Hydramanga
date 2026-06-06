@@ -1,7 +1,7 @@
 {
-	"name": "MangaScrolls",
-	"short_name": "MangaScrolls",
-	"description": "Your ultimate destination for manga. Discover, read, and share thousands of titles from your favorite genres.",
+	"name": "HydraManga",
+	"short_name": "HydraManga",
+	"description": "HydraManga is a dynamic, community-driven platform where readers can discover, track, review, and discuss manga, manhua, manhwa, and more in one seamless ecosystem.",
 	"start_url": "/",
 	"display": "standalone",
 	"background_color": "#161819",

@@ -1,6 +1,15 @@
 import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 import { useSession } from "@/lib/useUser";
 import AdminLayoutShell from "@/app/admin/AdminLayoutShell";
+import { buildPageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = buildPageMetadata({
+  title: 'Admin',
+  description: 'HydraManga admin area.',
+  path: '/admin',
+  noIndex: true,
+});
 
 /** Server-side admin gate — one getSession per admin page (not per proxy hit). */
 export default async function AdminLayout({children}: {children: React.ReactNode;}) {

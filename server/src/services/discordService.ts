@@ -2,7 +2,7 @@ import axios from 'axios';
 import logger from '@/services/loggerService';
 
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'http://localhost:3000';
-const SITE_NAME = process.env.PUBLIC_NAME || 'Manga Scrolls';
+const SITE_NAME = process.env.PUBLIC_NAME || 'HydraManga';
 const DISCORD_PUBLIC_WEBHOOK_URL = process.env.DISCORD_PUBLIC_WEBHOOK_URL || process.env.DISCORD_WEBHOOK_URL;
 const DISCORD_ADMIN_WEBHOOK_URL = process.env.DISCORD_ADMIN_WEBHOOK_URL || process.env.DISCORD_WEBHOOK_URL;
 const FOOTER_TEXT = SITE_NAME;

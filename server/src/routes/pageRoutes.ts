@@ -1,6 +1,7 @@
 import { Router, RequestHandler } from 'express';
 import {getRecentlyRead, getRecentlyAdded, getPopularChapters, getPopularManga, getHighScores, getMostFollowed, getRecentChaptersFromUserList, getRecentComments, getTopCommenters  } from '@/controllers/homeController';
 import getIndexPage from '@/controllers/indexController';
+import { getSitemapSeries } from '@/controllers/sitemapController';
 import { authMiddleware } from '@/middlewares/auth';
 
 const router = Router();
@@ -16,5 +17,6 @@ router.get('/home/recentComments', getRecentComments as RequestHandler);
 router.get('/home/topCommenters', getTopCommenters as RequestHandler);
 
 router.get('/index', getIndexPage as RequestHandler);
+router.get('/sitemap/series', getSitemapSeries as RequestHandler);
 
 export default router;

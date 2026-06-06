@@ -1,16 +1,13 @@
 import type { Metadata } from "next";
 import PageHeader from "@/components/PageHeader";
 import ContactContent from "@/app/contact/components/ContactContent";
+import { buildPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: `Contact - ${process.env.NEXT_PUBLIC_NAME}`,
-  description: "Contact us for support, feedback, or DMCA requests.",
-  openGraph: {
-    title: `Contact - ${process.env.NEXT_PUBLIC_NAME}`,
-    description: "Contact us for support, feedback, or DMCA requests.",
-    type: "website",
-  },
-};
+export const metadata: Metadata = buildPageMetadata({
+  title: 'Contact & DMCA',
+  description: 'Contact HydraManga for support, feedback, or DMCA and copyright requests.',
+  path: '/contact',
+});
 
 export default function ContactPage() {
   return (

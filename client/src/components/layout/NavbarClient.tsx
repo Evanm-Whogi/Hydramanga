@@ -104,7 +104,7 @@ export default function NavbarClient() {
                 <div className="flex container items-center h-18 pt-2 mx-auto px-5 lg:px-8 justify-between min-w-0">
                     {/* Left Section */}
                     <div className="flex items-center gap-8 h-full">
-                        <Link href="/" className="z-50 flex items-center h-full w-55.5">
+                        <Link href="/" className="z-50 flex items-center h-full w-56">
                             <Image
                                 src={'/logoIcon.png'}
                                 width={222}
@@ -112,9 +112,9 @@ export default function NavbarClient() {
                                 alt="Logo"
                                 priority
                                 className="object-contain"
-                                style={{ height: '100%', width: 'auto' }}
+                                style={{ height: '3.5rem', width: 'auto' }}
                             />
-                            <h1 className="text-2xl font-bold text-primary flex">Manga <span className="text-accent">Scrolls</span></h1>
+                            <h1 className="text-2xl font-bold text-primary flex ml-3">Hydra <span className="text-accent">Manga</span></h1>
                         </Link>
                         <nav className="hidden xl:flex items-center space-x-6 text-md text-muted ml-6">
                             <NavItem href='/home' icon={<HouseIcon className="size-4 inline" />} label='Home' />
