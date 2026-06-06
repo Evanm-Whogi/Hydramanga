@@ -84,12 +84,63 @@ export class ComixScraper implements IChapterScraper {
     private static readonly MIN_IMAGE_NATURAL_HEIGHT = 400;
     /** Placeholder/spinner assets from Comix CDN are ~1–2 KB; real chapter pages are much larger. */
     private static readonly MIN_IMAGE_DOWNLOAD_BYTES = 10_000;
+    private static readonly SCREENSHOT_TIMEOUT_MS = 15_000;
 
     private static isValidChapterImageDimensions(width: number, height: number): boolean {
         if (width <= 0 || height <= 0) return false;
         const longEdge = Math.max(width, height);
         const shortEdge = Math.min(width, height);
         return longEdge >= ComixScraper.MIN_CHAPTER_LONG_EDGE && shortEdge >= ComixScraper.MIN_CHAPTER_SHORT_EDGE;
+    }
+
+    /** Comix serves 3 direct CDN pages, then 1 scrambled page that must be browser-captured. */
+    private static isScrambledCdnPage(pageNum: number): boolean {
+        return pageNum > 0 && (pageNum - 1) % 4 === 3;
+    }
+
+    private static describeDownloadBuffer(buffer: Buffer): string {
+        if (buffer.length >= 12 && buffer.slice(0, 4).toString('ascii') === 'RIFF' && buffer.slice(8, 12).toString('ascii') === 'WEBP') {
+            return `webp (${buffer.length} bytes)`;
+        }
+        if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8) {
+            return `jpeg (${buffer.length} bytes)`;
+        }
+        if (buffer.length >= 8 && buffer.slice(0, 8).toString('ascii') === '\x89PNG\r\n\x1a\n') {
+            return `png (${buffer.length} bytes)`;
+        }
+        const preview = buffer.slice(0, 120).toString('utf8').replace(/[^\x20-\x7E]/g, '.');
+        if (/^\s*<(!DOCTYPE|html|body|head|svg)/i.test(preview)) {
+            return `likely HTML error page (${buffer.length} bytes): ${preview.slice(0, 80)}`;
+        }
+        return `unknown payload (${buffer.length} bytes): ${preview.slice(0, 60)}`;
+    }
+
+    private static summarizeAssetUrl(url: string): string {
+        try {
+            const parsed = new URL(url);
+            const pathTail = parsed.pathname.split('/').slice(-2).join('/');
+            return `${parsed.hostname}/.../${pathTail}`;
+        } catch {
+            return url.slice(0, 80);
+        }
+    }
+
+    private logAssetCollectionSummary(assets: ComixPageAsset[], chapterNumber: string, contextLabel: string): void {
+        const withDataUrl = assets.filter(a => !!a.dataUrl).length;
+        const withImageUrl = assets.filter(a => !!a.imageUrl).length;
+        const urlOnly = assets.filter(a => a.imageUrl && !a.dataUrl).length;
+        const samples = assets.slice(0, 3).map(a => ({
+            page: a.page,
+            source: a.dataUrl ? (a.source || 'canvas') : a.imageUrl ? 'url' : 'none',
+            url: a.imageUrl ? ComixScraper.summarizeAssetUrl(a.imageUrl) : undefined,
+            dataUrlBytes: a.dataUrl ? Math.max(0, a.dataUrl.length - (a.dataUrl.indexOf(',') + 1)) : undefined,
+            width: a.width,
+            height: a.height,
+        }));
+        logger.info(
+            `[Comix] [${contextLabel}] Asset summary for chapter ${chapterNumber}: total=${assets.length}, dataUrl=${withDataUrl}, imageUrl=${withImageUrl}, urlOnly=${urlOnly}`,
+            { service: 'comixScraper', samples },
+        );
     }
 
     private static readonly readerDefaultState = {
@@ -440,7 +491,7 @@ export class ComixScraper implements IChapterScraper {
                     `[Comix] [${attemptLabel}] Collecting page assets (expected=${expectedPageCount})`,
                     { service: 'comixScraper' },
                 );
-                const pageAssets = await this.collectPageAssetsFromReader(page, expectedPageCount, contextLabel);
+                const pageAssets = await this.collectPageAssetsFromReader(page, expectedPageCount, contextLabel, url);
                 const uniqueImages: string[] = [...new Set<string>(pageAssets.map(a => a.imageUrl).filter((v): v is string => !!v))];
                 logger.info(
                     `[Comix] Chapter ${chapterNumber}: collected ${pageAssets.length} page assets (${uniqueImages.length} URL-backed) on first pass`,
@@ -461,6 +512,7 @@ export class ComixScraper implements IChapterScraper {
                         page,
                         expectedPageCount,
                         `${contextLabel} retry`,
+                        url,
                     );
                     const retryUnique: string[] = [...new Set<string>(retryAssets.map(a => a.imageUrl).filter((v): v is string => !!v))];
                     logger.info(
@@ -480,11 +532,12 @@ export class ComixScraper implements IChapterScraper {
                     );
                 }
 
+                this.logAssetCollectionSummary(finalAssets, chapterNumber, attemptLabel);
                 logger.info(
                     `[Comix] [${attemptLabel}] Downloading ${finalAssets.length} assets to storage`,
                     { service: 'comixScraper' },
                 );
-                const storagePrefix = await this.downloadPageAssets(finalAssets, seriesId, chapterNumber, url);
+                const storagePrefix = await this.downloadPageAssets(finalAssets, seriesId, chapterNumber, url, attemptLabel);
                 logger.info(
                     `[Comix] [${attemptLabel}] Chapter download completed (prefix=${storagePrefix}, pages=${finalAssets.length})`,
                     { service: 'comixScraper' },
@@ -548,12 +601,175 @@ export class ComixScraper implements IChapterScraper {
         return !!(asset.imageUrl || asset.dataUrl);
     }
 
+    private async extractWowpicCdnBase(page: any): Promise<string | null> {
+        return page.evaluate(() => {
+            const imgSrc =
+                document.querySelector<HTMLImageElement>('img.rpage-page__img, .rpage-page img')?.currentSrc ||
+                document.querySelector<HTMLImageElement>('img.rpage-page__img, .rpage-page img')?.src ||
+                '';
+            const fromImg = imgSrc.match(/^(https:\/\/[a-z0-9]+\.wowpic\d*\.store\/i3\/[^/]+\/)/i);
+            if (fromImg) {
+                return fromImg[1];
+            }
+
+            const html = document.documentElement.innerHTML;
+            const fromHtml = html.match(/https:\/\/[a-z0-9]+\.wowpic\d*\.store\/i3\/[A-Za-z0-9]+\//i);
+            return fromHtml ? fromHtml[0] : null;
+        });
+    }
+
+    private buildCdnPageAssets(cdnBase: string, pageCount: number): ComixPageAsset[] {
+        const normalizedBase = cdnBase.endsWith('/') ? cdnBase : `${cdnBase}/`;
+        return Array.from({ length: pageCount }, (_, index) => ({
+            page: index + 1,
+            imageUrl: `${normalizedBase}${String(index + 1).padStart(3, '0')}.webp`,
+            source: 'url' as const,
+        }));
+    }
+
+    private async probeCdnAssets(
+        assets: ComixPageAsset[],
+        referer: string,
+        contextLabel: string,
+    ): Promise<{ directAssets: ComixPageAsset[]; browserCapturePages: number[] }> {
+        const browserCapturePages: number[] = [];
+        const batchSize = 25;
+
+        for (let start = 0; start < assets.length; start += batchSize) {
+            const chunk = assets.slice(start, Math.min(start + batchSize, assets.length));
+            await Promise.all(
+                chunk.map(async (asset) => {
+                    if (ComixScraper.isScrambledCdnPage(asset.page)) {
+                        browserCapturePages.push(asset.page);
+                        return;
+                    }
+                    if (!asset.imageUrl) {
+                        browserCapturePages.push(asset.page);
+                        return;
+                    }
+                    try {
+                        const response = await ComixScraper.axiosInstance.get(asset.imageUrl, {
+                            responseType: 'arraybuffer',
+                            timeout: 20000,
+                            headers: {
+                                Referer: referer,
+                                Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+                                'User-Agent': appConfig.scraper.comix.userAgent,
+                            },
+                        });
+                        const buffer = Buffer.from(response.data as ArrayBuffer);
+                        const metadata = await sharp(buffer, { failOn: 'none' }).metadata();
+                        const width = metadata.width || 0;
+                        const height = metadata.height || 0;
+                        const dimsOk = ComixScraper.isValidChapterImageDimensions(width, height);
+                        const bytesOk = buffer.length >= ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES;
+                        if (!dimsOk || !bytesOk) {
+                            browserCapturePages.push(asset.page);
+                        }
+                    } catch {
+                        browserCapturePages.push(asset.page);
+                    }
+                }),
+            );
+
+            const checked = Math.min(start + batchSize, assets.length);
+            if (checked < assets.length || start === 0) {
+                logger.info(
+                    `[Comix] [${contextLabel}] CDN probe progress: ${checked}/${assets.length}`,
+                    { service: 'comixScraper' },
+                );
+            }
+        }
+
+        const browserCaptureSet = new Set(browserCapturePages);
+        return {
+            directAssets: assets.filter(a => !browserCaptureSet.has(a.page)),
+            browserCapturePages: browserCapturePages.sort((a, b) => a - b),
+        };
+    }
+
+    private async collectBrowserCapturedAssets(
+        page: any,
+        contextLabel: string,
+        targetPages: number[],
+    ): Promise<ComixPageAsset[]> {
+        if (!targetPages.length) return [];
+
+        await this.dismissReaderHint(page);
+        const captured: ComixPageAsset[] = [];
+        const visitTotal = targetPages.length;
+
+        for (let visitIndex = 0; visitIndex < targetPages.length; visitIndex++) {
+            const pageNum = targetPages[visitIndex];
+            const node = page.locator(`.rpage-page[data-page="${pageNum}"]`).first();
+            if (!(await node.count())) continue;
+
+            let asset: ComixPageAsset | null = null;
+            for (let attempt = 1; attempt <= 2; attempt++) {
+                await node.scrollIntoViewIfNeeded().catch(() => {});
+                await page.waitForTimeout(300);
+                await this.dismissReaderHint(page);
+                asset = await this.capturePageViaScreenshot(page, pageNum, contextLabel);
+                if (asset) break;
+            }
+            if (asset) {
+                captured.push(asset);
+            }
+
+            const shouldLog =
+                visitIndex === 0 ||
+                visitIndex === visitTotal - 1 ||
+                (visitIndex + 1) % 10 === 0;
+            if (shouldLog) {
+                logger.info(
+                    `[Comix] [${contextLabel}] Browser capture ${visitIndex + 1}/${visitTotal}: page=${pageNum} captured=${captured.length}`,
+                    { service: 'comixScraper' },
+                );
+            }
+        }
+
+        logger.info(
+            `[Comix] [${contextLabel}] Browser capture complete: targets=${targetPages.length}, captured=${captured.length}`,
+            { service: 'comixScraper' },
+        );
+        return captured;
+    }
+
     private async collectPageAssetsFromReader(
         page: any,
         expectedPageCount: number,
         contextLabel: string,
+        chapterUrl: string,
     ): Promise<ComixPageAsset[]> {
         await this.dismissReaderHint(page);
+
+        if (expectedPageCount > 0) {
+            const cdnBase = await this.extractWowpicCdnBase(page);
+            if (cdnBase) {
+                logger.info(
+                    `[Comix] [${contextLabel}] Resolved wowpic CDN base (${ComixScraper.summarizeAssetUrl(`${cdnBase}001.webp`)}) for ${expectedPageCount} page(s)`,
+                    { service: 'comixScraper' },
+                );
+                const cdnAssets = this.buildCdnPageAssets(cdnBase, expectedPageCount);
+                const scrambledCount = cdnAssets.filter(a => ComixScraper.isScrambledCdnPage(a.page)).length;
+                const { directAssets, browserCapturePages } = await this.probeCdnAssets(cdnAssets, chapterUrl, contextLabel);
+                logger.info(
+                    `[Comix] [${contextLabel}] CDN probe complete: ${directAssets.length} direct URL(s), ${browserCapturePages.length} need browser capture (${scrambledCount} scrambled)`,
+                    { service: 'comixScraper' },
+                );
+                if (!browserCapturePages.length) {
+                    return directAssets;
+                }
+                const browserAssets = await this.collectBrowserCapturedAssets(page, contextLabel, browserCapturePages);
+                return this.mergePageAssets(directAssets, browserAssets);
+            }
+
+            logger.warn(
+                `[Comix] [${contextLabel}] No wowpic CDN base found; falling back to scroll/progress extraction`,
+                { service: 'comixScraper' },
+            );
+        }
+
         let assets = await this.collectPageAssetsByScrolling(page, expectedPageCount, contextLabel);
         logger.info(
             `[Comix] [${contextLabel}] Scroll extraction captured ${assets.length} page slot(s), ${assets.filter(a => this.hasCompleteAsset(a)).length} with image data`,
@@ -590,8 +806,8 @@ export class ComixScraper implements IChapterScraper {
         const maxSteps = Math.max(expectedPageCount > 0 ? expectedPageCount * 8 : 420, 160);
         const minCaptureWidth = ComixScraper.MIN_IMAGE_NATURAL_WIDTH;
         const minCaptureHeight = ComixScraper.MIN_IMAGE_NATURAL_HEIGHT;
-        const minCanvasWidth = ComixScraper.MIN_CAPTURE_WIDTH;
-        const minCanvasHeight = ComixScraper.MIN_CAPTURE_HEIGHT;
+        const minCanvasWidth = ComixScraper.MIN_CHAPTER_LONG_EDGE;
+        const minCanvasHeight = ComixScraper.MIN_CHAPTER_SHORT_EDGE;
         let stagnantSteps = 0;
         let reachedEnd = false;
 
@@ -675,15 +891,13 @@ export class ComixScraper implements IChapterScraper {
 
             const canvasCandidates = snapshot.out.filter((a: {
                 page: number;
-                imageUrl?: string;
                 hasCanvas: boolean;
             }) =>
                 a.hasCanvas &&
-                !a.imageUrl &&
-                (!pageMap.get(a.page)?.dataUrl),
+                !pageMap.get(a.page)?.dataUrl,
             );
             for (const candidate of canvasCandidates) {
-                const captured = await this.captureCanvasPageViaScreenshot(page, candidate.page, contextLabel);
+                const captured = await this.capturePageViaScreenshot(page, candidate.page, contextLabel);
                 if (captured) {
                     const existing = pageMap.get(candidate.page);
                     pageMap.set(candidate.page, {
@@ -696,7 +910,9 @@ export class ComixScraper implements IChapterScraper {
             const grew = pageMap.size > beforeSize;
             stagnantSteps = grew ? 0 : stagnantSteps + 1;
 
-            reachedEnd = reachedEnd || snapshot.hasEndMarker;
+            if (snapshot.hasEndMarker && pageMap.size >= Math.min(expectedPageCount || 0, 20)) {
+                reachedEnd = true;
+            }
 
             if (expectedPageCount > 0 && pageMap.size >= expectedPageCount) {
                 break;
@@ -811,7 +1027,7 @@ export class ComixScraper implements IChapterScraper {
                 await node.scrollIntoViewIfNeeded().catch(() => {});
                 await page.waitForTimeout(200);
                 await this.dismissReaderHint(page);
-                const asset = await this.captureCanvasPageViaScreenshot(page, pageNum, contextLabel);
+                const asset = await this.capturePageViaScreenshot(page, pageNum, contextLabel);
                 if (asset) {
                     captured.push(asset);
                     existingPages.add(pageNum);
@@ -848,25 +1064,33 @@ export class ComixScraper implements IChapterScraper {
         );
 
         if (buttonCount > 0 && pagesToVisit.length > 0) {
-            for (const pageNum of pagesToVisit) {
+            const visitTotal = pagesToVisit.length;
+            for (let visitIndex = 0; visitIndex < pagesToVisit.length; visitIndex++) {
+                const pageNum = pagesToVisit[visitIndex];
                 const button = progressButtons.nth(Math.min(pageNum - 1, buttonCount - 1));
                 if (!(await button.count())) continue;
                 const clicked = await button.click({ force: true }).then(() => true).catch(() => false);
                 await this.waitForReaderPageIndex(page, pageNum);
 
-                let asset = await this.captureAssetForActivePage(page, pageNum);
+                let asset = await this.capturePageViaScreenshot(page, pageNum, contextLabel);
                 if (!asset) {
-                    asset = await this.captureCanvasPageViaScreenshot(page, pageNum, contextLabel);
+                    asset = await this.captureAssetForActivePage(page, pageNum);
                 }
                 if (asset) {
                     pageMap.set(pageNum, asset);
                 }
 
                 const source = asset?.imageUrl ? 'url' : asset?.dataUrl ? 'canvas' : 'none';
-                logger.debug(
-                    `[Comix] [${contextLabel}] Progress page ${pageNum}: clicked=${clicked} source=${source} cumulativeAssets=${pageMap.size}`,
-                    { service: 'comixScraper' },
-                );
+                const shouldLog =
+                    visitIndex === 0 ||
+                    visitIndex === visitTotal - 1 ||
+                    (visitIndex + 1) % 10 === 0;
+                if (shouldLog) {
+                    logger.info(
+                        `[Comix] [${contextLabel}] Progress capture ${visitIndex + 1}/${visitTotal}: page=${pageNum} clicked=${clicked} source=${source} captured=${pageMap.size}`,
+                        { service: 'comixScraper' },
+                    );
+                }
             }
         } else {
             await this.scrollUntilReaderEnd(page);
@@ -981,7 +1205,7 @@ export class ComixScraper implements IChapterScraper {
         }, { n: pageNum, minW, minH });
     }
 
-    private async captureCanvasPageViaScreenshot(
+    private async capturePageViaScreenshot(
         page: any,
         pageNum: number,
         contextLabel: string,
@@ -991,7 +1215,31 @@ export class ComixScraper implements IChapterScraper {
             const node = page.locator(`.rpage-page[data-page="${pageNum}"]`).first();
             if (!(await node.count())) return null;
             await node.scrollIntoViewIfNeeded().catch(() => {});
-            await page.waitForTimeout(120);
+            await page.waitForFunction(
+                ({ n, minCanvasW, minImgW, minImgH }: { n: number; minCanvasW: number; minImgW: number; minImgH: number }) => {
+                    const root = document.querySelector(`.rpage-page[data-page="${n}"]`);
+                    if (!root) return false;
+                    const canvas = root.querySelector('canvas.rpage-page__img, canvas') as HTMLCanvasElement | null;
+                    if (canvas && canvas.width >= minCanvasW) {
+                        return true;
+                    }
+                    const img = root.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
+                    return !!(
+                        img &&
+                        img.complete &&
+                        img.naturalWidth >= minImgW &&
+                        img.naturalHeight >= minImgH
+                    );
+                },
+                {
+                    n: pageNum,
+                    minCanvasW: ComixScraper.MIN_CHAPTER_SHORT_EDGE,
+                    minImgW: ComixScraper.MIN_IMAGE_NATURAL_WIDTH,
+                    minImgH: ComixScraper.MIN_IMAGE_NATURAL_HEIGHT,
+                },
+                { timeout: 8000 },
+            ).catch(() => {});
+            await page.waitForTimeout(300);
             await page.evaluate((styleId: string) => {
                 let style = document.getElementById(styleId) as HTMLStyleElement | null;
                 if (!style) {
@@ -1012,11 +1260,23 @@ export class ComixScraper implements IChapterScraper {
                 `;
             }, hideStyleId);
             await page.waitForTimeout(60);
+
             const canvasLoc = node.locator('canvas.rpage-page__img, canvas').first();
-            const target = (await canvasLoc.count()) ? canvasLoc : node;
+            const imgLoc = node.locator('img.rpage-page__img, img').first();
+            let target = node;
+            let source: ComixPageAsset['source'] = 'canvas-screenshot';
+            if (await canvasLoc.count()) {
+                target = canvasLoc;
+                source = 'canvas-screenshot';
+            } else if (await imgLoc.count()) {
+                target = imgLoc;
+                source = 'canvas-screenshot';
+            }
+
             const buffer: Buffer = await target.screenshot({
                 type: 'png',
                 animations: 'disabled',
+                timeout: ComixScraper.SCREENSHOT_TIMEOUT_MS,
             });
             if (!buffer || buffer.length <= 1500) return null;
             const metadata = await sharp(buffer, { failOn: 'none' }).metadata();
@@ -1024,7 +1284,7 @@ export class ComixScraper implements IChapterScraper {
             const height = metadata.height || 0;
             if (!ComixScraper.isValidChapterImageDimensions(width, height)) {
                 logger.debug(
-                    `[Comix] [${contextLabel}] Rejecting canvas screenshot page ${pageNum} due to size ${width}x${height}`,
+                    `[Comix] [${contextLabel}] Rejecting browser screenshot page ${pageNum} due to size ${width}x${height}`,
                     { service: 'comixScraper' },
                 );
                 return null;
@@ -1034,10 +1294,10 @@ export class ComixScraper implements IChapterScraper {
                 dataUrl: `data:image/png;base64,${buffer.toString('base64')}`,
                 width,
                 height,
-                source: 'canvas-screenshot',
+                source,
             };
         } catch (error) {
-            logger.debug(`[Comix] [${contextLabel}] Canvas screenshot capture failed for page ${pageNum}: ${error}`, {
+            logger.debug(`[Comix] [${contextLabel}] Browser screenshot capture failed for page ${pageNum}: ${error}`, {
                 service: 'comixScraper',
             });
             return null;
@@ -1372,6 +1632,7 @@ export class ComixScraper implements IChapterScraper {
         seriesId: number,
         chapterNumber: string,
         referer: string,
+        contextLabel = 'download',
     ): Promise<string> {
         const storagePrefix = `${seriesId}/${chapterNumber}`;
         const dir = path.join(STORAGE_ROOT, storagePrefix);
@@ -1386,6 +1647,7 @@ export class ComixScraper implements IChapterScraper {
 
         const downloadOne = async (asset: ComixPageAsset) => {
             const filePath = path.join(dir, `${asset.page.toString().padStart(2, '0')}.webp`);
+            const assetSource = asset.dataUrl ? (asset.source || 'canvas') : asset.imageUrl ? 'url' : 'none';
             let lastError: any;
 
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -1393,6 +1655,10 @@ export class ComixScraper implements IChapterScraper {
                     if (asset.dataUrl?.startsWith('data:image')) {
                         const base64Part = asset.dataUrl.split(',')[1] || '';
                         const raw = Buffer.from(base64Part, 'base64');
+                        logger.debug(
+                            `[Comix] [${contextLabel}] Page ${asset.page}: saving canvas capture (${raw.length} bytes raw, source=${assetSource})`,
+                            { service: 'comixScraper' },
+                        );
                         // Preserve rendered pages at highest possible fidelity.
                         const out = await sharp(raw, { failOn: 'none' })
                             .webp({
@@ -1402,6 +1668,11 @@ export class ComixScraper implements IChapterScraper {
                             .toBuffer();
                         fs.writeFileSync(filePath, out);
                     } else if (asset.imageUrl) {
+                        const urlSummary = ComixScraper.summarizeAssetUrl(asset.imageUrl);
+                        logger.debug(
+                            `[Comix] [${contextLabel}] Page ${asset.page}: fetching URL (attempt ${attempt}/${maxRetries}, source=${assetSource}, url=${urlSummary})`,
+                            { service: 'comixScraper' },
+                        );
                         const response = await ComixScraper.axiosInstance.get(asset.imageUrl, {
                             responseType: 'arraybuffer',
                             timeout: 30000,
@@ -1412,19 +1683,32 @@ export class ComixScraper implements IChapterScraper {
                             },
                         });
                         const buffer = Buffer.from(response.data as ArrayBuffer);
+                        const contentType = String(response.headers['content-type'] || 'unknown');
                         if (buffer.length < ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES) {
+                            logger.warn(
+                                `[Comix] [${contextLabel}] Page ${asset.page}: URL payload too small (${buffer.length}/${ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES} bytes, status=${response.status}, contentType=${contentType}, url=${urlSummary}, payload=${ComixScraper.describeDownloadBuffer(buffer)})`,
+                                { service: 'comixScraper' },
+                            );
                             throw new Error(
-                                `Downloaded image too small for page ${asset.page}: ${buffer.length}/${ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES} bytes`,
+                                `Downloaded image too small for page ${asset.page}: ${buffer.length}/${ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES} bytes (url=${urlSummary}, contentType=${contentType})`,
                             );
                         }
                         const metadata = await sharp(buffer, { failOn: 'none' }).metadata();
                         const width = metadata.width || 0;
                         const height = metadata.height || 0;
                         if (!ComixScraper.isValidChapterImageDimensions(width, height)) {
+                            logger.warn(
+                                `[Comix] [${contextLabel}] Page ${asset.page}: URL image dimensions too small (${width}x${height}, bytes=${buffer.length}, url=${urlSummary})`,
+                                { service: 'comixScraper' },
+                            );
                             throw new Error(
                                 `Downloaded image dimensions too small for page ${asset.page}: ${width}x${height} (need long edge ≥${ComixScraper.MIN_CHAPTER_LONG_EDGE}, short edge ≥${ComixScraper.MIN_CHAPTER_SHORT_EDGE})`,
                             );
                         }
+                        logger.debug(
+                            `[Comix] [${contextLabel}] Page ${asset.page}: saved URL image (${buffer.length} bytes, ${width}x${height}, contentType=${contentType})`,
+                            { service: 'comixScraper' },
+                        );
                         // Comix CDN image URLs are already webp; avoid expensive no-op transcode.
                         fs.writeFileSync(filePath, buffer);
                     } else {
@@ -1433,6 +1717,10 @@ export class ComixScraper implements IChapterScraper {
                     return;
                 } catch (err: any) {
                     lastError = err;
+                    logger.warn(
+                        `[Comix] [${contextLabel}] Page ${asset.page}: download attempt ${attempt}/${maxRetries} failed (source=${assetSource}): ${err?.message || err}`,
+                        { service: 'comixScraper' },
+                    );
                     if (attempt < maxRetries) {
                         const delay = retryDelayMs * Math.pow(2, attempt - 1);
                         await new Promise(resolve => setTimeout(resolve, delay));
