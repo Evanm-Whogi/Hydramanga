@@ -23,8 +23,12 @@ export const SITE_KEYWORDS = [
   'HydraManga',
 ];
 
+export function normalizeCanonicalOrigin(rawUrl: string): string {
+  return rawUrl.replace(/\/$/, '').replace(/^(https?:\/\/)www\./i, '$1');
+}
+
 export function getSiteConfig() {
-  const url = (process.env.NEXT_PUBLIC_URL || DEFAULT_URL).replace(/\/$/, '');
+  const url = normalizeCanonicalOrigin(process.env.NEXT_PUBLIC_URL || DEFAULT_URL);
   return {
     name: process.env.NEXT_PUBLIC_NAME || DEFAULT_NAME,
     slogan: process.env.NEXT_PUBLIC_SLOGAN || DEFAULT_SLOGAN,
@@ -54,6 +58,10 @@ type PageMetadataOptions = {
   noIndex?: boolean;
   ogType?: 'website' | 'article';
   images?: string | Array<{ url: string; alt?: string; width?: number; height?: number }>;
+  /** When true, title is not wrapped with the root `%s | SiteName` template. Use on the homepage. */
+  absoluteTitle?: boolean;
+  /** When false, omit the global brand keywords meta tag (reduces SERP cannibalization on manga pages). */
+  includeSiteKeywords?: boolean;
 };
 
 function normalizeImages(images?: PageMetadataOptions['images']) {
@@ -71,20 +79,22 @@ function normalizeImages(images?: PageMetadataOptions['images']) {
 
 export function buildPageMetadata(options: PageMetadataOptions = {}): Metadata {
   const site = getSiteConfig();
-  const title = options.title ?? `${site.name} - ${site.slogan}`;
+  const titleText = options.title ?? `${site.name} - ${site.slogan}`;
   const description = options.description ?? site.description;
   const canonical = options.path ? absoluteUrl(options.path) : site.url;
   const ogImages = normalizeImages(options.images);
   const googleVerification = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION;
+  const includeSiteKeywords = options.includeSiteKeywords ?? true;
+  const title = options.absoluteTitle ? { absolute: titleText } : titleText;
 
   return {
     title,
     description,
-    keywords: SITE_KEYWORDS,
+    ...(includeSiteKeywords ? { keywords: SITE_KEYWORDS } : {}),
     metadataBase: getMetadataBase(),
     alternates: { canonical },
     openGraph: {
-      title,
+      title: titleText,
       description,
       url: canonical,
       siteName: site.name,
@@ -94,7 +104,7 @@ export function buildPageMetadata(options: PageMetadataOptions = {}): Metadata {
     },
     twitter: {
       card: 'summary_large_image',
-      title,
+      title: titleText,
       description,
       images: ogImages.map((image) => image.url),
     },
@@ -109,7 +119,7 @@ export function buildRootMetadata(): Metadata {
   const ogImages = normalizeImages();
 
   return {
-    ...buildPageMetadata({ title: defaultTitle, description: site.description, path: '/' }),
+    ...buildPageMetadata({ title: defaultTitle, description: site.description, path: '/', absoluteTitle: true }),
     title: {
       default: defaultTitle,
       template: `%s | ${site.name}`,
@@ -145,22 +155,57 @@ export function buildRootMetadata(): Metadata {
   };
 }
 
-export function buildWebsiteJsonLd() {
+export function buildOrganizationJsonLd() {
   const site = getSiteConfig();
   return {
-    '@context': 'https://schema.org',
-    '@type': 'WebSite',
+    '@type': 'Organization',
+    '@id': `${site.url}/#organization`,
     name: site.name,
     description: site.description,
     url: site.url,
-    potentialAction: {
-      '@type': 'SearchAction',
-      target: {
-        '@type': 'EntryPoint',
-        urlTemplate: `${site.url}/discover?search={search_term_string}`,
+    logo: absoluteUrl(getDefaultOgImagePath()),
+  };
+}
+
+export function buildWebsiteJsonLd() {
+  const site = getSiteConfig();
+  const organization = buildOrganizationJsonLd();
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      organization,
+      {
+        '@type': 'WebSite',
+        '@id': `${site.url}/#website`,
+        name: site.name,
+        description: site.description,
+        url: site.url,
+        publisher: { '@id': organization['@id'] },
+        potentialAction: {
+          '@type': 'SearchAction',
+          target: {
+            '@type': 'EntryPoint',
+            urlTemplate: `${site.url}/discover?search={search_term_string}`,
+          },
+          'query-input': 'required name=search_term_string',
+        },
       },
-      'query-input': 'required name=search_term_string',
-    },
+    ],
+  };
+}
+
+export function buildHomePageJsonLd() {
+  const site = getSiteConfig();
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebPage',
+    '@id': `${site.url}/#webpage`,
+    name: `${site.name} - ${site.slogan}`,
+    description: site.description,
+    url: site.url,
+    isPartOf: { '@id': `${site.url}/#website` },
+    about: { '@id': `${site.url}/#organization` },
+    primaryImageOfPage: absoluteUrl(getDefaultOgImagePath()),
   };
 }
 
@@ -172,6 +217,8 @@ export function buildComicSeriesJsonLd(manga: { title: string; description?: str
     name: manga.title,
     description: manga.description || `Read ${manga.title} on ${site.name}`,
     url: absoluteUrl(`/manga/${manga.id}`),
+    isPartOf: { '@id': `${site.url}/#website` },
+    publisher: { '@id': `${site.url}/#organization` },
     ...(manga.coverUrl ? { image: manga.coverUrl } : {}),
   };
 }

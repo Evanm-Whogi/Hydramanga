@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { formatTimeAgo } from "@/lib/utils";
+import { formatCompactNumber, formatTimeAgo } from "@/lib/utils";
 import BadgeList from "@/components/badges/BadgeList";
 import type { EarnedBadge } from "@/lib/badgeConfig";
 
@@ -31,7 +31,7 @@ export default function AuthorByline({author, createdAt}: {
           <BadgeList badges={author.badges} />
         </>
       ) : null}
-      <span className="text-muted tabular-nums rounded-md bg-background px-2 py-1">{karmaTotal.toLocaleString()}</span>
+      <span className="text-muted tabular-nums rounded-md bg-background px-2 py-1">{formatCompactNumber(karmaTotal)}</span>
       {createdAt && (
         <>
           <span className="text-muted">·</span>

@@ -21,6 +21,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description,
       path: `/manga/${id}`,
       images: coverUrl ? [{ url: coverUrl, alt: manga.title }] : undefined,
+      includeSiteKeywords: false,
     });
   } catch {
     return buildPageMetadata({

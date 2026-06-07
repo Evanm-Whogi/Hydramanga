@@ -494,6 +494,9 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
             <div className="bg-foreground rounded-md p-4 md:p-5 w-full">
               <div className="flex flex-col gap-2 text-sm md:text-base">
                 <div className="flex justify-between text-muted capitalize">
+                  Type <span>{manga.type}</span>
+                </div>
+                <div className="flex justify-between text-muted capitalize">
                   Rating <span>{manga.contentRating}</span>
                 </div>
                 <div className="flex justify-between text-muted">
@@ -504,7 +507,7 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
                 </div>
                 <div className="flex justify-between text-muted">
                   Has Anime? { manga.hasAnime ? (
-                    <a href={`https://hianime.to/search?keyword=${encodeURIComponent(manga.title)}`} target="_blank" rel="noopener noreferrer" className="hover:text-accent text-primary">Yes</a>
+                      <span className="text-muted">Yes</span>
                     ): (
                       <span className="text-muted">No</span>
                     )}
