@@ -5,7 +5,7 @@ import Chapters from "./Chapters";
 import Comments from "./Comments";
 import Gallery from "./Gallery";
 import Reviews from "./Reviews";
-import ListDropdown from "./ListDropdown";
+import BookmarkDropdown from "./BookmarkDropdown";
 import { useUser } from "@/providers/UserProvider";
 
 type MangaActionsPage = "chapters" | "comments" | "reviews" | "gallery";
@@ -16,12 +16,14 @@ interface MangaActionsProps {
     comments: any;
     commentPagination?: { page: number; limit: number; total: number; hasMore: boolean };
     gallery: any[];
-    initialListName: string | null;
+    initialBookmarkStatus: BookmarkStatus | string | null;
     importProgress: any;
     chaptersMaxHeight?: number | null;
 }
 
-export default function MangaActions({ manga, chapters, comments, commentPagination, gallery, initialListName, importProgress, chaptersMaxHeight }: MangaActionsProps) {
+import { BookmarkStatus } from '@/services/bookmarkService';
+
+export default function MangaActions({ manga, chapters, comments, commentPagination, gallery, initialBookmarkStatus, importProgress, chaptersMaxHeight }: MangaActionsProps) {
     const [page, setPage] = useState<MangaActionsPage>("chapters");
     const { user } = useUser();
 
@@ -30,7 +32,7 @@ export default function MangaActions({ manga, chapters, comments, commentPaginat
         <div className="grid grid-cols-1 xl:grid-cols-3 w-full pt-10 items-center space-y-4 xl:space-y-0">
 
             <div className="flex justify-start">
-                {user && <ListDropdown seriesId={manga.id} initialListName={initialListName} mangaTitle={manga.title} />}
+                {user && <BookmarkDropdown seriesId={manga.id} initialStatus={initialBookmarkStatus} mangaTitle={manga.title} />}
             </div>
 
             <div className="flex flex-col xl:flex-row justify-end gap-2 my-5 md:my-0">

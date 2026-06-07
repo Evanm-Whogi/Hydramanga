@@ -3,14 +3,12 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { fetchMangaPages, updateProgress, recordReadingTime, markChapterAsRead } from '@/services/mangaService';
-import { getBookmark, removeBookmark } from '@/services/bookmarkService';
 import { useUser } from '@/providers/UserProvider';
-import { MenuIcon, X, BookmarkIcon, ChevronLeft, ChevronRight, Settings } from 'lucide-react';
+import { MenuIcon, X, ChevronLeft, ChevronRight, Settings } from 'lucide-react';
 import { useChapterViewTracking } from '@/hooks/useViewTracking';
 import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
 import { updateImportProgressToast, dismissImportProgressToast } from '@/components/ImportProgressToast';
 import { showContinuousModeToast, dismissContinuousModeToast } from '@/components/ContinuousModeToast';
-import BookmarkModal from '@/components/BookmarkModal';
 import ReaderSettingsModal from './ReaderSettingsModal';
 import { 
   ReaderSettings, 
@@ -136,12 +134,6 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
-  
-  // Bookmark state
-  const [isBookmarked, setIsBookmarked] = useState(false);
-  const [bookmarkNote, setBookmarkNote] = useState('');
-  const [bookmarkModalOpen, setBookmarkModalOpen] = useState(false);
-  const [isBookmarkOperating, setIsBookmarkOperating] = useState(false);
   
   // Reader settings
   const [settings, setSettings] = useState<ReaderSettings>(() => loadReaderSettings());
@@ -321,40 +313,6 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       });
     } catch (err) {
       console.error('Failed to record reading time', err);
-    }
-  }, [user, id, chapterId]);
-
-  // Handle bookmark actions
-  const handleBookmarkClick = useCallback(() => {
-    if (!user) return;
-    setBookmarkModalOpen(true);
-  }, [user]);
-
-  const handleRemoveBookmark = useCallback(async () => {
-    if (!user || !id || !chapterId || isBookmarkOperating) return;
-    
-    setIsBookmarkOperating(true);
-    try {
-      await removeBookmark(Number(id), Number(chapterId));
-      setIsBookmarked(false);
-      setBookmarkNote('');
-    } catch (error) {
-      console.error('Failed to remove bookmark:', error);
-    } finally {
-      setIsBookmarkOperating(false);
-    }
-  }, [user, id, chapterId, isBookmarkOperating, bookmarkNote, mangaTitle, data?.chapterNumber]);
-
-  const handleBookmarkSuccess = useCallback(() => {
-    setIsBookmarked(true);
-    if (user && id && chapterId) {
-      getBookmark(Number(id), Number(chapterId))
-        .then((response: any) => {
-          if (response?.bookmark) {
-            setBookmarkNote(response.bookmark.note || '');
-          }
-        })
-        .catch((error: any) => console.error('Failed to fetch bookmark:', error));
     }
   }, [user, id, chapterId]);
 
@@ -540,27 +498,6 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     loadMangaPages();
   }, [id, chapterId]);
 
-  // Fetch bookmark status
-  useEffect(() => {
-    if (!user || !id || !chapterId) return;
-
-    const fetchBookmarkStatus = async () => {
-      try {
-        const response = await getBookmark(Number(id), Number(chapterId));
-        if (response?.bookmark) {
-          setIsBookmarked(true);
-          setBookmarkNote(response.bookmark.note || '');
-        } else {
-          setIsBookmarked(false);
-          setBookmarkNote('');
-        }
-      } catch (error) {
-        console.error('Failed to fetch bookmark status:', error);
-      }
-    };
-
-    fetchBookmarkStatus();
-  }, [user, id, chapterId]);
 
   // Show/update progress toast
   useEffect(() => {
@@ -986,22 +923,6 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
             </button>
           </div>
 
-          {/* Bookmark Button */}
-          {user && (
-            <button
-              onClick={() => isBookmarked ? handleRemoveBookmark() : handleBookmarkClick()}
-              disabled={isBookmarkOperating}
-              className={`w-full p-2.5 flex items-center justify-center gap-2 border-0 rounded cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
-                isBookmarked
-                  ? 'bg-accent hover:bg-accent/80 text-white'
-                  : 'bg-background hover:bg-background/50 text-primary'
-              }`}
-            >
-              <BookmarkIcon size={18} className={isBookmarked ? 'fill-white' : ''} />
-              {isBookmarked ? 'Remove Bookmark' : 'Bookmark Chapter'}
-            </button>
-          )}
-
           {/* Settings Button */}
           <button onClick={() => setSettingsModalOpen(true)} className="w-full mt-2 p-2.5 flex items-center justify-center gap-2 bg-background hover:bg-background/50 text-primary border-0 rounded cursor-pointer">
             <Settings size={18} />
@@ -1076,11 +997,6 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         </button>
         <span className="text-sm font-semibold">{currentPage}/{totalPages}</span>
         <div className="flex gap-2">
-          {user && (
-            <button onClick={() => isBookmarked ? handleRemoveBookmark() : handleBookmarkClick()} disabled={isBookmarkOperating} className="text-primary hover:text-accent p-2 disabled:cursor-not-allowed disabled:opacity-50">
-              <BookmarkIcon className="size-6" fill={isBookmarked ? 'currentColor' : 'none'} />
-            </button>
-          )}
           <button onClick={() => setSettingsModalOpen(true)} className="text-primary hover:text-accent p-2">
             <Settings className="size-6" />
           </button>
@@ -1137,8 +1053,6 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       </main>
 
       {/* Modals */}
-      <BookmarkModal isOpen={bookmarkModalOpen} onClose={() => setBookmarkModalOpen(false)} seriesId={Number(id)} chapterId={Number(chapterId)} chapterTitle={data?.title || `Chapter ${data?.chapterNumber}`} existingNote={bookmarkNote} onSuccess={handleBookmarkSuccess} mangaTitle={mangaTitle} chapterNumber={data?.chapterNumber} />
-
       <ReaderSettingsModal isOpen={settingsModalOpen} onClose={() => setSettingsModalOpen(false)} onSettingsChange={handleSettingsChange} />
     </div>
   );

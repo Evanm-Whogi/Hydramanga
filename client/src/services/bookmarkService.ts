@@ -1,21 +1,67 @@
-import { apiPost, apiGet, apiDelete } from '@/lib/api';
+import { apiGet, apiPut, apiDelete } from '@/lib/api';
 
-// Add a bookmark to a specific chapter
-export async function addBookmark(seriesId: number, chapterId: number, note?: string): Promise<any> {
-  return await apiPost(`/manga/${seriesId}/chapter/${chapterId}/bookmark`, {note});
+export const BOOKMARK_STATUSES = [
+  { label: 'Reading', value: 'reading' },
+  { label: 'Rereading', value: 'rereading' },
+  { label: 'Planned', value: 'planned' },
+  { label: 'Completed', value: 'completed' },
+  { label: 'Paused', value: 'paused' },
+  { label: 'Dropped', value: 'dropped' },
+] as const;
+
+export type BookmarkStatus = typeof BOOKMARK_STATUSES[number]['value'];
+
+export interface SeriesBookmark {
+  seriesId: number;
+  status: BookmarkStatus;
+  createdAt: string;
+  updatedAt: string;
+  lastUpdatedAt: string | null;
+  lastReadAt: string | null;
+  title: string;
+  cover: any;
+  type: string | null;
+  genres: string[] | null;
+  weightedScore: number | null;
+  rating: number | null;
+  totalChapters: number | null;
+  description: string | null;
+  views: number | null;
+  year: number | null;
+  seriesStatus: string | null;
+  lastChapterId: number | null;
+  lastPageNumber: number | null;
+  chapterNumber: string | null;
+  chapterTitle: string | null;
+  percentageCompleted: number | null;
 }
 
-// Remove a bookmark from a specific chapter
-export async function removeBookmark(seriesId: number, chapterId: number): Promise<any> {
-  return await apiDelete(`/manga/${seriesId}/chapter/${chapterId}/bookmark`);
-}
+export const fetchBookmarks = async (params?: {status?: string[]; type?: string[]; sort?: string;search?: string}): Promise<{ success: boolean; bookmarks: SeriesBookmark[]; total: number }> => {
+  const qs = new URLSearchParams();
+  params?.status?.forEach((s) => qs.append('status', s));
+  params?.type?.forEach((t) => qs.append('type', t));
+  if (params?.sort) qs.set('sort', params.sort);
+  if (params?.search) qs.set('search', params.search);
+  const query = qs.toString();
+  const path = `/bookmarks${query ? `?${query}` : ''}`;
+  const data = await apiGet(path);
+  if (!data) throw new Error('Failed to fetch bookmarks');
+  return data;
+};
 
-// Get all bookmarks for a specific series
-export async function getSeriesBookmarks(seriesId: number): Promise<any> {
-  return await apiGet(`/manga/${seriesId}/bookmarks`);
-}
+export const setBookmark = async (seriesId: number, status: BookmarkStatus) => {
+  const data = await apiPut(`/bookmarks/${seriesId}`, { status });
+  if (!data) throw new Error('Failed to set bookmark');
+  return data;
+};
 
-// Get a bookmark for a specific chapter
-export async function getBookmark(seriesId: number, chapterId: number): Promise<any> {
-  return await apiGet(`/manga/${seriesId}/chapter/${chapterId}/bookmark`);
-}
+export const removeBookmark = async (seriesId: number) => {
+  const data = await apiDelete(`/bookmarks/${seriesId}`);
+  if (!data) throw new Error('Failed to remove bookmark');
+  return data;
+};
+
+export const getStatusLabel = (status: BookmarkStatus | string | null): string => {
+  if (!status) return 'Bookmark';
+  return BOOKMARK_STATUSES.find((s) => s.value === status)?.label ?? status;
+};

@@ -1,183 +1,102 @@
 import { Request, Response, NextFunction } from 'express';
-import { BookmarkService } from '@/services/bookmarkService';
-import logger from '@/services/loggerService';
+import { BookmarkService, BOOKMARK_STATUSES, BookmarkStatus } from '@/services/bookmarkService';
+import { karmaService } from '@/services/karmaService';
+import { badgeService } from '@/services/badgeService';
 import { recordAuditFromRequest } from '@/audit/record';
 
-/**
- * Add or update a bookmark with optional note
- * POST /manga/:id/chapter/:chapterId/bookmark
- */
-export async function addBookmark(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> {
+export async function getBookmarks(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
   try {
-    const userId = (req as any).user.id;
-    const { chapterId } = req.params;
-    const { note } = req.body;
+    const userId = req.user!.id;
+    const statusParam = req.query.status;
+    const typeParam = req.query.type;
+    const status = statusParam
+      ? (Array.isArray(statusParam) ? statusParam : [statusParam]).map(String).filter((s): s is BookmarkStatus => BOOKMARK_STATUSES.includes(s as BookmarkStatus))
+      : undefined;
+    const types = typeParam
+      ? (Array.isArray(typeParam) ? typeParam : [typeParam]).map(String)
+      : undefined;
+    const sort = (req.query.sort as string) || 'bookmarked';
+    const search = req.query.search as string | undefined;
+    const limit = Math.min(parseInt(String(req.query.limit || '500'), 10) || 500, 500);
+    const offset = parseInt(String(req.query.offset || '0'), 10) || 0;
 
-    if (!chapterId) {
-      res.status(400).json({ error: 'Chapter ID is required' });
-      return;
-    }
-
-    const parsedChapterId = parseInt(chapterId, 10);
-    if (isNaN(parsedChapterId)) {
-      res.status(400).json({ error: 'Invalid chapter ID' });
-      return;
-    }
-
-    const bookmark = await BookmarkService.addBookmark(
-      userId,
-      parsedChapterId,
-      note
-    );
-
-    recordAuditFromRequest(req, {
-      action: 'bookmark.create',
-      category: 'library',
-      resourceType: 'chapter',
-      resourceId: String(parsedChapterId),
-      metadata: { seriesId: req.params.id },
+    const result = await BookmarkService.getUserBookmarks(userId, {
+      status,
+      types,
+      sort: ['updated', 'lastRead', 'bookmarked', 'title', 'ranking'].includes(sort) ? sort as any : 'bookmarked',
+      search,
+      limit,
+      offset,
     });
 
-    res.status(200).json({
-      success: true,
-      bookmark,
-    });
+    return res.json({ success: true, bookmarks: result.items, total: result.total });
   } catch (error) {
-    logger.error(`Failed to add bookmark: ${error}`, {
-      service: 'bookmarkController',
-    });
-    res.status(500).json({ error: 'Failed to add bookmark' });
+    return next(error);
   }
 }
 
-/**
- * Remove a bookmark
- * DELETE /manga/:id/chapter/:chapterId/bookmark
- */
-export async function removeBookmark(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> {
+export async function setBookmark(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
   try {
-    const userId = (req as any).user.id;
-    const { chapterId } = req.params;
+    const userId = req.user!.id;
+    const seriesId = parseInt(req.params.seriesId, 10);
+    const { status } = req.body;
 
-    if (!chapterId) {
-      res.status(400).json({ error: 'Chapter ID is required' });
-      return;
+    if (isNaN(seriesId)) {
+      return res.status(400).json({ success: false, message: 'Invalid series ID' });
+    }
+    if (!status || !BOOKMARK_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Valid status is required' });
     }
 
-    const parsedChapterId = parseInt(chapterId, 10);
-    if (isNaN(parsedChapterId)) {
-      res.status(400).json({ error: 'Invalid chapter ID' });
-      return;
+    const existing = await BookmarkService.getBookmarkStatus(userId, seriesId);
+    const bookmark = await BookmarkService.setBookmark(userId, seriesId, status);
+
+    if (!existing) {
+      await karmaService.award({
+        userId,
+        action: 'bookmark_add',
+        sourceType: 'series',
+        sourceId: String(seriesId),
+        idempotencyKey: `bookmark_add:${userId}:${seriesId}`,
+      });
     }
 
-    await BookmarkService.removeBookmark(userId, parsedChapterId);
+    badgeService.evaluateBadgesAsync(userId, 'bookmark_change');
+
+    recordAuditFromRequest(req, {
+      action: existing ? 'bookmark.update' : 'bookmark.create',
+      category: 'library',
+      resourceType: 'series',
+      resourceId: String(seriesId),
+      metadata: { status },
+    });
+
+    return res.json({ success: true, bookmark });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function removeBookmark(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const userId = req.user!.id;
+    const seriesId = parseInt(req.params.seriesId, 10);
+
+    if (isNaN(seriesId)) {
+      return res.status(400).json({ success: false, message: 'Invalid series ID' });
+    }
+
+    await BookmarkService.removeBookmark(userId, seriesId);
 
     recordAuditFromRequest(req, {
       action: 'bookmark.delete',
       category: 'library',
-      resourceType: 'chapter',
-      resourceId: String(parsedChapterId),
-      metadata: { seriesId: req.params.id },
+      resourceType: 'series',
+      resourceId: String(seriesId),
     });
 
-    res.status(200).json({
-      success: true,
-      message: 'Bookmark removed',
-    });
+    return res.json({ success: true });
   } catch (error) {
-    logger.error(`Failed to remove bookmark: ${error}`, {
-      service: 'bookmarkController',
-    });
-    res.status(500).json({ error: 'Failed to remove bookmark' });
-  }
-}
-
-/**
- * Get all bookmarks for a series
- * GET /manga/:id/bookmarks
- */
-export async function getSeriesBookmarks(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> {
-  try {
-    const userId = (req as any).user.id;
-    const { id } = req.params;
-
-    if (!id) {
-      res.status(400).json({ error: 'Series ID is required' });
-      return;
-    }
-
-    const seriesId = parseInt(id, 10);
-    if (isNaN(seriesId)) {
-      res.status(400).json({ error: 'Invalid series ID' });
-      return;
-    }
-
-    const bookmarksList = await BookmarkService.getSeriesBookmarks(
-      userId,
-      seriesId
-    );
-
-    res.status(200).json({
-      bookmarks: bookmarksList,
-      count: bookmarksList.length,
-    });
-  } catch (error) {
-    logger.error(`Failed to get series bookmarks: ${error}`, {
-      service: 'bookmarkController',
-    });
-    res.status(500).json({ error: 'Failed to get bookmarks' });
-  }
-}
-
-/**
- * Get bookmark details for a chapter
- * GET /manga/:id/chapter/:chapterId/bookmark
- */
-export async function getBookmark(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> {
-  try {
-    const userId = (req as any).user.id;
-    const { chapterId } = req.params;
-
-    if (!chapterId) {
-      res.status(400).json({ error: 'Chapter ID is required' });
-      return;
-    }
-
-    const parsedChapterId = parseInt(chapterId, 10);
-    if (isNaN(parsedChapterId)) {
-      res.status(400).json({ error: 'Invalid chapter ID' });
-      return;
-    }
-
-    const bookmark = await BookmarkService.getBookmark(
-      userId,
-      parsedChapterId
-    );
-
-    res.status(200).json({
-      bookmark: bookmark || null,
-      isBookmarked: !!bookmark,
-    });
-  } catch (error) {
-    logger.error(`Failed to get bookmark: ${error}`, {
-      service: 'bookmarkController',
-    });
-    res.status(500).json({ error: 'Failed to get bookmark' });
+    return next(error);
   }
 }

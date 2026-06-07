@@ -285,16 +285,16 @@ class MetricsService {
 
       const totalBookmarks = await db
         .select({ count: sql<number>`COUNT(*)`.as('count') })
-        .from(schema.userSeriesList)
-        .where(eq(schema.userSeriesList.seriesId, seriesId))
+        .from(schema.seriesBookmarks)
+        .where(eq(schema.seriesBookmarks.seriesId, seriesId))
         .limit(1);
 
       const totalFollowers = await db
         .select({ count: sql<number>`COUNT(*)`.as('count') })
-        .from(schema.userSeriesList)
+        .from(schema.seriesBookmarks)
         .where(
           and(
-            eq(schema.userSeriesList.seriesId, seriesId),
+            eq(schema.seriesBookmarks.seriesId, seriesId),
           )
         );
 

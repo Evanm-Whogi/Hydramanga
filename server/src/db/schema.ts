@@ -130,35 +130,20 @@ export const series = pgTable('series', {
   weightedScoreIdIdx: index('idx_series_weighted_score_id').on(t.weightedScore.desc(), t.id),
 }));
 
-// User Custom Lists Table
-export const userLists = pgTable('user_lists', {
-  id: serial('id').primaryKey(),
+export const bookmarkStatusEnum = pgEnum('bookmark_status', ['reading', 'rereading', 'planned', 'completed', 'paused', 'dropped']);
+
+// Series bookmarks (personal reading status — one status per series per user)
+export const seriesBookmarks = pgTable('series_bookmarks', {
   userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(),
-  slug: text('slug').notNull(),
-  isDefault: boolean('is_default').notNull().default(false),
-  isVisible: boolean('is_visible').notNull().default(true),
-  sortOrder: integer('sort_order').notNull().default(0),
+  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }),
+  status: bookmarkStatusEnum('status').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
-  userIdIdx: index('idx_user_lists_user_id').on(t.userId),
-  userSlugUnique: uniqueIndex('idx_user_lists_user_slug').on(t.userId, t.slug),
-  sortOrderIdx: index('idx_user_lists_sort_order').on(t.userId, t.sortOrder),
-}));
-
-// User Series List (Manga in Lists)
-export const userSeriesList = pgTable('user_series_list', {
-  userId: text('user_id').notNull(), 
-  seriesId: integer('series_id').notNull().references(() => series.id),
-  listId: integer('list_id').notNull().references(() => userLists.id, { onDelete: 'cascade' }),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
-}, (t) => ({
-  pk: primaryKey({ columns: [t.userId, t.seriesId] }), // A user can only have a specific series in one list
-  seriesIdIdx: index('idx_user_series_list_series_id').on(t.seriesId),
-  userIdIdx: index('idx_user_series_list_user_id').on(t.userId),
-  listIdIdx: index('idx_user_series_list_list_id').on(t.listId),
-  userListUpdatedIdx: index('idx_user_series_list_user_list_updated').on(t.userId, t.listId, t.updatedAt.desc()),
+  pk: primaryKey({ columns: [t.userId, t.seriesId] }),
+  userIdIdx: index('idx_series_bookmarks_user_id').on(t.userId),
+  userStatusIdx: index('idx_series_bookmarks_user_status').on(t.userId, t.status),
+  seriesIdIdx: index('idx_series_bookmarks_series_id').on(t.seriesId),
 }));
 
 // Announcements
@@ -519,21 +504,6 @@ export const userModeration = pgTable('user_moderation', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
-// Chapter Bookmarks
-export const bookmarks = pgTable('bookmarks', {
-  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
-  chapterId: integer('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
-  note: text('note'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-}, (t) => ({
-  pk: primaryKey({ columns: [t.userId, t.chapterId] }),
-  userIdIdx: index('idx_bookmarks_user_id').on(t.userId),
-  chapterIdIdx: index('idx_bookmarks_chapter_id').on(t.chapterId),
-  userChapterIdx: index('idx_bookmarks_user_chapter').on(t.userId, t.chapterId),
-  createdAtIdx: index('idx_bookmarks_created_at').on(t.createdAt.desc()),
-}));
-
 // Manga Import Progress (for real-time progress tracking)
 export const importStatusEnum = pgEnum('import_status', ['scanning', 'downloading', 'completed', 'failed', 'source_set']);
 export const mangaImportProgress = pgTable('manga_import_progress', {
@@ -610,15 +580,9 @@ export const chaptersRelations = relations(chapters, ({ one }) => ({
   }),
 }));
 
-export const bookmarksRelations = relations(bookmarks, ({ one }) => ({
-  user: one(user, {
-    fields: [bookmarks.userId],
-    references: [user.id],
-  }),
-  chapter: one(chapters, {
-    fields: [bookmarks.chapterId],
-    references: [chapters.id],
-  }),
+export const seriesBookmarksRelations = relations(seriesBookmarks, ({ one }) => ({
+  user: one(user, { fields: [seriesBookmarks.userId], references: [user.id] }),
+  series: one(series, { fields: [seriesBookmarks.seriesId], references: [series.id] }),
 }));
 
 export const userReadingProgressRelations = relations(userReadingProgress, ({ one }) => ({
@@ -687,27 +651,8 @@ export const reviewVotesRelations = relations(reviewVotes, ({ one }) => ({
   }),
 }));
 
-export const userListsRelations = relations(userLists, ({ one, many }) => ({
-  user: one(user, {
-    fields: [userLists.userId],
-    references: [user.id],
-  }),
-  items: many(userSeriesList),
-}));
-
-export const userSeriesListRelations = relations(userSeriesList, ({ one }) => ({
-  series: one(series, {
-    fields: [userSeriesList.seriesId],
-    references: [series.id],
-  }),
-  list: one(userLists, {
-    fields: [userSeriesList.listId],
-    references: [userLists.id],
-  }),
-}));
-
 export const seriesRelations = relations(series, ({ many }) => ({
-  usersTracking: many(userSeriesList),
+  bookmarks: many(seriesBookmarks),
   chapters: many(chapters),
   comments: many(comments),
   reviews: many(reviews),

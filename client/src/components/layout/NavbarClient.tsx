@@ -122,7 +122,7 @@ export default function NavbarClient() {
                             <NavItem href='/collections' icon={<LibraryBig className="size-4 inline" />} label='Collections' />
                             {user && (
                                 <>
-                                    <NavItem href='/lists' icon={<BookTextIcon className="size-4 inline" />} label='My Lists' />
+                                    <NavItem href='/bookmarks' icon={<BookTextIcon className="size-4 inline" />} label='Bookmarks' />
                                     <NavItem href='/history' icon={<ChartBarDecreasingIcon className="size-4 inline" />} label='History' />
                                 </>
                             )}
@@ -159,7 +159,7 @@ export default function NavbarClient() {
                                                     <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                                                 </div>
                                                 <Link href="/users/me?tab=overview" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><UserIcon className="size-4" /> My Profile</Link>
-                                                <Link href="/lists" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><ListIcon className="size-4" /> My Lists</Link>
+                                                <Link href="/bookmarks" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><BookTextIcon className="size-4" /> Bookmarks</Link>
 
                                                 {user?.role === "admin" && (
                                                     <Link href="/admin" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><ShieldIcon className="size-4" /> Admin</Link>
@@ -214,8 +214,8 @@ export default function NavbarClient() {
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-3">
-                                        <Link href="/lists" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/lists' ? 'text-primary' : 'text-muted'}`}>
-                                            <BookTextIcon className="size-4" /> My Lists
+                                        <Link href="/bookmarks" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/bookmarks' ? 'text-primary' : 'text-muted'}`}>
+                                            <BookTextIcon className="size-4" /> Bookmarks
                                         </Link>
                                         <Link href="/collections" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/collections' ? 'text-primary' : 'text-muted'}`}>
                                             <LibraryBig className="size-4" /> Collections

@@ -128,11 +128,11 @@ MangaDetails.displayName = 'MangaDetails';
 
 interface MangaContentProps {
   manga: any;
-  initialListName: string | null;
+  initialBookmarkStatus: string | null;
   gallery: any[];
 }
 
-export default function MangaContent({ manga, initialListName, gallery }: MangaContentProps) {
+export default function MangaContent({ manga, initialBookmarkStatus, gallery }: MangaContentProps) {
   const [analytics, setAnalytics] = useState<any>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -477,7 +477,7 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
               comments={manga.comments}
               commentPagination={manga.commentPagination}
               gallery={gallery}
-              initialListName={initialListName} 
+              initialBookmarkStatus={initialBookmarkStatus} 
               importProgress={progress} 
               chaptersMaxHeight={chaptersMaxHeight}
             />

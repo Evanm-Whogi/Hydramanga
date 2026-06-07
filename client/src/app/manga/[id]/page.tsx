@@ -38,12 +38,12 @@ export default async function MangaPage({ params }: Props) {
     const gallery = await fetchGallery(id);
     const manga = data.manga;
     const coverUrl = manga.cover?.raw?.url || manga.cover?.x350?.x3 || undefined;
-    const initialListName = data.userStatus?.listName ?? null;
+    const initialBookmarkStatus = data.userStatus?.status ?? null;
 
     return (
       <>
         <JsonLd data={buildComicSeriesJsonLd({ id: manga.id, title: manga.title, description: manga.description, coverUrl })} />
-        <MangaContent manga={manga} gallery={gallery} initialListName={initialListName} />
+        <MangaContent manga={manga} gallery={gallery} initialBookmarkStatus={initialBookmarkStatus} />
       </>
     );
 }

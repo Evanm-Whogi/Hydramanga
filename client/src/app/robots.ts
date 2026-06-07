@@ -13,7 +13,7 @@ export default function robots(): MetadataRoute.Robots {
           '/admin/',
           '/api/',
           '/profile',
-          '/lists',
+          '/bookmarks',
           '/history',
           '/users/me',
           '/login',

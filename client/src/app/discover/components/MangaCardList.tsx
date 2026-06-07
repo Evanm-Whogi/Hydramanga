@@ -52,7 +52,7 @@ function MangaCardList({ manga, onNavigate, priority }: { manga?: any; onNavigat
                         <Eye className="size-3.5 text-blue-300 mr-1" /> {manga.views > 0 ? formatViewCount(manga.views) : '0' }
                     </span>
                     <span className="text-sm text-muted font-medium uppercase flex items-center">
-                        <Bookmark className="size-3.5 text-green-300 mr-1" /> {formatViewCount(manga.followerCount) || '0' }
+                        <Bookmark className="size-3.5 text-green-300 mr-1" /> {manga.bookmarkStatusLabel ?? ((manga.followerCount ?? 0) > 0 ? formatViewCount(manga.followerCount) : '0')}
                     </span>
                 </div>
                 <p className="text-md text-muted font-medium line-clamp-3 max-w-4xl">{manga.description}</p>

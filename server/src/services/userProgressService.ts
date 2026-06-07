@@ -488,8 +488,8 @@ class UserProgressService {
         .select({
           seriesSaved: sql<number>`COUNT(*)`.as('series_saved'),
         })
-        .from(schema.userSeriesList)
-        .where(eq(schema.userSeriesList.userId, userId));
+        .from(schema.seriesBookmarks)
+        .where(eq(schema.seriesBookmarks.userId, userId));
 
       const seriesSaved = seriesSavedResult[0]?.seriesSaved || 0;
 

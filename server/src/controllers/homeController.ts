@@ -251,12 +251,12 @@ export const getMostFollowed = async (req: Request, res: Response) => {
         async () => {
             const followerCounts = db
                 .select({
-                    seriesId: schema.userSeriesList.seriesId,
+                    seriesId: schema.seriesBookmarks.seriesId,
                     count: sql<number>`count(*)`.as('follower_count'),
                 })
-                .from(schema.userSeriesList)
-                .where(threshold ? gte(schema.userSeriesList.updatedAt, threshold) : undefined)
-                .groupBy(schema.userSeriesList.seriesId)
+                .from(schema.seriesBookmarks)
+                .where(threshold ? gte(schema.seriesBookmarks.updatedAt, threshold) : undefined)
+                .groupBy(schema.seriesBookmarks.seriesId)
                 .orderBy(desc(sql`count(*)`))
                 .limit(limit)
                 .as('fc');
@@ -293,9 +293,12 @@ export const getRecentChaptersFromUserList = async (req: Request, res: Response)
         { key: cacheKey, ttl: HOME_CACHE_TTL.userSpecific },
         async () => {
             const userSeriesIds = await db
-                .selectDistinct({ seriesId: schema.userSeriesList.seriesId })
-                .from(schema.userSeriesList)
-                .where(eq(schema.userSeriesList.userId, userId));
+                .selectDistinct({ seriesId: schema.seriesBookmarks.seriesId })
+                .from(schema.seriesBookmarks)
+                .where(and(
+                    eq(schema.seriesBookmarks.userId, userId),
+                    inArray(schema.seriesBookmarks.status, ['reading', 'rereading']),
+                ));
 
             const seriesIds = userSeriesIds.map((r) => r.seriesId);
             if (seriesIds.length === 0) return [];

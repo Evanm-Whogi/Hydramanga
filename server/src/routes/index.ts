@@ -13,7 +13,7 @@ import reviewRoutes from '@/routes/reviewRoutes';
 import announcementRoutes from '@/routes/announcementRoutes';
 import adminRoutes from '@/routes/adminRoutes';
 import pageRoutes from '@/routes/pageRoutes';
-import listRoutes from '@/routes/listRoutes';
+import bookmarkRoutes from '@/routes/bookmarkRoutes';
 import contactRoutes from '@/routes/contactRoutes';
 import userRoutes from '@/routes/userRoutes';
 import importRequestRoutes from '@/routes/importRequestRoutes';
@@ -36,7 +36,7 @@ module.exports = (app: Express) => {
     app.use('/manga', optionalAuthMiddleware, mangaRoutes);
     app.use('/manga/progress', authMiddleware, progressRoutes);
 
-    app.use('/lists', authMiddleware, listRoutes);
+    app.use('/bookmarks', authMiddleware, bookmarkRoutes);
 
     app.get('/analytics/trending', getTrending as RequestHandler);
     app.get('/analytics/manga/:id', getMangaAnalytics as RequestHandler);

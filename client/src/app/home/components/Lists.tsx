@@ -129,9 +129,9 @@ export default function Lists() {
                             </CarouselSection>
                         )}
 
-                        {/* New chapters from your list (within 3 days) */}
-                        {recentChaptersFromList?.length > 0 && (
-                            <CarouselSection title="New chapters from your list (last 3 days)">
+                        {/* New chapters from reading/rereading bookmarks */}
+                        {user && recentChaptersFromList?.length > 0 && (
+                            <CarouselSection title="New Chapters from Your Bookmarks">
                                 {recentChaptersFromList.map((item: any) => (
                                     <div key={`list-chapter-${item.series?.id}-${item.chapter?.id}`} className="flex-[0_0_45%] lg:flex-[0_0_14%]">
                                         <RecentChapterFromListCard item={item} />

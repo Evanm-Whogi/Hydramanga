@@ -175,10 +175,10 @@ async function enrichDiscoverSearchPayload(
             .leftJoin(schema.mangaViewStats, eq(schema.series.id, schema.mangaViewStats.seriesId))
             .where(inArray(schema.series.id, seriesIds)),
         db
-            .select({ seriesId: schema.userSeriesList.seriesId, count: count() })
-            .from(schema.userSeriesList)
-            .where(inArray(schema.userSeriesList.seriesId, seriesIds))
-            .groupBy(schema.userSeriesList.seriesId),
+            .select({ seriesId: schema.seriesBookmarks.seriesId, count: count() })
+            .from(schema.seriesBookmarks)
+            .where(inArray(schema.seriesBookmarks.seriesId, seriesIds))
+            .groupBy(schema.seriesBookmarks.seriesId),
         db
             .selectDistinctOn([schema.chapters.seriesId], getTableColumns(schema.chapters))
             .from(schema.chapters)
@@ -424,7 +424,7 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
                 },
                 orderBy: (chaptersTable, { asc }) => [asc(chaptersTable.chapterNumber)],
             },
-            usersTracking: { where: (ut, { eq: eqFn }) => eqFn(ut.userId, userId) },
+            bookmarks: { where: (b, { eq: eqFn }) => eqFn(b.userId, userId) },
             },
         })
         : await db.query.series.findFirst({
@@ -453,17 +453,11 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
         return res.status(404).json({ status: 404, message: "Not found" });
     }
 
-    // Get user's list information if they're tracking this manga
-    const mangaWithTracking = mangaData as typeof mangaData & { usersTracking?: { listId: number }[] };
-    const userListInfo = mangaWithTracking.usersTracking?.[0];
-    let userStatus = null;
-    if (userListInfo?.listId) {
-        const userList = await db.query.userLists.findFirst({
-            where: eq(schema.userLists.id, userListInfo.listId),
-        });
-        userStatus = userList ? { listId: userList.id, listName: userList.name, listSlug: userList.slug } : null;
-    }
-    const { usersTracking, ...manga } = mangaWithTracking;
+    // Get user's bookmark status if logged in
+    const mangaWithBookmark = mangaData as typeof mangaData & { bookmarks?: { status: string }[] };
+    const bookmarkRow = mangaWithBookmark.bookmarks?.[0];
+    const userStatus = bookmarkRow ? { status: bookmarkRow.status } : null;
+    const { bookmarks: _bookmarks, ...manga } = mangaWithBookmark as any;
 
     // Fetch chapter view stats for all chapters
     const chapterViewStats = await metricsService.getSeriesChapterStats(id);
@@ -528,63 +522,6 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
         manga: enrichedRelationships ? { ...manga, relationships: enrichedRelationships } : manga,
         userStatus
     })
-}
-
-// Aggregate endpoint: Get all lists with their manga items for the lists page
-export async function getAllLists(req: Request, res: Response) {
-    const userId = req.user.id;
-
-    // Ensure user has default lists
-    const { ensureDefaultLists } = await import('./listController');
-    await ensureDefaultLists(userId);
-
-    // Get all user lists (include hidden for management)
-    const userLists = await db.query.userLists.findMany({
-        where: eq(schema.userLists.userId, userId),
-        orderBy: (userLists, { asc }) => [asc(userLists.sortOrder)],
-    });
-
-    // Get all series list items
-    const results = await db.query.userSeriesList.findMany({
-        where: eq(schema.userSeriesList.userId, userId),
-        with: {
-            series: true,
-            list: true,
-        },
-        orderBy: (userSeriesList, { desc }) => [desc(userSeriesList.updatedAt)],
-    });
-
-    // Recently added (last 20 items across all lists)
-    const addedRaw = results
-        .slice(0, 20)
-        .map(item => ({
-            ...item.series,
-            listStatus: item.list?.slug || '',
-            listName: item.list?.name || '',
-            addedAt: item.updatedAt 
-        }));
-
-    // Build dynamic lists based on user's custom lists
-    const listsData: any = { added: await enrichWithViewStats(addedRaw).then(enrichWithLatestChapter) };
-
-    // Group items by list
-    for (const list of userLists) {
-        const listItems = results
-            .filter(item => item.listId === list.id)
-            .map(item => ({
-                ...item.series,
-                listStatus: list.slug,
-                listName: list.name,
-                addedAt: item.updatedAt 
-            }));
-
-        listsData[list.slug] = await enrichWithViewStats(listItems).then(enrichWithLatestChapter);
-    }
-
-    return res.json({ 
-        lists: userLists,
-        ...listsData 
-    });
 }
 
 export async function getPages(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
