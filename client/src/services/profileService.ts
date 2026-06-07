@@ -1,5 +1,6 @@
 import { apiGet, apiPost } from '@/lib/api';
 import type { UserStats } from '@/types/stats';
+import type { EarnedBadge } from '@/lib/badgeConfig';
 
 export interface PublicProfile {
   id: string;
@@ -11,6 +12,7 @@ export interface PublicProfile {
   createdAt?: string;
   lastOnlineAt?: string;
   karmaTotal?: number;
+  badges?: EarnedBadge[];
   isPrivate?: boolean;
   isOwner?: boolean;
   isProfilePublic?: boolean;

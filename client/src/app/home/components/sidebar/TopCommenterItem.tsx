@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { MessageCircle, TrendingDown, TrendingUp } from "lucide-react";
+import BadgeList from "@/components/badges/BadgeList";
 
 const rankStyles: Record<number, string> = {
   1: "bg-yellow-500/20 text-yellow-400 border-yellow-500/40",
@@ -51,11 +52,7 @@ export default function TopCommenterItem({ user, rank }: { user: any; rank: numb
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className="truncate text-sm font-medium text-primary">{user.name}</p>
-          {user.role && user.role !== "user" && (
-            <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-[10px] capitalize text-muted">
-              {user.role}
-            </span>
-          )}
+          <BadgeList badges={user.badges} iconSize={12} />
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className="inline-flex items-center gap-1 text-xs text-muted">

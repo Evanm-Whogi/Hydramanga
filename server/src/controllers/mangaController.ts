@@ -14,8 +14,8 @@ import { cacheService } from '@/services/cacheService';
 import { CATALOG_CACHE_TTL } from '@/lib/catalogCache';
 import axios from 'axios';
 import { getCollectionsList } from '@/services/collectionsService';
-import { enrichCommentsWithKarma } from '@/lib/enrichAuthors';
 import { fetchSeriesChapterFlags } from '@/lib/seriesQueries';
+import { commentService } from '@/services/commentService';
 import { recordAuditFromRequest } from '@/audit/record';
 import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
 
@@ -424,35 +424,6 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
                 },
                 orderBy: (chaptersTable, { asc }) => [asc(chaptersTable.chapterNumber)],
             },
-            comments: {
-                where: (comments, { isNull }) => isNull(comments.parentId),
-                with: {
-                    author: {
-                        columns: {
-                            id: true,
-                            name: true,
-                            image: true,
-                            role: true,
-                        },
-                    },
-                    votes: true,
-                    replies: {
-                        with: {
-                            author: {
-                                columns: {
-                                    id: true,
-                                    name: true,
-                                    image: true,
-                                    role: true,
-                                },
-                            },
-                            votes: true,
-                        },
-                        orderBy: (comments, { asc }) => [asc(comments.createdAt)],
-                    },
-                },
-                orderBy: (comments, { desc }) => [desc(comments.createdAt)],
-            },
             usersTracking: { where: (ut, { eq: eqFn }) => eqFn(ut.userId, userId) },
             },
         })
@@ -471,35 +442,6 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
                     scraperId: true,
                 },
                 orderBy: (chaptersTable, { asc }) => [asc(chaptersTable.chapterNumber)],
-            },
-            comments: {
-                where: (comments, { isNull }) => isNull(comments.parentId),
-                with: {
-                    author: {
-                        columns: {
-                            id: true,
-                            name: true,
-                            image: true,
-                            role: true,
-                        },
-                    },
-                    votes: true,
-                    replies: {
-                        with: {
-                            author: {
-                                columns: {
-                                    id: true,
-                                    name: true,
-                                    image: true,
-                                    role: true,
-                                },
-                            },
-                            votes: true,
-                        },
-                        orderBy: (comments, { asc }) => [asc(comments.createdAt)],
-                    },
-                },
-                orderBy: (comments, { desc }) => [desc(comments.createdAt)],
             },
             },
         });
@@ -577,9 +519,9 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
         }
     }
 
-    if (manga.comments?.length) {
-        manga.comments = await enrichCommentsWithKarma(manga.comments);
-    }
+    const commentResult = await commentService.fetchSeriesComments(id, { sort: 'recent', page: 1 });
+    (manga as { comments?: unknown; commentPagination?: unknown }).comments = commentResult.comments;
+    (manga as { commentPagination?: unknown }).commentPagination = commentResult.pagination;
 
     return res.json({
         status: 200,

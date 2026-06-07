@@ -3,6 +3,7 @@ import { db } from '../db';
 import * as schema from '../db/schema';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 import { karmaService } from '@/services/karmaService';
+import { badgeService } from '@/services/badgeService';
 import { recordAuditFromRequest } from '@/audit/record';
 
 // Helper function to create default lists for a user
@@ -411,6 +412,8 @@ export async function addToList(req: Request, res: Response, next: NextFunction)
             resourceId: String(listId),
             metadata: { seriesId },
         });
+
+        badgeService.evaluateBadgesAsync(userId, 'list_change');
 
         return res.json({ 
             success: true, 

@@ -1,34 +1,11 @@
 import { db, schema } from '@/db/index';
-import { eq, and, desc, sql, inArray, count } from 'drizzle-orm';
+import { eq, and, desc, inArray, count } from 'drizzle-orm';
 import { karmaService } from '@/services/karmaService';
 import { notificationService } from '@/services/notificationService';
-
-type AuthorWithRank = {
-  id: string;
-  name: string;
-  image: string | null;
-  role: string;
-  levelName: string;
-};
+import { buildThreadTree } from '@/lib/buildThreadTree';
+import { enrichAuthors } from '@/lib/enrichAuthors';
 
 class BoardService {
-  private async enrichAuthors<T extends { author?: { id: string } | null }>(items: T[]): Promise<T[]> {
-    const userIds = [...new Set(items.map((i) => i.author?.id).filter(Boolean))] as string[];
-    const karmaMap = await karmaService.getKarmaSummaries(userIds);
-
-    return items.map((item) => {
-      if (!item.author) return item;
-      const karma = karmaMap[item.author.id];
-      return {
-        ...item,
-        author: {
-          ...item.author,
-          levelName: karma?.levelName ?? 'Rookie Reader',
-        } as AuthorWithRank,
-      };
-    });
-  }
-
   async listPosts(page = 1, limit = 20) {
     const offset = (page - 1) * limit;
     const posts = await db.query.boardPosts.findMany({
@@ -66,7 +43,7 @@ class BoardService {
       replyCount: countMap.get(post.id) ?? 0,
     }));
 
-    return this.enrichAuthors(withCounts);
+    return enrichAuthors(withCounts);
   }
 
   async getPost(postId: number) {
@@ -79,19 +56,30 @@ class BoardService {
     });
     if (!post) return null;
 
-    const replies = await db.query.boardReplies.findMany({
+    const flatReplies = await db.query.boardReplies.findMany({
       where: and(eq(schema.boardReplies.postId, postId), eq(schema.boardReplies.isDeleted, false)),
       with: {
         author: { columns: { id: true, name: true, image: true, role: true } },
         votes: true,
       },
-      orderBy: (r, { asc }) => [asc(r.createdAt)],
     });
 
-    const [enrichedPost] = await this.enrichAuthors([post]);
-    const enrichedReplies = await this.enrichAuthors(replies);
+    const replyTree = buildThreadTree(flatReplies);
+    const [enrichedPost] = await enrichAuthors([post]);
+    const enrichedReplies = await this.enrichReplyTree(replyTree);
 
     return { post: enrichedPost, replies: enrichedReplies };
+  }
+
+  private async enrichReplyTree<T extends { author?: { id: string } | null; replies: T[] }>(nodes: T[]): Promise<T[]> {
+    const enriched = await enrichAuthors(nodes);
+    return Promise.all(
+      enriched.map(async (node) => {
+        if (!node.replies?.length) return node;
+        const replies = await this.enrichReplyTree(node.replies);
+        return { ...node, replies };
+      })
+    );
   }
 
   async createPost(userId: string, title: string, content: string) {
@@ -117,6 +105,14 @@ class BoardService {
     });
     if (!post || post.isDeleted) throw new Error('Post not found');
     if (post.isLocked) throw new Error('Post is locked');
+
+    if (parentId) {
+      const parentReply = await db.query.boardReplies.findFirst({
+        where: eq(schema.boardReplies.id, parentId),
+      });
+      if (!parentReply || parentReply.isDeleted) throw new Error('Parent reply not found');
+      if (parentReply.postId !== postId) throw new Error('Parent reply belongs to a different post');
+    }
 
     const [reply] = await db
       .insert(schema.boardReplies)

@@ -379,6 +379,7 @@ export const userSettings = pgTable('user_settings', {
   hideNsfw: boolean('hide_nsfw').notNull().default(false),
   isProfilePublic: boolean('is_profile_public').notNull().default(true),
   incognitoMode: boolean('incognito_mode').notNull().default(false),
+  incognitoChaptersRead: integer('incognito_chapters_read').notNull().default(0),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   userIdIdx: index('idx_user_settings_user_id').on(t.userId),
@@ -397,6 +398,15 @@ export const karmaTransactions = pgTable('karma_transactions', {
 }, (t) => ({
   userIdIdx: index('idx_karma_transactions_user_id').on(t.userId),
   createdAtIdx: index('idx_karma_transactions_created_at').on(t.createdAt.desc()),
+}));
+
+export const userBadges = pgTable('user_badges', {
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  badgeId: text('badge_id').notNull(),
+  earnedAt: timestamp('earned_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.badgeId] }),
+  userIdIdx: index('idx_user_badges_user_id').on(t.userId),
 }));
 
 export const auditLogs = pgTable('audit_logs', {

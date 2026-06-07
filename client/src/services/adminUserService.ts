@@ -60,7 +60,7 @@ export async function listAdminUsers(params: ListAdminUsersParams = {}): Promise
 export interface AdminUserUpdatePayload {
   name?: string;
   email?: string;
-  role?: 'user' | 'admin';
+  role?: 'user' | 'admin' | 'moderator';
   bio?: string | null;
   emailVerified?: boolean;
   image?: string | null;

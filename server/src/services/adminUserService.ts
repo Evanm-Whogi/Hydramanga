@@ -3,8 +3,9 @@ import { eq, or, ilike, desc, asc, count, and, ne, SQL, gt, lt, isNull, isNotNul
 import { userProgressService } from '@/services/userProgressService';
 import { isUserBanned } from '@/lib/banHelpers';
 import { isAllowedProfileImageUrl } from '@/lib/profileImagePath';
+import { badgeService } from '@/services/badgeService';
 
-const VALID_ROLES = ['user', 'admin'] as const;
+const VALID_ROLES = ['user', 'admin', 'moderator'] as const;
 type UserRole = (typeof VALID_ROLES)[number];
 
 export interface AdminUserListParams {
@@ -313,6 +314,10 @@ class AdminUserService {
       .set(patch)
       .where(eq(schema.user.id, userId))
       .returning(userSelectFields);
+
+    if (updates.role !== undefined) {
+      badgeService.evaluateBadgesAsync(userId, 'role_change');
+    }
 
     const xpMap = await userProgressService.getUserXpSummaries([userId]);
 

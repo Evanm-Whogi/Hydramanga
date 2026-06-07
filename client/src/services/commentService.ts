@@ -1,4 +1,23 @@
-import { apiPost, apiDelete, apiPut } from '@/lib/api';
+import { apiGet, apiPost, apiDelete, apiPut } from '@/lib/api';
+
+export type CommentSort = 'recent' | 'oldest' | 'top' | 'worst';
+
+export type CommentPagination = {
+  page: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+};
+
+export async function fetchComments(seriesId: number, options: { sort?: CommentSort; page?: number; limit?: number } = {}): Promise<{ comments: any[]; pagination: CommentPagination }> {
+  const params = new URLSearchParams({ seriesId: String(seriesId) });
+  if (options.sort) params.set('sort', options.sort);
+  if (options.page) params.set('page', String(options.page));
+  if (options.limit) params.set('limit', String(options.limit));
+  const data = await apiGet(`/comments?${params.toString()}`);
+  if (!data) throw new Error('Failed to fetch comments');
+  return data;
+}
 
 export async function postComment({ seriesId, content, parentId, isSpoiler }: { seriesId: number, content: string, parentId?: number | null, isSpoiler?: boolean }): Promise<any> {
     const data = await apiPost('/comments', { seriesId, content, parentId, isSpoiler });

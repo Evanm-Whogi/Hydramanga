@@ -1,6 +1,6 @@
 import { db } from '@/db/index';
 import { schema } from '@/db/index';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 const DEFAULT_HIDE_NSFW = false;
 const DEFAULT_PROFILE_PUBLIC = true;
@@ -85,4 +85,35 @@ export async function updateUserSettings(userId: string, updates: Partial<UserSe
 
   settingsCache.delete(userId);
   return { hideNsfw, isProfilePublic, incognitoMode };
+}
+
+export async function incrementIncognitoChaptersRead(userId: string): Promise<number> {
+  const existing = await db
+    .select({ incognitoChaptersRead: schema.userSettings.incognitoChaptersRead })
+    .from(schema.userSettings)
+    .where(eq(schema.userSettings.userId, userId))
+    .limit(1);
+
+  if (existing.length) {
+    const [row] = await db
+      .update(schema.userSettings)
+      .set({
+        incognitoChaptersRead: sql`${schema.userSettings.incognitoChaptersRead} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.userSettings.userId, userId))
+      .returning({ incognitoChaptersRead: schema.userSettings.incognitoChaptersRead });
+    settingsCache.delete(userId);
+    return row?.incognitoChaptersRead ?? 0;
+  }
+
+  await db.insert(schema.userSettings).values({
+    userId,
+    hideNsfw: DEFAULT_HIDE_NSFW,
+    isProfilePublic: DEFAULT_PROFILE_PUBLIC,
+    incognitoMode: DEFAULT_INCOGNITO_MODE,
+    incognitoChaptersRead: 1,
+  });
+  settingsCache.delete(userId);
+  return 1;
 }

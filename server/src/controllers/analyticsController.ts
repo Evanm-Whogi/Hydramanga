@@ -1,7 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { metricsService } from '@/services/metricsService';
 import { userProgressService } from '@/services/userProgressService';
-import { getUserSettings } from '@/services/userSettingsService';
+import { getUserSettings, incrementIncognitoChaptersRead } from '@/services/userSettingsService';
+import { badgeService } from '@/services/badgeService';
 import logger from '@/services/loggerService';
 import { db, schema } from '@/db/index';
 import { eq, avg, count } from 'drizzle-orm';
@@ -221,6 +222,8 @@ export async function markChapterAsRead(req: Request, res: Response, next: NextF
     }
 
     if (await isIncognitoEnabled(userId)) {
+      await incrementIncognitoChaptersRead(userId);
+      badgeService.evaluateBadgesAsync(userId, 'chapter_read');
       return res.json({
         status: 200,
         message: 'Incognito mode enabled; progress not persisted',

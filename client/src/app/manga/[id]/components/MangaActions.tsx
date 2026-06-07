@@ -14,13 +14,14 @@ interface MangaActionsProps {
     manga: any;
     chapters: any[];
     comments: any;
+    commentPagination?: { page: number; limit: number; total: number; hasMore: boolean };
     gallery: any[];
     initialListName: string | null;
     importProgress: any;
     chaptersMaxHeight?: number | null;
 }
 
-export default function MangaActions({ manga, chapters, comments, gallery, initialListName, importProgress, chaptersMaxHeight }: MangaActionsProps) {
+export default function MangaActions({ manga, chapters, comments, commentPagination, gallery, initialListName, importProgress, chaptersMaxHeight }: MangaActionsProps) {
     const [page, setPage] = useState<MangaActionsPage>("chapters");
     const { user } = useUser();
 
@@ -52,7 +53,7 @@ export default function MangaActions({ manga, chapters, comments, gallery, initi
 
         <div className="flex flex-col pt-2 gap-2">
             {page === "chapters" && <Chapters manga={{ ...manga, chapters }} progress={importProgress} maxHeight={chaptersMaxHeight} />}
-            {page === "comments" && <Comments manga={manga} comments={comments} />}
+            {page === "comments" && <Comments manga={manga} comments={comments} commentPagination={commentPagination} />}
             {page === "reviews" && <Reviews seriesId={manga.id} />}
             {page === "gallery" && <Gallery gallery={gallery} mangaTitle={manga.title} />}
         </div>

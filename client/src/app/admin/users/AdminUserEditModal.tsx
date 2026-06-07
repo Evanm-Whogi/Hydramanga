@@ -26,7 +26,9 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
   const { user: currentUser, session } = useUser();
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
-  const [role, setRole] = useState<"user" | "admin">(user.role === "admin" ? "admin" : "user");
+  const [role, setRole] = useState<"user" | "admin" | "moderator">(
+    user.role === "admin" ? "admin" : user.role === "moderator" ? "moderator" : "user"
+  );
   const [bio, setBio] = useState(user.bio ?? "");
   const [emailVerified, setEmailVerified] = useState(user.emailVerified);
   const [image, setImage] = useState(user.image ?? "");
@@ -235,10 +237,11 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
                   <label className="text-sm font-medium text-muted ml-1">Role</label>
                   <select
                     value={role}
-                    onChange={(e) => setRole(e.target.value as "user" | "admin")}
+                    onChange={(e) => setRole(e.target.value as "user" | "admin" | "moderator")}
                     className="w-full bg-foreground border border-borders text-primary px-4 py-2.5 rounded-xl outline-none focus:border-borders focus:ring-1 focus:ring-borders"
                   >
                     <option value="user">user</option>
+                    <option value="moderator">moderator</option>
                     <option value="admin">admin</option>
                   </select>
               </div>

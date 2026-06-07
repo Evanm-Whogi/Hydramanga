@@ -6,6 +6,7 @@ import { getPublicProfile, type PublicProfile } from "@/services/profileService"
 import { useUser } from "@/providers/UserProvider";
 import Overview from "@/app/profile/components/Overview";
 import ProfileContent from "@/app/profile/components/ProfileContent";
+import ProfileBadgesCard from "@/components/badges/ProfileBadgesCard";
 import type { UserKarma } from "@/types/stats";
 import { redirect } from "next/navigation";
 
@@ -113,6 +114,7 @@ function PublicProfileView({ identifier }: { identifier: string }) {
                 <KarmaCard karma={profile.stats.karma} />
               </div>
             )}
+            <ProfileBadgesCard badges={profile.badges} />
           </div>
           <div className="flex flex-col w-full lg:w-2/3 lg:ml-5 mt-5 lg:mt-0 space-y-4">
             {profile.isOwner && (

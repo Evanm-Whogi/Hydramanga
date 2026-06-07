@@ -5,6 +5,7 @@ import { cacheService } from '@/services/cacheService';
 import { karmaService } from '@/services/karmaService';
 import { readingActivityService } from '@/services/readingActivityService';
 import { READING_TIME_DAY_THRESHOLD_SECONDS } from '@/config/karmaConfig';
+import { badgeService } from '@/services/badgeService';
 
 // Cache constants
 const CACHE_TTL = {
@@ -97,6 +98,7 @@ class UserProgressService {
           sourceId: String(chapterId),
           idempotencyKey: `chapter_read:${userId}:${chapterId}`,
         });
+        badgeService.evaluateBadgesAsync(userId, 'chapter_read');
       }
 
       // Upsert per-chapter progress
@@ -327,6 +329,7 @@ class UserProgressService {
       logger.info(`Chapter marked as read: userId=${userId}, chapterId=${chapterId}`, {
         service: 'userProgressService',
       });
+      badgeService.evaluateBadgesAsync(userId, 'chapter_read');
     } catch (error) {
       logger.error(`Failed to mark chapter as read: ${error}`, { service: 'userProgressService' });
       throw error;
@@ -621,6 +624,7 @@ class UserProgressService {
         `Recorded reading time: userId=${userId}, seriesId=${seriesId}, chapterId=${chapterId}, seconds=${seconds}`,
         { service: 'userProgressService' }
       );
+      badgeService.evaluateBadgesAsync(userId, 'reading_time');
     } catch (error) {
       logger.error(
         `Failed to record reading time for userId=${userId}, seriesId=${seriesId}: ${error}`,

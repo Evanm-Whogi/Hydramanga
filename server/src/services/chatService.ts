@@ -22,6 +22,7 @@ export interface ChatMessagePayload {
 }
 
 import { enrichAuthors } from '@/lib/enrichAuthors';
+import { badgeService } from '@/services/badgeService';
 import { normalizeUserContent } from '@/lib/normalizeUserContent';
 import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
 import { validateContentImagesAsync } from '@/lib/externalImageValidation';
@@ -107,6 +108,7 @@ class ChatService {
     if (enriched.author) payload.author = enriched.author as ChatMessagePayload['author'];
 
     await redisPublisher.publish(CHAT_CHANNEL, JSON.stringify({ type: 'message', data: payload }));
+    badgeService.evaluateBadgesAsync(userId, 'chat_message');
     return payload;
   }
 

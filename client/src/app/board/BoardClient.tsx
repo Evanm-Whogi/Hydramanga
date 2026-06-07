@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { Pin, Lock } from "lucide-react";
 import { toast } from "react-toastify";
 import { getBoardPosts, getBoardPost, createBoardPost, createBoardReply, voteBoardPost, voteBoardReply, adminBoardPost, updateBoardPost, deleteBoardPost, updateBoardReply, deleteBoardReply } from "@/services/boardService";  
@@ -20,7 +20,7 @@ export default function BoardClient() {
   const [posts, setPosts] = useState<any[]>([]);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [replyTextByPostId, setReplyTextByPostId] = useState<Record<number, string>>({});
+  const [replyTextByKey, setReplyTextByKey] = useState<Record<string, string>>({});
   const [menuOpenKey, setMenuOpenKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshVersions, setRefreshVersions] = useState<Record<number, number>>({});
@@ -60,14 +60,12 @@ export default function BoardClient() {
     }
   };
 
-  const handleReply = async (postId: number) => {
+  const handleReply = async (postId: number, content: string, parentId?: number) => {
     if (!requireAuth(user, '/board')) return;
     if (isReplyRateLimited) return;
-    const replyText = replyTextByPostId[postId] ?? "";
-    if (!requireTrimmed(replyText, "Please write a reply.")) return;
+    if (!requireTrimmed(content, "Please write a reply.")) return;
     try {
-      await createBoardReply(postId, replyText);
-      setReplyTextByPostId((prev) => ({ ...prev, [postId]: "" }));
+      await createBoardReply(postId, content, parentId);
       bumpPostRefresh(postId);
       toast.success("Reply posted");
     } catch (err: unknown) {
@@ -142,10 +140,8 @@ export default function BoardClient() {
                 bumpPostRefresh(postId);
               }}
               onReply={handleReply}
-              replyText={replyTextByPostId[post.id] ?? ""}
-              setReplyText={(value) =>
-                setReplyTextByPostId((prev) => ({ ...prev, [post.id]: value }))
-              }
+              replyTextByKey={replyTextByKey}
+              setReplyTextByKey={setReplyTextByKey}
               isReplyRateLimited={isReplyRateLimited}
               replyRateLimitSecondsLeft={replyRateLimitSecondsLeft}
               onPostUpdated={() => {
@@ -160,10 +156,16 @@ export default function BoardClient() {
   );
 }
 
-function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMenuOpenKey, onAdmin, onVotePost, onVoteReply, onReply, replyText, setReplyText, onPostUpdated, isReplyRateLimited, replyRateLimitSecondsLeft}: {post: any, refreshVersion: number, user: ReturnType<typeof useUser>['user'], isAdmin: boolean, menuOpenKey: string | null, setMenuOpenKey: (key: string | null) => void, onAdmin: (postId: number, updates: Record<string, boolean>) => Promise<void>, onVotePost: (postId: number, type: "like" | "dislike") => Promise<void>, onVoteReply: (postId: number, replyId: number, type: "like" | "dislike") => Promise<void>, onReply: (postId: number) => Promise<void>, replyText: string, setReplyText: (value: string) => void, onPostUpdated: () => void, isReplyRateLimited: boolean, replyRateLimitSecondsLeft: number}) {
+function countBoardReplies(nodes: { replies?: any[] }[]): number {
+  return nodes.reduce((sum, node) => sum + 1 + countBoardReplies(node.replies ?? []), 0);
+}
+
+function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMenuOpenKey, onAdmin, onVotePost, onVoteReply, onReply, replyTextByKey, setReplyTextByKey, onPostUpdated, isReplyRateLimited, replyRateLimitSecondsLeft}: {post: any, refreshVersion: number, user: ReturnType<typeof useUser>['user'], isAdmin: boolean, menuOpenKey: string | null, setMenuOpenKey: (key: string | null) => void, onAdmin: (postId: number, updates: Record<string, boolean>) => Promise<void>, onVotePost: (postId: number, type: "like" | "dislike") => Promise<void>, onVoteReply: (postId: number, replyId: number, type: "like" | "dislike") => Promise<void>, onReply: (postId: number, content: string, parentId?: number) => Promise<void>, replyTextByKey: Record<string, string>, setReplyTextByKey: Dispatch<SetStateAction<Record<string, string>>>, onPostUpdated: () => void, isReplyRateLimited: boolean, replyRateLimitSecondsLeft: number}) {
   const [detail, setDetail] = useState<{ post: any; replies: any[] } | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(true);
   const [replyOpen, setReplyOpen] = useState(false);
+  const [replyingToId, setReplyingToId] = useState<number | null>(null);
+  const [expandedReplies, setExpandedReplies] = useState<number[]>([]);
   const [repliesExpanded, setRepliesExpanded] = useState(false);
   const [editingPost, setEditingPost] = useState(false);
   const [editTitle, setEditTitle] = useState("");
@@ -207,10 +209,17 @@ function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMen
   const isOwner = current.author?.id === user?.id;
   const postMenuKey = `post-${current.id}`;
 
-  const handleSubmitReply = async () => {
-    await onReply(current.id);
+  const replyKey = (parentId?: number | null) => `${current.id}-${parentId ?? "root"}`;
+
+  const handleSubmitReply = async (parentId?: number) => {
+    const key = replyKey(parentId);
+    const text = replyTextByKey[key] ?? "";
+    await onReply(current.id, text, parentId);
+    setReplyTextByKey((prev) => ({ ...prev, [key]: "" }));
     setReplyOpen(false);
+    setReplyingToId(null);
     setRepliesExpanded(true);
+    if (parentId) setExpandedReplies((prev) => [...new Set([...prev, parentId])]);
   };
 
   const handleSavePost = async () => {
@@ -258,7 +267,118 @@ function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMen
     }
   };
 
-  const replyCount = loadingDetail ? (post.replyCount ?? 0) : replies.length;
+  const replyCount = loadingDetail ? (post.replyCount ?? 0) : countBoardReplies(replies);
+
+  const renderBoardReply = (reply: any, depth = 0) => {
+    const nested = depth > 0;
+    const childCount = countBoardReplies(reply.replies ?? []);
+    const branchExpanded = expandedReplies.includes(reply.id);
+    const replyOwner = reply.author?.id === user?.id;
+    const replyMenuKey = `reply-${reply.id}`;
+    const key = replyKey(reply.id);
+
+    if (editingReplyId === reply.id) {
+      return (
+        <div key={reply.id} className={`bg-background rounded-lg p-3 space-y-2 ${nested ? "ml-4 border-l-2 border-l-borders pl-3" : ""}`}>
+          <ContentComposer
+            value={editReplyText}
+            onChange={setEditReplyText}
+            placeholder="Edit reply…"
+            maxLength={CONTENT_LIMITS.boardReply}
+            onSubmit={() => void handleSaveReply(reply.id)}
+            submitLabel="Save"
+            layout="embedded"
+            onCancel={() => setEditingReplyId(null)}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div key={reply.id} className={nested ? "ml-4 border-l-2 border-l-borders pl-3" : ""}>
+        <SocialPostCard
+          variant="nested"
+          author={reply.author}
+          createdAt={reply.createdAt}
+          content={reply.content}
+          votes={reply.votes ?? []}
+          itemId={reply.id}
+          userId={user?.id}
+          onVote={(id, type) => onVoteReply(current.id, id, type)}
+          onReply={!isLocked ? () => {
+            if (!requireAuth(user, '/board')) return;
+            setReplyingToId(replyingToId === reply.id ? null : reply.id);
+          } : undefined}
+          replyActive={replyingToId === reply.id}
+          repliesToggle={
+            childCount > 0
+              ? {
+                  count: childCount,
+                  expanded: branchExpanded,
+                  onClick: () =>
+                    setExpandedReplies((prev) =>
+                      prev.includes(reply.id) ? prev.filter((id) => id !== reply.id) : [...prev, reply.id]
+                    ),
+                }
+              : undefined
+          }
+          overflowMenu={
+            replyOwner || isAdmin ? (
+              <ContentOverflowMenu
+                open={menuOpenKey === replyMenuKey}
+                onOpenChange={(open) => setMenuOpenKey(open ? replyMenuKey : null)}
+                iconClassName="size-4"
+                isOwner={replyOwner}
+                isAdmin={isAdmin}
+                onEdit={
+                  replyOwner
+                    ? () => {
+                        setEditReplyText(reply.content);
+                        setEditingReplyId(reply.id);
+                      }
+                    : undefined
+                }
+                onDelete={replyOwner ? () => void handleDeleteReply(reply.id) : undefined}
+                adminItems={
+                  isAdmin && !replyOwner
+                    ? [{ label: "Delete", variant: "danger", onClick: () => void handleDeleteReply(reply.id) }]
+                    : []
+                }
+              />
+            ) : undefined
+          }
+        />
+
+        {replyingToId === reply.id && !isLocked && (
+          <ContentComposer
+            value={replyTextByKey[key] ?? ""}
+            onChange={(value) => setReplyTextByKey((prev) => ({ ...prev, [key]: value }))}
+            placeholder="Write a reply…"
+            maxLength={CONTENT_LIMITS.boardReply}
+            onSubmit={() => void handleSubmitReply(reply.id)}
+            submitLabel="Post reply"
+            layout="reply"
+            rateLimited={isReplyRateLimited}
+            rateLimitHint={
+              isReplyRateLimited
+                ? `Please wait ${replyRateLimitSecondsLeft}s before replying again.`
+                : undefined
+            }
+            onCancel={() => {
+              setReplyingToId(null);
+              setReplyTextByKey((prev) => ({ ...prev, [key]: "" }));
+            }}
+          />
+        )}
+
+        {branchExpanded && reply.replies?.length ? (
+          <div className="mt-2 space-y-2">
+            {reply.replies.map((child: any) => renderBoardReply(child, depth + 1))}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
 
   const overflowMenu = (isOwner || isAdmin) ? (
     <ContentOverflowMenu
@@ -347,11 +467,11 @@ function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMen
     >
       {replyOpen && !isLocked && (
         <ContentComposer
-          value={replyText}
-          onChange={setReplyText}
+          value={replyTextByKey[replyKey()] ?? ""}
+          onChange={(value) => setReplyTextByKey((prev) => ({ ...prev, [replyKey()]: value }))}
           placeholder="Write a reply…"
           maxLength={CONTENT_LIMITS.boardReply}
-          onSubmit={handleSubmitReply}
+          onSubmit={() => void handleSubmitReply()}
           submitLabel="Post reply"
           layout="reply"
           rateLimited={isReplyRateLimited}
@@ -362,7 +482,7 @@ function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMen
           }
           onCancel={() => {
             setReplyOpen(false);
-            setReplyText("");
+            setReplyTextByKey((prev) => ({ ...prev, [replyKey()]: "" }));
           }}
         />
       )}
@@ -373,66 +493,7 @@ function BoardPostCard({post, refreshVersion, user, isAdmin, menuOpenKey, setMen
 
       {repliesExpanded && !loadingDetail && replyCount > 0 && (
         <div className="space-y-3 pt-3 mt-1 border-t border-borders">
-          {replies.map((reply: any) => {
-            const replyOwner = reply.author?.id === user?.id;
-            const replyMenuKey = `reply-${reply.id}`;
-
-            if (editingReplyId === reply.id) {
-              return (
-                <div key={reply.id} className="bg-background rounded-lg p-3 space-y-2">
-                  <ContentComposer
-                    value={editReplyText}
-                    onChange={setEditReplyText}
-                    placeholder="Edit reply…"
-                    maxLength={CONTENT_LIMITS.boardReply}
-                    onSubmit={() => void handleSaveReply(reply.id)}
-                    submitLabel="Save"
-                    layout="embedded"
-                    onCancel={() => setEditingReplyId(null)}
-                  />
-                </div>
-              );
-            }
-
-            return (
-              <SocialPostCard
-                key={reply.id}
-                variant="nested"
-                author={reply.author}
-                createdAt={reply.createdAt}
-                content={reply.content}
-                votes={reply.votes ?? []}
-                itemId={reply.id}
-                userId={user?.id}
-                onVote={(id, type) => onVoteReply(current.id, id, type)}
-                overflowMenu={
-                  replyOwner || isAdmin ? (
-                    <ContentOverflowMenu
-                      open={menuOpenKey === replyMenuKey}
-                      onOpenChange={(open) => setMenuOpenKey(open ? replyMenuKey : null)}
-                      iconClassName="size-4"
-                      isOwner={replyOwner}
-                      isAdmin={isAdmin}
-                      onEdit={
-                        replyOwner
-                          ? () => {
-                              setEditReplyText(reply.content);
-                              setEditingReplyId(reply.id);
-                            }
-                          : undefined
-                      }
-                      onDelete={replyOwner ? () => void handleDeleteReply(reply.id) : undefined}
-                      adminItems={
-                        isAdmin && !replyOwner
-                          ? [{ label: "Delete", variant: "danger", onClick: () => void handleDeleteReply(reply.id) }]
-                          : []
-                      }
-                    />
-                  ) : undefined
-                }
-              />
-            );
-          })}
+          {replies.map((reply: any) => renderBoardReply(reply))}
         </div>
       )}
     </SocialPostCard>

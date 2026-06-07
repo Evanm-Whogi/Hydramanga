@@ -2,6 +2,7 @@ import { db, schema } from '@/db/index';
 import { eq, or, max } from 'drizzle-orm';
 import { userProgressService } from '@/services/userProgressService';
 import { getUserSettings } from '@/services/userSettingsService';
+import { badgeService } from '@/services/badgeService';
 
 class ProfileService {
   /**
@@ -52,6 +53,7 @@ class ProfileService {
     }
 
     const stats = await userProgressService.getUserStats(targetUserId);
+    const badgeMap = await badgeService.getBadgesForUsers([targetUserId]);
 
     const { role, ...publicFields } = userRow;
 
@@ -62,6 +64,7 @@ class ProfileService {
       isPrivate: false,
       isOwner,
       isProfilePublic: settings.isProfilePublic,
+      badges: badgeMap[targetUserId] ?? [],
       stats: {
         totalSeriesReading: stats.totalSeriesReading,
         averageCompletion: stats.averageCompletion,

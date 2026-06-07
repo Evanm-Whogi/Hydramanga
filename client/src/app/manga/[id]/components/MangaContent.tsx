@@ -474,7 +474,8 @@ export default function MangaContent({ manga, initialListName, gallery }: MangaC
             <MangaActions 
               manga={manga} 
               chapters={localChapters} 
-              comments={manga.comments} 
+              comments={manga.comments}
+              commentPagination={manga.commentPagination}
               gallery={gallery}
               initialListName={initialListName} 
               importProgress={progress} 

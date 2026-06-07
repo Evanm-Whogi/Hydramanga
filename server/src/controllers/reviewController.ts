@@ -3,6 +3,7 @@ import { db, schema } from '@/db/index';
 import { eq, and, avg, count } from 'drizzle-orm';
 import { karmaService } from '@/services/karmaService';
 import { enrichAuthors } from '@/lib/enrichAuthors';
+import { badgeService } from '@/services/badgeService';
 import { isAdminRole } from '@/lib/authHelpers';
 import { recordAuditFromRequest } from '@/audit/record';
 import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
@@ -199,6 +200,10 @@ export async function voteReview(req: Request, res: Response, next: NextFunction
 
         if (!existing) {
             await db.insert(schema.reviewVotes).values({ reviewId, userId, type });
+            if (type === 'like') {
+                const review = await db.query.reviews.findFirst({ where: eq(schema.reviews.id, reviewId) });
+                if (review) badgeService.evaluateBadgesAsync(review.userId, 'review_vote');
+            }
             recordAuditFromRequest(req, {
                 action: 'review.vote',
                 category: 'social',
@@ -225,6 +230,10 @@ export async function voteReview(req: Request, res: Response, next: NextFunction
         await db.update(schema.reviewVotes)
             .set({ type })
             .where(and(eq(schema.reviewVotes.reviewId, reviewId), eq(schema.reviewVotes.userId, userId)));
+        if (type === 'like') {
+            const review = await db.query.reviews.findFirst({ where: eq(schema.reviews.id, reviewId) });
+            if (review) badgeService.evaluateBadgesAsync(review.userId, 'review_vote');
+        }
         recordAuditFromRequest(req, {
             action: 'review.vote',
             category: 'social',

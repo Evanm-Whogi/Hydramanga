@@ -1,6 +1,7 @@
 import { db, schema } from '@/db/index';
 import { eq, asc, inArray } from 'drizzle-orm';
 import logger from '@/services/loggerService';
+import { badgeService } from '@/services/badgeService';
 
 const BACKFILL_KEY = 'reading_days_backfill';
 
@@ -70,6 +71,7 @@ class ReadingActivityService {
           source,
         })
         .onConflictDoNothing();
+      badgeService.evaluateBadgesAsync(userId, 'reading_day');
     } catch (error) {
       logger.error(`Failed to record reading day: ${error}`, { service: 'readingActivityService' });
     }

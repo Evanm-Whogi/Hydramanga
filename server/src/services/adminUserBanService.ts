@@ -4,6 +4,7 @@ import { isUserBanned } from '@/lib/banHelpers';
 import { eq } from 'drizzle-orm';
 import type { IncomingHttpHeaders } from 'http';
 import { fromNodeHeaders } from 'better-auth/node';
+import { badgeService } from '@/services/badgeService';
 
 export interface BanUserOptions {
   banReason?: string;
@@ -48,6 +49,7 @@ class AdminUserBanService {
       headers: fromNodeHeaders(headers),
     });
 
+    badgeService.evaluateBadgesAsync(targetUserId, 'role_change');
     return { ok: true };
   }
 
@@ -61,6 +63,7 @@ class AdminUserBanService {
       headers: fromNodeHeaders(headers),
     });
 
+    badgeService.evaluateBadgesAsync(targetUserId, 'role_change');
     return { ok: true };
   }
 }

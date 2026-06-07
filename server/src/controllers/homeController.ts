@@ -8,6 +8,7 @@ import { cacheService } from '@/services/cacheService';
 import { getUserSettings } from '@/services/userSettingsService';
 import { getNsfwFilterConditions } from '@/config/contentFilter';
 import { enrichNestedSeriesExtras, enrichSeriesListExtras, seriesCardColumns} from '@/lib/seriesQueries';
+import { badgeService } from '@/services/badgeService';
 
 dotenv.config();
 
@@ -407,5 +408,8 @@ export const getTopCommenters = async (req: Request, res: Response) => {
             return await query;
         }
     );
-    res.json(results);
+    const userIds = results.map((r) => r.id);
+    const badgeMap = await badgeService.getBadgesForUsers(userIds);
+    const enriched = results.map((row) => ({ ...row, badges: badgeMap[row.id] ?? [] }));
+    res.json(enriched);
 };

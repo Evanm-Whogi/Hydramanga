@@ -14,6 +14,8 @@ import { getUserStats } from "@/services/mangaService";
 import type { UserKarma } from "@/types/stats";
 import ProfileShareCard from "@/app/profile/components/ProfileShareCard";
 import { getPublicProfile } from "@/services/profileService";
+import ProfileBadgesCard from "@/components/badges/ProfileBadgesCard";
+import type { EarnedBadge } from "@/lib/badgeConfig";
 
 
 const VIEWS: { [key: string]: React.FC<{ user: any; isOwner: boolean }> } = {
@@ -124,6 +126,7 @@ export default function ProfileContent() {
   const { user, session } = useUser()!;
   const [page, setPage] = useState(searchParams.get("tab") || "overview");
   const [lastOnlineAt, setLastOnlineAt] = useState<string | null>(session?.updatedAt?.toISOString() ?? null);
+  const [badges, setBadges] = useState<EarnedBadge[]>([]);
   const ActiveView = VIEWS[page] || Overview;
   const verified = searchParams.get("verified");
   const tabParam = searchParams.get("tab");
@@ -211,6 +214,7 @@ export default function ProfileContent() {
       .then(({ profile }) => {
         if (!alive) return;
         setLastOnlineAt(profile.lastOnlineAt ?? null);
+        setBadges(profile.badges ?? []);
       })
       .catch(() => {
         if (alive) setLastOnlineAt(session?.updatedAt?.toISOString() ?? null);
@@ -260,6 +264,8 @@ export default function ProfileContent() {
             <div className="bg-foreground rounded-md p-5 w-full mt-5">
               <LevelCard />
             </div>
+
+            <ProfileBadgesCard badges={badges} />
 
             {(user?.username || user?.id) && (
               <div className="w-full mt-5">

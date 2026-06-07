@@ -3,7 +3,8 @@ import { db, schema } from '@/db/index';
 import { eq, and } from 'drizzle-orm';
 import dotenv from 'dotenv';
 import { karmaService } from '@/services/karmaService';
-import { enrichCommentsWithKarma } from '@/lib/enrichAuthors';
+import { commentService, type CommentSort } from '@/services/commentService';
+import { badgeService } from '@/services/badgeService';
 import { isAdminRole } from '@/lib/authHelpers';
 import { discordService } from '@/services/discordService';
 import { notificationService } from '@/services/notificationService';
@@ -14,35 +15,20 @@ import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
 import { validateContentImagesAsync } from '@/lib/externalImageValidation';
 dotenv.config();
 
-// Fetch top-level comments with replies and votes for a manga series
+// Fetch comments for a manga series (nested tree, sortable, paginated)
 export async function fetchComments(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const seriesId = parseInt(req.query.seriesId as string, 10);
     if (isNaN(seriesId)) return res.status(400).json({ message: 'Invalid seriesId parameter' });
 
-    try {
-        const mangaComments = await db.query.comments.findMany({
-            where: (comments, { eq, and, isNull }) => and(
-                eq(comments.seriesId, seriesId),
-                isNull(comments.parentId)
-            ),
-            with: {
-                author: {
-                    columns: { name: true, image: true, id: true, role: true, username: true, displayUsername: true }
-                },
-                votes: true,
-                replies: {
-                    with: {
-                        author: { columns: { name: true, image: true, id: true, role: true, username: true, displayUsername: true } },
-                        votes: true,
-                    },
-                    orderBy: (comments, { asc }) => [asc(comments.createdAt)],
-                },
-            },
-            orderBy: (comments, { desc }) => [desc(comments.createdAt)],
-        });
+    const sort = (req.query.sort as CommentSort) || 'recent';
+    const validSorts: CommentSort[] = ['recent', 'oldest', 'top', 'worst'];
+    const sortParam = validSorts.includes(sort) ? sort : 'recent';
+    const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? commentService.COMMENT_PAGE_LIMIT), 10) || commentService.COMMENT_PAGE_LIMIT));
 
-        const enriched = await enrichCommentsWithKarma(mangaComments);
-        return res.status(200).json({ comments: enriched });
+    try {
+        const result = await commentService.fetchSeriesComments(seriesId, { sort: sortParam, page, limit });
+        return res.status(200).json(result);
     } catch (error) {
         return next(error);
     }
@@ -63,6 +49,11 @@ export async function createComment(req: Request, res: Response, next: NextFunct
     if (!seriesId)        return res.status(400).json({ message: 'seriesId is required' });
 
     try {
+        if (parentId) {
+            const parentCheck = await commentService.validateCommentParent(seriesId, parentId);
+            if (!parentCheck.ok) return res.status(400).json({ message: parentCheck.message });
+        }
+
         const newComment = await db.insert(schema.comments).values({
             content: normalizedContent,
             userId,
@@ -130,6 +121,8 @@ export async function createComment(req: Request, res: Response, next: NextFunct
                 extra: { seriesId, seriesTitle: seriesRow?.title ?? null, parentId: parentId ?? null },
             }),
         });
+
+        badgeService.evaluateBadgesAsync(userId, 'comment');
 
         return res.status(201).json({ comment: newComment[0] });
     } catch (error) {
