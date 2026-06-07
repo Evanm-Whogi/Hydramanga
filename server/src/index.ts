@@ -47,7 +47,7 @@ app.use(morgan(':username [:ip] :\n:method :url :status :response-time ms\n', {
     skip: (req, res) => req.originalUrl.includes('/heartbeat') || req.originalUrl.includes('/socket.io')
 }));
 
-const corsOrigins = ['https://manga.chit.sh', process.env.PUBLIC_APP_URL].filter(Boolean) as string[];
+const corsOrigins = ['https://hydramanga.com', process.env.PUBLIC_APP_URL].filter(Boolean) as string[];
 app.use(cors({ origin: corsOrigins, credentials: true }));
 app.use(
   helmet({

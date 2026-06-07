@@ -6,27 +6,27 @@ credentials-file: /etc/cloudflared/creds.json
 # Ingress rules (processed in order)
 ingress:
   # Route media files to Nginx
-  - hostname: manga.chit.sh
+  - hostname: hydramanga.com
     path: /media/manga/*
     service: http://nginx:80
   
   # Route socket.io (WebSocket) traffic to backend
-  - hostname: manga.chit.sh
+  - hostname: hydramanga.com
     path: /socket.io/*
     service: http://server:4000
   
   # Route API requests to Next.js so rewrites can proxy to backend
-  - hostname: manga.chit.sh
+  - hostname: hydramanga.com
     path: /api/*
     service: http://web:3000
   
   # Route auth requests to backend
-  - hostname: manga.chit.sh
+  - hostname: hydramanga.com
     path: /auth/*
     service: http://server:4000
   
   # Route everything else to Next.js frontend
-  - hostname: manga.chit.sh
+  - hostname: hydramanga.com
     service: http://web:3000
   
   # Catch-all (required)
