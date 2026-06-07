@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useMemo, useState } from "react";
 import { toast } from "react-toastify";
 import { signIn } from "@/lib/auth";
+import { markPendingOAuthRegister } from "@/lib/rybbit";
 
 type OAuthProvider = "google" | "discord";
 
@@ -17,9 +18,16 @@ type OAuthButtonsProps = {
   callbackURL?: string;
   oauthGoogleEnabled?: boolean;
   oauthDiscordEnabled?: boolean;
+  oauthIntent?: "login" | "register";
 };
 
-export default function OAuthButtons({disabled = false, callbackURL = "/home", oauthGoogleEnabled = true, oauthDiscordEnabled = true}: OAuthButtonsProps) {
+export default function OAuthButtons({
+  disabled = false,
+  callbackURL = "/home",
+  oauthGoogleEnabled = true,
+  oauthDiscordEnabled = true,
+  oauthIntent = "login",
+}: OAuthButtonsProps) {
   const [loadingProvider, setLoadingProvider] = useState<OAuthProvider | null>(null);
 
   const providers = useMemo(
@@ -32,6 +40,10 @@ export default function OAuthButtons({disabled = false, callbackURL = "/home", o
     setLoadingProvider(provider);
 
     try {
+      if (oauthIntent === "register") {
+        markPendingOAuthRegister(provider);
+      }
+
       const { error } = await signIn.social({
         provider,
         callbackURL,

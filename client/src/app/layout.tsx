@@ -13,6 +13,7 @@ import Footer from "@/components/layout/Footer";
 import WelcomeModalGate from "@/components/WelcomeModalGate";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import BannedSessionGuard from "@/components/BannedSessionGuard";
+import RybbitIdentify from "@/components/RybbitIdentify";
 import DevToolsGuardScript from "@/components/DevToolsGuardScript";
 import MaintenanceGate from "@/components/MaintenanceGate";
 import { getSiteSettings } from "@/services/siteSettingsService";
@@ -41,6 +42,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           <NotificationsProvider>
             <ImpersonationBanner />
             <BannedSessionGuard />
+            <RybbitIdentify />
             <MaintenanceGate maintenanceMode={siteSettings.maintenanceMode} maintenanceMessage={siteSettings.maintenanceMessage} isAdmin={isAdmin}>
               <Navbar />
               <main className="flex-1">{children}</main>

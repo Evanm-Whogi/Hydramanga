@@ -34,12 +34,17 @@ const originalQuery = Pool.prototype.query;
 };
 
 // Initialize PG Pool
+const poolMax = parseInt(process.env.DB_POOL_MAX || '60', 10);
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: parseInt(process.env.DB_POOL_MAX || '20', 10),
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 10_000,
+  max: poolMax,
+  idleTimeoutMillis: parseInt(process.env.DB_POOL_IDLE_TIMEOUT_MS || '60000', 10),
+  connectionTimeoutMillis: parseInt(process.env.DB_POOL_CONNECTION_TIMEOUT_MS || '30000', 10),
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10_000,
 });
+
+logger.info(`Database pool initialized (max=${poolMax})`, { service: 'database' });
 
 // Initialize Drizzle with PG
 const db = drizzle(pool, { schema });

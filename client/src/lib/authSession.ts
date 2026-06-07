@@ -1,5 +1,6 @@
 import { authClient } from '@/lib/auth';
 import { isUserBanned, type BanFields } from '@/lib/banHelpers';
+import { clearRybbitUser } from '@/lib/rybbit';
 
 const AUTH_MESSAGE_KEY = 'mang_auth_message';
 
@@ -33,6 +34,7 @@ export async function redirectToLogin(message?: string) {
   } catch {
     /* session may already be gone */
   }
+  clearRybbitUser();
   window.location.href = '/login';
 }
 

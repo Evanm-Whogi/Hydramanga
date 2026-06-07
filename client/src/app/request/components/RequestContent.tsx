@@ -8,6 +8,7 @@ import { Search, X, Loader2, ExternalLink } from "lucide-react";
 import { toast } from "react-toastify";
 import { isRateLimited, toastApiError } from "@/lib/rateLimit";
 import InputField from "@/components/InputField";
+import { trackRybbitEvent } from "@/lib/rybbit";
 import {createImportRequest, listMyImportRequests, type UserImportRequest,} from "@/services/importRequestService";
 import { fetchMangaById, searchMangaByTitle } from "@/services/mangaService";
 
@@ -165,12 +166,24 @@ function RequestForm({ importRequestsEnabled = true }: { importRequestsEnabled?:
     if (importPaused) return;
     setSubmitting(true);
     try {
+      const trimmedUrl = url.trim();
+      const trimmedNotes = notes.trim();
+      const seriesId = linkedSeries?.id;
+
       await createImportRequest({
         requestedTitle: title.trim(),
-        requestedUrl: url.trim() || undefined,
-        notes: notes.trim() || undefined,
-        seriesId: linkedSeries?.id,
+        requestedUrl: trimmedUrl || undefined,
+        notes: trimmedNotes || undefined,
+        seriesId,
       });
+
+      trackRybbitEvent("Import Request", {
+        has_url: Boolean(trimmedUrl),
+        has_notes: Boolean(trimmedNotes),
+        has_series_id: Boolean(seriesId),
+        ...(seriesId ? { series_id: seriesId } : {}),
+      });
+
       toast.success("Import request submitted. We'll review it soon.");
       setUrl("");
       setNotes("");
