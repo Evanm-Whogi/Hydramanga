@@ -2,7 +2,7 @@ export const KARMA_AMOUNTS = {
   comment: 10,
   review: 15,
   chapter_read: 5,
-  list_add: 3,
+  bookmark_add: 3,
   board_post: 8,
   board_reply: 5,
 } as const;

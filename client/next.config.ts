@@ -20,6 +20,21 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async redirects() {
+    const canonicalHost = (process.env.NEXT_PUBLIC_URL || 'https://hydramanga.com')
+      .replace(/^https?:\/\//, '')
+      .replace(/\/$/, '')
+      .replace(/^www\./i, '');
+
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: `www.${canonicalHost}` }],
+        destination: `https://${canonicalHost}/:path*`,
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     return [
       // OAuth provider redirects land here; proxy to Better Auth on the backend

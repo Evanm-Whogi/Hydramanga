@@ -10,7 +10,7 @@ export type BadgeTrigger =
   | 'chapter_read'
   | 'reading_time'
   | 'reading_day'
-  | 'list_change'
+  | 'bookmark_change'
   | 'review_vote'
   | 'role_change';
 
@@ -141,12 +141,11 @@ class BadgeService {
       if (currentStreak >= 7) await this.grantBadge(userId, 'unbroken_streak');
     }
 
-    if (trigger === 'list_change' || trigger === 'role_change') {
+    if (trigger === 'bookmark_change' || trigger === 'role_change') {
       const [finishedCount] = await db
         .select({ total: count() })
-        .from(schema.userSeriesList)
-        .innerJoin(schema.userLists, eq(schema.userLists.id, schema.userSeriesList.listId))
-        .where(and(eq(schema.userSeriesList.userId, userId), eq(schema.userLists.slug, 'finished')));
+        .from(schema.seriesBookmarks)
+        .where(and(eq(schema.seriesBookmarks.userId, userId), eq(schema.seriesBookmarks.status, 'completed')));
       if (Number(finishedCount?.total ?? 0) >= 25) await this.grantBadge(userId, 'completionist');
     }
 

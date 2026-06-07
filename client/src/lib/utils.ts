@@ -1,8 +1,9 @@
 // Compact number formatting (e.g. 1.2K, 3.4M) for view/follower counts
-export function formatCompactNumber(num: number): string {
-  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
-  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
-  return num.toString();
+export function formatCompactNumber(num: number | null | undefined): string {
+  const n = num ?? 0;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toString();
 }
 
 // Convert to Stars

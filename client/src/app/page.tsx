@@ -1,14 +1,18 @@
 import type { Metadata } from "next";
 import { getIndex } from "@/services/mangaService";
-import { buildPageMetadata, getSiteConfig } from "@/lib/seo";
+import JsonLd from '@/components/JsonLd';
+import { buildHomePageJsonLd, buildPageMetadata, getSiteConfig } from "@/lib/seo";
 import { Star, TrendingUp, PlayIcon, BookMarkedIcon, UsersIcon, MessageCircleIcon } from "lucide-react";
 import Link from "next/link";
 export const dynamic = 'force-dynamic';
 
+const site = getSiteConfig();
+
 export const metadata: Metadata = buildPageMetadata({
-  title: getSiteConfig().name,
-  description: getSiteConfig().description,
+  title: `${site.name} - ${site.slogan}`,
+  description: site.description,
   path: '/',
+  absoluteTitle: true,
 });
 
 export default async function Index() {
@@ -16,6 +20,7 @@ export default async function Index() {
 
   return (
     <>
+      <JsonLd data={buildHomePageJsonLd()} />
       <section id="hero" className="pt-25">
         <div className="container mx-auto text-primary flex flex-col py-[6vh] min-h-[65vh] overflow-hidden">
           <div className="absolute inset-0 -z-50 max-h-[65vh] overflow-hidden">

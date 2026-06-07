@@ -22,6 +22,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       path: `/manga/${id}/read/${chapterId}`,
       noIndex: true,
       images: coverUrl ? [{ url: coverUrl, alt: manga.title }] : undefined,
+      includeSiteKeywords: false,
     });
   } catch {
     return buildPageMetadata({

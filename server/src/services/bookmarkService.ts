@@ -1,188 +1,158 @@
 import { db } from '@/db';
-import { bookmarks, chapters } from '@/db/schema';
-import { and, eq, inArray } from 'drizzle-orm';
+import * as schema from '@/db/schema';
+import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 
+export const BOOKMARK_STATUSES = ['reading', 'rereading', 'planned', 'completed', 'paused', 'dropped'] as const;
+export type BookmarkStatus = typeof BOOKMARK_STATUSES[number];
+
+export type BookmarkSort = 'updated' | 'lastRead' | 'bookmarked' | 'title' | 'ranking';
+
 export class BookmarkService {
-  /**
-   * Create or update a bookmark with optional note
-   */
-  static async addBookmark(
-    userId: string,
-    chapterId: number,
-    note?: string
-  ): Promise<any> {
-    try {
-      const result = await db
-        .insert(bookmarks)
-        .values({
-          userId,
-          chapterId,
-          note: note || null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [bookmarks.userId, bookmarks.chapterId],
-          set: {
-            note: note || null,
-            updatedAt: new Date(),
-          },
-        })
-        .returning();
-
-      logger.info(
-        `Bookmark added/updated for user ${userId} on chapter ${chapterId}`,
-        { service: 'bookmarkService' }
-      );
-
-      return result[0] || null;
-    } catch (error) {
-      logger.error(`Failed to add bookmark: ${error}`, {
-        service: 'bookmarkService',
-      });
-      throw error;
-    }
+  static async setBookmark(userId: string, seriesId: number, status: BookmarkStatus): Promise<typeof schema.seriesBookmarks.$inferSelect> {
+    const existing = await db.query.seriesBookmarks.findFirst({
+      where: and(eq(schema.seriesBookmarks.userId, userId), eq(schema.seriesBookmarks.seriesId, seriesId)),
+    });
+    const now = new Date();
+    const [row] = await db.insert(schema.seriesBookmarks)
+      .values({ userId, seriesId, status, createdAt: now, updatedAt: now })
+      .onConflictDoUpdate({
+        target: [schema.seriesBookmarks.userId, schema.seriesBookmarks.seriesId],
+        set: { status, updatedAt: now },
+      })
+      .returning();
+    return row;
   }
 
-  /**
-   * Remove a bookmark
-   */
-  static async removeBookmark(userId: string, chapterId: number): Promise<void> {
-    try {
-      await db
-        .delete(bookmarks)
-        .where(
-          and(
-            eq(bookmarks.userId, userId),
-            eq(bookmarks.chapterId, chapterId)
-          )
-        );
-
-      logger.info(
-        `Bookmark removed for user ${userId} on chapter ${chapterId}`,
-        { service: 'bookmarkService' }
-      );
-    } catch (error) {
-      logger.error(`Failed to remove bookmark: ${error}`, {
-        service: 'bookmarkService',
-      });
-      throw error;
-    }
+  static async removeBookmark(userId: string, seriesId: number): Promise<void> {
+    await db.delete(schema.seriesBookmarks)
+      .where(and(eq(schema.seriesBookmarks.userId, userId), eq(schema.seriesBookmarks.seriesId, seriesId)));
   }
 
-  /**
-   * Get all bookmarks for a user in a specific series
-   */
-  static async getSeriesBookmarks(
-    userId: string,
-    seriesId: number
-  ): Promise<any[]> {
-    try {
-      const result = await db
-        .select({
-          chapterId: bookmarks.chapterId,
-          note: bookmarks.note,
-          createdAt: bookmarks.createdAt,
-          updatedAt: bookmarks.updatedAt,
-        })
-        .from(bookmarks)
-        .innerJoin(chapters, eq(bookmarks.chapterId, chapters.id))
-        .where(
-          and(
-            eq(bookmarks.userId, userId),
-            eq(chapters.seriesId, seriesId)
-          )
-        )
-        .orderBy(bookmarks.createdAt);
-
-      return result;
-    } catch (error) {
-      logger.error(`Failed to get series bookmarks: ${error}`, {
-        service: 'bookmarkService',
-      });
-      throw error;
-    }
+  static async getBookmarkStatus(userId: string, seriesId: number): Promise<BookmarkStatus | null> {
+    const row = await db.query.seriesBookmarks.findFirst({
+      where: and(eq(schema.seriesBookmarks.userId, userId), eq(schema.seriesBookmarks.seriesId, seriesId)),
+      columns: { status: true },
+    });
+    return (row?.status as BookmarkStatus) ?? null;
   }
 
-  /**
-   * Get all bookmarks for a user across all series
-   */
-  static async getUserBookmarks(userId: string): Promise<any[]> {
-    try {
-      const result = await db
-        .select({
-          chapterId: bookmarks.chapterId,
-          note: bookmarks.note,
-          createdAt: bookmarks.createdAt,
-          updatedAt: bookmarks.updatedAt,
-          chapterNumber: chapters.chapterNumber,
-          seriesId: chapters.seriesId,
-        })
-        .from(bookmarks)
-        .innerJoin(chapters, eq(bookmarks.chapterId, chapters.id))
-        .where(eq(bookmarks.userId, userId))
-        .orderBy(bookmarks.createdAt);
+  static async getUserBookmarks(userId: string, options: {
+    status?: BookmarkStatus[];
+    types?: string[];
+    sort?: BookmarkSort;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<{ items: any[]; total: number }> {
+    const { status, types, sort = 'bookmarked', search, limit = 500, offset = 0 } = options;
+    const conditions = [eq(schema.seriesBookmarks.userId, userId)];
 
-      return result;
-    } catch (error) {
-      logger.error(`Failed to get user bookmarks: ${error}`, {
-        service: 'bookmarkService',
-      });
-      throw error;
+    if (status?.length) {
+      conditions.push(inArray(schema.seriesBookmarks.status, status as any));
     }
+    if (types?.length) {
+      conditions.push(inArray(schema.series.type, types.map((t) => t.toLowerCase())));
+    }
+    if (search?.trim()) {
+      conditions.push(ilike(schema.series.title, `%${search.trim()}%`));
+    }
+
+    const whereClause = and(...conditions);
+    const orderBy = BookmarkService.buildOrderBy(sort);
+
+    const rows = await db
+      .select({
+        seriesId: schema.seriesBookmarks.seriesId,
+        status: schema.seriesBookmarks.status,
+        createdAt: schema.seriesBookmarks.createdAt,
+        updatedAt: schema.seriesBookmarks.updatedAt,
+        lastUpdatedAt: schema.series.lastUpdatedAt,
+        title: schema.series.title,
+        cover: schema.series.cover,
+        type: schema.series.type,
+        genres: schema.series.genres,
+        weightedScore: schema.series.weightedScore,
+        rating: schema.series.rating,
+        totalChapters: schema.series.totalChapters,
+        description: schema.series.description,
+        views: schema.mangaViewStats.totalViews,
+        year: schema.series.year,
+        seriesStatus: schema.series.status,
+        lastChapterId: schema.userReadingProgress.lastChapterId,
+        lastPageNumber: schema.userReadingProgress.lastPageNumber,
+        percentageCompleted: schema.userReadingProgress.percentageCompleted,
+        lastReadAt: schema.userReadingProgress.updatedAt,
+        chapterNumber: schema.chapters.chapterNumber,
+        chapterTitle: schema.chapters.title,
+      })
+      .from(schema.seriesBookmarks)
+      .innerJoin(schema.series, eq(schema.seriesBookmarks.seriesId, schema.series.id))
+      .leftJoin(schema.mangaViewStats, eq(schema.mangaViewStats.seriesId, schema.series.id))
+      .leftJoin(schema.userReadingProgress, and(
+        eq(schema.userReadingProgress.userId, userId),
+        eq(schema.userReadingProgress.seriesId, schema.seriesBookmarks.seriesId),
+      ))
+      .leftJoin(schema.chapters, eq(schema.userReadingProgress.lastChapterId, schema.chapters.id))
+      .where(whereClause)
+      .orderBy(...orderBy)
+      .limit(limit)
+      .offset(offset);
+
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)`.mapWith(Number) })
+      .from(schema.seriesBookmarks)
+      .innerJoin(schema.series, eq(schema.seriesBookmarks.seriesId, schema.series.id))
+      .where(whereClause);
+
+    return { items: rows, total: count };
   }
 
-  /**
-   * Check if a chapter is bookmarked by a user
-   */
-  static async isBookmarked(userId: string, chapterId: number): Promise<boolean> {
-    try {
-      const result = await db
-        .select({ chapterId: bookmarks.chapterId })
-        .from(bookmarks)
-        .where(
-          and(
-            eq(bookmarks.userId, userId),
-            eq(bookmarks.chapterId, chapterId)
-          )
-        )
-        .limit(1);
-
-      return result.length > 0;
-    } catch (error) {
-      logger.error(`Failed to check bookmark status: ${error}`, {
-        service: 'bookmarkService',
-      });
-      throw error;
-    }
+  static async getUserIdsBySeriesAndStatus(seriesId: number, statuses: BookmarkStatus[]): Promise<string[]> {
+    const rows = await db
+      .select({ userId: schema.seriesBookmarks.userId })
+      .from(schema.seriesBookmarks)
+      .where(and(
+        eq(schema.seriesBookmarks.seriesId, seriesId),
+        inArray(schema.seriesBookmarks.status, statuses as any),
+      ));
+    return [...new Set(rows.map((r) => r.userId))];
   }
 
-  /**
-   * Get bookmark details for a specific chapter
-   */
-  static async getBookmark(
-    userId: string,
-    chapterId: number
-  ): Promise<any | null> {
-    try {
-      const result = await db
-        .select()
-        .from(bookmarks)
-        .where(
-          and(
-            eq(bookmarks.userId, userId),
-            eq(bookmarks.chapterId, chapterId)
-          )
-        )
-        .limit(1);
+  static async getSeriesIdsForUserByStatus(userId: string, statuses: BookmarkStatus[]): Promise<number[]> {
+    const rows = await db
+      .select({ seriesId: schema.seriesBookmarks.seriesId })
+      .from(schema.seriesBookmarks)
+      .where(and(
+        eq(schema.seriesBookmarks.userId, userId),
+        inArray(schema.seriesBookmarks.status, statuses as any),
+      ));
+    return rows.map((r) => r.seriesId);
+  }
 
-      return result[0] || null;
-    } catch (error) {
-      logger.error(`Failed to get bookmark: ${error}`, {
-        service: 'bookmarkService',
-      });
-      throw error;
+  static async countByStatus(userId: string, status: BookmarkStatus): Promise<number> {
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)`.mapWith(Number) })
+      .from(schema.seriesBookmarks)
+      .where(and(eq(schema.seriesBookmarks.userId, userId), eq(schema.seriesBookmarks.status, status)));
+    return count;
+  }
+
+  private static buildOrderBy(sort: BookmarkSort) {
+    switch (sort) {
+      case 'updated':
+        return [desc(schema.series.lastUpdatedAt), desc(schema.seriesBookmarks.createdAt)];
+      case 'lastRead':
+        return [sql`${schema.userReadingProgress.updatedAt} DESC NULLS LAST`, desc(schema.seriesBookmarks.createdAt)];
+      case 'title':
+        return [asc(schema.series.title)];
+      case 'ranking':
+        return [desc(schema.series.weightedScore), desc(schema.seriesBookmarks.createdAt)];
+      case 'bookmarked':
+      default:
+        return [desc(schema.seriesBookmarks.createdAt)];
     }
   }
 }
+
+export const bookmarkService = BookmarkService;

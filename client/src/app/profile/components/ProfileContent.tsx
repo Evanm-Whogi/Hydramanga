@@ -24,9 +24,6 @@ const VIEWS: { [key: string]: React.FC<{ user: any; isOwner: boolean }> } = {
   activity: Activity,
 };
 
-const tabButtonClass = (active: boolean) =>
-  `${active ? "bg-foreground text-primary border border-borders" : "bg-foreground text-muted"} hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-base lg:text-lg cursor-pointer transition-colors`;
-
 function formatDate(value?: string | Date | null) {
   if (!value) return "Unknown";
   const parsed = new Date(value);

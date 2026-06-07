@@ -15,7 +15,7 @@ type SitemapSeriesResponse = {
 const STATIC_ROUTES: Array<{ path: string; changeFrequency: MetadataRoute.Sitemap[number]['changeFrequency']; priority: number }> = [
   { path: '/', changeFrequency: 'weekly', priority: 1 },
   { path: '/home', changeFrequency: 'hourly', priority: 0.9 },
-  { path: '/discover', changeFrequency: 'hourly', priority: 0.9 },
+  { path: '/discover', changeFrequency: 'hourly', priority: 0.8 },
   { path: '/collections', changeFrequency: 'daily', priority: 0.8 },
   { path: '/leaderboard', changeFrequency: 'daily', priority: 0.7 },
   { path: '/board', changeFrequency: 'hourly', priority: 0.7 },
@@ -67,7 +67,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: absoluteUrl(`/manga/${item.id}`),
       lastModified: item.lastUpdatedAt ? new Date(item.lastUpdatedAt) : now,
       changeFrequency: 'weekly' as const,
-      priority: 0.8,
+      priority: 0.5,
     }));
   } catch {
     mangaEntries = [];

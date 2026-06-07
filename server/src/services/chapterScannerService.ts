@@ -12,7 +12,7 @@
 import { db, schema } from '@/db';
 import { chapters, series, mangaImportProgress } from '@/db/schema';
 import { notificationService } from '@/services/notificationService';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { scraperManager } from '@/scrapers';
 import { queueService } from '@/services/queueService';
 import { discordService } from '@/services/discordService';
@@ -309,9 +309,12 @@ export class ChapterScannerService {
                 );
 
                 const libraryUsers = await db
-                    .select({ userId: schema.userSeriesList.userId })
-                    .from(schema.userSeriesList)
-                    .where(eq(schema.userSeriesList.seriesId, seriesId));
+                    .select({ userId: schema.seriesBookmarks.userId })
+                    .from(schema.seriesBookmarks)
+                    .where(and(
+                        eq(schema.seriesBookmarks.seriesId, seriesId),
+                        inArray(schema.seriesBookmarks.status, ['reading', 'rereading']),
+                    ));
 
                 const userIds = [
                     ...new Set(libraryUsers.map((row) => row.userId)),

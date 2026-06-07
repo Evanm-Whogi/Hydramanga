@@ -222,10 +222,10 @@ class KarmaService {
         .select({ count: count() })
         .from(schema.reviews)
         .where(eq(schema.reviews.userId, userId));
-      const [listCount] = await db
+      const [bookmarkCount] = await db
         .select({ count: count() })
-        .from(schema.userSeriesList)
-        .where(eq(schema.userSeriesList.userId, userId));
+        .from(schema.seriesBookmarks)
+        .where(eq(schema.seriesBookmarks.userId, userId));
       const [chapterReadCount] = await db
         .select({ count: count() })
         .from(schema.userChapterProgress)
@@ -236,7 +236,7 @@ class KarmaService {
       const total =
         Number(commentCount?.count ?? 0) * KARMA_AMOUNTS.comment +
         Number(reviewCount?.count ?? 0) * KARMA_AMOUNTS.review +
-        Number(listCount?.count ?? 0) * KARMA_AMOUNTS.list_add +
+        Number(bookmarkCount?.count ?? 0) * KARMA_AMOUNTS.bookmark_add +
         Number(chapterReadCount?.count ?? 0) * KARMA_AMOUNTS.chapter_read;
 
       if (total <= 0) continue;

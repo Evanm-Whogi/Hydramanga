@@ -2,27 +2,19 @@ import { db, schema } from '@/db/index';
 import { eq } from 'drizzle-orm';
 import { CONTENT_LIMITS } from '@/lib/securityLimits';
 
-export const DATA_EXPORT_VERSION = 1;
+export const DATA_EXPORT_VERSION = 2;
 
 class DataExportService {
   async exportUserData(userId: string) {
-    const bookmarks = await db
+    const seriesBookmarks = await db
       .select({
-        chapterId: schema.bookmarks.chapterId,
-        note: schema.bookmarks.note,
-        createdAt: schema.bookmarks.createdAt,
+        seriesId: schema.seriesBookmarks.seriesId,
+        status: schema.seriesBookmarks.status,
+        createdAt: schema.seriesBookmarks.createdAt,
+        updatedAt: schema.seriesBookmarks.updatedAt,
       })
-      .from(schema.bookmarks)
-      .where(eq(schema.bookmarks.userId, userId));
-
-    const lists = await db.query.userLists.findMany({
-      where: eq(schema.userLists.userId, userId),
-      with: {
-        items: {
-          columns: { seriesId: true, updatedAt: true },
-        },
-      },
-    });
+      .from(schema.seriesBookmarks)
+      .where(eq(schema.seriesBookmarks.userId, userId));
 
     const progress = await db
       .select({
@@ -46,18 +38,11 @@ class DataExportService {
     return {
       version: DATA_EXPORT_VERSION,
       exportedAt: new Date().toISOString(),
-      bookmarks: bookmarks.map((b) => ({
-        chapterId: b.chapterId,
-        note: b.note,
+      seriesBookmarks: seriesBookmarks.map((b) => ({
+        seriesId: b.seriesId,
+        status: b.status,
         createdAt: b.createdAt?.toISOString(),
-      })),
-      lists: lists.map((l) => ({
-        name: l.name,
-        slug: l.slug,
-        isDefault: l.isDefault,
-        isVisible: l.isVisible,
-        sortOrder: l.sortOrder,
-        items: l.items.map((i) => ({ seriesId: i.seriesId, addedAt: i.updatedAt?.toISOString() })),
+        updatedAt: b.updatedAt?.toISOString(),
       })),
       readingProgress: progress.map((p) => ({
         seriesId: p.seriesId,
@@ -75,15 +60,7 @@ class DataExportService {
 
   async importUserData(userId: string, payload: {
     version?: number;
-    bookmarks?: { chapterId: number; note?: string | null }[];
-    lists?: {
-      name: string;
-      slug?: string | null;
-      isDefault?: boolean;
-      isVisible?: boolean;
-      sortOrder?: number;
-      items?: { seriesId: number }[];
-    }[];
+    seriesBookmarks?: { seriesId: number; status: string }[];
     readingProgress?: {
       seriesId: number;
       lastChapterId?: number | null;
@@ -91,72 +68,25 @@ class DataExportService {
       totalPagesRead?: number;
     }[];
   }) {
-    if ((payload.bookmarks?.length ?? 0) > CONTENT_LIMITS.importMaxBookmarks) {
+    if ((payload.seriesBookmarks?.length ?? 0) > CONTENT_LIMITS.importMaxListItemsPerList * 10) {
       throw new Error('Too many bookmarks in import');
-    }
-    if ((payload.lists?.length ?? 0) > CONTENT_LIMITS.importMaxLists) {
-      throw new Error('Too many lists in import');
     }
     if ((payload.readingProgress?.length ?? 0) > CONTENT_LIMITS.importMaxProgressRows) {
       throw new Error('Too much reading progress in import');
     }
-    for (const list of payload.lists ?? []) {
-      if ((list.items?.length ?? 0) > CONTENT_LIMITS.importMaxListItemsPerList) {
-        throw new Error('Too many items in a list');
-      }
-    }
 
-    if (payload.bookmarks?.length) {
-      for (const b of payload.bookmarks) {
-        if (!b.chapterId) continue;
+    const validStatuses = ['reading', 'rereading', 'planned', 'completed', 'paused', 'dropped'];
+
+    if (payload.seriesBookmarks?.length) {
+      for (const b of payload.seriesBookmarks) {
+        if (!b.seriesId || !validStatuses.includes(b.status)) continue;
         await db
-          .insert(schema.bookmarks)
-          .values({ userId, chapterId: b.chapterId, note: b.note ?? null })
-          .onConflictDoNothing();
-      }
-    }
-
-    if (payload.lists?.length) {
-      for (const list of payload.lists) {
-        const slug =
-          list.slug ||
-          list.name
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-|-$/g, '')
-            .slice(0, 50);
-
-        const [inserted] = await db
-          .insert(schema.userLists)
-          .values({
-            userId,
-            name: list.name,
-            slug,
-            isDefault: list.isDefault ?? false,
-            isVisible: list.isVisible ?? true,
-            sortOrder: list.sortOrder ?? 0,
-          })
-          .onConflictDoNothing({ target: [schema.userLists.userId, schema.userLists.slug] })
-          .returning();
-
-        const listId =
-          inserted?.id ??
-          (
-            await db.query.userLists.findFirst({
-              where: (t, { and, eq: e }) => and(e(t.userId, userId), e(t.slug, slug)),
-              columns: { id: true },
-            })
-          )?.id;
-
-        if (!listId || !list.items?.length) continue;
-
-        for (const item of list.items) {
-          if (!item.seriesId) continue;
-          await db
-            .insert(schema.userSeriesList)
-            .values({ userId, listId, seriesId: item.seriesId })
-            .onConflictDoNothing({ target: [schema.userSeriesList.userId, schema.userSeriesList.seriesId] });
-        }
+          .insert(schema.seriesBookmarks)
+          .values({ userId, seriesId: b.seriesId, status: b.status as any })
+          .onConflictDoUpdate({
+            target: [schema.seriesBookmarks.userId, schema.seriesBookmarks.seriesId],
+            set: { status: b.status as any, updatedAt: new Date() },
+          });
       }
     }
 
