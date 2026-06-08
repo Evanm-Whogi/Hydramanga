@@ -34,7 +34,7 @@ export default function RegisterContent({ registrationEnabled = true, oauthGoogl
         password,
         username: trimmedUsername,
         name: trimmedUsername,
-        callbackURL: "/home",
+        callbackURL: "/",
       });
 
       if (error) {
@@ -48,7 +48,7 @@ export default function RegisterContent({ registrationEnabled = true, oauthGoogl
       identifyRybbitUser(data.user);
       trackUserRegister("email");
 
-      window.location.href = "/home";
+      window.location.href = "/";
     } catch (error: any) {
       toast.error(error?.message || "Failed to create account");
       setIsRegistering(false);

@@ -117,7 +117,7 @@ export default function NavbarClient() {
                             <h1 className="text-2xl font-bold text-primary flex ml-3">Hydra <span className="text-accent">Manga</span></h1>
                         </Link>
                         <nav className="hidden xl:flex items-center space-x-6 text-md text-muted ml-6">
-                            <NavItem href='/home' icon={<HouseIcon className="size-4 inline" />} label='Home' />
+                            <NavItem href='/' icon={<HouseIcon className="size-4 inline" />} label='Home' />
                             <NavItem href='/discover' icon={<BookOpenIcon className="size-4 inline" />} label='Discover' />
                             <NavItem href='/collections' icon={<LibraryBig className="size-4 inline" />} label='Collections' />
                             {user && (
@@ -205,7 +205,7 @@ export default function NavbarClient() {
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-3">
-                                        <Link href="/home" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/home' ? 'text-primary' : 'text-muted'}`}>
+                                        <Link href="/" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/' ? 'text-primary' : 'text-muted'}`}>
                                             <HouseIcon className="size-4" /> Home
                                         </Link>
                                         <Link href="/discover" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/discover' ? 'text-primary' : 'text-muted'}`}>
@@ -259,7 +259,7 @@ export default function NavbarClient() {
                             ) : (
                                 <div className="space-y-3">
                                     <div className="grid grid-cols-2 gap-3">
-                                        <Link href="/home" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/home' ? 'text-primary' : 'text-muted'}`}>
+                                        <Link href="/" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/' ? 'text-primary' : 'text-muted'}`}>
                                             <HouseIcon className="size-4" /> Home
                                         </Link>
                                         <Link href="/discover" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/discover' ? 'text-primary' : 'text-muted'}`}>

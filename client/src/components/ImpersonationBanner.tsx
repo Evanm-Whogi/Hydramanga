@@ -22,7 +22,7 @@ export default function ImpersonationBanner() {
       const { error } = await authClient.admin.stopImpersonating();
       if (error) throw new Error(error.message);
       toast.success("Returned to your account");
-      window.location.href = "/home";
+      window.location.href = "/";
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to exit impersonation");
       setStopping(false);

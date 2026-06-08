@@ -23,7 +23,7 @@ type OAuthButtonsProps = {
 
 export default function OAuthButtons({
   disabled = false,
-  callbackURL = "/home",
+  callbackURL = "/",
   oauthGoogleEnabled = true,
   oauthDiscordEnabled = true,
   oauthIntent = "login",

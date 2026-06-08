@@ -171,7 +171,7 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
       const { error } = await authClient.admin.impersonateUser({ userId: user.id });
       if (error) throw new Error(error.message);
       toast.success(`Now viewing as ${user.name}`);
-      window.location.href = "/home";
+      window.location.href = "/";
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to impersonate user");
       setActionLoading(null);

@@ -106,14 +106,14 @@ export default async function proxy(request: NextRequest) {
 
     if (isGuestRoute) {
         if (auth.verified || hasSession) {
-            return NextResponse.redirect(new URL("/home", request.url));
+            return NextResponse.redirect(new URL("/", request.url));
         }
         return NextResponse.next();
     }
 
     if (isAdminRoute) {
         if (auth.verified && auth.role !== "admin") {
-            return NextResponse.redirect(new URL("/home", request.url));
+            return NextResponse.redirect(new URL("/", request.url));
         }
         return NextResponse.next();
     }

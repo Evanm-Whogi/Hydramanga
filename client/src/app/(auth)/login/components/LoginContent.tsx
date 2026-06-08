@@ -69,7 +69,7 @@ export default function LoginContent({ oauthGoogleEnabled = true, oauthDiscordEn
 
       const params = new URLSearchParams(window.location.search);
       const returnTo = sanitizeReturnTo(params.get("returnTo"));
-      window.location.href = returnTo || "/home";
+      window.location.href = returnTo || "/";
     } catch (error: any) {
       toast(error?.message || "Login failed", { type: "error" });
       setLoading(false);
