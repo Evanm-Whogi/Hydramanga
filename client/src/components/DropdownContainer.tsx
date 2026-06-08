@@ -6,6 +6,7 @@ export default function DropdownContainer({ title, size, selectedLabel, children
     const containerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
+        if (!isOpen) return;
         const handleClickOutside = (event: MouseEvent) => {
             if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
                 setIsOpen(false);
@@ -13,7 +14,7 @@ export default function DropdownContainer({ title, size, selectedLabel, children
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
+    }, [isOpen]);
 
     return (
         <div ref={containerRef} className={`relative w-full`}>

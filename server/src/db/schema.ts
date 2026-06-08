@@ -146,6 +146,108 @@ export const seriesBookmarks = pgTable('series_bookmarks', {
   seriesIdIdx: index('idx_series_bookmarks_series_id').on(t.seriesId),
 }));
 
+export const curatedListVisibilityEnum = pgEnum('curated_list_visibility', ['public', 'private']);
+
+export const curatedLists = pgTable('curated_lists', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  title: varchar('title', { length: 200 }).notNull(),
+  slug: varchar('slug', { length: 120 }).notNull(),
+  description: text('description').default('').notNull(),
+  visibility: curatedListVisibilityEnum('visibility').notNull().default('public'),
+  viewCount: integer('view_count').notNull().default(0),
+  likeCount: integer('like_count').notNull().default(0),
+  dislikeCount: integer('dislike_count').notNull().default(0),
+  saveCount: integer('save_count').notNull().default(0),
+  itemCount: integer('item_count').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  userIdIdx: index('idx_curated_lists_user_id').on(t.userId),
+  userSlugUniq: uniqueIndex('idx_curated_lists_user_slug').on(t.userId, t.slug),
+  visibilityIdx: index('idx_curated_lists_visibility').on(t.visibility),
+  popularIdx: index('idx_curated_lists_popular').on(t.likeCount, t.viewCount),
+}));
+
+export const curatedListItems = pgTable('curated_list_items', {
+  listId: integer('list_id').notNull().references(() => curatedLists.id, { onDelete: 'cascade' }),
+  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.listId, t.seriesId] }),
+  listIdIdx: index('idx_curated_list_items_list_id').on(t.listId),
+  seriesIdIdx: index('idx_curated_list_items_series_id').on(t.seriesId),
+}));
+
+export const curatedListVotes = pgTable('curated_list_votes', {
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  listId: integer('list_id').notNull().references(() => curatedLists.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.listId] }),
+  listIdIdx: index('idx_curated_list_votes_list_id').on(t.listId),
+}));
+
+export const curatedListSaves = pgTable('curated_list_saves', {
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  listId: integer('list_id').notNull().references(() => curatedLists.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.listId] }),
+  listIdIdx: index('idx_curated_list_saves_list_id').on(t.listId),
+}));
+
+export const curatedListComments = pgTable('curated_list_comments', {
+  id: serial('id').primaryKey(),
+  listId: integer('list_id').notNull().references(() => curatedLists.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  content: text('content').notNull(),
+  parentId: integer('parent_id').references((): any => curatedListComments.id, { onDelete: 'cascade' }),
+  isDeleted: boolean('is_deleted').notNull().default(false),
+  deletedBy: text('deleted_by').references(() => user.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  listIdIdx: index('idx_curated_list_comments_list_id').on(t.listId),
+  userIdIdx: index('idx_curated_list_comments_user_id').on(t.userId),
+  parentIdIdx: index('idx_curated_list_comments_parent_id').on(t.parentId).where(sql`${t.parentId} IS NOT NULL`),
+}));
+
+export const curatedListCommentLikes = pgTable('curated_list_comment_likes', {
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  commentId: integer('comment_id').notNull().references(() => curatedListComments.id, { onDelete: 'cascade' }),
+  type: text('type').notNull().default('like'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.commentId] }),
+  commentIdIdx: index('idx_curated_list_comment_likes_comment_id').on(t.commentId),
+}));
+
+export const listViews = pgTable('list_views', {
+  id: serial('id').primaryKey(),
+  listId: integer('list_id').notNull().references(() => curatedLists.id, { onDelete: 'cascade' }),
+  ipAddress: text('ip_address').notNull(),
+  userAgent: text('user_agent').notNull(),
+  userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
+  viewedAt: timestamp('viewed_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  listIdIdx: index('idx_list_views_list_id').on(t.listId),
+  viewedAtIdx: index('idx_list_views_viewed_at').on(t.viewedAt.desc()),
+  uniqueViewIdx: index('idx_list_views_unique').on(t.listId, t.ipAddress, t.userAgent),
+}));
+
+export const listViewStats = pgTable('list_view_stats', {
+  listId: integer('list_id').primaryKey().references(() => curatedLists.id, { onDelete: 'cascade' }),
+  totalViews: integer('total_views').notNull().default(0),
+  uniqueViews: integer('unique_views').notNull().default(0),
+  lastViewedAt: timestamp('last_viewed_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  totalViewsIdx: index('idx_list_view_stats_total').on(t.totalViews.desc()),
+}));
+
 // Announcements
 export const announcements = pgTable('announcements', {
   id: serial('id').primaryKey(),
@@ -649,6 +751,46 @@ export const reviewVotesRelations = relations(reviewVotes, ({ one }) => ({
     fields: [reviewVotes.userId],
     references: [user.id],
   }),
+}));
+
+export const curatedListsRelations = relations(curatedLists, ({ one, many }) => ({
+  author: one(user, { fields: [curatedLists.userId], references: [user.id] }),
+  items: many(curatedListItems),
+  votes: many(curatedListVotes),
+  saves: many(curatedListSaves),
+  comments: many(curatedListComments),
+}));
+
+export const curatedListItemsRelations = relations(curatedListItems, ({ one }) => ({
+  list: one(curatedLists, { fields: [curatedListItems.listId], references: [curatedLists.id] }),
+  series: one(series, { fields: [curatedListItems.seriesId], references: [series.id] }),
+}));
+
+export const curatedListVotesRelations = relations(curatedListVotes, ({ one }) => ({
+  list: one(curatedLists, { fields: [curatedListVotes.listId], references: [curatedLists.id] }),
+  user: one(user, { fields: [curatedListVotes.userId], references: [user.id] }),
+}));
+
+export const curatedListSavesRelations = relations(curatedListSaves, ({ one }) => ({
+  list: one(curatedLists, { fields: [curatedListSaves.listId], references: [curatedLists.id] }),
+  user: one(user, { fields: [curatedListSaves.userId], references: [user.id] }),
+}));
+
+export const curatedListCommentsRelations = relations(curatedListComments, ({ one, many }) => ({
+  author: one(user, { fields: [curatedListComments.userId], references: [user.id] }),
+  list: one(curatedLists, { fields: [curatedListComments.listId], references: [curatedLists.id] }),
+  parent: one(curatedListComments, {
+    fields: [curatedListComments.parentId],
+    references: [curatedListComments.id],
+    relationName: 'curated_list_comment_replies',
+  }),
+  replies: many(curatedListComments, { relationName: 'curated_list_comment_replies' }),
+  votes: many(curatedListCommentLikes),
+}));
+
+export const curatedListCommentLikesRelations = relations(curatedListCommentLikes, ({ one }) => ({
+  comment: one(curatedListComments, { fields: [curatedListCommentLikes.commentId], references: [curatedListComments.id] }),
+  user: one(user, { fields: [curatedListCommentLikes.userId], references: [user.id] }),
 }));
 
 export const seriesRelations = relations(series, ({ many }) => ({

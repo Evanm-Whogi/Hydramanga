@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { HouseIcon, BookOpenIcon, DicesIcon, LibraryBig, SearchIcon, BellIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, CirclePlusIcon, ShieldIcon, TrophyIcon, MessagesSquareIcon, MessageCircleIcon, MegaphoneIcon } from 'lucide-react';
+import { HouseIcon, BookOpenIcon, DicesIcon, LibraryBig, SearchIcon, BellIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, CirclePlusIcon, ShieldIcon, TrophyIcon, MessagesSquareIcon, MessageCircleIcon, MegaphoneIcon, Bookmark } from 'lucide-react';
 import NavItem from './NavItem';
 import { authClient } from '@/lib/auth';
 import { useRouter, usePathname } from 'next/navigation';
@@ -120,6 +120,7 @@ export default function NavbarClient() {
                             <NavItem href='/home' icon={<HouseIcon className="size-4 inline" />} label='Home' />
                             <NavItem href='/discover' icon={<BookOpenIcon className="size-4 inline" />} label='Discover' />
                             <NavItem href='/collections' icon={<LibraryBig className="size-4 inline" />} label='Collections' />
+                            <NavItem href='/lists' icon={<ListIcon className="size-4 inline" />} label='Lists' />
                             {user && (
                                 <>
                                     <NavItem href='/bookmarks' icon={<BookTextIcon className="size-4 inline" />} label='Bookmarks' />
@@ -160,6 +161,8 @@ export default function NavbarClient() {
                                                 </div>
                                                 <Link href="/users/me?tab=overview" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><UserIcon className="size-4" /> My Profile</Link>
                                                 <Link href="/bookmarks" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><BookTextIcon className="size-4" /> Bookmarks</Link>
+                                                <Link href="/lists/mine" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><ListIcon className="size-4" /> My Lists</Link>
+                                                <Link href="/lists/saved" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><Bookmark className="size-4" /> Saved Lists</Link>
 
                                                 {user?.role === "admin" && (
                                                     <Link href="/admin" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><ShieldIcon className="size-4" /> Admin</Link>
@@ -214,8 +217,17 @@ export default function NavbarClient() {
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-3">
+                                        <Link href="/lists" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/lists' ? 'text-primary' : 'text-muted'}`}>
+                                            <ListIcon className="size-4" /> Lists
+                                        </Link>
                                         <Link href="/bookmarks" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/bookmarks' ? 'text-primary' : 'text-muted'}`}>
                                             <BookTextIcon className="size-4" /> Bookmarks
+                                        </Link>
+                                        <Link href="/lists/mine" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/lists/mine' ? 'text-primary' : 'text-muted'}`}>
+                                            <ListIcon className="size-4" /> My Lists
+                                        </Link>
+                                        <Link href="/lists/saved" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/lists/saved' ? 'text-primary' : 'text-muted'}`}>
+                                            <Bookmark className="size-4" /> Saved Lists
                                         </Link>
                                         <Link href="/collections" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/collections' ? 'text-primary' : 'text-muted'}`}>
                                             <LibraryBig className="size-4" /> Collections

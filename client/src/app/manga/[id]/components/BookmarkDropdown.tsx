@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { BookmarkIcon, ChevronDownIcon, Trash2Icon } from 'lucide-react';
+import { useClickOutside } from '@/hooks/useClickOutside';
 import { BOOKMARK_STATUSES, setBookmark, removeBookmark, getStatusLabel, BookmarkStatus } from '@/services/bookmarkService';
 import { toast } from 'react-toastify';
 import { toastApiError } from '@/lib/rateLimit';
@@ -10,9 +11,13 @@ import { requireAuth } from '@/lib/requireAuth';
 
 export default function BookmarkDropdown({ seriesId, initialStatus, mangaTitle }: { seriesId: number; initialStatus: BookmarkStatus | string | null; mangaTitle?: string }) {
   const { user } = useUser();
+  const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<BookmarkStatus | null>((initialStatus as BookmarkStatus) || null);
   const [loading, setLoading] = useState(false);
+
+  const closeDropdown = useCallback(() => setOpen(false), []);
+  useClickOutside(rootRef, closeDropdown, open);
 
   const handleSetStatus = async (newStatus: BookmarkStatus) => {
     setLoading(true);
@@ -46,7 +51,7 @@ export default function BookmarkDropdown({ seriesId, initialStatus, mangaTitle }
 
   return (
     <div className="relative inline-flex items-center gap-3">
-      <div className="relative">
+      <div ref={rootRef} className="relative">
         <button onClick={() => { if (!requireAuth(user, `/manga/${seriesId}`)) return; setOpen(!open); }} disabled={loading} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none text-primary transition-all ${loading ? 'animate-manga-pulse' : ''}`}>
           <BookmarkIcon className={`size-6 mr-2 transition-colors ${status ? 'fill-accent text-accent' : ''}`} />
           <span className="capitalize">{label}</span>

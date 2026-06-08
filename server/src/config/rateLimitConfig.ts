@@ -34,6 +34,12 @@ export const rateLimitPresets = {
   boardMutation: preset(10 * 60 * 1000, 30, 'RATE_LIMIT_BOARD_MUTATION_MAX', 'RATE_LIMIT_BOARD_MUTATION_WINDOW_MS', 'You are changing board posts too quickly. Please wait.'),
   // window: 1 min | max: 40
   boardVote: preset(60 * 1000, 40, 'RATE_LIMIT_BOARD_VOTE_MAX', 'RATE_LIMIT_BOARD_VOTE_WINDOW_MS', 'You are voting too quickly. Please wait.'),
+  // window: 1 min | max: 40
+  listVote: preset(60 * 1000, 40, 'RATE_LIMIT_LIST_VOTE_MAX', 'RATE_LIMIT_LIST_VOTE_WINDOW_MS', 'You are voting too quickly. Please wait.'),
+  // window: 1 min | max: 30
+  listViewTrack: preset(60 * 1000, 30, 'RATE_LIMIT_LIST_VIEW_TRACK_MAX', 'RATE_LIMIT_LIST_VIEW_TRACK_WINDOW_MS', 'Too many view requests. Please wait.'),
+  // window: 5 min | max: 10
+  listCommentCreate: preset(5 * 60 * 1000, 10, 'RATE_LIMIT_LIST_COMMENT_CREATE_MAX', 'RATE_LIMIT_LIST_COMMENT_CREATE_WINDOW_MS', 'You are commenting too quickly. Please wait before posting again.'),
   // window: 5 min | max: 10
   commentCreate: preset(5 * 60 * 1000, 10, 'RATE_LIMIT_COMMENT_CREATE_MAX', 'RATE_LIMIT_COMMENT_CREATE_WINDOW_MS', 'You are commenting too quickly. Please wait before posting again.'),
   // window: 5 min | max: 40

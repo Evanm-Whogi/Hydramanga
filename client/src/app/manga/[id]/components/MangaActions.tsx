@@ -6,6 +6,7 @@ import Comments from "./Comments";
 import Gallery from "./Gallery";
 import Reviews from "./Reviews";
 import BookmarkDropdown from "./BookmarkDropdown";
+import AddToListDropdown from "./AddToListDropdown";
 import { useUser } from "@/providers/UserProvider";
 
 type MangaActionsPage = "chapters" | "comments" | "reviews" | "gallery";
@@ -31,8 +32,9 @@ export default function MangaActions({ manga, chapters, comments, commentPaginat
         <>
         <div className="grid grid-cols-1 xl:grid-cols-3 w-full pt-10 items-center space-y-4 xl:space-y-0">
 
-            <div className="flex justify-start">
+            <div className="flex justify-start gap-3 flex-wrap">
                 {user && <BookmarkDropdown seriesId={manga.id} initialStatus={initialBookmarkStatus} mangaTitle={manga.title} />}
+                {user && <AddToListDropdown seriesId={manga.id} mangaTitle={manga.title} />}
             </div>
 
             <div className="flex flex-col xl:flex-row justify-end gap-2 my-5 md:my-0">

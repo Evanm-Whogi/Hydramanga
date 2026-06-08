@@ -105,3 +105,11 @@ export async function getMyViewHistory(limit: number = 50): Promise<any> {
 export async function getRandomManga(limit: number = 4): Promise<any> {
     return await apiGet(`/manga/random?limit=${limit}`);
 }
+
+export async function trackMangaView(mangaId: number | string): Promise<any> {
+    return await apiPost(`/manga/${mangaId}/track-view`);
+}
+
+export async function trackChapterView(mangaId: number | string, chapterId: number | string): Promise<any> {
+    return await apiPost(`/manga/${mangaId}/chapter/${chapterId}/track-view`);
+}

@@ -7,6 +7,7 @@ export type NotificationType =
   | 'import_request_status'
   | 'comment_reply'
   | 'board_reply'
+  | 'list_comment_reply'
   | 'new_chapters';
 
 export interface NotificationRow {
@@ -160,6 +161,17 @@ class NotificationService {
       title: 'New board reply',
       message: `${params.replierName} replied on "${params.postTitle}".`,
       linkUrl: '/board',
+      imageUrl: null,
+    });
+  }
+
+  async notifyListCommentReply(params: {recipientUserId: string; replierName: string; listId: number; listTitle: string}): Promise<void> {
+    await this.create({
+      userId: params.recipientUserId,
+      type: 'list_comment_reply',
+      title: 'New list comment',
+      message: `${params.replierName} replied on your list "${params.listTitle}".`,
+      linkUrl: `/lists/${params.listId}`,
       imageUrl: null,
     });
   }

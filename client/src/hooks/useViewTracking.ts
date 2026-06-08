@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef } from 'react';
-import { getClientApiBase } from '@/lib/env';
+import { trackMangaView, trackChapterView } from '@/services/mangaService';
+import { trackListView } from '@/services/curatedListService';
 
 /**
  * Hook to track manga view on client-side page mount
@@ -15,16 +16,30 @@ export function useMangaViewTracking(mangaId: string | number, mangaTitle?: stri
 
     (async () => {
       try {
-        await fetch(`${getClientApiBase()}/manga/${mangaId}/track-view`, {
-          method: 'POST',
-          credentials: 'include',
-        });
+        await trackMangaView(mangaId);
       } catch (err) {
         console.error('Failed to track manga view:', err);
       }
     })();
     
   }, [mangaId, mangaTitle, enabled]);
+}
+
+export function useListViewTracking(listId: string | number, enabled = true) {
+  const tracked = useRef(false);
+
+  useEffect(() => {
+    if (!enabled || tracked.current) return;
+    tracked.current = true;
+
+    (async () => {
+      try {
+        await trackListView(Number(listId));
+      } catch (err) {
+        console.error('Failed to track list view:', err);
+      }
+    })();
+  }, [listId, enabled]);
 }
 
 /**
@@ -40,10 +55,7 @@ export function useChapterViewTracking(mangaId: string | number, chapterId: stri
 
     (async () => {
       try {
-        await fetch(`${getClientApiBase()}/manga/${mangaId}/chapter/${chapterId}/track-view`, {
-          method: 'POST',
-          credentials: 'include',
-        });
+        await trackChapterView(mangaId, chapterId);
       } catch (err) {
         console.error('Failed to track chapter view:', err);
       }

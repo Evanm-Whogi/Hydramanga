@@ -479,6 +479,70 @@ class MetricsService {
       throw error;
     }
   }
+
+  async trackListView(listId: number, trackingData: ViewTrackingData): Promise<void> {
+    try {
+      const { ipAddress, userAgent, userId } = trackingData;
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      const existingView = await db
+        .select()
+        .from(schema.listViews)
+        .where(
+          and(
+            eq(schema.listViews.listId, listId),
+            eq(schema.listViews.ipAddress, ipAddress),
+            eq(schema.listViews.userAgent, userAgent),
+            gte(schema.listViews.viewedAt, oneDayAgo)
+          )
+        )
+        .limit(1);
+
+      const isUniqueView = existingView.length === 0;
+
+      await db.insert(schema.listViews).values({
+        listId,
+        ipAddress,
+        userAgent,
+        userId: userId || null,
+        viewedAt: new Date(),
+      });
+
+      await db
+        .insert(schema.listViewStats)
+        .values({
+          listId,
+          totalViews: 1,
+          uniqueViews: isUniqueView ? 1 : 0,
+          lastViewedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: schema.listViewStats.listId,
+          set: {
+            totalViews: sql`${schema.listViewStats.totalViews} + 1`,
+            uniqueViews: isUniqueView ? sql`${schema.listViewStats.uniqueViews} + 1` : schema.listViewStats.uniqueViews,
+            lastViewedAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
+
+      await db.update(schema.curatedLists)
+        .set({ viewCount: sql`${schema.curatedLists.viewCount} + 1` })
+        .where(eq(schema.curatedLists.id, listId));
+    } catch (error) {
+      logger.error(`Failed to track list view: ${error}`, { service: 'metricsService' });
+    }
+  }
+
+  async getListViewStats(listId: number) {
+    const [stats] = await db
+      .select()
+      .from(schema.listViewStats)
+      .where(eq(schema.listViewStats.listId, listId))
+      .limit(1);
+    return stats ?? null;
+  }
 }
 
 export const metricsService = new MetricsService();

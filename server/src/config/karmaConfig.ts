@@ -5,6 +5,8 @@ export const KARMA_AMOUNTS = {
   bookmark_add: 3,
   board_post: 8,
   board_reply: 5,
+  list_create: 8,
+  list_comment: 10,
 } as const;
 
 export type KarmaAction = keyof typeof KARMA_AMOUNTS;

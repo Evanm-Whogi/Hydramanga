@@ -6,4 +6,7 @@ export const CONTENT_LIMITS = {
   boardPost: 50_000,
   boardReply: 20_000,
   chatMessage: 2_000,
+  listTitle: 200,
+  listDescription: 5_000,
+  listComment: 10_000,
 } as const;

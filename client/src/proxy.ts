@@ -15,6 +15,8 @@ const PROTECTED_PATHS = [
     "/admin",
     "/profile",
     "/bookmarks",
+    "/lists/mine",
+    "/lists/saved",
     "/history",
     "/request",
 ] as const;

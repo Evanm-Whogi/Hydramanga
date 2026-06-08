@@ -1,5 +1,6 @@
 import { formatTimeAgo } from "@/lib/utils";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useClickOutside } from "@/hooks/useClickOutside";
 import { ClockIcon, CheckIcon, SearchIcon, ChevronDownIcon } from "lucide-react";
 import { getSeriesChapterProgress, markChapterAsRead, markChapterAsUnread } from "@/services/mangaService";
 import { toast } from "react-toastify";
@@ -31,16 +32,6 @@ interface ChapterProgress {
     };
 }
 
-function useClickOutside(ref: React.RefObject<HTMLElement | null>, handler: () => void) {
-    useEffect(() => {
-        const listener = (e: MouseEvent) => {
-            if (ref.current && !ref.current.contains(e.target as Node)) handler();
-        };
-        document.addEventListener("mousedown", listener);
-        return () => document.removeEventListener("mousedown", listener);
-    }, [ref, handler]);
-}
-
 interface ChaptersProps {
     manga: any;
     progress?: any;
@@ -66,8 +57,8 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
 
     const closeFilterDropdown = useCallback(() => setFilterOpen(false), []);
     const closeSortDropdown = useCallback(() => setSortOpen(false), []);
-    useClickOutside(filterRef, closeFilterDropdown);
-    useClickOutside(sortRef, closeSortDropdown);
+    useClickOutside(filterRef, closeFilterDropdown, filterOpen);
+    useClickOutside(sortRef, closeSortDropdown, sortOpen);
 
     const rawChapters = manga.chapters || [];
 
