@@ -77,7 +77,7 @@ export class ComixScraper implements IChapterScraper {
     private static readonly MIN_CAPTURE_WIDTH = 700;
     private static readonly MIN_CAPTURE_HEIGHT = 900;
     /** Accepts landscape pages (e.g. 1024×768) — long/short edge, not both ≥ portrait mins. */
-    private static readonly MIN_CHAPTER_LONG_EDGE = 700;
+    private static readonly MIN_CHAPTER_LONG_EDGE = 650;
     private static readonly MIN_CHAPTER_SHORT_EDGE = 400;
     /** DOM readiness threshold (lower than capture min — reader thumbs load before full decode). */
     private static readonly MIN_IMAGE_NATURAL_WIDTH = 320;

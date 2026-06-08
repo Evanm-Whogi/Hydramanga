@@ -20,6 +20,7 @@ import { jobHandlerRegistry } from '@/jobs/handlers/JobHandlerRegistry';
 import { appConfig } from '@/config/appConfig';
 import { discordService } from '@/services/discordService';
 import {chapterDownloadQueueName, getAllChapterDownloadQueueNames, isChapterDownloadJobQueue, isChapterDownloadQueue, resolveChapterDownloadQueueConfig, scraperIdFromChapterDownloadQueue} from '@/lib/chapterDownloadQueues';
+import { formatDbError, getPgErrorDetails } from '@/utils/dbError';
 
 class QueueService {
     private queues: { [key: string]: Queue } = {};
@@ -156,7 +157,7 @@ class QueueService {
         };
 
         const onFailed = async (job: any, err: any) => {
-            const errorMessage = err?.message || 'Unknown error';
+            const errorMessage = formatDbError(err);
             const errorStack = err?.stack || '';
             
             // Log detailed error information for debugging
@@ -167,6 +168,7 @@ class QueueService {
                     jobName: job?.name,
                     attempts: job?.attemptsMade,
                     maxAttempts: job?.opts?.attempts,
+                    pg_error: getPgErrorDetails(err),
                     errorStack: errorStack.split('\n').slice(0, 5).join(' | ') // First 5 lines of stack
                 }
             );

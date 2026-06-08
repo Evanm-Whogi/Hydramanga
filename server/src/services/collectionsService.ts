@@ -3,8 +3,13 @@ import { sql } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { cacheService } from '@/services/cacheService';
 import { CATALOG_CACHE_TTL } from '@/lib/catalogCache';
+import { NSFW_BLOCKED_GENRES } from '@/config/contentFilter';
 
-export async function getCollectionsList() {
+const NSFW_COLLECTION_GENRES = new Set(
+    [...NSFW_BLOCKED_GENRES, 'adult'].map((genre) => genre.toLowerCase()),
+);
+
+export async function getCollectionsList(hideNsfw = false) {
      const genreMetadata = [
         { name: "Romance", description: "Discover heartwarming love stories, emotional relationships, and the complexities of romantic connections in these captivating series." },
         { name: "Comedy", description: "Dive into lighthearted stories filled with witty humor, hilarious misunderstandings, and entertaining scenarios that range from clever satire to slapstick comedy" },
@@ -57,16 +62,29 @@ export async function getCollectionsList() {
     // Fallback description for any genre not explicitly defined above
     const defaultDescription = "Explore a curated selection of popular titles within this category.";
 
-    const cacheKey = `collections:genres:v2`; // Updated key since data structure changed
+    const cacheKey = `collections:genres:v3:${hideNsfw}`;
 
     try {
+        const visibleGenreMetadata = hideNsfw
+            ? genreMetadata.filter((genre) => !NSFW_COLLECTION_GENRES.has(genre.name.toLowerCase()))
+            : genreMetadata;
+
         const collectionsData = await cacheService.getOrSet(
             {
                 key: cacheKey,
                 ttl: CATALOG_CACHE_TTL,
             },
             async () => {
-                const genreNames = genreMetadata.map(g => g.name);
+                const genreNames = visibleGenreMetadata.map(g => g.name);
+                const nsfwRatingFilter = hideNsfw
+                    ? sql`AND (${schema.series.contentRating} IS NULL OR ${schema.series.contentRating} NOT IN ('pornographic'))`
+                    : sql``;
+                const nsfwGenreFilter = hideNsfw
+                    ? sql`AND NOT EXISTS (
+                        SELECT 1 FROM jsonb_array_elements_text(${schema.series.genres}) AS blocked_genre
+                        WHERE lower(trim(blocked_genre)) IN ('hentai', 'lolicon', 'shotacon', 'smut')
+                    )`
+                    : sql``;
 
                 const results = await db.execute(sql`
                     WITH expanded_manga AS (
@@ -79,6 +97,8 @@ export async function getCollectionsList() {
                             CASE WHEN ${schema.series.weightedScore} >= 75 THEN 1 ELSE 2 END as priority
                         FROM ${schema.series}
                         WHERE ${schema.series.genres} IS NOT NULL
+                        ${nsfwRatingFilter}
+                        ${nsfwGenreFilter}
                     ),
                     ranked_manga AS (
                         SELECT *,
@@ -96,7 +116,7 @@ export async function getCollectionsList() {
                 const data: any = {};
                 
                 // 2. Pre-fill with name and description
-                genreMetadata.forEach(g => {
+                visibleGenreMetadata.forEach(g => {
                     data[g.name] = { 
                         description: g.description,
                         count: 0, 

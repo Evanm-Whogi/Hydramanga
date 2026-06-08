@@ -54,7 +54,7 @@ module.exports = (app: Express) => {
 
     app.use('/', contactRoutes);
 
-    app.use('/', pageRoutes);
+    app.use('/', optionalAuthMiddleware, pageRoutes);
 
     app.use('/import-requests', authMiddleware, importRequestRoutes);
 

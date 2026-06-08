@@ -53,7 +53,7 @@ export const getRecentlyAdded = async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const offset = (page - 1) * limit;
-    const userId = (req as any).user?.id || (req as any).session?.userId;
+    const userId = req.user?.id;
     const { hideNsfw } = await getUserSettings(userId);
 
     const cacheKey = `home:recentlyAdded:${hideNsfw}:${page}:${limit}`;
@@ -87,7 +87,7 @@ export const getPopularChapters = async (req: Request, res: Response) => {
     const period = (req.query.period as string) || 'week';
     const threshold = getThreshold(period);
     const limit = parseInt(req.query.limit as string) || 20;
-    const userId = (req as any).user?.id || (req as any).session?.userId;
+    const userId = req.user?.id;
     const { hideNsfw } = await getUserSettings(userId);
 
     const cacheKey = `home:popularChapters:${hideNsfw}:${period}:${limit}`;
@@ -148,7 +148,7 @@ export const getPopularManga = async (req: Request, res: Response) => {
     const period = (req.query.period as string) || 'week';
     const threshold = getThreshold(period);
     const limit = parseInt(req.query.limit as string) || 14;
-    const userId = (req as any).user?.id || (req as any).session?.userId;
+    const userId = req.user?.id;
     const { hideNsfw } = await getUserSettings(userId);
 
     const cacheKey = `home:popularManga:${hideNsfw}:${period}:${limit}`;
@@ -210,7 +210,7 @@ export const getPopularManga = async (req: Request, res: Response) => {
 export const getHighScores = async (req: Request, res: Response) => {
     const type = (req.query.type as string)?.toLowerCase() || 'all';
     const limit = parseInt(req.query.limit as string) || 14;
-    const userId = (req as any).user?.id || (req as any).session?.userId;
+    const userId = req.user?.id;
     const { hideNsfw } = await getUserSettings(userId);
 
     const cacheKey = `home:highScores:${hideNsfw}:${type}:${limit}`;
@@ -241,7 +241,7 @@ export const getMostFollowed = async (req: Request, res: Response) => {
     const period = (req.query.period as string) || 'all';
     const threshold = getThreshold(period);
     const limit = parseInt(req.query.limit as string) || 14;
-    const userId = (req as any).user?.id || (req as any).session?.userId;
+    const userId = req.user?.id;
     const { hideNsfw } = await getUserSettings(userId);
 
     const cacheKey = `home:mostFollowed:${hideNsfw}:${period}:${limit}`;

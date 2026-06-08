@@ -6,13 +6,14 @@ import { UserProvider } from '@/providers/UserProvider';
 import { NotificationsProvider } from '@/providers/NotificationsProvider';
 import { useSession } from '@/lib/useUser';
 import { cookies } from 'next/headers';
-import { GoogleAnalytics } from '@next/third-parties/google'
+import Script from "next/script"
 
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import WelcomeModalGate from "@/components/WelcomeModalGate";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import BannedSessionGuard from "@/components/BannedSessionGuard";
+import RybbitIdentify from "@/components/RybbitIdentify";
 import DevToolsGuardScript from "@/components/DevToolsGuardScript";
 import MaintenanceGate from "@/components/MaintenanceGate";
 import { getSiteSettings } from "@/services/siteSettingsService";
@@ -37,11 +38,11 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <link rel="preconnect" href="https://images.mangabaka.dev" crossOrigin="anonymous" />
       </head>
       <body className="bg-background text-primary min-h-screen flex flex-col" suppressHydrationWarning={true}>
-        <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID as string} />
         <UserProvider initialSession={session}>
           <NotificationsProvider>
             <ImpersonationBanner />
             <BannedSessionGuard />
+            <RybbitIdentify />
             <MaintenanceGate maintenanceMode={siteSettings.maintenanceMode} maintenanceMessage={siteSettings.maintenanceMessage} isAdmin={isAdmin}>
               <Navbar />
               <main className="flex-1">{children}</main>
@@ -62,6 +63,11 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           pauseOnHover
           transition={Bounce}
           theme="dark"
+        />
+        <Script
+          src="https://tracking.chit.sh/api/script.js"
+          data-site-id="3622d35d4d54"
+          strategy="afterInteractive"
         />
       </body>
     </html>

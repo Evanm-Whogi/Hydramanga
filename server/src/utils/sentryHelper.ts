@@ -4,6 +4,7 @@
  */
 
 import * as Sentry from "@sentry/node";
+import { formatDbError, getPgErrorDetails } from '@/utils/dbError';
 
 export interface SpanOptions {
   op?: string;
@@ -102,6 +103,18 @@ export function captureError(
     if (context?.data) {
       scope.setContext("error_context", context.data);
     }
+
+    const pgError = getPgErrorDetails(error);
+    if (pgError) {
+    scope.setContext("postgres_error", { ...pgError });
+      if (pgError.code) {
+        scope.setTag("pg_code", pgError.code);
+      }
+    }
+
+    scope.setContext("db_error", {
+      formatted: formatDbError(error),
+    });
 
     Sentry.captureException(error);
   });

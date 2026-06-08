@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { toast } from "react-toastify";
 import { signUp } from "@/lib/auth";
+import { identifyRybbitUser, trackUserRegister } from "@/lib/rybbit";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import InputField from '@/components/InputField';
 import OAuthButtons from "@/components/auth/OAuthButtons";
@@ -33,7 +34,7 @@ export default function RegisterContent({ registrationEnabled = true, oauthGoogl
         password,
         username: trimmedUsername,
         name: trimmedUsername,
-        callbackURL: "/home",
+        callbackURL: "/",
       });
 
       if (error) {
@@ -44,7 +45,10 @@ export default function RegisterContent({ registrationEnabled = true, oauthGoogl
 
       toast.success(`Welcome ${getUserDisplayName(data.user)}! Your account has been created.`);
 
-      window.location.href = "/home";
+      identifyRybbitUser(data.user);
+      trackUserRegister("email");
+
+      window.location.href = "/";
     } catch (error: any) {
       toast.error(error?.message || "Failed to create account");
       setIsRegistering(false);
@@ -82,7 +86,12 @@ export default function RegisterContent({ registrationEnabled = true, oauthGoogl
               {isRegistering ? "Creating account..." : "Create Account"}
             </button>
             <div className={registrationDisabled ? 'opacity-50 pointer-events-none' : ''}>
-              <OAuthButtons disabled={fieldsDisabled} oauthGoogleEnabled={oauthGoogleEnabled} oauthDiscordEnabled={oauthDiscordEnabled} />
+              <OAuthButtons
+                disabled={fieldsDisabled}
+                oauthGoogleEnabled={oauthGoogleEnabled}
+                oauthDiscordEnabled={oauthDiscordEnabled}
+                oauthIntent="register"
+              />
             </div>
             <span className="text-center pt-5">
               Already have an account?{" "}

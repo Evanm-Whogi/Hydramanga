@@ -4,16 +4,16 @@ import MangaCard from "@/components/MangaCard";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import * as homeService from '@/services/homeService';
-import MostFollowedCard from "@/app/home/components/cards/MostFollowedCard";
-import PopularChapterCard from "@/app/home/components/cards/PopularChapterCard";
+import MostFollowedCard from "@/components/home/cards/MostFollowedCard";
+import PopularChapterCard from "@/components/home/cards/PopularChapterCard";
 import ContinueReadingCard from "@/components/ContinueReadingCard";
-import CollectionsCard from "@/app/home/components/cards/CollectionsCard";
-import HomeSidebar from "@/app/home/components/HomeSidebar";
-import RecentCard from "@/app/home/components/cards/RecentCard";
-import RecentChapterFromListCard from "@/app/home/components/cards/RecentChapterFromListCard";
+import CollectionsCard from "@/components/home/cards/CollectionsCard";
+import HomeSidebar from "@/components/home/HomeSidebar";
+import RecentCard from "@/components/home/cards/RecentCard";
+import RecentChapterFromListCard from "@/components/home/cards/RecentChapterFromListCard";
 import { getCollections } from "@/services/mangaService";
 
-import CarouselSection from "@/app/home/components/CarouselSection"
+import CarouselSection from "@/components/home/CarouselSection"
 import { useUser } from "@/providers/UserProvider";
 
 function usePaginatedManga(fetchFn: any, limit = 14) {

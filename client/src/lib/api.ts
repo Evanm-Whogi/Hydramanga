@@ -61,6 +61,11 @@ const handleBackendError = async (error: any) => {
         redirect('/login');
     }
 
+    if (status === 404) {
+        const { notFound } = await import('next/navigation');
+        notFound();
+    }
+
     // Check if it's a network error (backend unreachable)
     if (error.code === 'ECONNREFUSED' ||
         error.code === 'ETIMEDOUT' ||

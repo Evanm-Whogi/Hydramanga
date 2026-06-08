@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || 'http://localhost:4000';
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ['mangadev.chit.sh'],
+  allowedDevOrigins: ['hydramanga.com'],
   async headers() {
     return [
       {

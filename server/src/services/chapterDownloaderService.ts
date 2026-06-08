@@ -17,6 +17,7 @@ import logger from '@/services/loggerService';
 import { eq, and } from 'drizzle-orm';
 import * as Sentry from "@sentry/node";
 import { withSpan, addBreadcrumb, captureError } from '@/utils/sentryHelper';
+import { formatDbError, getPgErrorDetails, withDbRetry } from '@/utils/dbError';
 
 export interface ChapterDownloadData {
     seriesId: number;
@@ -85,27 +86,34 @@ export class ChapterDownloaderService {
             await withSpan(
                 'upsert_chapter_metadata',
                 async () => {
-                    return db
-                        .insert(chapters)
-                        .values({
-                            seriesId: data.seriesId,
-                            chapterNumber: chapterNumberStr,
-                            storagePrefix,
-                            pageCount,
-                            title: data.chapterTitle,
-                            scraperId: data.scraperId || null,
-                            updatedAt: new Date(),
-                        })
-                        .onConflictDoUpdate({
-                            target: [chapters.seriesId, chapters.chapterNumber],
-                            set: {
-                                storagePrefix,
-                                pageCount,
-                                title: data.chapterTitle,
-                                scraperId: data.scraperId || null,
-                                updatedAt: new Date(),
-                            },
-                        });
+                    return withDbRetry(
+                        () =>
+                            db
+                                .insert(chapters)
+                                .values({
+                                    seriesId: data.seriesId,
+                                    chapterNumber: chapterNumberStr,
+                                    storagePrefix,
+                                    pageCount,
+                                    title: data.chapterTitle,
+                                    scraperId: data.scraperId || null,
+                                    updatedAt: new Date(),
+                                })
+                                .onConflictDoUpdate({
+                                    target: [chapters.seriesId, chapters.chapterNumber],
+                                    set: {
+                                        storagePrefix,
+                                        pageCount,
+                                        title: data.chapterTitle,
+                                        scraperId: data.scraperId || null,
+                                        updatedAt: new Date(),
+                                    },
+                                }),
+                        {
+                            label: `upsert_chapter_metadata series=${data.seriesId} chapter=${chapterNumberStr}`,
+                            maxAttempts: 3,
+                        }
+                    );
                 },
                 {
                     op: 'db.upsert',
@@ -193,10 +201,12 @@ export class ChapterDownloaderService {
                 },
             });
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error during download';
             logger.error(
-                `[DOWNLOADER] Failed to download chapter ${data.chapterNumber} for series ${data.seriesId}: ${errorMessage}`,
-                { service: 'chapterDownloaderService' }
+                `[DOWNLOADER] Failed to download chapter ${data.chapterNumber} for series ${data.seriesId}: ${formatDbError(error)}`,
+                {
+                    service: 'chapterDownloaderService',
+                    pg_error: getPgErrorDetails(error),
+                }
             );
 
             captureError(error, {
