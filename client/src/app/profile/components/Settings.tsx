@@ -189,7 +189,7 @@ export default function Settings({ user }: { user: any }) {
                     <div className="flex items-center justify-between gap-4">
                         <div>
                             <p className="font-medium text-primary">Hide NSFW content</p>
-                            <p className="text-sm text-muted">When on, manga with adult ratings or genres (e.g. hentai, erotica) are hidden.</p>
+                            <p className="text-sm text-muted">When on, pornographic manga and explicit genres (e.g. hentai, smut) are hidden.</p>
                         </div>
                         <button
                             type="button"

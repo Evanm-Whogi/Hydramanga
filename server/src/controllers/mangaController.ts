@@ -7,7 +7,7 @@ import fs from 'fs-extra';
 import logger from '@/services/loggerService';
 import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import { metricsService } from '@/services/metricsService';
-import { shouldFilterManga, getBlockedGenres, getNsfwFilterConditions } from '@/config/contentFilter';
+import { shouldFilterManga, getBlockedGenres, getNsfwFilterConditions, isSeriesHiddenByUserNsfw } from '@/config/contentFilter';
 import { getUserSettings } from '@/services/userSettingsService';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import { cacheService } from '@/services/cacheService';
@@ -220,7 +220,7 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         const { genres, tags, type, status, search, years, sort = "weightedScore", order = "desc", cursor, limit = "40" } = req.query;
         const pageSize = Math.min(Number(limit), 40);
         const isAsc = String(order).toLowerCase() === 'asc';
-        const userId = (req as any).user?.id || (req as any).session?.userId;
+        const userId = req.user?.id;
         const { hideNsfw } = await getUserSettings(userId);
         const hasCursor = Boolean(cursor);
 
@@ -387,16 +387,6 @@ export async function getMangaTags(req: Request, res: Response, next: NextFuncti
     } catch (error) {
         return next(error);
     }
-}
-
-function isSeriesHiddenByUserNsfw(manga: { contentRating?: string | null; genres?: string[] | null }, hideNsfw: boolean): boolean {
-    if (!hideNsfw) return false;
-    if (manga.contentRating === 'pornographic') return true;
-    if (!manga.genres?.length) return false;
-    return manga.genres.some((genre) => {
-        const normalized = genre.toLowerCase().trim();
-        return (['hentai', 'lolicon', 'shotacon', 'smut'] as const).some((blocked) => normalized === blocked);
-    });
 }
 
 export async function getOne(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
@@ -967,7 +957,9 @@ export async function getGallery(req: Request, res: Response, next: NextFunction
 
 export async function getCollections(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
-        const collections = await getCollectionsList();
+        const userId = req.user?.id;
+        const { hideNsfw } = await getUserSettings(userId);
+        const collections = await getCollectionsList(hideNsfw);
         return res.json(collections);
     } catch (error) {
         logger.error(`Error fetching collections: ${(error as Error).message}`, { service: 'mangaController' });

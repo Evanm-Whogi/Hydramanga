@@ -9,7 +9,7 @@ export async function invalidateCatalogCaches(): Promise<void> {
         cacheService.invalidatePattern('manga:search:v4:*'),
         cacheService.invalidatePattern('manga:search:count:v4:*'),
         cacheService.del('manga:tags:all'),
-        cacheService.del('collections:genres:v2'),
+        cacheService.invalidatePattern('collections:genres:v*'),
     ]);
     logger.info('Catalog caches invalidated after metadata import', { service: 'catalogCache' });
 }

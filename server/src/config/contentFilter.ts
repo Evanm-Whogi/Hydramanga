@@ -13,6 +13,8 @@ export const NSFW_BLOCKED_GENRES = [
   'smut',
 ] as const;
 
+export const NSFW_BLOCKED_RATINGS = ['pornographic'] as const;
+
 // Default blocked genres if not specified in env (server-wide ALLOW_NSFW_CONTENT)
 const DEFAULT_BLOCKED_GENRES = [...NSFW_BLOCKED_GENRES];
 
@@ -85,15 +87,38 @@ export function getBlockedGenresForSQL(): string[] {
 }
 
 /**
+ * Check if a series should be hidden for a user with "hide NSFW" enabled.
+ */
+export function isSeriesHiddenByUserNsfw(
+  manga: { contentRating?: string | null; genres?: string[] | null },
+  hideNsfw: boolean,
+): boolean {
+  if (!hideNsfw) return false;
+
+  const rating = manga.contentRating?.toLowerCase().trim();
+  if (rating && (NSFW_BLOCKED_RATINGS as readonly string[]).includes(rating)) {
+    return true;
+  }
+
+  if (!manga.genres?.length) return false;
+
+  return manga.genres.some((genre) => {
+    const normalized = genre.toLowerCase().trim();
+    return NSFW_BLOCKED_GENRES.some((blocked) => normalized === blocked);
+  });
+}
+
+/**
  * Returns Drizzle SQL conditions to hide NSFW content when user preference hideNsfw is true.
- * Filters out: contentRating in ('erotica','pornographic') and genres containing any of NSFW_BLOCKED_GENRES (case-insensitive).
+ * Filters out: contentRating 'pornographic' and genres containing any of NSFW_BLOCKED_GENRES (case-insensitive).
  * Use with and(...conditions) in queries. When hideNsfw is false, returns [] (no filter).
  */
 export function getNsfwFilterConditions(hideNsfw: boolean, seriesTable: { contentRating: any; genres: any; id: any }): SQL[] {
   if (!hideNsfw) return [];
   const genreList = NSFW_BLOCKED_GENRES.map((g) => `'${g}'`).join(',');
+  const ratingList = NSFW_BLOCKED_RATINGS.map((r) => `'${r}'`).join(',');
   return [
-    sql`(${seriesTable.contentRating} IS NULL OR ${seriesTable.contentRating} NOT IN ('pornographic'))`,
+    sql`(${seriesTable.contentRating} IS NULL OR ${seriesTable.contentRating} NOT IN (${sql.raw(ratingList)}))`,
     sql`(${seriesTable.genres} IS NULL OR NOT EXISTS (
       SELECT 1 FROM jsonb_array_elements_text(${seriesTable.genres}) AS g
       WHERE lower(trim(g)) IN (${sql.raw(genreList)})

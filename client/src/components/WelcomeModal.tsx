@@ -53,7 +53,9 @@ export function WelcomeModal({ isOpen, onClose, title, description, bodyMarkdown
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-background/80 backdrop-blur-sm" onClick={handleDismiss} aria-hidden/>
-      <div role="dialog" aria-modal="true" aria-labelledby="welcome-modal-title" className="relative z-10 bg-foreground border border-borders rounded-xl shadow-2xl w-[90%] md:w-1/4 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in duration-200">
+      <div role="dialog" aria-modal="true" 
+      aria-labelledby="welcome-modal-title" 
+      className="relative z-10 bg-foreground border border-borders rounded-xl shadow-2xl w-[90%] md:w-1/3 lg:w-1/4 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in duration-200">
         <button
           type="button"
           onClick={handleDismiss}
