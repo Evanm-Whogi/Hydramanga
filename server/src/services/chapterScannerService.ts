@@ -21,7 +21,7 @@ import logger from '@/services/loggerService';
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import * as Sentry from "@sentry/node";
-import { withSpan, addBreadcrumb, captureError } from '@/utils/sentryHelper';
+import { withSpan, addBreadcrumb } from '@/utils/sentryHelper';
 
 export class ChapterScannerService {
     private static extractSecondaryTitleStrings(secondaryTitles: unknown): string[] {
@@ -384,26 +384,7 @@ export class ChapterScannerService {
                 { service: 'chapterScannerService' }
             );
 
-            await withSpan(
-                'mark_scan_failed',
-                async () => mangaProgressService.markFailed(seriesId, errorMessage),
-                { op: 'db.write', tags: { series_id: String(seriesId) } }
-            ).catch((markErr) => {
-                logger.error(`Failed to mark scan as failed: ${markErr}`, { service: 'chapterScannerService' });
-            });
-
-            captureError(error, {
-                tags: {
-                    process: 'chapter_scan',
-                    series_id: String(seriesId),
-                },
-                data: {
-                    manga_title: mangaTitle,
-                    chapters_found: foundCount,
-                    is_first_scan: isFirstScan,
-                },
-            });
-
+            // markFailed and Sentry reporting happen in queueService after all retries are exhausted
             throw error;
         }
     }

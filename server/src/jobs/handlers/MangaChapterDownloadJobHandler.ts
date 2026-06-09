@@ -5,8 +5,7 @@
 import { IJobHandler } from './IJobHandler';
 import { ChapterDownloaderService, ChapterDownloadData } from '@/services/chapterDownloaderService';
 import logger from '@/services/loggerService';
-import * as Sentry from "@sentry/node";
-import { withTransaction, setJobContext, captureError } from '@/utils/sentryHelper';
+import { withTransaction, setJobContext } from '@/utils/sentryHelper';
 import { isChapterDownloadJobQueue } from '@/lib/chapterDownloadQueues';
 
 export class MangaChapterDownloadJobHandler implements IJobHandler {
@@ -51,20 +50,6 @@ export class MangaChapterDownloadJobHandler implements IJobHandler {
       );
     } catch (error) {
       logger.error(`Manga chapter download job handler failed: ${error}`, { service: 'mangaChapterDownloadJobHandler' });
-      
-      captureError(error, {
-        tags: {
-          job_type: "chapter_download",
-          series_id: String(data.seriesId),
-          chapter_number: String(data.chapterNumber),
-        },
-        data: {
-          manga_title: data.mangaTitle,
-          chapter_title: data.chapterTitle,
-          url: data.chapterUrl,
-        },
-      });
-
       throw error;
     }
   }

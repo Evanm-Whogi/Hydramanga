@@ -359,7 +359,25 @@ export class ComixScraper implements IChapterScraper {
             }
 
             await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
-            await page.waitForSelector('section.mpage__chapters ul.mchap-list li.mchap-item', { timeout: 20000 });
+
+            const chapterItemCount = await page.locator('section.mpage__chapters ul.mchap-list li.mchap-item').count();
+            const hasGroupFilter = await page.locator('div.fdrop.mpage__group button.ubtn.ubtn--soft').count() > 0;
+
+            if (chapterItemCount === 0 && !hasGroupFilter) {
+                logger.info(`[Comix] No chapters on title page for "${mangaName}", skipping`, { service: 'comixScraper' });
+                return;
+            }
+
+            if (chapterItemCount === 0) {
+                try {
+                    await page.waitForSelector('section.mpage__chapters ul.mchap-list li.mchap-item', { timeout: 5000 });
+                } catch {
+                    logger.info(`[Comix] No chapters found for "${mangaName}", skipping`, { service: 'comixScraper' });
+                    return;
+                }
+            } else {
+                await page.waitForSelector('section.mpage__chapters ul.mchap-list li.mchap-item', { timeout: 20000 });
+            }
 
             const groupStats = await this.extractGroupStats(page);
             const expectedMaxChapter = await this.extractHighestChapterNumberFromCurrentPage(page);
@@ -1319,6 +1337,12 @@ export class ComixScraper implements IChapterScraper {
         return missing;
     }
 
+    private async dismissPageOverlays(page: any): Promise<void> {
+        await page.evaluate(() => {
+            document.querySelectorAll('a[href="#"][target="_blank"]').forEach(el => el.remove());
+        }).catch(() => {});
+    }
+
     private async dismissReaderHint(page: any): Promise<void> {
         const hint = page.locator('div.rpage-hint[role="dialog"][aria-label="Reader gestures"]');
         if (!(await hint.count())) return;
@@ -1415,12 +1439,28 @@ export class ComixScraper implements IChapterScraper {
     }
 
     private async selectGroupFilter(page: any, groupName: string): Promise<void> {
-        const trigger = page.locator('div.fdrop.mpage__group button.ubtn.ubtn--soft').first();
-        if (!(await trigger.count())) {
+        const groupSection = page.locator('div.fdrop.mpage__group');
+        if (!(await groupSection.count())) {
             return;
         }
 
-        await trigger.click();
+        const trigger = groupSection.locator('button.ubtn.ubtn--soft').first();
+        if (!(await trigger.count())) {
+            logger.debug('[Comix] No group filter button on title page, skipping group selection', { service: 'comixScraper' });
+            return;
+        }
+
+        await this.dismissPageOverlays(page);
+
+        try {
+            await trigger.click({ force: true, timeout: 10000 });
+        } catch (error) {
+            logger.warn(`[Comix] Group filter click failed for "${groupName}", continuing with current list: ${error}`, {
+                service: 'comixScraper',
+            });
+            return;
+        }
+
         const menu = page.locator('div.fdrop__pop.fdrop__pop--menu');
         await menu.waitFor({ state: 'visible', timeout: 5000 });
 

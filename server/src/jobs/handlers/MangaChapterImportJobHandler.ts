@@ -5,8 +5,7 @@
 import { IJobHandler } from './IJobHandler';
 import { ChapterScannerService } from '@/services/chapterScannerService';
 import logger from '@/services/loggerService';
-import * as Sentry from "@sentry/node";
-import { withTransaction, setJobContext, captureError } from '@/utils/sentryHelper';
+import { withTransaction, setJobContext } from '@/utils/sentryHelper';
 
 export class MangaChapterImportJobHandler implements IJobHandler {
   canHandle(queueName: string): boolean {
@@ -45,18 +44,6 @@ export class MangaChapterImportJobHandler implements IJobHandler {
       );
     } catch (error) {
       logger.error(`Manga chapter import job handler failed: ${error}`, { service: 'mangaChapterImportJobHandler' });
-      
-      captureError(error, {
-        tags: {
-          job_type: "chapter_scan",
-          series_id: String(data.seriesId),
-        },
-        data: {
-          manga_title: data.mangaTitle,
-          is_first_scan: data.isFirstScan || false,
-        },
-      });
-
       throw error;
     }
   }

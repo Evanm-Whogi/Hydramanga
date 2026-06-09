@@ -21,6 +21,7 @@ import { appConfig } from '@/config/appConfig';
 import { discordService } from '@/services/discordService';
 import {chapterDownloadQueueName, getAllChapterDownloadQueueNames, isChapterDownloadJobQueue, isChapterDownloadQueue, resolveChapterDownloadQueueConfig, scraperIdFromChapterDownloadQueue} from '@/lib/chapterDownloadQueues';
 import { formatDbError, getPgErrorDetails } from '@/utils/dbError';
+import { captureJobErrorIfFinal } from '@/utils/sentryHelper';
 
 class QueueService {
     private queues: { [key: string]: Queue } = {};
@@ -176,36 +177,89 @@ class QueueService {
             const maxAttempts = job?.opts?.attempts || 3;
             const allRetriesExhausted = job?.attemptsMade >= maxAttempts;
 
-            // Chapter scan: notify Discord only when all retries are exhausted
-            if (queueName === 'mangaChapterImportQueue' && allRetriesExhausted) {
-                try {
-                    const jobData = job?.data;
-                    if (jobData?.seriesId && jobData?.mangaTitle) {
-                        await discordService.notifyScraperFailed(
-                            jobData.mangaTitle,
-                            jobData.seriesId,
-                            [],
-                            jobData.coverUrl
-                        );
-                    }
-                } catch (discordError) {
-                    logger.error(`Failed to send Discord scraper failure notification: ${discordError}`, { service: 'queueService' });
-                }
-            }
+            if (allRetriesExhausted) {
+                const jobData = job?.data;
 
-            // Only mark as failed if all retries are exhausted (for chapter downloads)
-            if (isChapterDownloadJobQueue(queueName) && allRetriesExhausted) {
-                try {
-                    const { mangaProgressService } = await import('@/services/mangaProgressService');
-                    const jobData = job?.data;
-                    if (jobData?.seriesId && jobData?.chapterNumber) {
-                        await mangaProgressService.markFailed(
-                            jobData.seriesId, 
-                            `Chapter ${jobData.chapterNumber} failed after ${job.attemptsMade} attempts: ${errorMessage}`
-                        );
+                if (queueName === 'mangaChapterImportQueue') {
+                    captureJobErrorIfFinal(job, err, {
+                        queueName,
+                        tags: {
+                            job_type: 'chapter_scan',
+                            series_id: String(jobData?.seriesId ?? 'unknown'),
+                        },
+                        data: {
+                            manga_title: jobData?.mangaTitle,
+                            is_first_scan: jobData?.isFirstScan || false,
+                            romanized_title: jobData?.romanizedTitle,
+                            cover_url: jobData?.coverUrl,
+                            attempts: job?.attemptsMade,
+                            max_attempts: maxAttempts,
+                            job_id: job?.id,
+                            job_name: job?.name,
+                            error_message: errorMessage,
+                            error_stack: errorStack,
+                        },
+                    });
+
+                    try {
+                        if (jobData?.seriesId && jobData?.mangaTitle) {
+                            await discordService.notifyScraperFailed(
+                                jobData.mangaTitle,
+                                jobData.seriesId,
+                                [],
+                                jobData.coverUrl
+                            );
+                        }
+                    } catch (discordError) {
+                        logger.error(`Failed to send Discord scraper failure notification: ${discordError}`, { service: 'queueService' });
                     }
-                } catch (markFailedError) {
-                    logger.error(`Failed to mark import as failed: ${markFailedError}`, { service: 'queueService' });
+
+                    try {
+                        const { mangaProgressService } = await import('@/services/mangaProgressService');
+                        if (jobData?.seriesId) {
+                            await mangaProgressService.markFailed(
+                                jobData.seriesId,
+                                `Chapter scan failed after ${job.attemptsMade} attempts: ${errorMessage}`
+                            );
+                        }
+                    } catch (markFailedError) {
+                        logger.error(`Failed to mark chapter scan as failed: ${markFailedError}`, { service: 'queueService' });
+                    }
+                } else if (isChapterDownloadJobQueue(queueName)) {
+                    captureJobErrorIfFinal(job, err, {
+                        queueName,
+                        tags: {
+                            job_type: 'chapter_download',
+                            series_id: String(jobData?.seriesId ?? 'unknown'),
+                            chapter_number: String(jobData?.chapterNumber ?? 'unknown'),
+                            scraper_id: String(jobData?.scraperId ?? 'unknown'),
+                        },
+                        data: {
+                            manga_title: jobData?.mangaTitle,
+                            chapter_title: jobData?.chapterTitle,
+                            url: jobData?.chapterUrl,
+                            scraper_id: jobData?.scraperId,
+                            is_preview: jobData?.isPreview || false,
+                            attempts: job?.attemptsMade,
+                            max_attempts: maxAttempts,
+                            job_id: job?.id,
+                            job_name: job?.name,
+                            error_message: errorMessage,
+                            error_stack: errorStack,
+                        },
+                    });
+
+                    try {
+                        const { mangaProgressService } = await import('@/services/mangaProgressService');
+                        if (jobData?.seriesId && jobData?.chapterNumber) {
+                            await mangaProgressService.markFailed(
+                                jobData.seriesId,
+                                `Chapter ${jobData.chapterNumber} failed after ${job.attemptsMade} attempts: ${errorMessage}`
+                            );
+                        }
+                    } catch (markFailedError) {
+                        logger.error(`Failed to mark import as failed: ${markFailedError}`, { service: 'queueService' });
+                    }
                 }
             }
         };

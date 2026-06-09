@@ -230,7 +230,31 @@ export class WeebCentralScraper implements IChapterScraper {
                 );
             }
 
-            await page.goto(pageUrl, { waitUntil: 'domcontentloaded' });
+            let lastNavError: unknown;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                try {
+                    logger.info(
+                        `[WeebCentral] Navigating to series page (attempt ${attempt}/3): ${pageUrl}`,
+                        { service: 'weebCentralScraper' }
+                    );
+                    await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+                    lastNavError = undefined;
+                    break;
+                } catch (err) {
+                    lastNavError = err;
+                    if (attempt < 3) {
+                        logger.warn(
+                            `[WeebCentral] Series page navigation failed on attempt ${attempt}: ${err instanceof Error ? err.message : err}`,
+                            { service: 'weebCentralScraper' }
+                        );
+                        await page.waitForTimeout(2000 * attempt);
+                    }
+                }
+            }
+
+            if (lastNavError) {
+                throw lastNavError;
+            }
 
             // Capture initial chapter count before potentially expanding the list
             const initialChapterCount = await page.evaluate(() => {

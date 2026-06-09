@@ -16,7 +16,7 @@ import { mangaProgressService } from '@/services/mangaProgressService';
 import logger from '@/services/loggerService';
 import { eq, and } from 'drizzle-orm';
 import * as Sentry from "@sentry/node";
-import { withSpan, addBreadcrumb, captureError } from '@/utils/sentryHelper';
+import { withSpan, addBreadcrumb } from '@/utils/sentryHelper';
 import { formatDbError, getPgErrorDetails, withDbRetry } from '@/utils/dbError';
 
 export interface ChapterDownloadData {
@@ -209,22 +209,8 @@ export class ChapterDownloaderService {
                 }
             );
 
-            captureError(error, {
-                tags: {
-                    process: 'chapter_download',
-                    series_id: String(data.seriesId),
-                    chapter_number: chapterNumberStr,
-                },
-                data: {
-                    manga_title: data.mangaTitle,
-                    chapter_title: data.chapterTitle,
-                    url: data.chapterUrl,
-                },
-            });
-
-            // NOTE: Do NOT mark as failed here. Let the queue service handle it after all retry attempts exhausted.
-            // Marking failed on every error prevents retries and causes state machine errors.
-            // The queueService.onFailed() handler will call markFailed() after max attempts reached.
+            // NOTE: Do NOT mark as failed or report to Sentry here. queueService.onFailed() handles both
+            // after all retry attempts are exhausted.
             throw error;
         }
     }
