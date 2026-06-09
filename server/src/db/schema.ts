@@ -467,9 +467,44 @@ export const userSettings = pgTable('user_settings', {
   isProfilePublic: boolean('is_profile_public').notNull().default(true),
   incognitoMode: boolean('incognito_mode').notNull().default(false),
   incognitoChaptersRead: integer('incognito_chapters_read').notNull().default(0),
+  profileVisibility: jsonb('profile_visibility').notNull().default(sql`'{"bio":true,"readingStats":true,"favorites":true,"lists":true,"bookmarks":true,"comments":true,"wall":true,"recentReads":true}'::jsonb`),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   userIdIdx: index('idx_user_settings_user_id').on(t.userId),
+}));
+
+export const userFavoriteSeries = pgTable('user_favorite_series', {
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.seriesId] }),
+  userIdIdx: index('idx_user_favorite_series_user_id').on(t.userId),
+}));
+
+export const profileWallPosts = pgTable('profile_wall_posts', {
+  id: serial('id').primaryKey(),
+  wallUserId: text('wall_user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  authorUserId: text('author_user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  parentId: integer('parent_id').references((): any => profileWallPosts.id, { onDelete: 'cascade' }),
+  content: text('content').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  wallUserIdIdx: index('idx_profile_wall_posts_wall_user_id').on(t.wallUserId, t.createdAt.desc()),
+  authorUserIdIdx: index('idx_profile_wall_posts_author_user_id').on(t.authorUserId),
+  parentIdIdx: index('idx_profile_wall_posts_parent_id').on(t.parentId).where(sql`${t.parentId} IS NOT NULL`),
+}));
+
+export const profileWallPostVotes = pgTable('profile_wall_post_votes', {
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  postId: integer('post_id').notNull().references(() => profileWallPosts.id, { onDelete: 'cascade' }),
+  type: text('type').notNull().default('like'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.postId] }),
+  postIdIdx: index('idx_profile_wall_post_votes_post_id').on(t.postId),
 }));
 
 // Karma ledger
@@ -837,4 +872,21 @@ export const userNotificationsRelations = relations(userNotifications, ({ one })
 export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   actor: one(user, { fields: [auditLogs.actorId], references: [user.id] }),
   targetUser: one(user, { fields: [auditLogs.targetUserId], references: [user.id] }),
+}));
+
+export const profileWallPostsRelations = relations(profileWallPosts, ({ one, many }) => ({
+  wallUser: one(user, { fields: [profileWallPosts.wallUserId], references: [user.id], relationName: 'wallPosts' }),
+  author: one(user, { fields: [profileWallPosts.authorUserId], references: [user.id], relationName: 'authoredWallPosts' }),
+  parent: one(profileWallPosts, { fields: [profileWallPosts.parentId], references: [profileWallPosts.id], relationName: 'wallPostReplies' }),
+  votes: many(profileWallPostVotes),
+}));
+
+export const profileWallPostVotesRelations = relations(profileWallPostVotes, ({ one }) => ({
+  post: one(profileWallPosts, { fields: [profileWallPostVotes.postId], references: [profileWallPosts.id] }),
+  user: one(user, { fields: [profileWallPostVotes.userId], references: [user.id] }),
+}));
+
+export const userFavoriteSeriesRelations = relations(userFavoriteSeries, ({ one }) => ({
+  user: one(user, { fields: [userFavoriteSeries.userId], references: [user.id] }),
+  series: one(series, { fields: [userFavoriteSeries.seriesId], references: [series.id] }),
 }));

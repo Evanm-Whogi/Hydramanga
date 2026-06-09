@@ -35,6 +35,14 @@ export interface UserStats {
   readingTimes: MangaReadingTime[];
   seriesSaved: number;
   comments: number;
+  chaptersRead: number;
+  bookmarks: number;
+  daysActive: number;
+  upvotes: number;
+  downvotes: number;
+  reputation: number;
+  typeBreakdown: Record<string, number>;
+  genreBreakdown: Record<string, number>;
   streak: number;
   currentStreak?: number;
   karma: UserKarma;

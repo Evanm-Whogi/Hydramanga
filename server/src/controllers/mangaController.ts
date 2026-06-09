@@ -28,13 +28,15 @@ function normalizeApostrophes(s: string): string {
         .replace(/\u201D/g, '"');  // RIGHT DOUBLE QUOTATION MARK "
 }
 
-/** Indexed search on denormalized search_text (titles + authors). Multi-word = all tokens match, any order. */
+/** Indexed search on denormalized search_text (titles + authors). Phrase match + all-token AND (any order). */
 function buildTextSearchCondition(normalizedSearch: string) {
-    const tokens = normalizedSearch.split(/\s+/).map((t) => t.trim()).filter(Boolean);
-    if (tokens.length >= 2) {
-        return and(...tokens.map((token) => ilike(schema.series.searchText, `%${token}%`)));
-    }
-    return ilike(schema.series.searchText, `%${normalizedSearch}%`);
+    const trimmed = normalizedSearch.trim();
+    if (!trimmed) return undefined;
+    const phraseMatch = ilike(schema.series.searchText, `%${trimmed}%`);
+    const tokens = trimmed.split(/\s+/).map((t) => t.trim()).filter(Boolean);
+    if (tokens.length < 2) return phraseMatch;
+    const tokenMatch = and(...tokens.map((token) => ilike(schema.series.searchText, `%${token}%`)));
+    return or(phraseMatch, tokenMatch);
 }
 
 const discoverSeriesSelect = {
@@ -118,12 +120,14 @@ async function enrichWithLatestChapter(mangaList: any[]) {
 }
 
 const DISCOVER_NEW_INTERVAL = '3 days';
+const DISCOVER_PAGE_SIZE = 40;
 const DISCOVER_PAGINATION_KEYS = new Set(['cursor', 'limit']);
 
 function normalizeDiscoverQueryForCache(query: Request['query'], excludePagination = false) {
     const entries = Object.entries(query)
         .filter(([key, value]) => {
             if (key === 'nsfw' || value === undefined) return false;
+            if (key === 'limit') return false;
             if (excludePagination && DISCOVER_PAGINATION_KEYS.has(key)) return false;
             return true;
         })
@@ -218,14 +222,14 @@ async function enrichDiscoverSearchPayload(
 export async function searchManga(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
         const { genres, tags, type, status, search, years, sort = "weightedScore", order = "desc", cursor, limit = "40" } = req.query;
-        const pageSize = Math.min(Number(limit), 40);
+        const pageSize = Math.min(Number(limit) || DISCOVER_PAGE_SIZE, DISCOVER_PAGE_SIZE);
         const isAsc = String(order).toLowerCase() === 'asc';
         const userId = req.user?.id;
         const { hideNsfw } = await getUserSettings(userId);
         const hasCursor = Boolean(cursor);
 
-        const cacheKey = `manga:search:v4:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query)}`;
-        const countCacheKey = `manga:search:count:v4:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query, true)}`;
+        const cacheKey = `manga:search:v6:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query)}`;
+        const countCacheKey = `manga:search:count:v6:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query, true)}`;
 
         const conditions: any = [];
 
@@ -310,10 +314,10 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                         isAsc ? asc(effectiveSort) : desc(effectiveSort),
                         isAsc ? asc(schema.series.id) : desc(schema.series.id),
                     )
-                    .limit(pageSize + 1);
+                    .limit(DISCOVER_PAGE_SIZE + 1);
 
-                const hasNextPage = data.length > pageSize;
-                const items = hasNextPage ? data.slice(0, -1) : data;
+                const hasNextPage = data.length > DISCOVER_PAGE_SIZE;
+                const items = hasNextPage ? data.slice(0, DISCOVER_PAGE_SIZE) : data;
 
                 let nextCursor: string | null = null;
                 if (hasNextPage) {
@@ -353,8 +357,29 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         }
 
         const responsePayload = await enrichDiscoverSearchPayload(skeleton);
+        const slicedItems = responsePayload.items.slice(0, pageSize);
+        const hasNextPage = responsePayload.items.length > pageSize || responsePayload.meta.hasNextPage;
 
-        return res.json(responsePayload);
+        let nextCursor = responsePayload.nextCursor;
+        if (slicedItems.length > 0 && hasNextPage && responsePayload.items.length > pageSize) {
+            const last = slicedItems[slicedItems.length - 1];
+            const sortKey = resolveDiscoverSortKey(sort);
+            let val: any = last[sortKey as keyof typeof last] ?? 0;
+            if (val instanceof Date) {
+                val = val.toISOString();
+            } else if (typeof val === 'string') {
+                const parsed = Date.parse(val);
+                if (!isNaN(parsed)) val = new Date(parsed).toISOString();
+            }
+            nextCursor = `${val}|${last.id}`;
+        }
+
+        return res.json({
+            ...responsePayload,
+            items: slicedItems,
+            meta: { ...responsePayload.meta, hasNextPage },
+            nextCursor: hasNextPage ? nextCursor : null,
+        });
 
     } catch (error) {
         return next(error);

@@ -7,6 +7,37 @@ import { readingActivityService } from '@/services/readingActivityService';
 import { READING_TIME_DAY_THRESHOLD_SECONDS } from '@/config/karmaConfig';
 import { badgeService } from '@/services/badgeService';
 
+function normalizeSeriesType(raw: string | null | undefined): 'manga' | 'manhwa' | 'manhua' | 'other' {
+  const value = (raw ?? '').toLowerCase().trim();
+  if (value === 'manga' || value === 'manhwa' || value === 'manhua') return value;
+  return 'other';
+}
+
+function buildGenreBreakdown(rows: { genres: unknown }[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const row of rows) {
+    const genres = Array.isArray(row.genres) ? row.genres : [];
+    const seen = new Set<string>();
+    for (const genre of genres) {
+      if (typeof genre !== 'string') continue;
+      const key = genre.trim();
+      if (!key || seen.has(key.toLowerCase())) continue;
+      seen.add(key.toLowerCase());
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+  }
+  return counts;
+}
+
+function buildTypeBreakdown(rows: { type: string | null }[]): Record<string, number> {
+  const counts: Record<string, number> = { manga: 0, manhwa: 0, manhua: 0, other: 0 };
+  for (const row of rows) {
+    const bucket = normalizeSeriesType(row.type);
+    counts[bucket] += 1;
+  }
+  return counts;
+}
+
 // Cache constants
 const CACHE_TTL = {
   USER_PROGRESS: 180, // 3 minutes
@@ -493,6 +524,39 @@ class UserProgressService {
 
       const seriesSaved = seriesSavedResult[0]?.seriesSaved || 0;
 
+      const [chaptersReadRow] = await db
+        .select({ count: sql<number>`COUNT(*)`.as('chapters_read') })
+        .from(schema.userChapterProgress)
+        .where(and(eq(schema.userChapterProgress.userId, userId), eq(schema.userChapterProgress.isRead, true)));
+
+      const [commentsRow] = await db
+        .select({ count: sql<number>`COUNT(*)`.as('comments') })
+        .from(schema.comments)
+        .where(eq(schema.comments.userId, userId));
+
+      const [upvotesRow] = await db
+        .select({ count: sql<number>`COUNT(*)`.as('upvotes') })
+        .from(schema.commentLikes)
+        .innerJoin(schema.comments, eq(schema.commentLikes.commentId, schema.comments.id))
+        .where(and(eq(schema.comments.userId, userId), eq(schema.commentLikes.type, 'like')));
+
+      const [downvotesRow] = await db
+        .select({ count: sql<number>`COUNT(*)`.as('downvotes') })
+        .from(schema.commentLikes)
+        .innerJoin(schema.comments, eq(schema.commentLikes.commentId, schema.comments.id))
+        .where(and(eq(schema.comments.userId, userId), eq(schema.commentLikes.type, 'dislike')));
+
+      const [daysActiveRow] = await db
+        .select({ count: sql<number>`COUNT(*)`.as('days_active') })
+        .from(schema.userReadingDays)
+        .where(eq(schema.userReadingDays.userId, userId));
+
+      const typeGenreRows = await db
+        .select({ type: schema.series.type, genres: schema.series.genres })
+        .from(schema.userReadingProgress)
+        .innerJoin(schema.series, eq(schema.userReadingProgress.seriesId, schema.series.id))
+        .where(eq(schema.userReadingProgress.userId, userId));
+
       const streakStats = await readingActivityService.getStreakStats(userId);
       await karmaService.ensureBackfilled();
       const karma = await karmaService.getKarmaSummary(userId);
@@ -523,6 +587,15 @@ class UserProgressService {
         }),
         readingTimes: readingTimes || [],
         seriesSaved,
+        comments: Number(commentsRow?.count ?? 0),
+        chaptersRead: Number(chaptersReadRow?.count ?? 0),
+        bookmarks: seriesSaved,
+        daysActive: Number(daysActiveRow?.count ?? 0),
+        upvotes: Number(upvotesRow?.count ?? 0),
+        downvotes: Number(downvotesRow?.count ?? 0),
+        reputation: karma.totalKarma,
+        typeBreakdown: buildTypeBreakdown(typeGenreRows),
+        genreBreakdown: buildGenreBreakdown(typeGenreRows),
         streak: streakStats.longestStreak,
         currentStreak: streakStats.currentStreak,
         karma: {

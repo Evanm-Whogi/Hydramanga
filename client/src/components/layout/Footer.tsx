@@ -16,7 +16,7 @@ export default  function Footer() {
                         <h1 className="text-2xl text-primary">Quick Links</h1>
                         <Link href="/" className="hover:text-primary">Home</Link>
                         <Link href="/discover" className="hover:text-primary">Discover</Link>
-                        <Link href="/bookmarks" className="hover:text-primary">Bookmarks</Link>
+                        <Link href="/users/me?tab=bookmarks" className="hover:text-primary">Bookmarks</Link>
                         <Link href="/users/me" className="hover:text-primary">My Profile</Link>
                         <Link href="/announcements" className="hover:text-primary">Announcements</Link>
                     </div>

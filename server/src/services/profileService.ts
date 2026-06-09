@@ -3,6 +3,7 @@ import { eq, or, max } from 'drizzle-orm';
 import { userProgressService } from '@/services/userProgressService';
 import { getUserSettings } from '@/services/userSettingsService';
 import { badgeService } from '@/services/badgeService';
+import { canViewProfileSection } from '@/lib/profileVisibility';
 
 class ProfileService {
   /**
@@ -64,16 +65,28 @@ class ProfileService {
       isPrivate: false,
       isOwner,
       isProfilePublic: settings.isProfilePublic,
+      profileVisibility: settings.profileVisibility,
       badges: badgeMap[targetUserId] ?? [],
-      stats: {
-        totalSeriesReading: stats.totalSeriesReading,
-        averageCompletion: stats.averageCompletion,
-        totalPagesRead: stats.totalPagesRead,
-        seriesSaved: stats.seriesSaved,
-        streak: stats.streak,
-        currentStreak: stats.currentStreak,
-        karma: stats.karma,
-      },
+      stats: canViewProfileSection(settings.profileVisibility, 'readingStats', isOwner)
+        ? {
+            totalSeriesReading: stats.totalSeriesReading,
+            averageCompletion: stats.averageCompletion,
+            totalPagesRead: stats.totalPagesRead,
+            seriesSaved: stats.seriesSaved,
+            comments: stats.comments,
+            chaptersRead: stats.chaptersRead,
+            bookmarks: stats.bookmarks,
+            daysActive: stats.daysActive,
+            upvotes: stats.upvotes,
+            downvotes: stats.downvotes,
+            reputation: stats.reputation,
+            typeBreakdown: stats.typeBreakdown,
+            genreBreakdown: stats.genreBreakdown,
+            streak: stats.streak,
+            currentStreak: stats.currentStreak,
+            karma: stats.karma,
+          }
+        : undefined,
     };
   }
 }

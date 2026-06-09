@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Grid2X2, TextAlignJustify } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { fetchBookmarks, SeriesBookmark, BOOKMARK_STATUSES, getStatusLabel, removeBookmark, setBookmark, BookmarkStatus } from '@/services/bookmarkService';
+import { getProfileBookmarks } from '@/services/profileService';
 import { FILTER_OPTIONS } from '@/constants/filters';
 import MangaCard from '@/components/MangaCard';
 import BookmarksTable from '@/app/bookmarks/components/BookmarksTable';
@@ -33,7 +34,7 @@ function bookmarkToManga(bookmark: SeriesBookmark) {
   };
 }
 
-export default function BookmarksPageClient() {
+export default function BookmarksPageClient({ identifier, readOnly = false }: { identifier?: string; readOnly?: boolean }) {
   const [bookmarks, setBookmarks] = useState<SeriesBookmark[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -44,18 +45,21 @@ export default function BookmarksPageClient() {
   const load = useCallback(async (withLoading = true) => {
     if (withLoading) setLoading(true);
     try {
-      const res = await fetchBookmarks({
+      const params = {
         status: selectedStatuses.length ? selectedStatuses : undefined,
         type: selectedTypes.length ? selectedTypes : undefined,
         sort,
-      });
+      };
+      const res = identifier && identifier !== 'me'
+        ? await getProfileBookmarks(identifier, params)
+        : await fetchBookmarks(params);
       setBookmarks(res.bookmarks);
     } catch (err) {
       toastApiError(err, 'Failed to load bookmarks');
     } finally {
       if (withLoading) setLoading(false);
     }
-  }, [selectedStatuses, selectedTypes, sort]);
+  }, [identifier, selectedStatuses, selectedTypes, sort]);
 
   useEffect(() => { load(true); }, [load]);
 
@@ -127,22 +131,24 @@ export default function BookmarksPageClient() {
           />
           <SingleDropdown options={SORT_OPTIONS as any} onChange={setSort} initialValue={sort} size="w-full" />
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setViewMode('grid')} className={`rounded-md p-2 transition-colors ${viewMode === 'grid' ? 'bg-accent text-foreground' : 'bg-foreground text-muted hover:bg-foreground/50'}`} aria-label="Grid view">
-            <Grid2X2 className="size-5" />
-          </button>
-          <button onClick={() => setViewMode('list')} className={`rounded-md p-2 transition-colors ${viewMode === 'list' ? 'bg-accent text-foreground' : 'bg-foreground text-muted hover:bg-foreground/50'}`} aria-label="List view">
-            <TextAlignJustify className="size-5" />
-          </button>
-        </div>
+        {!readOnly && (
+          <div className="flex gap-2">
+            <button onClick={() => setViewMode('grid')} className={`rounded-md p-2 transition-colors ${viewMode === 'grid' ? 'bg-accent text-foreground' : 'bg-foreground text-muted hover:bg-foreground/50'}`} aria-label="Grid view">
+              <Grid2X2 className="size-5" />
+            </button>
+            <button onClick={() => setViewMode('list')} className={`rounded-md p-2 transition-colors ${viewMode === 'list' ? 'bg-accent text-foreground' : 'bg-foreground text-muted hover:bg-foreground/50'}`} aria-label="List view">
+              <TextAlignJustify className="size-5" />
+            </button>
+          </div>
+        )}
       </div>
 
       {loading ? (
         <div className="py-20 text-center text-muted">Loading bookmarks...</div>
       ) : bookmarks.length === 0 ? (
-        <div className="py-20 text-center text-muted">No bookmarks yet. Browse manga and set a bookmark status.</div>
-      ) : viewMode === 'grid' ? (
-        <div className="grid grid-cols-2 gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-8">
+        <div className="py-20 text-center text-muted">{readOnly ? 'No bookmarks to show.' : 'No bookmarks yet. Browse manga and set a bookmark status.'}</div>
+      ) : viewMode === 'grid' || readOnly ? (
+        <div className="grid grid-cols-2 gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7">
           {bookmarks.map((bookmark, index) => (
             <div key={bookmark.seriesId} className="relative">
               <MangaCard manga={bookmarkToManga(bookmark)} priority={index < 16} />

@@ -14,9 +14,6 @@ const GUEST_PATHS = ["/login", "/register", "/reset-password"] as const;
 const PROTECTED_PATHS = [
     "/admin",
     "/profile",
-    "/bookmarks",
-    "/lists/mine",
-    "/lists/saved",
     "/history",
     "/request",
 ] as const;

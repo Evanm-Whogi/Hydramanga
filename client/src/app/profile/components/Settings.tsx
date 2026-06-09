@@ -18,6 +18,16 @@ export default function Settings({ user }: { user: any }) {
     const [hideNsfw, setHideNsfw] = useState(false);
     const [isProfilePublic, setIsProfilePublic] = useState(true);
     const [incognitoMode, setIncognitoMode] = useState(false);
+    const [profileVisibility, setProfileVisibility] = useState({
+      bio: true,
+      readingStats: true,
+      favorites: true,
+      lists: true,
+      bookmarks: true,
+      comments: true,
+      wall: true,
+      recentReads: true,
+    });
     const [settingsLoading, setSettingsLoading] = useState(false);
 
   const fetchSettings = async () => {
@@ -26,6 +36,7 @@ export default function Settings({ user }: { user: any }) {
       setHideNsfw(s.hideNsfw);
       setIsProfilePublic(s.isProfilePublic);
       setIncognitoMode(s.incognitoMode ?? false);
+      setProfileVisibility(s.profileVisibility);
     } catch {
       setHideNsfw(false);
       setIsProfilePublic(true);
@@ -85,6 +96,33 @@ export default function Settings({ user }: { user: any }) {
             setSettingsLoading(false);
         }
     };
+
+    const handleVisibilityToggle = async (key: keyof typeof profileVisibility) => {
+        const newValue = !profileVisibility[key];
+        const nextVisibility = { ...profileVisibility, [key]: newValue };
+        setSettingsLoading(true);
+        try {
+            await updateSettings({ profileVisibility: nextVisibility });
+            setProfileVisibility(nextVisibility);
+            toast.success(newValue ? "Section is now visible on your public profile" : "Section hidden from your public profile");
+            router.refresh();
+        } catch (error) {
+            toastApiError(error, "Failed to update setting");
+        } finally {
+            setSettingsLoading(false);
+        }
+    };
+
+    const visibilityOptions: { key: keyof typeof profileVisibility; label: string; description: string }[] = [
+      { key: "bio", label: "About / Bio", description: "Show your bio on your public profile overview." },
+      { key: "readingStats", label: "Reading statistics", description: "Show your reading stats and breakdown charts." },
+      { key: "favorites", label: "Favorites", description: "Show your favorite manga on your profile overview." },
+      { key: "lists", label: "Lists", description: "Allow others to view your curated lists tab." },
+      { key: "bookmarks", label: "Bookmarks", description: "Allow others to view your manga bookmarks tab." },
+      { key: "comments", label: "Comments", description: "Allow others to browse your manga comments." },
+      { key: "wall", label: "Wall", description: "Allow others to view and post on your profile wall." },
+      { key: "recentReads", label: "Recent reads", description: "Show your recent reading history tab." },
+    ];
 
   const handleUpdateInfo = async () => {
     try {
@@ -205,7 +243,7 @@ export default function Settings({ user }: { user: any }) {
                     <div className="flex items-center justify-between gap-4 mt-6 pt-6 border-t border-borders">
                         <div>
                             <p className="font-medium text-primary">Public profile</p>
-                            <p className="text-sm text-muted">When on, other members can view your reading stats and karma on your profile page.</p>
+                            <p className="text-sm text-muted">When on, other members can view your public profile page.</p>
                         </div>
                         <button
                             type="button"
@@ -233,6 +271,30 @@ export default function Settings({ user }: { user: any }) {
                         >
                             <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${incognitoMode ? 'translate-x-5' : 'translate-x-1'}`} />
                         </button>
+                    </div>
+                </div>
+                <div className="flex flex-col p-5 bg-foreground w-full rounded-md">
+                    <h1 className="text-xl font-bold">Public profile sections</h1>
+                    <p className="text-sm text-muted mb-4">Choose what visitors can see on your public profile page.</p>
+                    <div className="space-y-4">
+                      {visibilityOptions.map((option) => (
+                        <div key={option.key} className="flex items-center justify-between gap-4 pt-4 first:pt-0 border-t first:border-t-0 border-borders">
+                          <div>
+                            <p className="font-medium text-primary">{option.label}</p>
+                            <p className="text-sm text-muted">{option.description}</p>
+                          </div>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={profileVisibility[option.key]}
+                            disabled={settingsLoading}
+                            onClick={() => handleVisibilityToggle(option.key)}
+                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 ${profileVisibility[option.key] ? 'bg-accent' : 'bg-foreground'}`}
+                          >
+                            <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${profileVisibility[option.key] ? 'translate-x-5' : 'translate-x-1'}`} />
+                          </button>
+                        </div>
+                      ))}
                     </div>
                 </div>
             </div>

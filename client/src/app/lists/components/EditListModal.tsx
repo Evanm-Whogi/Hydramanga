@@ -95,7 +95,7 @@ export default function EditListModal({ listId, initialList, onClose, onUpdated,
       await deleteList(listId);
       toast.success("List deleted");
       onClose();
-      router.push("/lists/mine");
+      router.push("/users/me?tab=lists");
     } catch (err) {
       toastApiError(err, "Failed to delete list");
     } finally {

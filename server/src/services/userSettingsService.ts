@@ -1,6 +1,7 @@
 import { db } from '@/db/index';
 import { schema } from '@/db/index';
 import { eq, sql } from 'drizzle-orm';
+import { DEFAULT_PROFILE_VISIBILITY, normalizeProfileVisibility, type ProfileVisibility } from '@/lib/profileVisibility';
 
 const DEFAULT_HIDE_NSFW = false;
 const DEFAULT_PROFILE_PUBLIC = true;
@@ -17,6 +18,7 @@ export interface UserSettings {
   hideNsfw: boolean;
   isProfilePublic: boolean;
   incognitoMode: boolean;
+  profileVisibility: ProfileVisibility;
 }
 
 export async function getUserSettings(userId: string | null | undefined): Promise<UserSettings> {
@@ -25,6 +27,7 @@ export async function getUserSettings(userId: string | null | undefined): Promis
       hideNsfw: DEFAULT_HIDE_NSFW,
       isProfilePublic: DEFAULT_PROFILE_PUBLIC,
       incognitoMode: DEFAULT_INCOGNITO_MODE,
+      profileVisibility: DEFAULT_PROFILE_VISIBILITY,
     };
   }
 
@@ -43,11 +46,13 @@ export async function getUserSettings(userId: string | null | undefined): Promis
           hideNsfw: DEFAULT_HIDE_NSFW,
           isProfilePublic: DEFAULT_PROFILE_PUBLIC,
           incognitoMode: DEFAULT_INCOGNITO_MODE,
+          profileVisibility: DEFAULT_PROFILE_VISIBILITY,
         }
       : {
           hideNsfw: row[0].hideNsfw,
           isProfilePublic: row[0].isProfilePublic ?? DEFAULT_PROFILE_PUBLIC,
           incognitoMode: row[0].incognitoMode ?? DEFAULT_INCOGNITO_MODE,
+          profileVisibility: normalizeProfileVisibility(row[0].profileVisibility),
         };
   settingsCache.set(userId, {
     settings,
@@ -68,11 +73,14 @@ export async function updateUserSettings(userId: string, updates: Partial<UserSe
     updates.isProfilePublic ?? existing[0]?.isProfilePublic ?? DEFAULT_PROFILE_PUBLIC;
   const incognitoMode =
     updates.incognitoMode ?? existing[0]?.incognitoMode ?? DEFAULT_INCOGNITO_MODE;
+  const profileVisibility = updates.profileVisibility
+    ? normalizeProfileVisibility({ ...normalizeProfileVisibility(existing[0]?.profileVisibility), ...updates.profileVisibility })
+    : normalizeProfileVisibility(existing[0]?.profileVisibility);
 
   if (existing.length) {
     await db
       .update(schema.userSettings)
-      .set({ hideNsfw, isProfilePublic, incognitoMode, updatedAt: new Date() })
+      .set({ hideNsfw, isProfilePublic, incognitoMode, profileVisibility, updatedAt: new Date() })
       .where(eq(schema.userSettings.userId, userId));
   } else {
     await db.insert(schema.userSettings).values({
@@ -80,11 +88,12 @@ export async function updateUserSettings(userId: string, updates: Partial<UserSe
       hideNsfw,
       isProfilePublic,
       incognitoMode,
+      profileVisibility,
     });
   }
 
   settingsCache.delete(userId);
-  return { hideNsfw, isProfilePublic, incognitoMode };
+  return { hideNsfw, isProfilePublic, incognitoMode, profileVisibility };
 }
 
 export async function incrementIncognitoChaptersRead(userId: string): Promise<number> {

@@ -1,9 +1,11 @@
 import { apiPostFormData, apiDelete, apiGet, apiPatch } from '@/lib/api';
+import type { ProfileVisibility } from '@/types/profile';
 
 export interface UserSettings {
   hideNsfw: boolean;
   isProfilePublic: boolean;
   incognitoMode: boolean;
+  profileVisibility: ProfileVisibility;
 }
 
 export async function getSettings(): Promise<UserSettings> {
@@ -12,6 +14,16 @@ export async function getSettings(): Promise<UserSettings> {
     hideNsfw: data?.hideNsfw ?? false,
     isProfilePublic: data?.isProfilePublic ?? true,
     incognitoMode: data?.incognitoMode ?? false,
+    profileVisibility: data?.profileVisibility ?? {
+      bio: true,
+      readingStats: true,
+      favorites: true,
+      lists: true,
+      bookmarks: true,
+      comments: true,
+      wall: true,
+      recentReads: true,
+    },
   };
 }
 
@@ -21,6 +33,16 @@ export async function updateSettings(updates: Partial<UserSettings>): Promise<Us
     hideNsfw: data?.hideNsfw ?? false,
     isProfilePublic: data?.isProfilePublic ?? true,
     incognitoMode: data?.incognitoMode ?? false,
+    profileVisibility: data?.profileVisibility ?? {
+      bio: true,
+      readingStats: true,
+      favorites: true,
+      lists: true,
+      bookmarks: true,
+      comments: true,
+      wall: true,
+      recentReads: true,
+    },
   };
 }
 

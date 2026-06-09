@@ -2,6 +2,7 @@ import { db } from '@/db';
 import * as schema from '@/db/schema';
 import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import logger from '@/services/loggerService';
+import { getNsfwFilterConditions } from '@/config/contentFilter';
 
 export const BOOKMARK_STATUSES = ['reading', 'rereading', 'planned', 'completed', 'paused', 'dropped'] as const;
 export type BookmarkStatus = typeof BOOKMARK_STATUSES[number];
@@ -44,9 +45,14 @@ export class BookmarkService {
     search?: string;
     limit?: number;
     offset?: number;
+    hideNsfw?: boolean;
   } = {}): Promise<{ items: any[]; total: number }> {
-    const { status, types, sort = 'bookmarked', search, limit = 500, offset = 0 } = options;
+    const { status, types, sort = 'bookmarked', search, limit = 500, offset = 0, hideNsfw = false } = options;
     const conditions = [eq(schema.seriesBookmarks.userId, userId)];
+
+    if (hideNsfw) {
+      conditions.push(...getNsfwFilterConditions(true, schema.series));
+    }
 
     if (status?.length) {
       conditions.push(inArray(schema.seriesBookmarks.status, status as any));

@@ -1,10 +1,16 @@
 "use client";
-import { LayoutDashboardIcon, SettingsIcon, ShieldIcon, Upload, X, Camera } from 'lucide-react';
+import { LayoutDashboardIcon, SettingsIcon, ShieldIcon, Upload, X, Camera, ListIcon, Bookmark, BookTextIcon, MessageSquareIcon, MessagesSquareIcon, HistoryIcon } from 'lucide-react';
 import { useSearchParams, useRouter } from "next/navigation";
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import Overview from '@/app/profile/components/Overview';
 import Settings from '@/app/profile/components/Settings';
 import Activity from '@/app/profile/components/Activity';
+import ProfileComments from '@/app/profile/components/ProfileComments';
+import ProfileLists from '@/app/profile/components/ProfileLists';
+import ProfileTabBar from '@/app/profile/components/ProfileTabBar';
+import ProfileRecentReads from '@/app/profile/components/ProfileRecentReads';
+import BookmarksPageClient from '@/app/bookmarks/components/BookmarksPageClient';
+import ProfileWall from '@/app/profile/components/ProfileWall';
 import { toast } from 'react-toastify';
 import { toastApiError } from '@/lib/rateLimit';
 import { useUser } from "@/providers/UserProvider";
@@ -16,12 +22,18 @@ import ProfileShareCard from "@/app/profile/components/ProfileShareCard";
 import { getPublicProfile } from "@/services/profileService";
 import ProfileBadgesCard from "@/components/badges/ProfileBadgesCard";
 import type { EarnedBadge } from "@/lib/badgeConfig";
+import { buildProfileTabs, DEFAULT_PROFILE_VISIBILITY, normalizeProfileTab, type ProfileTabId } from '@/app/profile/profileTabs';
 
-
-const VIEWS: { [key: string]: React.FC<{ user: any; isOwner: boolean }> } = {
-  overview: Overview,
-  settings: Settings,
-  activity: Activity,
+const TAB_ICONS: Partial<Record<ProfileTabId, React.ReactNode>> = {
+  overview: <LayoutDashboardIcon className="size-5" />,
+  lists: <ListIcon className="size-5" />,
+  'saved-lists': <Bookmark className="size-5" />,
+  bookmarks: <BookTextIcon className="size-5" />,
+  comments: <MessageSquareIcon className="size-5" />,
+  wall: <MessagesSquareIcon className="size-5" />,
+  'recent-reads': <HistoryIcon className="size-5" />,
+  settings: <SettingsIcon className="size-5" />,
+  activity: <ShieldIcon className="size-5" />,
 };
 
 function formatDate(value?: string | Date | null) {
@@ -117,16 +129,49 @@ function LevelCard() {
   );
 }
 
+function renderTabContent(tab: ProfileTabId, user: any) {
+  switch (tab) {
+    case 'overview':
+      return <Overview user={user} isOwner={true} identifier="me" />;
+    case 'lists':
+      return <ProfileLists mode="mine" />;
+    case 'saved-lists':
+      return <ProfileLists mode="saved" />;
+    case 'bookmarks':
+      return <BookmarksPageClient />;
+    case 'comments':
+      return <ProfileComments identifier="me" />;
+    case 'wall':
+      return <ProfileWall identifier="me" wallOwnerId={user.id} />;
+    case 'recent-reads':
+      return <ProfileRecentReads identifier="me" />;
+    case 'settings':
+      return <Settings user={user} />;
+    case 'activity':
+      return <Activity user={user} isOwner={true} />;
+    default:
+      return <Overview user={user} isOwner={true} identifier="me" />;
+  }
+}
+
 export default function ProfileContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, session } = useUser()!;
-  const [page, setPage] = useState(searchParams.get("tab") || "overview");
+  const tabParam = searchParams.get("tab");
+  const [page, setPage] = useState<ProfileTabId>(() => normalizeProfileTab(tabParam));
   const [lastOnlineAt, setLastOnlineAt] = useState<string | null>(session?.updatedAt?.toISOString() ?? null);
   const [badges, setBadges] = useState<EarnedBadge[]>([]);
-  const ActiveView = VIEWS[page] || Overview;
   const verified = searchParams.get("verified");
-  const tabParam = searchParams.get("tab");
+  const ownerTabs = useMemo(() => buildProfileTabs(true, DEFAULT_PROFILE_VISIBILITY, TAB_ICONS), []);
+
+  const handleTabChange = (tab: string) => {
+    const nextTab = normalizeProfileTab(tab);
+    setPage(nextTab);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', nextTab);
+    router.replace(`/users/me?${params.toString()}`, { scroll: false });
+  };
 
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -190,9 +235,7 @@ export default function ProfileContent() {
   };
 
   useEffect(() => {
-    if (tabParam && VIEWS[tabParam]) {
-      setPage(tabParam);
-    }
+    setPage(normalizeProfileTab(tabParam));
   }, [tabParam]);
 
   useEffect(() => {
@@ -272,35 +315,10 @@ export default function ProfileContent() {
 
           </div>
           <div className="flex flex-col space-y-2 w-full lg:w-2/3 lg:ml-5 mt-5 lg:mt-0">
-            <div className="flex flex-wrap gap-3">
-              <button
-                onClick={() => setPage("overview")}
-                className={`${
-                  page === "overview" ? "bg-foreground text-primary border border-borders" : "bg-foreground text-muted"
-                } hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-base lg:text-lg cursor-pointer transition-colors`}
-              >
-                <LayoutDashboardIcon className="size-5 mr-2" /> Overview
-              </button>
-              <button
-                onClick={() => setPage("settings")}
-                className={`${
-                  page === "settings" ? "bg-foreground text-primary border border-borders" : "bg-foreground text-muted"
-                } hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-base lg:text-lg cursor-pointer transition-colors`}
-              >
-                <SettingsIcon className="size-5 mr-2" /> Settings
-              </button>
-              <button
-                onClick={() => setPage("activity")}
-                className={`${
-                  page === "activity" ? "bg-foreground text-primary border border-borders" : "bg-foreground text-muted"
-                } hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-base lg:text-lg cursor-pointer transition-colors`}
-              >
-                <ShieldIcon className="size-5 mr-2" /> Activity
-              </button>
-            </div>
+            <ProfileTabBar tabs={ownerTabs} activeTab={page} onTabChange={handleTabChange} />
 
-            <div className="mt-4">
-              <ActiveView user={user} isOwner={true} />
+            <div className="mt-4 mb-12">
+              {renderTabContent(page, user)}
             </div>
           </div>
         </div>

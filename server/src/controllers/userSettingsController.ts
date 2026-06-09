@@ -17,14 +17,14 @@ export async function patchSettings(req: Request, res: Response) {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ message: 'Unauthorized' });
-    const { hideNsfw, isProfilePublic, incognitoMode } = req.body || {};
-    const settings = await updateUserSettings(userId, { hideNsfw, isProfilePublic, incognitoMode });
+    const { hideNsfw, isProfilePublic, incognitoMode, profileVisibility } = req.body || {};
+    const settings = await updateUserSettings(userId, { hideNsfw, isProfilePublic, incognitoMode, profileVisibility });
     recordAuditFromRequest(req, {
       action: 'settings.update',
       category: 'settings',
       resourceType: 'user',
       resourceId: userId,
-      metadata: { hideNsfw, isProfilePublic, incognitoMode },
+      metadata: { hideNsfw, isProfilePublic, incognitoMode, profileVisibility },
     });
     return res.json(settings);
   } catch (err) {
