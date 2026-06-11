@@ -48,7 +48,7 @@ export default function DataExportSection() {
     <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md">
       <h1 className="text-xl font-bold">Data export & import</h1>
       <p className="text-sm text-muted">
-        Export or restore your series bookmarks and reading progress as JSON.
+        Export or restore your bookmarks, lists, saved lists, reading progress, recent reads, and view history as JSON.
       </p>
       <div className="flex flex-col gap-3 pt-5">
         <button type="button" onClick={handleExport} className={actionButtonClass}>

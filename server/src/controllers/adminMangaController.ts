@@ -9,6 +9,7 @@ import logger from '@/services/loggerService';
 import { queueService } from '@/services/queueService';
 import { cacheService } from '@/services/cacheService';
 import { extractSecondaryTitleStrings } from '@/lib/secondaryTitles';
+import { seriesMigrationService } from '@/services/seriesMigrationService';
 
 export async function adminScraperSearch(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
@@ -308,6 +309,59 @@ export async function adminDeleteChapters(req: Request, res: Response, next: Nex
         });
     } catch (error) {
         logger.error(`Admin delete chapters failed: ${(error as Error).message}`, { service: 'adminMangaController' });
+        return next(error);
+    }
+}
+
+/** Admin: migrate chapters and user data from this series to another series (queued job). */
+export async function adminMigrateSeries(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+    try {
+        const sourceSeriesId = parseInt(req.params.id, 10);
+        if (isNaN(sourceSeriesId) || sourceSeriesId <= 0) return res.status(400).json({ error: 'Invalid manga ID' });
+
+        const targetSeriesId = parseInt(String((req.body || {}).targetSeriesId), 10);
+        if (isNaN(targetSeriesId) || targetSeriesId <= 0) return res.status(400).json({ error: 'targetSeriesId is required' });
+
+        const preview = await seriesMigrationService.preparePreview(sourceSeriesId, targetSeriesId);
+        if (!preview.valid) {
+            return res.status(400).json({ error: preview.error || 'Invalid migration' });
+        }
+
+        const jobId = seriesMigrationService.buildJobId(sourceSeriesId, targetSeriesId);
+        const existingJob = await queueService.getJob('seriesMigrationQueue', jobId);
+        if (existingJob) {
+            const state = await existingJob.getState();
+            if (state === 'waiting' || state === 'delayed' || state === 'active') {
+                return res.status(409).json({
+                    queued: false,
+                    message: 'Migration already queued or in progress',
+                    jobId,
+                    ...preview,
+                });
+            }
+        }
+
+        await queueService.addJob(
+            'seriesMigrationQueue',
+            'migrateSeries',
+            { sourceSeriesId, targetSeriesId, triggeredBy: req.user?.id },
+            { jobId }
+        );
+
+        logger.info(`Queued series migration ${sourceSeriesId} → ${targetSeriesId}`, { service: 'adminMangaController' });
+        return res.json({
+            queued: true,
+            jobId,
+            sourceSeriesId,
+            targetSeriesId,
+            toMigrateCount: preview.toMigrateCount,
+            conflictCount: preview.conflictCount,
+            conflictChapterNumbers: preview.conflictChapterNumbers,
+            sourceTitle: preview.sourceTitle,
+            targetTitle: preview.targetTitle,
+        });
+    } catch (error) {
+        logger.error(`Admin migrate series failed: ${(error as Error).message}`, { service: 'adminMangaController' });
         return next(error);
     }
 }

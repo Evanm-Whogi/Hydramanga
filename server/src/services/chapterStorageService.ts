@@ -43,6 +43,40 @@ class ChapterStorageService {
     if (!storageRoot) return [];
     return this.removeChapterStorage(storageRoot, payload.seriesId, payload.prefixes, payload.deleteSeriesFolder);
   }
+
+  async moveChapterStorage(storageRoot: string, fromPrefix: string, toPrefix: string): Promise<string | null> {
+    const fromDir = path.join(storageRoot, fromPrefix);
+    const toDir = path.join(storageRoot, toPrefix);
+    try {
+      if (!(await fs.pathExists(fromDir))) {
+        logger.warn(`Source chapter dir missing: ${fromDir}`, { service: 'chapterStorageService' });
+        return `missing: ${fromPrefix}`;
+      }
+      if (await fs.pathExists(toDir)) {
+        logger.warn(`Target chapter dir already exists: ${toDir}`, { service: 'chapterStorageService' });
+        return `exists: ${toPrefix}`;
+      }
+      await fs.ensureDir(path.dirname(toDir));
+      await fs.move(fromDir, toDir);
+      return null;
+    } catch (err) {
+      const msg = (err as Error).message;
+      logger.warn(`Failed to move chapter storage ${fromPrefix} → ${toPrefix}: ${msg}`, { service: 'chapterStorageService' });
+      return `${fromPrefix}: ${msg}`;
+    }
+  }
+
+  async removeEmptySeriesDir(storageRoot: string, seriesId: number): Promise<void> {
+    const seriesDir = path.join(storageRoot, String(seriesId));
+    try {
+      if (await fs.pathExists(seriesDir)) {
+        const entries = await fs.readdir(seriesDir);
+        if (entries.length === 0) await fs.remove(seriesDir);
+      }
+    } catch (err) {
+      logger.warn(`Failed to remove empty series dir ${seriesDir}: ${(err as Error).message}`, { service: 'chapterStorageService' });
+    }
+  }
 }
 
 export const chapterStorageService = new ChapterStorageService();

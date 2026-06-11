@@ -60,6 +60,11 @@ export interface QueueConfig {
         timeout: number;
         retries: number;
     };
+    seriesMigrationQueue: {
+        concurrency: number;
+        timeout: number;
+        retries: number;
+    };
 }
 
 /**
@@ -131,6 +136,15 @@ export interface ScraperConfig {
     toonily: {
         baseUrl: string;
         userAgent: string;
+        timeout: number; // milliseconds
+        priority: number; // 1 = highest priority
+        enabled: boolean;
+    };
+    kagane: {
+        apiUrl: string;
+        baseUrl: string;
+        userAgent: string;
+        flareSolverrUrl?: string;
         timeout: number; // milliseconds
         priority: number; // 1 = highest priority
         enabled: boolean;
@@ -292,6 +306,11 @@ export class AppConfigService {
                     timeout: parseEnvNumber('STORAGE_CLEANUP_TIMEOUT', 30 * 60 * 1000),
                     retries: parseEnvNumber('STORAGE_CLEANUP_RETRIES', 2),
                 },
+                seriesMigrationQueue: {
+                    concurrency: parseEnvNumber('SERIES_MIGRATION_CONCURRENCY', 1),
+                    timeout: parseEnvNumber('SERIES_MIGRATION_TIMEOUT', 60 * 60 * 1000),
+                    retries: parseEnvNumber('SERIES_MIGRATION_RETRIES', 1),
+                },
             },
 
             // Cache Configuration
@@ -368,6 +387,15 @@ export class AppConfigService {
                     timeout: parseEnvNumber('TOONILY_TIMEOUT', 30000), // 30 seconds
                     priority: parseEnvNumber('TOONILY_PRIORITY', 5), // 5 = fifth priority
                     enabled: parseEnvBoolean('TOONILY_ENABLED', true),
+                },
+                kagane: {
+                    apiUrl: 'https://yuzuki.kagane.to',
+                    baseUrl: 'https://kagane.to',
+                    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+                    flareSolverrUrl: parseEnvString('KAGANE_FLARESOLVERR_URL') || parseEnvString('FLARESOLVERR_URL'),
+                    timeout: parseEnvNumber('KAGANE_TIMEOUT', 30000), // 30 seconds
+                    priority: parseEnvNumber('KAGANE_PRIORITY', 3), // 3 = third priority tier
+                    enabled: parseEnvBoolean('KAGANE_ENABLED', true),
                 },
             },
 

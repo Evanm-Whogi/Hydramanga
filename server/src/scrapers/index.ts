@@ -19,6 +19,7 @@ import { ToonilyScraper } from './implementations/ToonilyScraper';
 import { AtsuMoeScraper } from './implementations/AtsuMoeScraper';
 import { AsuraComicScraper } from './implementations/AsuraComicScraper';
 import { ComixScraper } from './implementations/ComixScraper';
+import { KaganeScraper } from './implementations/KaganeScraper';
 import logger from '@/services/loggerService';
 
 /**
@@ -59,6 +60,10 @@ export function initializeScrapers(): void {
     // Register Toonily scraper
     const toonilyScraper = new ToonilyScraper();
     scraperManager.registerScraper(toonilyScraper);
+
+    // Register Kagane scraper
+    const kaganeScraper = new KaganeScraper();
+    scraperManager.registerScraper(kaganeScraper);
 
     // Log registration summary
     const stats = scraperManager.getStats();

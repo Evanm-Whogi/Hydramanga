@@ -82,8 +82,8 @@ export class ComixScraper implements IChapterScraper {
     /** DOM readiness threshold (lower than capture min — reader thumbs load before full decode). */
     private static readonly MIN_IMAGE_NATURAL_WIDTH = 320;
     private static readonly MIN_IMAGE_NATURAL_HEIGHT = 400;
-    /** Placeholder/spinner assets from Comix CDN are ~1–2 KB; real chapter pages are much larger. */
-    private static readonly MIN_IMAGE_DOWNLOAD_BYTES = 10_000;
+    /** Placeholder/spinner assets from Comix CDN are ~1–2 KB; small but valid webp pages can be ~5 KB. */
+    private static readonly MIN_IMAGE_DOWNLOAD_BYTES = 2_000;
     private static readonly SCREENSHOT_TIMEOUT_MS = 15_000;
 
     private static isValidChapterImageDimensions(width: number, height: number): boolean {
@@ -680,8 +680,7 @@ export class ComixScraper implements IChapterScraper {
                         const width = metadata.width || 0;
                         const height = metadata.height || 0;
                         const dimsOk = ComixScraper.isValidChapterImageDimensions(width, height);
-                        const bytesOk = buffer.length >= ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES;
-                        if (!dimsOk || !bytesOk) {
+                        if (!dimsOk) {
                             browserCapturePages.push(asset.page);
                         }
                     } catch {
@@ -1724,19 +1723,20 @@ export class ComixScraper implements IChapterScraper {
                         });
                         const buffer = Buffer.from(response.data as ArrayBuffer);
                         const contentType = String(response.headers['content-type'] || 'unknown');
-                        if (buffer.length < ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES) {
-                            logger.warn(
-                                `[Comix] [${contextLabel}] Page ${asset.page}: URL payload too small (${buffer.length}/${ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES} bytes, status=${response.status}, contentType=${contentType}, url=${urlSummary}, payload=${ComixScraper.describeDownloadBuffer(buffer)})`,
-                                { service: 'comixScraper' },
-                            );
-                            throw new Error(
-                                `Downloaded image too small for page ${asset.page}: ${buffer.length}/${ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES} bytes (url=${urlSummary}, contentType=${contentType})`,
-                            );
-                        }
                         const metadata = await sharp(buffer, { failOn: 'none' }).metadata();
                         const width = metadata.width || 0;
                         const height = metadata.height || 0;
-                        if (!ComixScraper.isValidChapterImageDimensions(width, height)) {
+                        const dimsOk = ComixScraper.isValidChapterImageDimensions(width, height);
+                        if (!dimsOk) {
+                            if (buffer.length < ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES) {
+                                logger.warn(
+                                    `[Comix] [${contextLabel}] Page ${asset.page}: URL payload too small (${buffer.length}/${ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES} bytes, status=${response.status}, contentType=${contentType}, url=${urlSummary}, payload=${ComixScraper.describeDownloadBuffer(buffer)})`,
+                                    { service: 'comixScraper' },
+                                );
+                                throw new Error(
+                                    `Downloaded image too small for page ${asset.page}: ${buffer.length}/${ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES} bytes (url=${urlSummary}, contentType=${contentType})`,
+                                );
+                            }
                             logger.warn(
                                 `[Comix] [${contextLabel}] Page ${asset.page}: URL image dimensions too small (${width}x${height}, bytes=${buffer.length}, url=${urlSummary})`,
                                 { service: 'comixScraper' },

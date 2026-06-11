@@ -11,12 +11,14 @@ const QUEUE_LABELS: Record<string, string> = {
   emailQueue: 'Email',
   mangaImportQueue: 'Manga Import',
   mangaChapterImportQueue: 'Chapter Scan',
+  seriesMigrationQueue: 'Series Migration',
 };
 
 const QUEUE_DESCRIPTIONS: Record<string, string> = {
   emailQueue: 'Transactional and notification emails',
   mangaImportQueue: 'Full series import and metadata sync',
   mangaChapterImportQueue: 'Scraper chapter list discovery',
+  seriesMigrationQueue: 'Move chapters and user data between series',
 };
 
 function getAllAdminQueueNames(): string[] {

@@ -12,6 +12,7 @@ export const CHAPTER_DOWNLOAD_SCRAPER_IDS = [
     'toonily',
     'asuracomic',
     'comix',
+    'kagane',
     'mangadex',
     'nhentai',
 ] as const;
@@ -33,6 +34,7 @@ const SCRAPER_DISPLAY_NAMES: Record<string, string> = {
     asuracomic: 'AsuraComic',
     comix: 'Comix',
     atsumoe: 'AtsuMoe',
+    kagane: 'Kagane',
     nhentai: 'nHentai',
     [UNKNOWN_SCRAPER_QUEUE_ID]: 'Unknown',
 };
@@ -40,6 +42,7 @@ const SCRAPER_DISPLAY_NAMES: Record<string, string> = {
 /** Conservative defaults for rate-sensitive sources; env vars override per scraper. */
 const SCRAPER_DOWNLOAD_OVERRIDES: Record<string, Partial<Pick<ChapterDownloadWorkerConfig, 'concurrency'> & { limiterMax: number }>> = {
     mangadex: { concurrency: 1, limiterMax: 2 },
+    kagane: { concurrency: 1, limiterMax: 2 },
     nhentai: { concurrency: 2, limiterMax: 4 },
 };
 
@@ -136,6 +139,7 @@ export function getAdminQueueDisplayOrder(): string[] {
         'mangaImportQueue',
         ...getAllChapterDownloadQueueNames(),
         'storageCleanupQueue',
+        'seriesMigrationQueue',
         'emailQueue',
     ];
 }

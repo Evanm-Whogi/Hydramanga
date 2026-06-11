@@ -57,3 +57,21 @@ export async function adminCancelScan(mangaId: number): Promise<{ success: boole
 export async function adminDeleteChapters(mangaId: number, options: { chapterIds?: number[]; deleteAll?: boolean; confirm: boolean }): Promise<{ success: boolean; seriesId: number; deletedCount: number; storageCleanupQueued?: boolean }> {
   return apiDelete(`/admin/manga/${mangaId}/chapters`, options);
 }
+
+export interface AdminMigrateSeriesResult {
+  queued: boolean;
+  jobId?: string;
+  sourceSeriesId: number;
+  targetSeriesId: number;
+  toMigrateCount?: number;
+  conflictCount?: number;
+  conflictChapterNumbers?: string[];
+  sourceTitle?: string;
+  targetTitle?: string;
+  message?: string;
+}
+
+/** Admin: migrate chapters and user data to another series (queued background job). */
+export async function adminMigrateSeries(sourceSeriesId: number, targetSeriesId: number): Promise<AdminMigrateSeriesResult> {
+  return apiPost(`/admin/manga/${sourceSeriesId}/migrate`, { targetSeriesId });
+}

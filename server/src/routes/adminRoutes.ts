@@ -2,7 +2,7 @@ import { Router, RequestHandler } from 'express';
 import { auditAdminMiddleware } from '@/middlewares/auditAdminMiddleware';
 import { listAdminAuditLogs } from '@/controllers/adminAuditController';
 import { triggerMangaSync, triggerMonitoredRescan, triggerTrendingRescan, triggerRankedScan } from '@/controllers/mangaImportController';
-import { adminScraperSearch, adminSetSource, adminAddSecondaryTitle, adminTriggerRescan, adminGetSource, adminClearSource, adminCancelScan, adminDeleteChapters, adminUpdateSeries } from '@/controllers/adminMangaController';
+import { adminScraperSearch, adminSetSource, adminAddSecondaryTitle, adminTriggerRescan, adminGetSource, adminClearSource, adminCancelScan, adminDeleteChapters, adminUpdateSeries, adminMigrateSeries } from '@/controllers/adminMangaController';
 import { listAdminManga, listAdminMangaScraperFilters, listAdminMangaTypeFilters } from '@/controllers/adminMangaListController';
 import { getAdminOverviewStats, getAdminTimeseries } from '@/controllers/adminStatsController';
 import { listAdminUsers, getAdminUser, patchAdminUser } from '@/controllers/adminUserController';
@@ -77,5 +77,6 @@ router.patch('/manga/:id/secondary-titles', requireRole('admin'), adminAddSecond
 router.post('/manga/:id/rescan', requireRole('admin'), adminTriggerRescan as RequestHandler);
 router.post('/manga/:id/cancel-scan', requireRole('admin'), adminCancelScan as RequestHandler);
 router.delete('/manga/:id/chapters', requireRole('admin'), adminDeleteChapters as RequestHandler);
+router.post('/manga/:id/migrate', requireRole('admin'), adminMigrateSeries as RequestHandler);
 
 export default router;

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { X, Search, RefreshCw, Check, Loader2, Trash2, StopCircle, AlertCircle, Eraser, Edit3 } from "lucide-react";
-import { adminScraperSearch, adminSetSource, adminTriggerRescan, adminAddSecondaryTitle, adminGetSource, adminClearSource, adminCancelScan, adminDeleteChapters, adminUpdateSeries, type ScraperSourceResult, type ScraperSearchResult } from "@/services/adminMangaService";
+import { X, Search, RefreshCw, Check, Loader2, Trash2, StopCircle, AlertCircle, Eraser, Edit3, ArrowRightLeft } from "lucide-react";
+import { adminScraperSearch, adminSetSource, adminTriggerRescan, adminAddSecondaryTitle, adminGetSource, adminClearSource, adminCancelScan, adminDeleteChapters, adminUpdateSeries, adminMigrateSeries, type ScraperSourceResult, type ScraperSearchResult } from "@/services/adminMangaService";
+import { fetchMangaById } from "@/services/mangaService";
 import { toast } from "react-toastify";
 
 interface ChapterInfo { id: number; chapterNumber: string; title?: string | null; }
@@ -78,7 +79,6 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
   const [deleteSelected, setDeleteSelected] = useState<Set<number>>(new Set());
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [editMetadata, setEditMetadata] = useState(false);
   const [metadataForm, setMetadataForm] = useState({
     title: manga?.title ?? "",
     nativeTitle: manga?.nativeTitle ?? "",
@@ -91,7 +91,12 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
     note: manga?.note ?? "",
   });
   const [savingMetadata, setSavingMetadata] = useState(false);
-  const [modalPage, setModalPage] = useState<"source" | "chapters">("source");
+  const [modalPage, setModalPage] = useState<"source" | "chapters" | "migrate">("source");
+  const [migrateTargetId, setMigrateTargetId] = useState("");
+  const [migrateTargetTitle, setMigrateTargetTitle] = useState<string | null>(null);
+  const [migrateTargetLoading, setMigrateTargetLoading] = useState(false);
+  const [migrateConfirm, setMigrateConfirm] = useState(false);
+  const [migrating, setMigrating] = useState(false);
 
   // Local state for variants so the modal updates immediately after successful PATCH
   const [variantsList, setVariantsList] = useState(() => flattenSecondaryTitles(secondaryTitles));
@@ -251,17 +256,74 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
       const noteVal = metadataForm.note.trim();
       if (noteVal !== (manga?.note ?? "").trim()) updates.note = noteVal || null;
       if (Object.keys(updates).length === 0) {
-        setEditMetadata(false);
         return;
       }
       await adminUpdateSeries(mangaId, updates);
       toast.success("Metadata updated.");
-      setEditMetadata(false);
       onMetadataUpdated?.();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to update metadata");
     } finally {
       setSavingMetadata(false);
+    }
+  };
+
+  const resetMetadataForm = () => {
+    setMetadataForm({
+      title: manga?.title ?? "",
+      nativeTitle: manga?.nativeTitle ?? "",
+      romanizedTitle: manga?.romanizedTitle ?? "",
+      description: manga?.description ?? "",
+      status: manga?.status ?? "",
+      year: manga?.year != null ? String(manga.year) : "",
+      contentRating: manga?.contentRating ?? "",
+      type: manga?.type ?? "",
+      note: manga?.note ?? "",
+    });
+  };
+
+  const lookupMigrateTarget = async () => {
+    const id = parseInt(migrateTargetId.trim(), 10);
+    if (isNaN(id) || id <= 0) {
+      setMigrateTargetTitle(null);
+      return;
+    }
+    setMigrateTargetLoading(true);
+    try {
+      const data = await fetchMangaById(id);
+      setMigrateTargetTitle(data?.manga?.title ?? null);
+    } catch {
+      setMigrateTargetTitle(null);
+      toast.error("Target series not found");
+    } finally {
+      setMigrateTargetLoading(false);
+    }
+  };
+
+  const handleMigrate = async () => {
+    const targetId = parseInt(migrateTargetId.trim(), 10);
+    if (isNaN(targetId) || targetId <= 0) {
+      toast.error("Enter a valid target series ID");
+      return;
+    }
+    if (!migrateConfirm) {
+      toast.error("Confirm the migration first");
+      return;
+    }
+    setMigrating(true);
+    try {
+      const res = await adminMigrateSeries(mangaId, targetId);
+      if (!res.queued) {
+        toast.warning(res.message || "Migration could not be queued");
+        return;
+      }
+      const conflictMsg = res.conflictCount ? ` ${res.conflictCount} chapter(s) skipped due to conflicts.` : "";
+      toast.success(`Migration queued: ${res.toMigrateCount ?? 0} chapter(s) will move to #${targetId}.${conflictMsg}`);
+      setMigrateConfirm(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to queue migration");
+    } finally {
+      setMigrating(false);
     }
   };
 
@@ -323,6 +385,13 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
               className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${modalPage === "chapters" ? "bg-accent text-white" : "bg-foreground hover:bg-foreground/80 text-muted"}`}
             >
               Chapters & Metadata
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalPage("migrate")}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${modalPage === "migrate" ? "bg-accent text-white" : "bg-foreground hover:bg-foreground/80 text-muted"}`}
+            >
+              Migrate
             </button>
           </div>
         </div>
@@ -541,27 +610,14 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
           {/* Edit series metadata */}
           {manga && (
             <section>
-              <h3 className="text-sm font-medium text-muted mb-2 flex items-center gap-1">
-                <Edit3 className="size-4" />
-                Edit metadata
-              </h3>
-              {!editMetadata ? (
-                <button
-                  type="button"
-                  onClick={() => setEditMetadata(true)}
-                  className="px-4 py-2 bg-foreground hover:bg-foreground/80 rounded-md text-sm"
-                >
-                  Edit title, description, status…
-                </button>
-              ) : (
-                <div className="space-y-3 bg-foreground/30 rounded-md p-3">
-                  <div className="grid gap-2 sm:grid-cols-2">
+              <div className="space-y-3 rounded-md">
+                <div className="grid gap-2 sm:grid-cols-2">
                     <div>
                       <label className="text-xs text-muted">Title</label>
                       <input
                         value={metadataForm.title}
                         onChange={(e) => setMetadataForm((f) => ({ ...f, title: e.target.value }))}
-                        className="w-full px-3 py-2 bg-background border border-borders rounded-md text-sm"
+                        className="w-full px-3 py-2 bg-foreground rounded-md text-sm"
                       />
                     </div>
                     <div>
@@ -569,7 +625,7 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
                       <input
                         value={metadataForm.romanizedTitle}
                         onChange={(e) => setMetadataForm((f) => ({ ...f, romanizedTitle: e.target.value }))}
-                        className="w-full px-3 py-2 bg-background border border-borders rounded-md text-sm"
+                        className="w-full px-3 py-2 bg-foreground rounded-md text-sm"
                       />
                     </div>
                     <div>
@@ -577,7 +633,7 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
                       <input
                         value={metadataForm.nativeTitle}
                         onChange={(e) => setMetadataForm((f) => ({ ...f, nativeTitle: e.target.value }))}
-                        className="w-full px-3 py-2 bg-background border border-borders rounded-md text-sm"
+                        className="w-full px-3 py-2 bg-foreground rounded-md text-sm"
                       />
                     </div>
                     <div>
@@ -586,7 +642,7 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
                         value={metadataForm.status}
                         onChange={(e) => setMetadataForm((f) => ({ ...f, status: e.target.value }))}
                         placeholder="ongoing, completed, …"
-                        className="w-full px-3 py-2 bg-background border border-borders rounded-md text-sm"
+                        className="w-full px-3 py-2 bg-foreground rounded-md text-sm"
                       />
                     </div>
                     <div>
@@ -596,7 +652,7 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
                         value={metadataForm.year}
                         onChange={(e) => setMetadataForm((f) => ({ ...f, year: e.target.value }))}
                         placeholder="2024"
-                        className="w-full px-3 py-2 bg-background border border-borders rounded-md text-sm"
+                        className="w-full px-3 py-2 bg-foreground rounded-md text-sm"
                       />
                     </div>
                     <div>
@@ -605,7 +661,7 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
                         value={metadataForm.type}
                         onChange={(e) => setMetadataForm((f) => ({ ...f, type: e.target.value }))}
                         placeholder="manga, manhwa, …"
-                        className="w-full px-3 py-2 bg-background border border-borders rounded-md text-sm"
+                        className="w-full px-3 py-2 bg-foreground rounded-md text-sm"
                       />
                     </div>
                     <div>
@@ -614,7 +670,7 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
                         value={metadataForm.contentRating}
                         onChange={(e) => setMetadataForm((f) => ({ ...f, contentRating: e.target.value }))}
                         placeholder="safe, suggestive, …"
-                        className="w-full px-3 py-2 bg-background border border-borders rounded-md text-sm"
+                        className="w-full px-3 py-2 bg-foreground rounded-md text-sm"
                       />
                     </div>
                     <div>
@@ -623,7 +679,7 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
                         value={metadataForm.note}
                         onChange={(e) => setMetadataForm((f) => ({ ...f, note: e.target.value }))}
                         placeholder="Shown above title on overview"
-                        className="w-full px-3 py-2 bg-background border border-borders rounded-md text-sm"
+                        className="w-full px-3 py-2 bg-foreground rounded-md text-sm"
                       />
                     </div>
                   </div>
@@ -633,30 +689,29 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
                       value={metadataForm.description}
                       onChange={(e) => setMetadataForm((f) => ({ ...f, description: e.target.value }))}
                       rows={4}
-                      className="w-full px-3 py-2 bg-background border border-borders rounded-md text-sm resize-y"
+                      className="w-full px-3 py-2 bg-foreground rounded-md text-sm resize-y"
                     />
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setEditMetadata(false)}
-                      disabled={savingMetadata}
-                      className="px-4 py-2 bg-foreground/50 hover:bg-foreground/70 rounded-md text-sm"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSaveMetadata}
-                      disabled={savingMetadata}
-                      className="px-4 py-2 bg-accent text-white rounded-md hover:bg-accent/80 disabled:opacity-50 inline-flex items-center gap-1"
-                    >
-                      {savingMetadata ? <Loader2 className="size-4 animate-spin" /> : null}
-                      Save
-                    </button>
-                  </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={resetMetadataForm}
+                    disabled={savingMetadata}
+                    className="px-4 py-2 bg-foreground/50 hover:bg-foreground/70 rounded-md text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveMetadata}
+                    disabled={savingMetadata}
+                    className="px-4 py-2 bg-accent text-white rounded-md hover:bg-accent/80 disabled:opacity-50 inline-flex items-center gap-1"
+                  >
+                    {savingMetadata ? <Loader2 className="size-4 animate-spin" /> : null}
+                    Save
+                  </button>
                 </div>
-              )}
+              </div>
             </section>
           )}
 
@@ -749,6 +804,72 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
               )}
             </section>
           )}
+          </>
+          )}
+
+          {modalPage === "migrate" && (
+          <>
+          <section>
+            <h3 className="text-sm font-medium text-muted mb-2 flex items-center gap-1">
+              <ArrowRightLeft className="size-4" />
+              Migrate chapters to another series
+            </h3>
+            <p className="text-sm text-muted mb-4">
+              Move downloaded chapters, storage files, and user data (bookmarks, lists, reviews, views, progress) from this series to a target series.
+              Conflicting chapter numbers on the target are skipped. This series will be reset with no import source or scan history.
+            </p>
+            <div className="bg-foreground/30 rounded-md p-3 space-y-3 mb-4">
+              <p className="text-sm"><span className="text-muted">Source:</span> #{mangaId} — {mangaTitle}</p>
+              <p className="text-sm"><span className="text-muted">Chapters:</span> {chapters.length}</p>
+            </div>
+            <div className="flex flex-wrap gap-2 items-end mb-2">
+              <div>
+                <label className="text-xs text-muted block mb-1">Target series ID</label>
+                <input
+                  type="number"
+                  value={migrateTargetId}
+                  onChange={(e) => {
+                    setMigrateTargetId(e.target.value);
+                    setMigrateTargetTitle(null);
+                    setMigrateConfirm(false);
+                  }}
+                  onBlur={() => void lookupMigrateTarget()}
+                  placeholder="e.g. 3937"
+                  className="w-40 px-3 py-2 bg-background border border-borders rounded-md text-sm"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => void lookupMigrateTarget()}
+                disabled={migrateTargetLoading || !migrateTargetId.trim()}
+                className="px-4 py-2 bg-foreground hover:bg-foreground/80 rounded-md text-sm disabled:opacity-50 inline-flex items-center gap-1"
+              >
+                {migrateTargetLoading ? <Loader2 className="size-4 animate-spin" /> : null}
+                Look up
+              </button>
+            </div>
+            {migrateTargetTitle && (
+              <p className="text-sm text-muted mb-4">Target: {migrateTargetTitle}</p>
+            )}
+            <label className="flex items-start gap-2 text-sm mb-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={migrateConfirm}
+                onChange={(e) => setMigrateConfirm(e.target.checked)}
+                className="mt-1 rounded"
+              />
+              <span>I understand this queues a background job. Source chapters move to the target; conflicts are skipped; this series import state is reset.</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => void handleMigrate()}
+              disabled={migrating || !migrateConfirm || !migrateTargetId.trim()}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-md hover:bg-accent/80 disabled:opacity-50"
+            >
+              {migrating ? <Loader2 className="size-4 animate-spin" /> : <ArrowRightLeft className="size-4" />}
+              Queue migration
+            </button>
+          </section>
           </>
           )}
         </div>

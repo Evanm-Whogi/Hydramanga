@@ -22,6 +22,7 @@ async function main() {
     queueService.getQueue('mangaChapterImportQueue');
     queueService.ensureChapterDownloadQueues();
     queueService.getQueue('storageCleanupQueue');
+    queueService.getQueue('seriesMigrationQueue');
     queueService.getQueue('emailQueue');
 
     try {
