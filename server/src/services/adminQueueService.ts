@@ -2,6 +2,7 @@ import type { JobType } from 'bullmq';
 import { appConfig } from '@/config/appConfig';
 import { queueService } from '@/services/queueService';
 import {getAdminQueueDisplayOrder, getChapterDownloadQueueDescription, getChapterDownloadQueueLabel, isChapterDownloadJobQueue, isChapterDownloadQueue, resolveChapterDownloadQueueConfig, scraperIdFromChapterDownloadQueue} from '@/lib/chapterDownloadQueues';
+import { parseJobProgressValue } from '@/utils/jobProgress';
 
 const STATIC_QUEUE_NAMES = (Object.keys(appConfig.queues) as (keyof typeof appConfig.queues)[]).filter(
   (name): name is Exclude<keyof typeof appConfig.queues, 'chapterDownload'> => name !== 'chapterDownload'
@@ -19,6 +20,7 @@ const QUEUE_DESCRIPTIONS: Record<string, string> = {
   mangaImportQueue: 'Full series import and metadata sync',
   mangaChapterImportQueue: 'Scraper chapter list discovery',
   seriesMigrationQueue: 'Move chapters and user data between series',
+  storageCleanupQueue: 'Cleanup old chapter files and series folders',
 };
 
 function getAllAdminQueueNames(): string[] {
@@ -44,6 +46,12 @@ function getQueueConcurrency(name: string): number {
   return config && 'concurrency' in config ? config.concurrency : 1;
 }
 
+export interface AdminQueueActiveJob {
+  id: string;
+  summary: string;
+  progress: number | null;
+}
+
 export interface AdminQueueRow {
   name: string;
   label: string;
@@ -56,6 +64,7 @@ export interface AdminQueueRow {
   delayed: number;
   oldestWaitingMs: number | null;
   concurrency: number;
+  activeJobs: AdminQueueActiveJob[];
   error?: string;
 }
 
@@ -140,9 +149,9 @@ function serializeJob(job: {
   progress?: unknown;
   getState?: () => Promise<string>;
 }): Omit<AdminQueueJobRow, 'state'> & { state?: string } {
-  let progress: number | string | null = null;
-  if (typeof job.progress === 'number') progress = job.progress;
-  else if (job.progress != null) progress = JSON.stringify(job.progress);
+  const numericProgress = parseJobProgressValue(job.progress);
+  const progress: number | string | null =
+    numericProgress ?? (job.progress != null && typeof job.progress !== 'number' ? JSON.stringify(job.progress) : null);
 
   return {
     id: String(job.id ?? ''),
@@ -158,6 +167,24 @@ function serializeJob(job: {
     summary: summarizeJobData(job.name, job.data),
     data: sanitizeJobData(job.data),
   };
+}
+
+async function fetchActiveJobsForQueue(queueName: string, limit: number): Promise<AdminQueueActiveJob[]> {
+  if (limit <= 0) return [];
+  try {
+    const queue = queueService.getQueue(queueName);
+    const jobs = await queue.getJobs(['active'], 0, limit - 1, false);
+    return jobs.filter(Boolean).map((job) => {
+      const base = serializeJob(job as Parameters<typeof serializeJob>[0]);
+      return {
+        id: base.id,
+        summary: base.summary,
+        progress: parseJobProgressValue(job?.progress),
+      };
+    });
+  } catch {
+    return [];
+  }
 }
 
 class AdminQueueService {
@@ -176,6 +203,10 @@ class AdminQueueService {
             ),
           ]);
 
+          const concurrency = getQueueConcurrency(name);
+          const activeJobs =
+            status.active > 0 ? await fetchActiveJobsForQueue(name, Math.max(status.active, concurrency)) : [];
+
           queues.push({
             name,
             label: getQueueLabel(name),
@@ -187,7 +218,8 @@ class AdminQueueService {
             failed: status.failed,
             delayed: status.delayed,
             oldestWaitingMs: snapshot.oldestWaitingMs,
-            concurrency: getQueueConcurrency(name),
+            concurrency,
+            activeJobs,
           });
         } catch (err) {
           redisAvailable = false;
@@ -203,6 +235,7 @@ class AdminQueueService {
             delayed: 0,
             oldestWaitingMs: null,
             concurrency: getQueueConcurrency(name),
+            activeJobs: [],
             error: err instanceof Error ? err.message : 'Failed to read queue',
           });
         }

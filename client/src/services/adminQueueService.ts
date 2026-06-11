@@ -1,5 +1,11 @@
 import { apiDelete, apiGet, apiPost } from '@/lib/api';
 
+export interface AdminQueueActiveJob {
+  id: string;
+  summary: string;
+  progress: number | null;
+}
+
 export interface AdminQueueRow {
   name: string;
   label: string;
@@ -12,6 +18,7 @@ export interface AdminQueueRow {
   delayed: number;
   oldestWaitingMs: number | null;
   concurrency: number;
+  activeJobs: AdminQueueActiveJob[];
   error?: string;
 }
 
@@ -31,8 +38,12 @@ export interface AdminQueuesResponse {
 
 export async function getAdminQueues(): Promise<AdminQueuesResponse> {
   const data = await apiGet('/admin/queues', { timeoutMs: 15000 });
+  const queues = ((data as { queues: AdminQueueRow[] }).queues ?? []).map((row) => ({
+    ...row,
+    activeJobs: row.activeJobs ?? [],
+  }));
   return {
-    queues: (data as { queues: AdminQueueRow[] }).queues ?? [],
+    queues,
     totals: (data as { totals: AdminQueueTotals }).totals,
     redisAvailable: (data as { redisAvailable: boolean }).redisAvailable ?? true,
   };

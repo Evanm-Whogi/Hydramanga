@@ -123,7 +123,9 @@ export async function adminTriggerRescan(req: Request, res: Response, next: Next
                     ? 'Scan already in progress'
                     : result.reason === 'series_not_found'
                       ? 'Manga not found'
-                      : 'Rescan could not be queued';
+                      : result.reason === 'novel'
+                        ? 'Novels are not supported for chapter import'
+                        : 'Rescan could not be queued';
             return res.status(409).json({ success: false, seriesId: id, queued: false, message, reason: result.reason });
         }
         return res.json({ success: true, seriesId: id, queued: true, message: 'Rescan queued' });

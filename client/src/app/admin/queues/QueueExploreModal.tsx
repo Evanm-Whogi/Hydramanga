@@ -5,6 +5,7 @@ import Link from "next/link";
 import {X, Loader2, ChevronLeft, ChevronRight, RefreshCw, ExternalLink, RotateCcw, Trash2, FastForward, OctagonX} from "lucide-react";
 import { toast } from "react-toastify";
 import { getAdminQueueJobs, retryAdminQueueJob, promoteAdminQueueJob, removeAdminQueueJob, clearAdminQueue, type AdminQueueJobCounts, type AdminQueueJobRow, type AdminQueueJobState, type AdminQueueRow } from "@/services/adminQueueService";
+import JobProgressDisplay from "./JobProgressDisplay";
 
 const STATE_TABS: { value: AdminQueueJobState; label: string }[] = [
   { value: "waiting", label: "Waiting" },
@@ -47,7 +48,7 @@ interface QueueExploreModalProps {
 }
 
 export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: QueueExploreModalProps) {
-  const [state, setState] = useState<AdminQueueJobState>("waiting");
+  const [state, setState] = useState<AdminQueueJobState>(queue.active > 0 ? "active" : "waiting");
   const [jobs, setJobs] = useState<AdminQueueJobRow[]>([]);
   const [counts, setCounts] = useState<AdminQueueJobCounts>(EMPTY_COUNTS);
   const [page, setPage] = useState(1);
@@ -147,6 +148,12 @@ export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: Qu
   useEffect(() => {
     fetchJobs();
   }, [fetchJobs]);
+
+  useEffect(() => {
+    if (queue.active <= 0) return;
+    const interval = setInterval(() => fetchJobs(true), 3000);
+    return () => clearInterval(interval);
+  }, [queue.active, fetchJobs]);
 
   useEffect(() => {
     setPage(1);
@@ -250,16 +257,21 @@ export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: Qu
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={handleClearState}
-            disabled={loading || clearing !== null || stateCount === 0}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-muted hover:text-red-400 hover:bg-foreground border border-borders disabled:opacity-50 shrink-0"
-            title={`Clear all ${stateLabel.toLowerCase()} jobs`}
-          >
-            {clearing === "state" ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-            Clear {stateLabel.toLowerCase()}
-          </button>
+          <div className="flex items-center gap-3 shrink-0">
+            {queue.active > 0 && (
+              <p className="text-xs text-muted hidden sm:block">Auto-refreshes every 3s while jobs are active</p>
+            )}
+            <button
+              type="button"
+              onClick={handleClearState}
+              disabled={loading || clearing !== null || stateCount === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-muted hover:text-red-400 hover:bg-foreground border border-borders disabled:opacity-50"
+              title={`Clear all ${stateLabel.toLowerCase()} jobs`}
+            >
+              {clearing === "state" ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              Clear {stateLabel.toLowerCase()}
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto min-h-0">
@@ -283,6 +295,7 @@ export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: Qu
                   <tr className="border-b border-borders">
                     <th className="px-4 py-2 font-semibold text-muted">Job</th>
                     <th className="px-4 py-2 font-semibold text-muted">Summary</th>
+                    <th className="px-4 py-2 font-semibold text-muted text-right">Progress</th>
                     <th className="px-4 py-2 font-semibold text-muted">Created</th>
                     <th className="px-4 py-2 font-semibold text-muted">Attempts</th>
                     <th className="px-4 py-2 font-semibold text-muted w-28">
@@ -324,6 +337,9 @@ export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: Qu
                                 <ExternalLink className="size-3" />
                               </Link>
                             )}
+                          </td>
+                          <td className="px-4 py-2 align-top text-right min-w-[5.5rem]">
+                            <JobProgressDisplay progress={job.progress} />
                           </td>
                           <td className="px-4 py-2 align-top text-muted whitespace-nowrap">
                             {formatDateTime(job.createdAt)}
@@ -403,7 +419,7 @@ export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: Qu
                         </tr>
                         {expanded && (
                           <tr className="border-b border-borders/50 bg-foreground/40">
-                            <td colSpan={5} className="px-4 py-3">
+                            <td colSpan={6} className="px-4 py-3">
                               <pre className="text-xs text-muted overflow-x-auto max-h-48 whitespace-pre-wrap break-all font-mono">
                                 {JSON.stringify(job.data, null, 2)}
                               </pre>

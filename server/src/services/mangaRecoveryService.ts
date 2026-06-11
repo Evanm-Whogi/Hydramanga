@@ -13,6 +13,7 @@ import { queueService } from '@/services/queueService';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import logger from '@/services/loggerService';
+import { isNovelType } from '@/config/contentFilter';
 
 class MangaRecoveryService {
   /**
@@ -72,13 +73,19 @@ class MangaRecoveryService {
 
     // Get manga details
     const [manga]: any = await db
-      .select({ title: series.title, romanizedTitle: series.romanizedTitle })
+      .select({ title: series.title, romanizedTitle: series.romanizedTitle, type: series.type })
       .from(series)
       .where(eq(series.id, seriesId));
 
     if (!manga) {
       logger.warn(`[RECOVERY] Manga ${seriesId} not found, cleaning up progress`, { service: 'mangaRecoveryService' });
       await mangaProgressService.markFailed(seriesId, 'Manga no longer exists');
+      return;
+    }
+
+    if (isNovelType(manga.type)) {
+      logger.info(`[RECOVERY] Skipping novel "${manga.title}" (${seriesId})`, { service: 'mangaRecoveryService' });
+      await mangaProgressService.markFailed(seriesId, 'Novels are not supported for chapter import');
       return;
     }
 

@@ -1,7 +1,9 @@
 import path from 'path';
 import fs from 'fs-extra';
+import type { Job } from 'bullmq';
 import logger from '@/services/loggerService';
 import { appConfig } from '@/config/appConfig';
+import { progressForIndex, setJobProgress } from '@/utils/jobProgress';
 
 export interface ChapterStorageCleanupPayload {
   seriesId: number;
@@ -10,10 +12,17 @@ export interface ChapterStorageCleanupPayload {
 }
 
 class ChapterStorageService {
-  async removeChapterStorage(storageRoot: string, seriesId: number, prefixes: string[], deleteSeriesFolder: boolean): Promise<string[]> {
+  async removeChapterStorage(
+    storageRoot: string,
+    seriesId: number,
+    prefixes: string[],
+    deleteSeriesFolder: boolean,
+    job?: Job
+  ): Promise<string[]> {
     const storageFailed: string[] = [];
     if (deleteSeriesFolder) {
       const seriesDir = path.join(storageRoot, String(seriesId));
+      await setJobProgress(job, 25);
       try {
         await fs.remove(seriesDir);
       } catch (err) {
@@ -21,11 +30,13 @@ class ChapterStorageService {
         logger.warn(`Failed to delete series storage ${seriesDir}: ${msg}`, { service: 'chapterStorageService' });
         storageFailed.push(`${seriesId}: ${msg}`);
       }
+      await setJobProgress(job, 95);
       return storageFailed;
     }
 
     const uniquePrefixes = [...new Set(prefixes.filter(Boolean))];
-    for (const prefix of uniquePrefixes) {
+    for (let i = 0; i < uniquePrefixes.length; i++) {
+      const prefix = uniquePrefixes[i];
       const dir = path.join(storageRoot, prefix);
       try {
         await fs.remove(dir);
@@ -34,14 +45,28 @@ class ChapterStorageService {
         logger.warn(`Failed to delete chapter storage ${dir}: ${msg}`, { service: 'chapterStorageService' });
         storageFailed.push(`${prefix}: ${msg}`);
       }
+      await setJobProgress(job, progressForIndex(i, uniquePrefixes.length, 10, 95));
     }
     return storageFailed;
   }
 
-  async processCleanupJob(payload: ChapterStorageCleanupPayload): Promise<string[]> {
+  async processCleanupJob(payload: ChapterStorageCleanupPayload, job?: Job): Promise<string[]> {
     const storageRoot = appConfig.scraper?.chapterStorageRoot;
-    if (!storageRoot) return [];
-    return this.removeChapterStorage(storageRoot, payload.seriesId, payload.prefixes, payload.deleteSeriesFolder);
+    if (!storageRoot) {
+      await setJobProgress(job, 100);
+      return [];
+    }
+
+    await setJobProgress(job, 5);
+    const failed = await this.removeChapterStorage(
+      storageRoot,
+      payload.seriesId,
+      payload.prefixes,
+      payload.deleteSeriesFolder,
+      job
+    );
+    await setJobProgress(job, 100);
+    return failed;
   }
 
   async moveChapterStorage(storageRoot: string, fromPrefix: string, toPrefix: string): Promise<string | null> {

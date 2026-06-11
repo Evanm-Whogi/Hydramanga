@@ -2,6 +2,7 @@
  * Manga Chapter Import Job Handler
  * Processes chapter discovery jobs
  */
+import type { Job } from 'bullmq';
 import { IJobHandler } from './IJobHandler';
 import { ChapterScannerService } from '@/services/chapterScannerService';
 import logger from '@/services/loggerService';
@@ -12,7 +13,7 @@ export class MangaChapterImportJobHandler implements IJobHandler {
     return queueName === 'mangaChapterImportQueue';
   }
 
-  async handle(data: any): Promise<void> {
+  async handle(data: any, job?: Job): Promise<void> {
     try {
       await withTransaction(
         `chapter_scan_${data.seriesId}`,
@@ -30,7 +31,8 @@ export class MangaChapterImportJobHandler implements IJobHandler {
             data.mangaTitle,
             data.seriesId,
             data.romanizedTitle,
-            data.isFirstScan
+            data.isFirstScan,
+            job
           );
         },
         {

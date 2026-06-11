@@ -39,6 +39,8 @@ export async function createImportRequest(req: Request, res: Response, next: Nex
         case 'invalid_series':
         case 'series_not_found':
           return res.status(400).json({ message: 'Invalid manga reference' });
+        case 'novel_not_supported':
+          return res.status(400).json({ message: 'Novels are not supported for import' });
       }
     }
 

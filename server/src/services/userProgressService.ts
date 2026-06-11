@@ -6,6 +6,7 @@ import { karmaService } from '@/services/karmaService';
 import { readingActivityService } from '@/services/readingActivityService';
 import { READING_TIME_DAY_THRESHOLD_SECONDS } from '@/config/karmaConfig';
 import { badgeService } from '@/services/badgeService';
+import { getExcludeNovelConditions } from '@/config/contentFilter';
 
 function normalizeSeriesType(raw: string | null | undefined): 'manga' | 'manhwa' | 'manhua' | 'other' {
   const value = (raw ?? '').toLowerCase().trim();
@@ -247,7 +248,7 @@ class UserProgressService {
             eq(schema.userReadingTime.seriesId, schema.userReadingProgress.seriesId)
           )
         )
-        .where(eq(schema.userReadingProgress.userId, userId))
+        .where(and(eq(schema.userReadingProgress.userId, userId), ...getExcludeNovelConditions(schema.series)))
         .groupBy(
           schema.userReadingProgress.userId,
           schema.userReadingProgress.seriesId,

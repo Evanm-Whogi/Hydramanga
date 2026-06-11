@@ -1,6 +1,7 @@
 import { db, schema } from '@/db/index';
 import { eq, or, ilike, desc, asc, count, and, sql, SQL, isNull, isNotNull } from 'drizzle-orm';
 import { scraperManager } from '@/scrapers';
+import { getExcludeNovelConditions } from '@/config/contentFilter';
 
 export interface AdminMangaListParams {
   page: number;
@@ -79,6 +80,8 @@ class AdminMangaListService {
         filters.push(eq(schema.series.type, type));
       }
     }
+
+    filters.push(...getExcludeNovelConditions(schema.series));
 
     const whereClause = filters.length > 0 ? and(...filters) : undefined;
 
@@ -195,10 +198,13 @@ class AdminMangaListService {
         count: count(),
       })
       .from(schema.series)
+      .where(and(...getExcludeNovelConditions(schema.series)))
       .groupBy(schema.series.type)
       .orderBy(desc(count()));
 
-    return rows.map((row) => ({
+    return rows
+      .filter((row) => row.type?.toLowerCase().trim() !== 'novel')
+      .map((row) => ({
       id: row.type ?? 'none',
       count: Number(row.count),
     }));

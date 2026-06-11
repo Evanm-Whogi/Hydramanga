@@ -62,7 +62,7 @@ export async function getCollectionsList(hideNsfw = false) {
     // Fallback description for any genre not explicitly defined above
     const defaultDescription = "Explore a curated selection of popular titles within this category.";
 
-    const cacheKey = `collections:genres:v3:${hideNsfw}`;
+    const cacheKey = `collections:genres:v4:${hideNsfw}`;
 
     try {
         const visibleGenreMetadata = hideNsfw
@@ -85,6 +85,7 @@ export async function getCollectionsList(hideNsfw = false) {
                         WHERE lower(trim(blocked_genre)) IN ('hentai', 'lolicon', 'shotacon', 'smut')
                     )`
                     : sql``;
+                const novelFilter = sql`AND (${schema.series.type} IS NULL OR lower(trim(${schema.series.type})) <> 'novel')`;
 
                 const results = await db.execute(sql`
                     WITH expanded_manga AS (
@@ -99,6 +100,7 @@ export async function getCollectionsList(hideNsfw = false) {
                         WHERE ${schema.series.genres} IS NOT NULL
                         ${nsfwRatingFilter}
                         ${nsfwGenreFilter}
+                        ${novelFilter}
                     ),
                     ranked_manga AS (
                         SELECT *,

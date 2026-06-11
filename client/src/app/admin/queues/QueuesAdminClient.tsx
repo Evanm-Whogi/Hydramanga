@@ -6,6 +6,8 @@ import {toast } from "react-toastify";
 import {getAdminQueues, pauseAdminQueue, resumeAdminQueue, clearAdminQueue, type AdminQueueRow, type AdminQueueTotals} from "@/services/adminQueueService";
 import AdminStatCard from "../components/AdminStatCard";
 import QueueExploreModal from "./QueueExploreModal";
+import JobProgressDisplay from "./JobProgressDisplay";
+import { formatActiveJobsProgress } from "@/lib/jobProgress";
 import { formatCompactNumber as formatNumber } from "@/lib/utils";
 
 function formatDuration(ms: number | null): string {
@@ -72,11 +74,14 @@ export default function QueuesAdminClient() {
     }
   }, []);
 
+  const hasActiveJobs = (totals?.active ?? 0) > 0;
+
   useEffect(() => {
     fetchQueues();
-    const interval = setInterval(() => fetchQueues(true), 30_000);
+    const intervalMs = hasActiveJobs ? 5_000 : 30_000;
+    const interval = setInterval(() => fetchQueues(true), intervalMs);
     return () => clearInterval(interval);
-  }, [fetchQueues]);
+  }, [fetchQueues, hasActiveJobs]);
 
   useEffect(() => {
     if (!exploringQueue) return;
@@ -138,7 +143,8 @@ export default function QueuesAdminClient() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted">
-          BullMQ job queues backed by Redis. Refreshes every 30 seconds.
+          BullMQ job queues backed by Redis. Refreshes every {hasActiveJobs ? "5" : "30"} seconds
+          {hasActiveJobs ? " while jobs are active" : ""}.
         </p>
         <button
           type="button"
@@ -210,6 +216,7 @@ export default function QueuesAdminClient() {
                 <th className="px-4 py-3 font-semibold text-muted">Status</th>
                 <th className="px-4 py-3 font-semibold text-muted text-right">Waiting</th>
                 <th className="px-4 py-3 font-semibold text-muted text-right">Active</th>
+                <th className="px-4 py-3 font-semibold text-muted">Progress</th>
                 <th className="px-4 py-3 font-semibold text-muted text-right">Delayed</th>
                 <th className="px-4 py-3 font-semibold text-muted text-right">Failed</th>
                 <th className="px-4 py-3 font-semibold text-muted text-right">Completed</th>
@@ -223,19 +230,21 @@ export default function QueuesAdminClient() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-muted">
+                  <td colSpan={11} className="px-4 py-12 text-center text-muted">
                     <Loader2 className="size-6 animate-spin inline-block" />
                   </td>
                 </tr>
               ) : queues.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={11} className="px-4 py-8 text-center text-muted">
                     No queues configured
                   </td>
                 </tr>
               ) : (
                 queues.map((row) => {
                   const hint = healthHint(row);
+                  const activeProgressLabel = formatActiveJobsProgress(row.activeJobs ?? []);
+                  const primaryActiveJob = row.activeJobs?.[0];
                   return (
                     <tr
                       key={row.name}
@@ -270,6 +279,29 @@ export default function QueuesAdminClient() {
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums text-teal-400">
                         {formatNumber(row.active)}
+                      </td>
+                      <td className="px-4 py-3 min-w-[7rem] max-w-[12rem]">
+                        {row.active > 0 ? (
+                          <div>
+                            {primaryActiveJob && primaryActiveJob.progress != null ? (
+                              <JobProgressDisplay progress={primaryActiveJob.progress} />
+                            ) : (
+                              <span className="text-muted text-xs tabular-nums">{activeProgressLabel ?? "—"}</span>
+                            )}
+                            {row.activeJobs && row.activeJobs.length > 1 && (
+                              <p className="text-xs text-muted/70 mt-1 truncate" title={row.activeJobs.map((j) => j.summary).join(", ")}>
+                                +{row.activeJobs.length - 1} more
+                              </p>
+                            )}
+                            {primaryActiveJob?.summary && (
+                              <p className="text-xs text-muted mt-1 line-clamp-1" title={primaryActiveJob.summary}>
+                                {primaryActiveJob.summary}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums text-muted">
                         {formatNumber(row.delayed)}

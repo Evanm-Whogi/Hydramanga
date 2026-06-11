@@ -2,6 +2,7 @@
  * Manga Chapter Download Job Handler
  * Processes chapter download jobs
  */
+import type { Job } from 'bullmq';
 import { IJobHandler } from './IJobHandler';
 import { ChapterDownloaderService, ChapterDownloadData } from '@/services/chapterDownloaderService';
 import logger from '@/services/loggerService';
@@ -13,7 +14,7 @@ export class MangaChapterDownloadJobHandler implements IJobHandler {
     return isChapterDownloadJobQueue(queueName);
   }
 
-  async handle(data: any): Promise<void> {
+  async handle(data: any, job?: Job): Promise<void> {
     try {
       await withTransaction(
         `chapter_download_${data.seriesId}_${data.chapterNumber}`,
@@ -37,7 +38,7 @@ export class MangaChapterDownloadJobHandler implements IJobHandler {
             scraperId: data.scraperId || null,
           };
           
-          await ChapterDownloaderService.downloadChapter(downloadData);
+          await ChapterDownloaderService.downloadChapter(downloadData, job);
         },
         {
           op: "job.chapter_download",

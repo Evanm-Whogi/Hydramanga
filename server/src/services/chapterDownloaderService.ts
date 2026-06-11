@@ -9,6 +9,7 @@
  * - Handle download errors
  */
 
+import type { Job } from 'bullmq';
 import { db } from '@/db';
 import { chapters } from '@/db/schema';
 import { scraperManager } from '@/scrapers';
@@ -18,6 +19,7 @@ import { eq, and } from 'drizzle-orm';
 import * as Sentry from "@sentry/node";
 import { withSpan, addBreadcrumb } from '@/utils/sentryHelper';
 import { formatDbError, getPgErrorDetails, withDbRetry } from '@/utils/dbError';
+import { setJobProgress } from '@/utils/jobProgress';
 
 export interface ChapterDownloadData {
     seriesId: number;
@@ -33,10 +35,11 @@ export class ChapterDownloaderService {
      * Download a single chapter's images and store metadata
      * @param data - Chapter download data containing URL and metadata
      */
-    static async downloadChapter(data: ChapterDownloadData): Promise<void> {
+    static async downloadChapter(data: ChapterDownloadData, job?: Job): Promise<void> {
         const chapterNumberStr = String(data.chapterNumber);
 
         try {
+            await setJobProgress(job, 5);
             logger.info(
                 `[DOWNLOADER] Starting download for chapter ${data.chapterNumber} of "${data.mangaTitle}"`,
                 { service: 'chapterDownloaderService' }
@@ -75,6 +78,7 @@ export class ChapterDownloaderService {
 
             const storagePrefix = downloadResult.storagePrefix;
             const pageCount = downloadResult.pageCount;
+            await setJobProgress(job, 80);
 
             Sentry.addBreadcrumb({
                 message: 'Chapter downloaded to storage',
@@ -191,6 +195,7 @@ export class ChapterDownloaderService {
                 );
             }
 
+            await setJobProgress(job, 100);
             Sentry.addBreadcrumb({
                 message: 'Chapter download completed successfully',
                 level: 'info',

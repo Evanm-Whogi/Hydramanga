@@ -11,7 +11,9 @@
 */
 import nodemailer from 'nodemailer';
 import path from 'path';
+import type { Job } from 'bullmq';
 import logger from '@/services/loggerService';
+import { setJobProgress } from '@/utils/jobProgress';
 import { queueService } from '@/services/queueService';
 import { SendEmailFunction, emailJobData } from '@/types/types'; 
 import handlebars from 'handlebars';
@@ -36,15 +38,17 @@ class EmailService {
         logger.info(`Email Job added to Queue: emailQueue`, { service: 'emailService'});
     }
 
-    public processEmailJob = async (jobData: emailJobData) => {
+    public processEmailJob = async (jobData: emailJobData, job?: Job) => {
         var { to, templateName, subject, locals } = jobData;
         locals = { ...locals, appName: process.env.PUBLIC_NAME, year: new Date().getFullYear() }; // Add appName and year to locals
 
+        await setJobProgress(job, 10);
         const templatePath = path.join(__dirname, '../templates', `${templateName}.hbs`);
         const source = fs.readFileSync(templatePath, 'utf8');
         const template = handlebars.compile(source);
         const htmlContent = template(locals);
 
+        await setJobProgress(job, 50);
         const mailOptions = {
             from: `${process.env.PUBLIC_NAME} ${process.env.SMTP_USER}`,
             to,
@@ -54,6 +58,7 @@ class EmailService {
 
         try {
             await this.transporter.sendMail(mailOptions);
+            await setJobProgress(job, 100);
             logger.info(`${templateName} Email sent to ${to}`, { service: 'emailService'});
         } catch (error: any) {
             logger.error(`Error sending email to ${to}: ${error.message}`, { service: 'emailService'});

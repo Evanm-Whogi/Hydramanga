@@ -9,6 +9,7 @@
  * - Send notifications
  */
 
+import type { Job } from 'bullmq';
 import { db, schema } from '@/db';
 import { chapters, series, mangaImportProgress } from '@/db/schema';
 import { notificationService } from '@/services/notificationService';
@@ -22,6 +23,8 @@ import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import * as Sentry from "@sentry/node";
 import { withSpan, addBreadcrumb } from '@/utils/sentryHelper';
+import { clampProgress, setJobProgress } from '@/utils/jobProgress';
+import { isNovelType } from '@/config/contentFilter';
 
 export class ChapterScannerService {
     private static extractSecondaryTitleStrings(secondaryTitles: unknown): string[] {
@@ -88,8 +91,17 @@ export class ChapterScannerService {
         mangaTitle: string,
         seriesId: number,
         romanizedTitle?: string,
-        isFirstScan = false
+        isFirstScan = false,
+        job?: Job
     ): Promise<void> {
+        const [typeRow] = await db.select({ type: series.type }).from(series).where(eq(series.id, seriesId)).limit(1);
+        if (isNovelType(typeRow?.type)) {
+            logger.info(`Skipping chapter scan for novel ${mangaTitle} (${seriesId})`, { service: 'chapterScannerService' });
+            await mangaProgressService.markFailed(seriesId, 'Novels are not supported for chapter import');
+            return;
+        }
+
+        await setJobProgress(job, 5);
         let foundCount = 0;
         const newChapters: string[] = [];
         let previewRemaining = isFirstScan ? appConfig.queues.chapterDownload.previewCount : 0;
@@ -115,6 +127,7 @@ export class ChapterScannerService {
             async () => mangaProgressService.initializeProgress(seriesId, baseChapterCount, baseChapterCount),
             { op: 'db.write', tags: { series_id: String(seriesId) } }
         );
+        await setJobProgress(job, 10);
 
         // Fetch cover image, native title for Discord notifications and search filtering
         const [manga] = await withSpan(
@@ -160,6 +173,7 @@ export class ChapterScannerService {
                 has_cover: !!coverUrl,
             },
         });
+        await setJobProgress(job, 15);
 
         try {
             // Start scraping using scraper manager with priority fallback
@@ -245,6 +259,7 @@ export class ChapterScannerService {
                     // Only increment after successfully queuing the job
                     foundCount++;
                     newChapters.push(chapter.number);
+                    await setJobProgress(job, clampProgress(15 + Math.min(60, foundCount * 2)));
                 } catch (jobError) {
                     logger.error(
                         `[SCANNER] Error adding job for chapter ${chapter.number}: ${jobError}`,
@@ -261,6 +276,7 @@ export class ChapterScannerService {
             logger.info(
                 `[SCANNER] Finished scanning ${mangaTitle}. Queued ${foundCount} new chapters.`
             );
+            await setJobProgress(job, 80);
 
             Sentry.addBreadcrumb({
                 message: `Chapters found during scan: ${foundCount}`,
@@ -377,6 +393,7 @@ export class ChapterScannerService {
                     ),
                 { op: 'notification', tags: { type: 'scan_completed' } }
             );
+            await setJobProgress(job, 100);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error during scan';
             logger.error(

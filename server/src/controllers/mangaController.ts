@@ -7,7 +7,7 @@ import fs from 'fs-extra';
 import logger from '@/services/loggerService';
 import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import { metricsService } from '@/services/metricsService';
-import { shouldFilterManga, getBlockedGenres, getNsfwFilterConditions, isSeriesHiddenByUserNsfw } from '@/config/contentFilter';
+import { shouldFilterManga, getBlockedGenres, getCatalogFilterConditions, isSeriesHiddenByUserNsfw, isNovelType, getExcludeNovelConditions } from '@/config/contentFilter';
 import { getUserSettings } from '@/services/userSettingsService';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import { cacheService } from '@/services/cacheService';
@@ -228,8 +228,8 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         const { hideNsfw } = await getUserSettings(userId);
         const hasCursor = Boolean(cursor);
 
-        const cacheKey = `manga:search:v6:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query)}`;
-        const countCacheKey = `manga:search:count:v6:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query, true)}`;
+        const cacheKey = `manga:search:v7:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query)}`;
+        const countCacheKey = `manga:search:count:v7:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query, true)}`;
 
         const conditions: any = [];
 
@@ -276,7 +276,7 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
 
         // Content Restrictions: user preference "Hide NSFW" and optional server-wide block
         const serverBlocksNsfw = getBlockedGenres().length > 0;
-        conditions.push(...getNsfwFilterConditions(hideNsfw || serverBlocksNsfw, schema.series));
+        conditions.push(...getCatalogFilterConditions(hideNsfw || serverBlocksNsfw, schema.series));
         conditions.push(or(ne(schema.series.state, 'merged'), isNull(schema.series.state)));
 
         // 2. Sorting & Pagination Setup
@@ -464,7 +464,7 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
 
     const { hideNsfw } = await getUserSettings(userId);
     const mangaGenres = Array.isArray(mangaData.genres) ? mangaData.genres as string[] : null;
-    if (shouldFilterManga(mangaGenres) || isSeriesHiddenByUserNsfw({ contentRating: mangaData.contentRating as string | null, genres: mangaGenres }, hideNsfw)) {
+    if (shouldFilterManga(mangaGenres) || isSeriesHiddenByUserNsfw({ contentRating: mangaData.contentRating as string | null, genres: mangaGenres }, hideNsfw) || isNovelType(mangaData.type)) {
         return res.status(404).json({ status: 404, message: "Not found" });
     }
 
@@ -515,7 +515,7 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
                 image: schema.series.cover,
             })
             .from(schema.series)
-            .where(inArray(schema.series.id, relationshipIds));
+            .where(and(inArray(schema.series.id, relationshipIds), ...getExcludeNovelConditions(schema.series)));
             
             // Enrich the relationships object with fetched data
             enrichedRelationships = {};
@@ -640,9 +640,12 @@ export async function triggerMangaScan(req: Request, res: Response, next: NextFu
         }
         
         // Get manga title from database
-        const [manga] = await db.select({ title: series.title }).from(series).where(eq(series.id, mangaId));
+        const [manga] = await db.select({ title: series.title, type: series.type }).from(series).where(eq(series.id, mangaId));
         if (!manga) {
             return res.status(404).json({ error: 'Manga not found' });
+        }
+        if (isNovelType(manga.type)) {
+            return res.status(400).json({ error: 'Novels are not supported for chapter import' });
         }
         const mangaTitle = (manga.title || '').trim();
         if (!mangaTitle) {
@@ -893,7 +896,8 @@ export async function getRecommendedManga(req: Request, res: Response, next: Nex
                         and(
                             ne(schema.series.id, id),
                             isNotNull(schema.series.genres),
-                            gt(schema.series.weightedScore, 0)
+                            gt(schema.series.weightedScore, 0),
+                            ...getExcludeNovelConditions(schema.series),
                         )
                     )
                     .orderBy(desc(schema.series.weightedScore))
@@ -1009,6 +1013,7 @@ export async function randomManga(req: Request, res: Response, next: NextFunctio
                     isNotNull(schema.series.genres),
                     isNotNull(schema.series.weightedScore),
                     gt(schema.series.weightedScore, 50),
+                    ...getExcludeNovelConditions(schema.series),
                     ...excludedGenres.map(genre => 
                         sql`not (${schema.series.genres} @> ${JSON.stringify([genre])}::jsonb)`
                     )

@@ -1,4 +1,4 @@
-import { sql, SQL } from 'drizzle-orm';
+import { sql, SQL, or, isNull } from 'drizzle-orm';
 
 /**
  * Content Filter Configuration
@@ -124,5 +124,19 @@ export function getNsfwFilterConditions(hideNsfw: boolean, seriesTable: { conten
       WHERE lower(trim(g)) IN (${sql.raw(genreList)})
     ))`,
   ];
+}
+
+export function isNovelType(type: string | null | undefined): boolean {
+  return (type ?? '').trim().toLowerCase() === 'novel';
+}
+
+/** Exclude light novels from catalog/browse queries. */
+export function getExcludeNovelConditions(seriesTable: { type: any }): SQL[] {
+  return [or(isNull(seriesTable.type), sql`lower(trim(${seriesTable.type})) <> 'novel'`)!];
+}
+
+/** NSFW preference + always hide novels from catalog surfaces. */
+export function getCatalogFilterConditions(hideNsfw: boolean, seriesTable: { contentRating: any; genres: any; id: any; type: any }): SQL[] {
+  return [...getExcludeNovelConditions(seriesTable), ...getNsfwFilterConditions(hideNsfw, seriesTable)];
 }
 

@@ -1,6 +1,7 @@
 import { db, schema } from '@/db/index';
 import { eq, or, ilike, desc, count, and, SQL } from 'drizzle-orm';
 import { notificationService } from '@/services/notificationService';
+import { isNovelType } from '@/config/contentFilter';
 
 const VALID_STATUSES = ['pending', 'in_progress', 'completed', 'rejected'] as const;
 export type ImportRequestStatus = (typeof VALID_STATUSES)[number];
@@ -59,11 +60,12 @@ class ImportRequestService {
         return { error: 'invalid_series' as const };
       }
       const [seriesRow] = await db
-        .select({ id: schema.series.id })
+        .select({ id: schema.series.id, type: schema.series.type })
         .from(schema.series)
         .where(eq(schema.series.id, parsed))
         .limit(1);
       if (!seriesRow) return { error: 'series_not_found' as const };
+      if (isNovelType(seriesRow.type)) return { error: 'novel_not_supported' as const };
       seriesId = parsed;
     }
 

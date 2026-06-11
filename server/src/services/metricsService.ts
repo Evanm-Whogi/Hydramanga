@@ -2,7 +2,7 @@ import { db, schema } from '@/db/index';
 import { eq, and, sql, gte, desc, inArray } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { cacheService } from '@/services/cacheService';
-import { shouldFilterManga } from '@/config/contentFilter';
+import { shouldFilterManga, isNovelType, getExcludeNovelConditions } from '@/config/contentFilter';
 import { fetchSeriesChapterFlags, seriesCardColumns } from '@/lib/seriesQueries';
 import { series } from '@/db/schema';
 
@@ -233,7 +233,7 @@ class MetricsService {
       const seriesData = await db
         .select(seriesCardColumns)
         .from(series)
-        .where(inArray(series.id, seriesIds));
+        .where(and(inArray(series.id, seriesIds), ...getExcludeNovelConditions(series)));
 
       const { importedIds } = await fetchSeriesChapterFlags(seriesIds);
 
@@ -250,7 +250,7 @@ class MetricsService {
           },
         };
       })
-      .filter(item => !shouldFilterManga(item.genres as any)); // Filter out blocked content
+      .filter(item => !shouldFilterManga(item.genres as any) && !isNovelType(item.type as string | null)); // Filter out blocked content and novels
 
       // Cache the result
       await cacheService.set(cacheKey, results, CACHE_TTL.TRENDING, ['trending']);
@@ -424,7 +424,7 @@ class MetricsService {
         })
         .from(schema.mangaViews)
         .innerJoin(schema.series, eq(schema.mangaViews.seriesId, schema.series.id))
-        .where(eq(schema.mangaViews.userId, userId))
+        .where(and(eq(schema.mangaViews.userId, userId), ...getExcludeNovelConditions(schema.series)))
         .groupBy(schema.series.id, schema.series.title, schema.series.cover, schema.series.rating)
         .orderBy(desc(sql`MAX(${schema.mangaViews.viewedAt})`))
         .limit(limit);

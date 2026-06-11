@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import { userProgressService } from '@/services/userProgressService';
 import { cacheService } from '@/services/cacheService';
 import { getUserSettings } from '@/services/userSettingsService';
-import { getNsfwFilterConditions } from '@/config/contentFilter';
+import { getCatalogFilterConditions } from '@/config/contentFilter';
 import { enrichNestedSeriesExtras, enrichSeriesListExtras, seriesCardColumns} from '@/lib/seriesQueries';
 import { badgeService } from '@/services/badgeService';
 
@@ -57,7 +57,7 @@ export const getRecentlyAdded = async (req: Request, res: Response) => {
     const { hideNsfw } = await getUserSettings(userId);
 
     const cacheKey = `home:recentlyAdded:${hideNsfw}:${page}:${limit}`;
-    const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
+    const nsfwConditions = getCatalogFilterConditions(hideNsfw, series);
     const data = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.userSpecific },
         async () => {
@@ -91,7 +91,7 @@ export const getPopularChapters = async (req: Request, res: Response) => {
     const { hideNsfw } = await getUserSettings(userId);
 
     const cacheKey = `home:popularChapters:${hideNsfw}:${period}:${limit}`;
-    const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
+    const nsfwConditions = getCatalogFilterConditions(hideNsfw, series);
     const results = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.global },
         async () => {
@@ -152,7 +152,7 @@ export const getPopularManga = async (req: Request, res: Response) => {
     const { hideNsfw } = await getUserSettings(userId);
 
     const cacheKey = `home:popularManga:${hideNsfw}:${period}:${limit}`;
-    const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
+    const nsfwConditions = getCatalogFilterConditions(hideNsfw, series);
     const results = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.global },
         async () => {
@@ -214,7 +214,7 @@ export const getHighScores = async (req: Request, res: Response) => {
     const { hideNsfw } = await getUserSettings(userId);
 
     const cacheKey = `home:highScores:${hideNsfw}:${type}:${limit}`;
-    const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
+    const nsfwConditions = getCatalogFilterConditions(hideNsfw, series);
     const data = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.global },
         async () => {
@@ -245,7 +245,7 @@ export const getMostFollowed = async (req: Request, res: Response) => {
     const { hideNsfw } = await getUserSettings(userId);
 
     const cacheKey = `home:mostFollowed:${hideNsfw}:${period}:${limit}`;
-    const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
+    const nsfwConditions = getCatalogFilterConditions(hideNsfw, series);
     const data = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.global },
         async () => {
@@ -288,7 +288,7 @@ export const getRecentChaptersFromUserList = async (req: Request, res: Response)
     const { hideNsfw } = await getUserSettings(userId);
 
     const cacheKey = `home:recentChaptersFromList:${userId}:${hideNsfw}:${limit}`;
-    const nsfwConditions = getNsfwFilterConditions(hideNsfw, series);
+    const nsfwConditions = getCatalogFilterConditions(hideNsfw, series);
     const formatted = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.userSpecific },
         async () => {

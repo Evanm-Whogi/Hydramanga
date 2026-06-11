@@ -4,7 +4,7 @@ import { getUserSettings } from '@/services/userSettingsService';
 import { canViewProfileSection } from '@/lib/profileVisibility';
 import { seriesCardColumns, enrichSeriesListExtras } from '@/lib/seriesQueries';
 import { resolveCoverUrl } from '@/lib/coverUtils';
-import { getNsfwFilterConditions } from '@/config/contentFilter';
+import { getCatalogFilterConditions, getExcludeNovelConditions, isNovelType } from '@/config/contentFilter';
 import { BookmarkService, type BookmarkSort, type BookmarkStatus } from '@/services/bookmarkService';
 
 const MAX_FAVORITES = 10;
@@ -44,7 +44,7 @@ class ProfileSectionService {
   async getFavorites(identifier: string, viewerUserId: string | null) {
     const { userId } = await assertProfileAccess(identifier, viewerUserId, 'favorites');
     const { hideNsfw } = await getUserSettings(viewerUserId ?? undefined);
-    const nsfwConditions = getNsfwFilterConditions(hideNsfw, schema.series);
+    const nsfwConditions = getCatalogFilterConditions(hideNsfw, schema.series);
 
     const rows = await db
       .select({
@@ -66,10 +66,10 @@ class ProfileSectionService {
 
     if (uniqueIds.length > 0) {
       const existing = await db
-        .select({ id: schema.series.id })
+        .select({ id: schema.series.id, type: schema.series.type })
         .from(schema.series)
         .where(sql`${schema.series.id} IN (${sql.join(uniqueIds.map((id) => sql`${id}`), sql`, `)})`);
-      const validIds = new Set(existing.map((r) => r.id));
+      const validIds = new Set(existing.filter((r) => !isNovelType(r.type)).map((r) => r.id));
       for (const id of uniqueIds) {
         if (!validIds.has(id)) throw new ProfileAccessError(`Series ${id} not found`, 404);
       }
@@ -133,7 +133,7 @@ class ProfileSectionService {
   async getRecentReads(identifier: string, viewerUserId: string | null, page = 1, limit = 20) {
     const { userId } = await assertProfileAccess(identifier, viewerUserId, 'recentReads');
     const { hideNsfw } = await getUserSettings(viewerUserId ?? undefined);
-    const nsfwConditions = getNsfwFilterConditions(hideNsfw, schema.series);
+    const nsfwConditions = getCatalogFilterConditions(hideNsfw, schema.series);
     const safeLimit = Math.min(50, Math.max(1, limit));
     const offset = (Math.max(1, page) - 1) * safeLimit;
 

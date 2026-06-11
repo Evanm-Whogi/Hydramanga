@@ -9,7 +9,7 @@ export const FILTER_OPTIONS = {
     "Yaoi", "Yuri"
   ] as const,
 
-  types: ["Manga", "Manhua", "Manhwa", "Novel", "Oel", "Other"] as const,
+  types: ["Manga", "Manhua", "Manhwa", "Oel", "Other"] as const,
 
   sort: [
     { label: "Popular", value: "weightedScore" },

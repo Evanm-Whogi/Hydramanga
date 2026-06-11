@@ -24,6 +24,7 @@ import { mangaProgressService } from '@/services/mangaProgressService';
 import { cacheService } from '@/services/cacheService';
 import { invalidateCatalogCaches } from '@/lib/catalogCache';
 import logger from '@/services/loggerService';
+import { setJobProgress } from '@/utils/jobProgress';
 
 export interface SeriesMigrationJobPayload {
   sourceSeriesId: number;
@@ -103,8 +104,10 @@ class SeriesMigrationService {
 
   async migrateSeries(payload: SeriesMigrationJobPayload, job?: Job): Promise<SeriesMigrationResult> {
     const { sourceSeriesId, targetSeriesId } = payload;
+    await setJobProgress(job, 2);
     const preview = await this.preparePreview(sourceSeriesId, targetSeriesId);
     if (!preview.valid) throw new Error(preview.error || 'Invalid migration');
+    await setJobProgress(job, 5);
 
     const [sourceProgressSnapshot] = await db
       .select()
@@ -133,6 +136,7 @@ class SeriesMigrationService {
       newPrefix: `${targetSeriesId}/${ch.chapterNumber}`,
     }));
 
+    await setJobProgress(job, 8);
     await db.transaction(async (tx) => {
       if (conflictChapters.length > 0) {
         await tx.delete(chapters).where(inArray(chapters.id, conflictChapters.map((c) => c.id)));

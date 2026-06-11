@@ -7,6 +7,7 @@ import { queueService } from '@/services/queueService';
 import { getAllChapterDownloadQueueNames } from '@/lib/chapterDownloadQueues';
 import { mangaProgressService, isSourceOnlyProgress } from '@/services/mangaProgressService';
 import { autoSelectScraperSource } from '@/services/scraperSourceService';
+import { getExcludeNovelConditions, isNovelType } from '@/config/contentFilter';
 
 // Constants
 const TRENDING_CACHE_KEY = 'trending:top100';
@@ -58,6 +59,7 @@ class MangaOrchestratorService {
       const rows = await db
         .select({ id: series.id, title: series.title })
         .from(series)
+        .where(and(...getExcludeNovelConditions(series)))
         .orderBy(desc(series.weightedScore), desc(series.lastUpdatedAt))
         .limit(limit);
 
@@ -92,7 +94,7 @@ class MangaOrchestratorService {
     const jobIdPrefix = options.jobIdPrefix === 'trending' ? 'trending' : 'ranked';
     const typeFilter = options.type?.trim().toLowerCase();
 
-    const conditions = [notMergedCondition];
+    const conditions = [notMergedCondition, ...getExcludeNovelConditions(series)];
     if (typeFilter && typeFilter !== 'all') {
       conditions.push(eq(series.type, typeFilter));
     }
@@ -201,6 +203,11 @@ class MangaOrchestratorService {
   async enqueueOnDemand(seriesId: number, mangaTitle: string) {
     if (isIgnored(mangaTitle)) return logger.info(`Skipping on-demand scan for ignored title ${mangaTitle}`, { service: 'mangaOrchestratorService' });
 
+    const [seriesMeta] = await db.select({ type: series.type }).from(series).where(eq(series.id, seriesId)).limit(1);
+    if (isNovelType(seriesMeta?.type)) {
+      return logger.info(`Skipping on-demand scan for novel ${mangaTitle} (${seriesId})`, { service: 'mangaOrchestratorService' });
+    }
+
     // Check if manga already has chapters - if so, this isn't a "first scan"
     const existingChapters = await db.select().from(chapters).where(eq(chapters.seriesId, seriesId)).limit(1);
     if (existingChapters.length > 0) return logger.info(`Manga ${mangaTitle} already has chapters, skipping first scan notification`, { service: 'mangaOrchestratorService' });
@@ -247,13 +254,17 @@ class MangaOrchestratorService {
   // Enqueue a single rescan for one series (admin or manual). Always enqueues a chapter-scan job to check for new chapters.
   async enqueueSingleRescan(seriesId: number): Promise<{ queued: boolean; reason?: string }> {
     const [manga] = await db
-      .select({ title: series.title, romanizedTitle: series.romanizedTitle, cover: series.cover })
+      .select({ title: series.title, romanizedTitle: series.romanizedTitle, cover: series.cover, type: series.type })
       .from(series)
       .where(eq(series.id, seriesId))
       .limit(1);
     if (!manga?.title) {
       logger.warn(`enqueueSingleRescan: series ${seriesId} not found`, { service: 'mangaOrchestratorService' });
       return { queued: false, reason: 'series_not_found' };
+    }
+    if (isNovelType(manga.type)) {
+      logger.info(`enqueueSingleRescan: skipping novel series ${seriesId}`, { service: 'mangaOrchestratorService' });
+      return { queued: false, reason: 'novel' };
     }
     const progress = await mangaProgressService.getProgress(seriesId);
     if (progress && (progress.status === 'scanning' || progress.status === 'downloading')) {
@@ -381,6 +392,7 @@ class MangaOrchestratorService {
       
       // Find all series with at least one chapter that aren't in top trending; skip completed manga
       const notCompleted = or(isNull(series.status), ne(series.status, 'completed'));
+      const novelFilter = getExcludeNovelConditions(series);
       let results: Array<{ id: number; title: string | null; cover: unknown }>;
       
       if (trendingIds.length > 0) {
@@ -388,13 +400,13 @@ class MangaOrchestratorService {
           .selectDistinct({ id: series.id, title: series.title, cover: series.cover })
           .from(series)
           .innerJoin(chapters, eq(chapters.seriesId, series.id))
-          .where(and(sql`NOT ${inArray(series.id, trendingIds)}`, notCompleted));
+          .where(and(sql`NOT ${inArray(series.id, trendingIds)}`, notCompleted, ...novelFilter));
       } else {
         results = await db
           .selectDistinct({ id: series.id, title: series.title, cover: series.cover })
           .from(series)
           .innerJoin(chapters, eq(chapters.seriesId, series.id))
-          .where(notCompleted);
+          .where(and(notCompleted, ...novelFilter));
       }
 
       // Filter out results with null titles

@@ -2,7 +2,7 @@ import { db } from '@/db';
 import * as schema from '@/db/schema';
 import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import logger from '@/services/loggerService';
-import { getNsfwFilterConditions } from '@/config/contentFilter';
+import { getCatalogFilterConditions, getExcludeNovelConditions, isNovelType } from '@/config/contentFilter';
 
 export const BOOKMARK_STATUSES = ['reading', 'rereading', 'planned', 'completed', 'paused', 'dropped'] as const;
 export type BookmarkStatus = typeof BOOKMARK_STATUSES[number];
@@ -11,6 +11,10 @@ export type BookmarkSort = 'updated' | 'lastRead' | 'bookmarked' | 'title' | 'ra
 
 export class BookmarkService {
   static async setBookmark(userId: string, seriesId: number, status: BookmarkStatus): Promise<typeof schema.seriesBookmarks.$inferSelect> {
+    const [seriesRow] = await db.select({ type: schema.series.type }).from(schema.series).where(eq(schema.series.id, seriesId)).limit(1);
+    if (!seriesRow) throw new Error('Manga not found');
+    if (isNovelType(seriesRow.type)) throw new Error('Novels are not supported');
+
     const existing = await db.query.seriesBookmarks.findFirst({
       where: and(eq(schema.seriesBookmarks.userId, userId), eq(schema.seriesBookmarks.seriesId, seriesId)),
     });
@@ -51,7 +55,9 @@ export class BookmarkService {
     const conditions = [eq(schema.seriesBookmarks.userId, userId)];
 
     if (hideNsfw) {
-      conditions.push(...getNsfwFilterConditions(true, schema.series));
+      conditions.push(...getCatalogFilterConditions(true, schema.series));
+    } else {
+      conditions.push(...getExcludeNovelConditions(schema.series));
     }
 
     if (status?.length) {

@@ -1,6 +1,6 @@
 import { db, schema } from '@/db/index';
 import { eq, and, or, ilike, desc, asc, sql, inArray, count, max } from 'drizzle-orm';
-import { getNsfwFilterConditions } from '@/config/contentFilter';
+import { getCatalogFilterConditions, getExcludeNovelConditions, isNovelType } from '@/config/contentFilter';
 import { getUserSettings } from '@/services/userSettingsService';
 import { resolveCoverUrl } from '@/lib/coverUtils';
 import { seriesCardColumns, enrichSeriesListExtras } from '@/lib/seriesQueries';
@@ -86,7 +86,7 @@ async function fetchPreviewCovers(listIds: number[], userId?: string | null): Pr
   if (listIds.length === 0) return map;
 
   const { hideNsfw } = await getUserSettings(userId ?? undefined);
-  const nsfwConditions = getNsfwFilterConditions(hideNsfw, schema.series);
+  const nsfwConditions = getCatalogFilterConditions(hideNsfw, schema.series);
 
   const rows = await db
     .select({
@@ -343,7 +343,7 @@ class CuratedListService {
     if (!list || !canViewList(list, userId)) return null;
 
     const { hideNsfw } = await getUserSettings(userId ?? undefined);
-    const nsfwConditions = getNsfwFilterConditions(hideNsfw, schema.series);
+    const nsfwConditions = getCatalogFilterConditions(hideNsfw, schema.series);
 
     const itemConditions = [eq(schema.curatedListItems.listId, listId), ...nsfwConditions];
 
@@ -424,8 +424,9 @@ class CuratedListService {
     if (!list || list.userId !== userId) throw new Error('List not found');
     if (list.itemCount >= CONTENT_LIMITS.importMaxListItemsPerList) throw new Error(`Lists can contain at most ${CONTENT_LIMITS.importMaxListItemsPerList} items`);
 
-    const [seriesRow] = await db.select({ id: schema.series.id }).from(schema.series).where(eq(schema.series.id, seriesId)).limit(1);
+    const [seriesRow] = await db.select({ id: schema.series.id, type: schema.series.type }).from(schema.series).where(eq(schema.series.id, seriesId)).limit(1);
     if (!seriesRow) throw new Error('Manga not found');
+    if (isNovelType(seriesRow.type)) throw new Error('Novels cannot be added to lists');
 
     const existing = await db.query.curatedListItems.findFirst({
       where: and(eq(schema.curatedListItems.listId, listId), eq(schema.curatedListItems.seriesId, seriesId)),
@@ -660,7 +661,7 @@ class CuratedListService {
     const rows = await db
       .select({ id: schema.series.id, title: schema.series.title, cover: schema.series.cover })
       .from(schema.series)
-      .where(ilike(schema.series.title, `%${term}%`))
+      .where(and(ilike(schema.series.title, `%${term}%`), ...getExcludeNovelConditions(schema.series)))
       .limit(Math.min(limit, 20));
     return rows.map((r) => ({ id: r.id, title: r.title, cover: resolveCoverUrl(r.cover) }));
   }
