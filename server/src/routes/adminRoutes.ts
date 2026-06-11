@@ -13,6 +13,7 @@ import {listAdminQueues, listAdminQueueJobs, pauseAdminQueue, resumeAdminQueue, 
 import { getAdminSiteSettings, patchAdminSiteSettings } from '@/controllers/adminSiteSettingsController';
 import { requireRole } from '@/middlewares/requireRole';
 import { listAdminStickers, createAdminSticker, updateAdminSticker, deleteAdminSticker, scanAdminStickers } from '@/controllers/adminStickerController';
+import { listAdminLogContainers, getAdminContainerLogs } from '@/controllers/adminDockerLogController';
 
 const router = Router();
 
@@ -62,6 +63,10 @@ router.get('/queues/:name/jobs', requireRole('admin'), listAdminQueueJobs as Req
 router.post('/queues/:name/jobs/:jobId/retry', requireRole('admin'), retryAdminQueueJob as RequestHandler);
 router.post('/queues/:name/jobs/:jobId/promote', requireRole('admin'), promoteAdminQueueJob as RequestHandler);
 router.delete('/queues/:name/jobs/:jobId', requireRole('admin'), removeAdminQueueJob as RequestHandler);
+
+// Docker container logs
+router.get('/logs/containers', requireRole('admin'), listAdminLogContainers as RequestHandler);
+router.get('/logs/containers/:id', requireRole('admin'), getAdminContainerLogs as RequestHandler);
 
 // Manga import/sync endpoints
 router.get('/manga/sync', requireRole('admin'), triggerMangaSync as RequestHandler);

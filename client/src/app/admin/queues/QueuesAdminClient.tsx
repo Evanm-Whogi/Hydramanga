@@ -216,11 +216,11 @@ export default function QueuesAdminClient() {
                 <th className="px-4 py-3 font-semibold text-muted">Status</th>
                 <th className="px-4 py-3 font-semibold text-muted text-right">Waiting</th>
                 <th className="px-4 py-3 font-semibold text-muted text-right">Active</th>
-                <th className="px-4 py-3 font-semibold text-muted">Progress</th>
                 <th className="px-4 py-3 font-semibold text-muted text-right">Delayed</th>
                 <th className="px-4 py-3 font-semibold text-muted text-right">Failed</th>
                 <th className="px-4 py-3 font-semibold text-muted text-right">Completed</th>
                 <th className="px-4 py-3 font-semibold text-muted">Oldest wait</th>
+                <th className="px-4 py-3 font-semibold text-muted">Progress</th>
                 <th className="px-4 py-3 font-semibold text-muted text-right">Concurrency</th>
                 <th className="px-4 py-3 font-semibold text-muted w-12">
                   <span className="sr-only">Actions</span>
@@ -280,6 +280,18 @@ export default function QueuesAdminClient() {
                       <td className="px-4 py-3 text-right tabular-nums text-teal-400">
                         {formatNumber(row.active)}
                       </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-muted">
+                        {formatNumber(row.delayed)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-red-400">
+                        {formatNumber(row.failed)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-muted">
+                        {formatNumber(row.completed)}
+                      </td>
+                      <td className="px-4 py-3 text-muted whitespace-nowrap">
+                        {formatDuration(row.oldestWaitingMs)}
+                      </td>
                       <td className="px-4 py-3 min-w-[7rem] max-w-[12rem]">
                         {row.active > 0 ? (
                           <div>
@@ -302,18 +314,6 @@ export default function QueuesAdminClient() {
                         ) : (
                           <span className="text-muted">—</span>
                         )}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-muted">
-                        {formatNumber(row.delayed)}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-red-400">
-                        {formatNumber(row.failed)}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-muted">
-                        {formatNumber(row.completed)}
-                      </td>
-                      <td className="px-4 py-3 text-muted whitespace-nowrap">
-                        {formatDuration(row.oldestWaitingMs)}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums text-muted">
                         {row.concurrency}
