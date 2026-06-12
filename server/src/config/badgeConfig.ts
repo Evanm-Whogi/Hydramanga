@@ -10,6 +10,70 @@ export type BadgeDefinition = {
   color: string;
 };
 
+export type ChapterMilestoneBadge = { id: string; threshold: number };
+
+export const CHAPTER_MILESTONE_BADGES: ChapterMilestoneBadge[] = [
+  { id: 'first_head', threshold: 100 },
+  { id: 'growing_heads', threshold: 500 },
+  { id: 'many_headed_beast', threshold: 2500 },
+  { id: 'hydra_unleashed', threshold: 10000 },
+  { id: 'legendary_hydra', threshold: 25000 },
+  { id: 'hydra_eternal', threshold: 50000 },
+];
+
+export const CHAPTER_MILESTONE_BADGE_IDS = CHAPTER_MILESTONE_BADGES.map((badge) => badge.id);
+
+export function isChapterMilestoneBadge(badgeId: string): boolean {
+  return CHAPTER_MILESTONE_BADGE_IDS.includes(badgeId);
+}
+
+export function getHighestChapterMilestoneBadgeId(badgeIds: string[]): string | null {
+  let highest: string | null = null;
+  for (const badgeId of badgeIds) {
+    if (!isChapterMilestoneBadge(badgeId)) continue;
+    if (!highest || CHAPTER_MILESTONE_BADGE_IDS.indexOf(badgeId) > CHAPTER_MILESTONE_BADGE_IDS.indexOf(highest)) highest = badgeId;
+  }
+  return highest;
+}
+
+export function collapseChapterMilestoneBadges<T extends { id: string }>(badges: T[]): T[] {
+  const highestId = getHighestChapterMilestoneBadgeId(badges.map((badge) => badge.id));
+  if (!highestId) return badges;
+  return badges.filter((badge) => !isChapterMilestoneBadge(badge.id) || badge.id === highestId);
+}
+
+export type OriginalLegacyBadge = { id: string; maxRank: number };
+
+export const ORIGINAL_LEGACY_BADGES: OriginalLegacyBadge[] = [
+  { id: 'original_100', maxRank: 100 },
+  { id: 'original_1000', maxRank: 1000 },
+];
+
+export const ORIGINAL_LEGACY_BADGE_IDS = ORIGINAL_LEGACY_BADGES.map((badge) => badge.id);
+
+export function isOriginalLegacyBadge(badgeId: string): boolean {
+  return ORIGINAL_LEGACY_BADGE_IDS.includes(badgeId);
+}
+
+export function getMostExclusiveOriginalLegacyBadgeId(badgeIds: string[]): string | null {
+  let best: string | null = null;
+  for (const badgeId of badgeIds) {
+    if (!isOriginalLegacyBadge(badgeId)) continue;
+    if (!best || ORIGINAL_LEGACY_BADGE_IDS.indexOf(badgeId) < ORIGINAL_LEGACY_BADGE_IDS.indexOf(best)) best = badgeId;
+  }
+  return best;
+}
+
+export function collapseOriginalLegacyBadges<T extends { id: string }>(badges: T[]): T[] {
+  const bestId = getMostExclusiveOriginalLegacyBadgeId(badges.map((badge) => badge.id));
+  if (!bestId) return badges;
+  return badges.filter((badge) => !isOriginalLegacyBadge(badge.id) || badge.id === bestId);
+}
+
+export function collapseDisplayBadges<T extends { id: string }>(badges: T[]): T[] {
+  return collapseOriginalLegacyBadges(collapseChapterMilestoneBadges(badges));
+}
+
 export const BADGE_DEFINITIONS: BadgeDefinition[] = [
   { id: 'first_bite', name: 'First Bite', description: 'Every journey begins with a single page.', requirementText: 'Read your very first chapter on HydraManga.', category: 'reading', icon: 'BookOpen', color: '#F472B6' },
   { id: 'marathon_reader', name: 'Marathon Reader', description: 'Time flies when the plot thickens.', requirementText: 'Accumulate 24 hours of total reading time.', category: 'reading', icon: 'Timer', color: '#FB923C' },

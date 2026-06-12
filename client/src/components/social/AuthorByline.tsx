@@ -28,7 +28,7 @@ export default function AuthorByline({author, createdAt}: {
       {author?.badges?.length ? (
         <>
           <span className="text-muted">·</span>
-          <BadgeList badges={author.badges} />
+          <BadgeList badges={author.badges} userId={author.id} />
         </>
       ) : null}
       <span className="text-muted tabular-nums rounded-md bg-background px-2 py-1">{formatCompactNumber(karmaTotal)}</span>

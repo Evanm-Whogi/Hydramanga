@@ -3,11 +3,12 @@
 import { useState } from "react";
 import BadgeIcon from "@/components/badges/BadgeIcon";
 import BadgeModal from "@/components/badges/BadgeModal";
-import type { EarnedBadge } from "@/lib/badgeConfig";
+import { isChapterMilestoneBadge, type EarnedBadge } from "@/lib/badgeConfig";
 
-export default function ProfileBadgesCard({ badges }: { badges?: EarnedBadge[] }) {
+export default function ProfileBadgesCard({ badges, userId, chaptersRead }: { badges?: EarnedBadge[]; userId?: string; chaptersRead?: number }) {
   const [selected, setSelected] = useState<EarnedBadge | null>(null);
   const earned = badges ?? [];
+  const earnedChapterMilestoneId = earned.find((badge) => isChapterMilestoneBadge(badge.id))?.id ?? null;
 
   return (
     <div className="bg-foreground rounded-md p-5 w-full mt-5">
@@ -29,7 +30,15 @@ export default function ProfileBadgesCard({ badges }: { badges?: EarnedBadge[] }
           ))}
         </div>
       )}
-      {selected && <BadgeModal badge={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <BadgeModal
+          badge={selected}
+          onClose={() => setSelected(null)}
+          userId={userId}
+          chaptersRead={chaptersRead}
+          earnedChapterMilestoneId={earnedChapterMilestoneId}
+        />
+      )}
     </div>
   );
 }

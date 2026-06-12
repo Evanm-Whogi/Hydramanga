@@ -209,6 +209,20 @@ export function buildHomePageJsonLd() {
   };
 }
 
+export function buildComicSeriesJsonLd(manga: { title: string; description?: string | null; coverUrl?: string; id: number }) {
+  const site = getSiteConfig();
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'ComicSeries',
+    name: manga.title,
+    description: manga.description || `Read ${manga.title} on ${site.name}`,
+    url: absoluteUrl(`/manga/${manga.id}`),
+    isPartOf: { '@id': `${site.url}/#website` },
+    publisher: { '@id': `${site.url}/#organization` },
+    ...(manga.coverUrl ? { image: manga.coverUrl } : {}),
+  };
+}
+
 export function truncateDescription(text: string | null | undefined, maxLength = 160): string {
   if (!text) return '';
   const trimmed = text.trim();

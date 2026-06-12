@@ -165,6 +165,7 @@ export default function ProfileContent() {
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [badges, setBadges] = useState<EarnedBadge[]>([]);
+  const [chaptersRead, setChaptersRead] = useState<number | undefined>(undefined);
   const verified = searchParams.get("verified");
   const ownerTabs = useMemo(() => buildProfileTabs(true, DEFAULT_PROFILE_VISIBILITY, TAB_ICONS), []);
 
@@ -260,6 +261,7 @@ export default function ProfileContent() {
         setFollowerCount(profile.followerCount ?? 0);
         setFollowingCount(profile.followingCount ?? 0);
         setBadges(profile.badges ?? []);
+        setChaptersRead(typeof profile.stats?.chaptersRead === "number" ? profile.stats.chaptersRead : undefined);
       })
       .catch(() => {
         if (alive) setLastOnlineAt(session?.updatedAt?.toISOString() ?? null);
@@ -316,7 +318,7 @@ export default function ProfileContent() {
               <LevelCard />
             </div>
 
-            <ProfileBadgesCard badges={badges} />
+            <ProfileBadgesCard badges={badges} userId={user?.id} chaptersRead={chaptersRead} />
 
             {(user?.username || user?.id) && (
               <div className="w-full mt-5">
