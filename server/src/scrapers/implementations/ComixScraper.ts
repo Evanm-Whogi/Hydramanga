@@ -594,6 +594,31 @@ export class ComixScraper implements IChapterScraper {
         return this.searchComix(query, Math.min(Math.max(limit, 1), 20));
     }
 
+    private async createBrowserContext(browser: any, viewport: { width: number; height: number } = { width: 1800, height: 2600 }): Promise<any> {
+        const session = await this.getCfSession();
+        const context = await browser.newContext({
+            userAgent: session.userAgent,
+            viewport,
+            deviceScaleFactor: 1,
+            locale: 'en-US',
+        });
+        const cookies = session.browserCookies.length
+            ? session.browserCookies
+            : [{ name: 'cf_clearance', value: session.cfClearance, domain: '.comix.to', path: '/' }];
+        await context.addCookies(cookies);
+        await this.applyReaderDefaults(context);
+        return context;
+    }
+
+    private async gotoComixPage(page: any, url: string, timeout = 45000): Promise<void> {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
+        for (let i = 0; i < 15; i++) {
+            const title = await page.title();
+            if (!title.includes('Just a moment')) return;
+            await page.waitForTimeout(2000);
+        }
+    }
+
     async* scrapeChapters(
         mangaName: string,
         checkExists: (chapterNumber: string) => Promise<boolean>,
@@ -605,13 +630,7 @@ export class ComixScraper implements IChapterScraper {
         mangaPageUrl?: string,
     ): AsyncGenerator<ScrapedChapter, void, undefined> {
         const browser = await ComixScraper.getBrowser();
-        const context = await browser.newContext({
-            userAgent: appConfig.scraper.comix.userAgent,
-            // Higher render resolution helps when we must capture rendered pages.
-            viewport: { width: 1800, height: 2600 },
-            deviceScaleFactor: 1,
-        });
-        await this.applyReaderDefaults(context);
+        const context = await this.createBrowserContext(browser);
         const page = await context.newPage();
 
         try {
@@ -633,7 +652,7 @@ export class ComixScraper implements IChapterScraper {
                 pageUrl = match.href;
             }
 
-            await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+            await this.gotoComixPage(page, pageUrl);
 
             const chapterItemCount = await page.locator('section.mpage__chapters ul.mchap-list li.mchap-item').count();
             const hasGroupFilter = await page.locator('div.fdrop.mpage__group button.ubtn.ubtn--soft').count() > 0;
@@ -674,7 +693,7 @@ export class ComixScraper implements IChapterScraper {
                 let bestFallback: Array<{ url: string; title: string; number: string; isSpecial: boolean; specialType?: string }> = [];
 
                 for (const group of orderedGroups) {
-                    await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+                    await this.gotoComixPage(page, pageUrl);
                     await page.waitForSelector('section.mpage__chapters ul.mchap-list li.mchap-item', { timeout: 20000 });
                     await this.selectGroupFilter(page, group.name);
 
@@ -748,17 +767,12 @@ export class ComixScraper implements IChapterScraper {
                 service: 'comixScraper',
             });
             const browser = await ComixScraper.getBrowser();
-            const context = await browser.newContext({
-                userAgent: appConfig.scraper.comix.userAgent,
-                viewport: { width: 1800, height: 2600 },
-                deviceScaleFactor: 1,
-            });
-            await this.applyReaderDefaults(context);
+            const context = await this.createBrowserContext(browser);
             const page = await context.newPage();
 
             try {
                 logger.info(`[Comix] [${attemptLabel}] Navigating to chapter page`, { service: 'comixScraper' });
-                await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+                await this.gotoComixPage(page, url);
                 logger.info(`[Comix] [${attemptLabel}] Waiting for reader shell`, { service: 'comixScraper' });
                 await page.waitForSelector(
                     'main.rpage-main, div.rpage-main, button.rpage-progress__seg, div.rpage-chap-ending__nav',
