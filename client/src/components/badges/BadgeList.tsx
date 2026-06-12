@@ -3,13 +3,14 @@
 import { useState } from "react";
 import BadgeIcon from "./BadgeIcon";
 import BadgeModal from "./BadgeModal";
-import type { EarnedBadge } from "@/lib/badgeConfig";
+import { isChapterMilestoneBadge, type EarnedBadge } from "@/lib/badgeConfig";
 
-export default function BadgeList({ badges, iconSize = 14, maxVisible = 5 }: { badges?: EarnedBadge[]; iconSize?: number; maxVisible?: number }) {
+export default function BadgeList({ badges, iconSize = 14, maxVisible = 5, userId }: { badges?: EarnedBadge[]; iconSize?: number; maxVisible?: number; userId?: string }) {
   const [selected, setSelected] = useState<EarnedBadge | null>(null);
   const [expanded, setExpanded] = useState(false);
   if (!badges?.length) return null;
 
+  const earnedChapterMilestoneId = badges.find((badge) => isChapterMilestoneBadge(badge.id))?.id ?? null;
   const hiddenCount = badges.length - maxVisible;
   const showOverflow = !expanded && hiddenCount > 0;
   const visibleBadges = showOverflow ? badges.slice(0, maxVisible) : badges;
@@ -44,7 +45,14 @@ export default function BadgeList({ badges, iconSize = 14, maxVisible = 5 }: { b
           </button>
         )}
       </span>
-      {selected && <BadgeModal badge={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <BadgeModal
+          badge={selected}
+          onClose={() => setSelected(null)}
+          userId={userId}
+          earnedChapterMilestoneId={earnedChapterMilestoneId}
+        />
+      )}
     </>
   );
 }

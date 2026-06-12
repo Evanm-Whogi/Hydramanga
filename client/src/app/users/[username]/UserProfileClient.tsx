@@ -182,7 +182,11 @@ function PublicProfileView({ identifier }: { identifier: string }) {
                 <KarmaCard karma={profile.stats.karma} />
               </div>
             )}
-            <ProfileBadgesCard badges={profile.badges} />
+            <ProfileBadgesCard
+              badges={profile.badges}
+              userId={profile.id}
+              chaptersRead={typeof profile.stats?.chaptersRead === "number" ? profile.stats.chaptersRead : undefined}
+            />
           </div>
           <div className="flex flex-col w-full lg:w-2/3 lg:ml-5 mt-5 lg:mt-0 space-y-4">
             {profile.isOwner && (

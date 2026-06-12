@@ -12,6 +12,78 @@ export type BadgeDefinition = {
 
 export type EarnedBadge = BadgeDefinition & { earnedAt?: string };
 
+export type ChapterMilestoneBadge = { id: string; threshold: number };
+
+export const CHAPTER_MILESTONE_BADGES: ChapterMilestoneBadge[] = [
+  { id: 'first_head', threshold: 100 },
+  { id: 'growing_heads', threshold: 500 },
+  { id: 'many_headed_beast', threshold: 2500 },
+  { id: 'hydra_unleashed', threshold: 10000 },
+  { id: 'legendary_hydra', threshold: 25000 },
+  { id: 'hydra_eternal', threshold: 50000 },
+];
+
+export const CHAPTER_MILESTONE_BADGE_IDS = CHAPTER_MILESTONE_BADGES.map((badge) => badge.id);
+
+export function isChapterMilestoneBadge(badgeId: string): boolean {
+  return CHAPTER_MILESTONE_BADGE_IDS.includes(badgeId);
+}
+
+export function getHighestChapterMilestoneBadgeId(badgeIds: string[]): string | null {
+  let highest: string | null = null;
+  for (const badgeId of badgeIds) {
+    if (!isChapterMilestoneBadge(badgeId)) continue;
+    if (!highest || CHAPTER_MILESTONE_BADGE_IDS.indexOf(badgeId) > CHAPTER_MILESTONE_BADGE_IDS.indexOf(highest)) highest = badgeId;
+  }
+  return highest;
+}
+
+export function getChapterMilestoneIndexForReadCount(chaptersRead: number): number {
+  let index = -1;
+  for (let i = 0; i < CHAPTER_MILESTONE_BADGES.length; i++) {
+    if (chaptersRead >= CHAPTER_MILESTONE_BADGES[i].threshold) index = i;
+  }
+  return index;
+}
+
+export type ChapterMilestoneTierStatus = 'completed' | 'current' | 'upcoming';
+
+export function getChapterMilestoneTierStatus(index: number, chaptersRead: number | null, earnedBadgeId: string | null): ChapterMilestoneTierStatus {
+  const autoIndex = chaptersRead !== null ? getChapterMilestoneIndexForReadCount(chaptersRead) : -1;
+  const earnedIndex = earnedBadgeId ? CHAPTER_MILESTONE_BADGE_IDS.indexOf(earnedBadgeId) : -1;
+  const lastIndex = CHAPTER_MILESTONE_BADGES.length - 1;
+
+  if (earnedIndex > autoIndex) {
+    if (index < earnedIndex) return 'completed';
+    if (index === earnedIndex) return 'current';
+    return 'upcoming';
+  }
+
+  if (autoIndex >= lastIndex) {
+    if (index < lastIndex) return 'completed';
+    return 'current';
+  }
+  if (autoIndex < 0) return index === 0 ? 'current' : 'upcoming';
+  if (index <= autoIndex) return 'completed';
+  if (index === autoIndex + 1) return 'current';
+  return 'upcoming';
+}
+
+export function getChapterMilestoneTierProgress(index: number, chaptersRead: number): number {
+  const milestone = CHAPTER_MILESTONE_BADGES[index];
+  const previousThreshold = index === 0 ? 0 : CHAPTER_MILESTONE_BADGES[index - 1].threshold;
+  if (chaptersRead >= milestone.threshold) return 100;
+  const span = milestone.threshold - previousThreshold;
+  if (span <= 0) return 0;
+  return Math.min(100, Math.max(0, ((chaptersRead - previousThreshold) / span) * 100));
+}
+
+export function collapseChapterMilestoneBadges(badges: EarnedBadge[]): EarnedBadge[] {
+  const highestId = getHighestChapterMilestoneBadgeId(badges.map((badge) => badge.id));
+  if (!highestId) return badges;
+  return badges.filter((badge) => !isChapterMilestoneBadge(badge.id) || badge.id === highestId);
+}
+
 export const BADGE_DEFINITIONS: BadgeDefinition[] = [
   { id: 'first_bite', name: 'First Bite', description: 'Every journey begins with a single page.', requirementText: 'Read your very first chapter on HydraManga.', category: 'reading', icon: 'BookOpen', color: '#F472B6' },
   { id: 'marathon_reader', name: 'Marathon Reader', description: 'Time flies when the plot thickens.', requirementText: 'Accumulate 24 hours of total reading time.', category: 'reading', icon: 'Timer', color: '#FB923C' },

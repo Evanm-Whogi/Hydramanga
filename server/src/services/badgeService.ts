@@ -1,6 +1,6 @@
 import { db, schema } from '@/db/index';
 import { eq, and, count, countDistinct, sql, inArray, gt, asc } from 'drizzle-orm';
-import { BADGE_BY_ID, BADGE_DEFINITIONS, type EarnedBadge } from '@/config/badgeConfig';
+import { BADGE_BY_ID, BADGE_DEFINITIONS, CHAPTER_MILESTONE_BADGES, CHAPTER_MILESTONE_BADGE_IDS, ORIGINAL_LEGACY_BADGES, ORIGINAL_LEGACY_BADGE_IDS, collapseDisplayBadges, getHighestChapterMilestoneBadgeId, getMostExclusiveOriginalLegacyBadgeId, isChapterMilestoneBadge, isOriginalLegacyBadge, type EarnedBadge } from '@/config/badgeConfig';
 import { isUserBanned } from '@/lib/banHelpers';
 import { isSeriesHiddenByUserNsfw } from '@/config/contentFilter';
 import { isBetaVersion } from '@/config/versionConfig';
@@ -25,15 +25,6 @@ export type BadgeTrigger =
   | 'signup'
   | 'role_change'
   | 'admin_set';
-
-const CHAPTER_MILESTONES: { id: string; threshold: number }[] = [
-  { id: 'first_head', threshold: 100 },
-  { id: 'growing_heads', threshold: 500 },
-  { id: 'many_headed_beast', threshold: 2500 },
-  { id: 'hydra_unleashed', threshold: 10000 },
-  { id: 'legendary_hydra', threshold: 25000 },
-  { id: 'hydra_eternal', threshold: 50000 },
-];
 
 const DEFAULT_AVATAR = '/default-avatar.jpg';
 
@@ -61,8 +52,29 @@ class BadgeService {
     }
     for (const uid of userIds) {
       if (!result[uid]) result[uid] = [];
+      else result[uid] = collapseDisplayBadges(result[uid]);
     }
     return result;
+  }
+
+  private async syncChapterMilestoneBadges(userId: string, readCount: number): Promise<void> {
+    const autoHighestId = getHighestChapterMilestoneBadgeId(
+      CHAPTER_MILESTONE_BADGES.filter((milestone) => readCount >= milestone.threshold).map((milestone) => milestone.id),
+    );
+    const existingRows = await db
+      .select({ badgeId: schema.userBadges.badgeId })
+      .from(schema.userBadges)
+      .where(and(eq(schema.userBadges.userId, userId), inArray(schema.userBadges.badgeId, CHAPTER_MILESTONE_BADGE_IDS)));
+    const existingHighestId = getHighestChapterMilestoneBadgeId(existingRows.map((row) => row.badgeId));
+    const highestId = [autoHighestId, existingHighestId].reduce<string | null>((best, badgeId) => {
+      if (!badgeId) return best;
+      if (!best) return badgeId;
+      return CHAPTER_MILESTONE_BADGE_IDS.indexOf(badgeId) > CHAPTER_MILESTONE_BADGE_IDS.indexOf(best) ? badgeId : best;
+    }, null);
+    for (const milestone of CHAPTER_MILESTONE_BADGES) {
+      if (milestone.id === highestId) await this.grantBadge(userId, milestone.id);
+      else await this.revokeBadge(userId, milestone.id);
+    }
   }
 
   async grantBadge(userId: string, badgeId: string): Promise<boolean> {
@@ -90,7 +102,15 @@ class BadgeService {
   }
 
   async setUserBadges(userId: string, badgeIds: string[]): Promise<void> {
-    const validIds = [...new Set(badgeIds.filter((id) => BADGE_BY_ID[id]))];
+    let validIds = [...new Set(badgeIds.filter((id) => BADGE_BY_ID[id]))];
+    const highestSelectedMilestoneId = getHighestChapterMilestoneBadgeId(validIds);
+    if (highestSelectedMilestoneId) {
+      validIds = validIds.filter((id) => !isChapterMilestoneBadge(id) || id === highestSelectedMilestoneId);
+    }
+    const mostExclusiveOriginalLegacyId = getMostExclusiveOriginalLegacyBadgeId(validIds);
+    if (mostExclusiveOriginalLegacyId) {
+      validIds = validIds.filter((id) => !isOriginalLegacyBadge(id) || id === mostExclusiveOriginalLegacyId);
+    }
     const existing = await db
       .select({ badgeId: schema.userBadges.badgeId })
       .from(schema.userBadges)
@@ -166,34 +186,59 @@ class BadgeService {
     }
 
     for (let i = 0; i < users.length; i++) {
-      const userId = users[i].id;
-      if (i < 100 && (await this.grantBadge(userId, 'original_100'))) original100 += 1;
-      if (i < 1000 && (await this.grantBadge(userId, 'original_1000'))) original1000 += 1;
+      const granted = await this.syncOriginalLegacyBadges(users[i].id);
+      if (granted === 'original_100') original100 += 1;
+      if (granted === 'original_1000') original1000 += 1;
     }
 
     return { firstGeneration, original100, original1000 };
   }
 
   async evaluateSignupBadges(userId: string): Promise<void> {
-    await this.evaluateLegacyRankForUser(userId);
+    await this.syncOriginalLegacyBadges(userId);
     if (isBetaVersion()) await this.grantBadge(userId, 'first_generation');
   }
 
-  private async evaluateLegacyRankForUser(userId: string): Promise<void> {
+  private async getUserJoinRank(userId: string): Promise<number | null> {
     const [userRow] = await db
       .select({ createdAt: schema.user.createdAt })
       .from(schema.user)
       .where(eq(schema.user.id, userId))
       .limit(1);
-    if (!userRow) return;
-
+    if (!userRow) return null;
     const [rankRow] = await db
       .select({ rank: sql<number>`count(*)::int` })
       .from(schema.user)
       .where(sql`${schema.user.createdAt} <= ${userRow.createdAt}`);
     const rank = Number(rankRow?.rank ?? 0);
-    if (rank > 0 && rank <= 100) await this.grantBadge(userId, 'original_100');
-    if (rank > 0 && rank <= 1000) await this.grantBadge(userId, 'original_1000');
+    return rank > 0 ? rank : null;
+  }
+
+  private getAutoOriginalLegacyBadgeId(joinRank: number | null): string | null {
+    if (joinRank === null) return null;
+    if (joinRank <= 100) return 'original_100';
+    if (joinRank <= 1000) return 'original_1000';
+    return null;
+  }
+
+  private async syncOriginalLegacyBadges(userId: string): Promise<string | null> {
+    const joinRank = await this.getUserJoinRank(userId);
+    const autoId = this.getAutoOriginalLegacyBadgeId(joinRank);
+    const existingRows = await db
+      .select({ badgeId: schema.userBadges.badgeId })
+      .from(schema.userBadges)
+      .where(and(eq(schema.userBadges.userId, userId), inArray(schema.userBadges.badgeId, ORIGINAL_LEGACY_BADGE_IDS)));
+    const existingId = getMostExclusiveOriginalLegacyBadgeId(existingRows.map((row) => row.badgeId));
+    const displayId = [autoId, existingId].reduce<string | null>((best, badgeId) => {
+      if (!badgeId) return best;
+      if (!best) return badgeId;
+      return ORIGINAL_LEGACY_BADGE_IDS.indexOf(badgeId) < ORIGINAL_LEGACY_BADGE_IDS.indexOf(best) ? badgeId : best;
+    }, null);
+    for (const badge of ORIGINAL_LEGACY_BADGES) {
+      if (badge.id === displayId) await this.grantBadge(userId, badge.id);
+      else await this.revokeBadge(userId, badge.id);
+    }
+    return displayId;
   }
 
   private async getChapterReadCount(userId: string): Promise<number> {
@@ -208,9 +253,7 @@ class BadgeService {
     if (trigger === 'chapter_read' || trigger === 'role_change') {
       const readCount = await this.getChapterReadCount(userId);
       if (readCount >= 1) await this.grantBadge(userId, 'first_bite');
-      for (const milestone of CHAPTER_MILESTONES) {
-        if (readCount >= milestone.threshold) await this.grantBadge(userId, milestone.id);
-      }
+      await this.syncChapterMilestoneBadges(userId, readCount);
 
       const distinctSeriesRead = await db
         .select({ total: countDistinct(schema.chapters.seriesId) })
@@ -523,6 +566,8 @@ class BadgeService {
 
     if (trigger === 'signup') {
       await this.evaluateSignupBadges(userId);
+    } else if (trigger === 'role_change') {
+      await this.syncOriginalLegacyBadges(userId);
     }
   }
 
