@@ -27,6 +27,7 @@ export interface PublicProfile {
   isOwner?: boolean;
   isFollowing?: boolean;
   followerCount?: number;
+  followingCount?: number;
   isProfilePublic?: boolean;
   profileVisibility?: ProfileVisibility;
   stats?: Partial<UserStats>;

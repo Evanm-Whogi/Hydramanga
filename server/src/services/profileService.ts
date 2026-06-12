@@ -66,6 +66,7 @@ class ProfileService {
       ...publicFields,
       lastOnlineAt: lastSession?.lastOnlineAt ?? userRow.createdAt,
       followerCount: followMeta.followerCount,
+      followingCount: followMeta.followingCount,
       ...(isOwner ? { role } : { isFollowing: followMeta.isFollowing }),
       isPrivate: false,
       isOwner,

@@ -4,9 +4,10 @@ import { resolveUserId } from '@/services/profileSectionService';
 import { badgeService } from '@/services/badgeService';
 
 class UserFollowService {
-  async getFollowMeta(targetUserId: string, viewerUserId: string | null): Promise<{ followerCount: number; isFollowing: boolean }> {
-    const [followerCountRow, followingRow] = await Promise.all([
+  async getFollowMeta(targetUserId: string, viewerUserId: string | null): Promise<{ followerCount: number; followingCount: number; isFollowing: boolean }> {
+    const [followerCountRow, followingCountRow, followingRow] = await Promise.all([
       db.select({ count: count() }).from(schema.userFollows).where(eq(schema.userFollows.followingId, targetUserId)),
+      db.select({ count: count() }).from(schema.userFollows).where(eq(schema.userFollows.followerId, targetUserId)),
       viewerUserId && viewerUserId !== targetUserId
         ? db.query.userFollows.findFirst({
             where: and(eq(schema.userFollows.followerId, viewerUserId), eq(schema.userFollows.followingId, targetUserId)),
@@ -16,6 +17,7 @@ class UserFollowService {
 
     return {
       followerCount: Number(followerCountRow[0]?.count ?? 0),
+      followingCount: Number(followingCountRow[0]?.count ?? 0),
       isFollowing: Boolean(followingRow),
     };
   }

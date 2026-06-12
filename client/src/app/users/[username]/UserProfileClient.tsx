@@ -62,6 +62,7 @@ function PublicProfileView({ identifier }: { identifier: string }) {
   const searchParams = useSearchParams();
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [followerCount, setFollowerCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<ProfileTabId>(() => normalizeProfileTab(searchParams.get("tab")));
 
@@ -70,6 +71,7 @@ function PublicProfileView({ identifier }: { identifier: string }) {
       .then((d) => {
         setProfile(d.profile);
         setFollowerCount(d.profile.followerCount ?? 0);
+        setFollowingCount(d.profile.followingCount ?? 0);
       })
       .catch(() => setProfile(null))
       .finally(() => setLoading(false));
@@ -165,6 +167,7 @@ function PublicProfileView({ identifier }: { identifier: string }) {
               <div className="flex text-primary capitalize">Account Created: <span className="ml-2 text-muted">{new Date(profile?.createdAt!).toDateString()}</span></div>
               <div className="flex text-primary capitalize">Last Online: <span className="ml-2 text-muted">{formatDate(profile?.lastOnlineAt ?? profile?.createdAt)}</span></div>
               <div className="flex text-primary capitalize">Followers: <span className="ml-2 text-muted">{formatCompactNumber(followerCount)}</span></div>
+              <div className="flex text-primary capitalize">Following: <span className="ml-2 text-muted">{formatCompactNumber(followingCount)}</span></div>
               {!profile.isOwner && (
                 <FollowButton
                   identifier={profileIdentifier}

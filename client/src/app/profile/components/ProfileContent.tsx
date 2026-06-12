@@ -163,6 +163,7 @@ export default function ProfileContent() {
   const [page, setPage] = useState<ProfileTabId>(() => normalizeProfileTab(tabParam));
   const [lastOnlineAt, setLastOnlineAt] = useState<string | null>(session?.updatedAt?.toISOString() ?? null);
   const [followerCount, setFollowerCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
   const [badges, setBadges] = useState<EarnedBadge[]>([]);
   const verified = searchParams.get("verified");
   const ownerTabs = useMemo(() => buildProfileTabs(true, DEFAULT_PROFILE_VISIBILITY, TAB_ICONS), []);
@@ -257,6 +258,7 @@ export default function ProfileContent() {
         if (!alive) return;
         setLastOnlineAt(profile.lastOnlineAt ?? null);
         setFollowerCount(profile.followerCount ?? 0);
+        setFollowingCount(profile.followingCount ?? 0);
         setBadges(profile.badges ?? []);
       })
       .catch(() => {
@@ -303,6 +305,9 @@ export default function ProfileContent() {
                 </div>
                 <div className="flex text-primary capitalize">
                   Followers: <span className="ml-2 text-muted">{formatCompactNumber(followerCount)}</span>
+                </div>
+                <div className="flex text-primary capitalize">
+                  Following: <span className="ml-2 text-muted">{formatCompactNumber(followingCount)}</span>
                 </div>
               </div>
             </div>
