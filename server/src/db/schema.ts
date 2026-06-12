@@ -483,6 +483,16 @@ export const userFavoriteSeries = pgTable('user_favorite_series', {
   userIdIdx: index('idx_user_favorite_series_user_id').on(t.userId),
 }));
 
+export const userFollows = pgTable('user_follows', {
+  followerId: text('follower_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  followingId: text('following_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.followerId, t.followingId] }),
+  followerIdIdx: index('idx_user_follows_follower_id').on(t.followerId),
+  followingIdIdx: index('idx_user_follows_following_id').on(t.followingId),
+}));
+
 export const profileWallPosts = pgTable('profile_wall_posts', {
   id: serial('id').primaryKey(),
   wallUserId: text('wall_user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
@@ -889,4 +899,9 @@ export const profileWallPostVotesRelations = relations(profileWallPostVotes, ({ 
 export const userFavoriteSeriesRelations = relations(userFavoriteSeries, ({ one }) => ({
   user: one(user, { fields: [userFavoriteSeries.userId], references: [user.id] }),
   series: one(series, { fields: [userFavoriteSeries.seriesId], references: [series.id] }),
+}));
+
+export const userFollowsRelations = relations(userFollows, ({ one }) => ({
+  follower: one(user, { fields: [userFollows.followerId], references: [user.id], relationName: 'userFollowsAsFollower' }),
+  following: one(user, { fields: [userFollows.followingId], references: [user.id], relationName: 'userFollowsAsFollowing' }),
 }));

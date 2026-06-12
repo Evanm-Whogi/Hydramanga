@@ -23,6 +23,7 @@ import { getPublicProfile } from "@/services/profileService";
 import ProfileBadgesCard from "@/components/badges/ProfileBadgesCard";
 import type { EarnedBadge } from "@/lib/badgeConfig";
 import { buildProfileTabs, DEFAULT_PROFILE_VISIBILITY, normalizeProfileTab, type ProfileTabId } from '@/app/profile/profileTabs';
+import { formatCompactNumber } from '@/lib/utils';
 
 const TAB_ICONS: Partial<Record<ProfileTabId, React.ReactNode>> = {
   overview: <LayoutDashboardIcon className="size-5" />,
@@ -161,6 +162,7 @@ export default function ProfileContent() {
   const tabParam = searchParams.get("tab");
   const [page, setPage] = useState<ProfileTabId>(() => normalizeProfileTab(tabParam));
   const [lastOnlineAt, setLastOnlineAt] = useState<string | null>(session?.updatedAt?.toISOString() ?? null);
+  const [followerCount, setFollowerCount] = useState(0);
   const [badges, setBadges] = useState<EarnedBadge[]>([]);
   const verified = searchParams.get("verified");
   const ownerTabs = useMemo(() => buildProfileTabs(true, DEFAULT_PROFILE_VISIBILITY, TAB_ICONS), []);
@@ -254,6 +256,7 @@ export default function ProfileContent() {
       .then(({ profile }) => {
         if (!alive) return;
         setLastOnlineAt(profile.lastOnlineAt ?? null);
+        setFollowerCount(profile.followerCount ?? 0);
         setBadges(profile.badges ?? []);
       })
       .catch(() => {
@@ -297,6 +300,9 @@ export default function ProfileContent() {
                 </div>
                 <div className="flex text-primary capitalize">
                   Last Online: <span className="ml-2 text-muted">{formatDate(lastOnlineAt ?? session?.updatedAt?.toISOString() ?? user?.createdAt)}</span>
+                </div>
+                <div className="flex text-primary capitalize">
+                  Followers: <span className="ml-2 text-muted">{formatCompactNumber(followerCount)}</span>
                 </div>
               </div>
             </div>

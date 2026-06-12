@@ -7,7 +7,10 @@ import { getPublicProfile } from '@/controllers/profileController';
 import { listMyAuthAuditLogs } from '@/controllers/userAuditController';
 import { exportMyData, importMyData } from '@/controllers/profileExtensionController';
 import { getProfileStats, getProfileFavorites, setMyFavorites, getProfileWall, createProfileWallPost, updateProfileWallPost, voteProfileWallPost, deleteProfileWallPost, getProfileComments, getProfileRecentReads, getProfileBookmarks, getProfileLists } from '@/controllers/profileSectionController';
-import { dataExportRateLimit, dataImportRateLimit, profilePictureRateLimit, settingsPatchRateLimit, commentMutationRateLimit, listVoteRateLimit } from '@/middlewares/userActionRateLimit';
+import { followUser, unfollowUser } from '@/controllers/userFollowController';
+import { reportUser } from '@/controllers/userReportController';
+import { publicFormRateLimiter } from '@/middlewares/rateLimit';
+import { dataExportRateLimit, dataImportRateLimit, profilePictureRateLimit, settingsPatchRateLimit, commentMutationRateLimit, listVoteRateLimit, listWriteRateLimit } from '@/middlewares/userActionRateLimit';
 
 const router = Router();
 
@@ -30,6 +33,10 @@ router.get('/:identifier/comments', getProfileComments as RequestHandler);
 router.get('/:identifier/recent-reads', getProfileRecentReads as RequestHandler);
 router.get('/:identifier/bookmarks', getProfileBookmarks as RequestHandler);
 router.get('/:identifier/lists', getProfileLists as RequestHandler);
+
+router.post('/:identifier/follow', authMiddleware, listWriteRateLimit, followUser as RequestHandler);
+router.delete('/:identifier/follow', authMiddleware, listWriteRateLimit, unfollowUser as RequestHandler);
+router.post('/:identifier/report', authMiddleware, publicFormRateLimiter, reportUser as RequestHandler);
 
 router.get('/:identifier/public', getPublicProfile as RequestHandler);
 

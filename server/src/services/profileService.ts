@@ -3,6 +3,7 @@ import { eq, or, max } from 'drizzle-orm';
 import { userProgressService } from '@/services/userProgressService';
 import { getUserSettings } from '@/services/userSettingsService';
 import { badgeService } from '@/services/badgeService';
+import { userFollowService } from '@/services/userFollowService';
 import { canViewProfileSection } from '@/lib/profileVisibility';
 
 class ProfileService {
@@ -53,15 +54,19 @@ class ProfileService {
       };
     }
 
-    const stats = await userProgressService.getUserStats(targetUserId);
-    const badgeMap = await badgeService.getBadgesForUsers([targetUserId]);
+    const [stats, badgeMap, followMeta] = await Promise.all([
+      userProgressService.getUserStats(targetUserId),
+      badgeService.getBadgesForUsers([targetUserId]),
+      userFollowService.getFollowMeta(targetUserId, viewerUserId),
+    ]);
 
     const { role, ...publicFields } = userRow;
 
     return {
       ...publicFields,
       lastOnlineAt: lastSession?.lastOnlineAt ?? userRow.createdAt,
-      ...(isOwner ? { role } : {}),
+      followerCount: followMeta.followerCount,
+      ...(isOwner ? { role } : { isFollowing: followMeta.isFollowing }),
       isPrivate: false,
       isOwner,
       isProfilePublic: settings.isProfilePublic,

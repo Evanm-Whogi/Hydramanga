@@ -9,6 +9,7 @@ import { useUser } from "@/providers/UserProvider";
 import Overview from "@/app/profile/components/Overview";
 import ProfileContent from "@/app/profile/components/ProfileContent";
 import ProfileBadgesCard from "@/components/badges/ProfileBadgesCard";
+import FollowButton from "@/components/profile/FollowButton";
 import ProfileTabBar from "@/app/profile/components/ProfileTabBar";
 import ProfileComments from "@/app/profile/components/ProfileComments";
 import ProfileWall from "@/app/profile/components/ProfileWall";
@@ -18,6 +19,7 @@ import BookmarksPageClient from "@/app/bookmarks/components/BookmarksPageClient"
 import type { UserKarma } from "@/types/stats";
 import type { ProfileVisibility } from "@/types/profile";
 import { buildProfileTabs, DEFAULT_PROFILE_VISIBILITY, normalizeProfileTab, type ProfileTabId } from "@/app/profile/profileTabs";
+import { formatCompactNumber } from "@/lib/utils";
 
 const TAB_ICONS: Partial<Record<ProfileTabId, React.ReactNode>> = {
   overview: <LayoutDashboardIcon className="size-5" />,
@@ -59,12 +61,16 @@ function PublicProfileView({ identifier }: { identifier: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [profile, setProfile] = useState<PublicProfile | null>(null);
+  const [followerCount, setFollowerCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<ProfileTabId>(() => normalizeProfileTab(searchParams.get("tab")));
 
   useEffect(() => {
     getPublicProfile(identifier)
-      .then((d) => setProfile(d.profile))
+      .then((d) => {
+        setProfile(d.profile);
+        setFollowerCount(d.profile.followerCount ?? 0);
+      })
       .catch(() => setProfile(null))
       .finally(() => setLoading(false));
   }, [identifier]);
@@ -158,6 +164,15 @@ function PublicProfileView({ identifier }: { identifier: string }) {
               {profile.role && <div className="text-primary mt-1">Role: <span className="text-muted ml-2">{profile.role}</span></div>}
               <div className="flex text-primary capitalize">Account Created: <span className="ml-2 text-muted">{new Date(profile?.createdAt!).toDateString()}</span></div>
               <div className="flex text-primary capitalize">Last Online: <span className="ml-2 text-muted">{formatDate(profile?.lastOnlineAt ?? profile?.createdAt)}</span></div>
+              <div className="flex text-primary capitalize">Followers: <span className="ml-2 text-muted">{formatCompactNumber(followerCount)}</span></div>
+              {!profile.isOwner && (
+                <FollowButton
+                  identifier={profileIdentifier}
+                  username={profile.name}
+                  initialIsFollowing={profile.isFollowing ?? false}
+                  onFollowerCountChange={setFollowerCount}
+                />
+              )}
             </div>
             {profile.stats?.karma && (
               <div className="bg-foreground rounded-md p-5 w-full mt-5">

@@ -25,6 +25,8 @@ export interface PublicProfile {
   badges?: EarnedBadge[];
   isPrivate?: boolean;
   isOwner?: boolean;
+  isFollowing?: boolean;
+  followerCount?: number;
   isProfilePublic?: boolean;
   profileVisibility?: ProfileVisibility;
   stats?: Partial<UserStats>;
@@ -81,6 +83,18 @@ export interface ProfileListItem {
 
 export async function getPublicProfile(identifier: string): Promise<{ profile: PublicProfile }> {
   return apiGet(`/users/${encodeURIComponent(identifier)}/public`);
+}
+
+export async function followUser(identifier: string): Promise<{ success: boolean; followerCount: number; isFollowing: boolean }> {
+  return apiPost(`/users/${encodeURIComponent(identifier)}/follow`, {});
+}
+
+export async function unfollowUser(identifier: string): Promise<{ success: boolean; followerCount: number; isFollowing: boolean }> {
+  return apiDelete(`/users/${encodeURIComponent(identifier)}/follow`);
+}
+
+export async function reportUser(identifier: string, body: { username: string; reportType: string; details?: string }): Promise<{ success: boolean }> {
+  return apiPost(`/users/${encodeURIComponent(identifier)}/report`, body);
 }
 
 export async function getProfileStats(identifier: string): Promise<{ stats: UserStats }> {
