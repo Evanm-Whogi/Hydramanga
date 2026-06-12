@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next';
+import { connection } from 'next/server';
 import { absoluteUrl } from '@/lib/seo';
 import { getBackendInternalUrl } from '@/lib/env';
 
@@ -35,7 +36,7 @@ async function fetchAllSeriesIds(): Promise<SitemapSeriesItem[]> {
     if (cursor) params.set('cursor', String(cursor));
 
     const response = await fetch(`${backendUrl}/sitemap/series?${params.toString()}`, {
-      next: { revalidate: 3600 },
+      cache: 'no-store',
     });
 
     if (!response.ok) break;
@@ -51,6 +52,7 @@ async function fetchAllSeriesIds(): Promise<SitemapSeriesItem[]> {
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  await connection();
   const now = new Date();
   const staticEntries: MetadataRoute.Sitemap = STATIC_ROUTES.map((route) => ({
     url: absoluteUrl(route.path),
