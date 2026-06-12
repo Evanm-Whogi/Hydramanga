@@ -11,7 +11,6 @@ import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
 const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const SITE_BASE = appConfig.scraper.comix.baseUrl;
-const SEARCH_API = appConfig.scraper.comix.searchApiUrl;
 
 function calculateTitleSimilarity(title1: string, title2: string): number {
     if (title1.toLowerCase() === title2.toLowerCase()) {
@@ -72,6 +71,51 @@ interface ComixPageAsset {
     source?: 'url' | 'canvas' | 'canvas-screenshot';
 }
 
+interface ComixCfSession {
+    cfClearance: string;
+    userAgent: string;
+    expiresAt: number;
+    browserCookies: Array<{ name: string; value: string; domain: string; path: string }>;
+}
+
+interface FlareSolverrCookie {
+    name: string;
+    value: string;
+    expiry?: number;
+}
+
+interface FlareSolverrResult {
+    status?: string;
+    message?: string;
+    solution?: {
+        status?: number;
+        response?: string;
+        cookies?: FlareSolverrCookie[];
+        userAgent?: string;
+    };
+}
+
+const COMIX_CF_HELP = 'Set FLARESOLVERR_URL (or KAGANE_FLARESOLVERR_URL) for automatic Cloudflare bypass, or export COMIX_CF_CLEARANCE (+ COMIX_CF_USER_AGENT) from a browser session on comix.to.';
+
+function getFlareSolverrUrl(): string | undefined {
+    const url = process.env.FLARESOLVERR_URL?.trim()
+        || process.env.KAGANE_FLARESOLVERR_URL?.trim()
+        || appConfig.scraper.kagane.flareSolverrUrl?.trim();
+    return url ? url.replace(/\/$/, '') : undefined;
+}
+
+function mapSearchResults(items: ComixSearchItem[], query: string, limit: number): MangaSearchResult[] {
+    return items
+        .map(item => ({
+            href: item.url?.startsWith('http') ? item.url : new URL(item.url || '', SITE_BASE).href,
+            title: item.title || '',
+            score: calculateTitleSimilarity(item.title || '', query),
+        }))
+        .filter(r => r.href && r.title && r.score >= 50)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
+}
+
 export class ComixScraper implements IChapterScraper {
     /** Full-size canvas elements in the reader (portrait-oriented pages). */
     private static readonly MIN_CAPTURE_WIDTH = 700;
@@ -85,6 +129,8 @@ export class ComixScraper implements IChapterScraper {
     /** Placeholder/spinner assets from Comix CDN are ~1–2 KB; small but valid webp pages can be ~5 KB. */
     private static readonly MIN_IMAGE_DOWNLOAD_BYTES = 2_000;
     private static readonly SCREENSHOT_TIMEOUT_MS = 15_000;
+    private static cfSessionCache: ComixCfSession | null = null;
+    private static cfSessionPromise: Promise<ComixCfSession> | null = null;
 
     private static isValidChapterImageDimensions(width: number, height: number): boolean {
         if (width <= 0 || height <= 0) return false;
@@ -219,6 +265,284 @@ export class ComixScraper implements IChapterScraper {
         return true;
     }
 
+    private async requestFlareSolverr(payload: Record<string, unknown>): Promise<FlareSolverrResult> {
+        const flareSolverrUrl = getFlareSolverrUrl();
+        if (!flareSolverrUrl) {
+            throw new Error('FlareSolverr URL is not configured');
+        }
+
+        const response = await axios.post<FlareSolverrResult>(
+            `${flareSolverrUrl}/v1`,
+            payload,
+            {
+                timeout: 120000,
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                validateStatus: () => true,
+            },
+        );
+
+        if (response.status < 200 || response.status >= 300) {
+            throw new Error(`FlareSolverr HTTP ${response.status}`);
+        }
+        if (response.data?.status !== 'ok') {
+            throw new Error(`FlareSolverr error: ${response.data?.message || 'unknown error'}`);
+        }
+        return response.data;
+    }
+
+    private buildBrowserCookies(cookies: FlareSolverrCookie[]): Array<{ name: string; value: string; domain: string; path: string }> {
+        return cookies.map(cookie => ({
+            name: cookie.name,
+            value: cookie.value,
+            domain: '.comix.to',
+            path: '/',
+        }));
+    }
+
+    private flareSessionFromSolution(solution: FlareSolverrResult['solution']): ComixCfSession {
+        const cookies = solution?.cookies || [];
+        const clearance = cookies.find(cookie => cookie.name === 'cf_clearance');
+        if (!clearance?.value) {
+            throw new Error('FlareSolverr response missing cf_clearance cookie');
+        }
+
+        const expirySeconds = clearance.expiry && clearance.expiry > 0 ? clearance.expiry : Math.floor(Date.now() / 1000) + 1800;
+        return {
+            cfClearance: clearance.value,
+            userAgent: solution?.userAgent || appConfig.scraper.comix.userAgent,
+            expiresAt: expirySeconds * 1000,
+            browserCookies: this.buildBrowserCookies(cookies),
+        };
+    }
+
+    private async getCfSessionViaFlareSolverr(): Promise<ComixCfSession> {
+        logger.info('[Comix] Requesting Cloudflare clearance via FlareSolverr', { service: 'comixScraper' });
+        const result = await this.requestFlareSolverr({
+            cmd: 'request.get',
+            url: `${SITE_BASE}/browse`,
+            maxTimeout: 120000,
+        });
+        return this.flareSessionFromSolution(result.solution);
+    }
+
+    private async getCfSessionViaPlaywright(): Promise<ComixCfSession> {
+        const browser = await ComixScraper.getBrowser();
+        const context = await browser.newContext({
+            userAgent: appConfig.scraper.comix.userAgent,
+            viewport: { width: 1366, height: 768 },
+            locale: 'en-US',
+        });
+        await context.addInitScript(() => {
+            Object.defineProperty(navigator, 'webdriver', { get: () => false });
+        });
+
+        const envClearance = process.env.COMIX_CF_CLEARANCE?.trim();
+        if (envClearance) {
+            await context.addCookies([
+                { name: 'cf_clearance', value: envClearance, domain: '.comix.to', path: '/' },
+            ]);
+        }
+
+        const page = await context.newPage();
+        try {
+            await page.goto(`${SITE_BASE}/browse`, { waitUntil: 'domcontentloaded', timeout: 90000 });
+            for (let i = 0; i < 60; i++) {
+                const cookies = await context.cookies();
+                const clearance = cookies.find((cookie: { name: string; value: string; expires?: number }) => cookie.name === 'cf_clearance');
+                if (clearance?.value) {
+                    const allCookies = await context.cookies();
+                    return {
+                        cfClearance: clearance.value,
+                        userAgent: process.env.COMIX_CF_USER_AGENT?.trim() || appConfig.scraper.comix.userAgent,
+                        expiresAt: (clearance.expires && clearance.expires > 0 ? clearance.expires : Math.floor(Date.now() / 1000) + 1800) * 1000,
+                        browserCookies: allCookies.map((cookie: { name: string; value: string }) => ({
+                            name: cookie.name,
+                            value: cookie.value,
+                            domain: '.comix.to',
+                            path: '/',
+                        })),
+                    };
+                }
+                const title = await page.title();
+                if (!title.includes('Just a moment')) break;
+                await page.waitForTimeout(2000);
+            }
+            throw new Error(`Playwright could not obtain cf_clearance within timeout. ${COMIX_CF_HELP}`);
+        } finally {
+            await page.close().catch(() => {});
+            await context.close().catch(() => {});
+            await ComixScraper.releaseBrowser(browser);
+        }
+    }
+
+    private async getCfSession(forceRefresh = false): Promise<ComixCfSession> {
+        if (!forceRefresh && ComixScraper.cfSessionCache && Date.now() < ComixScraper.cfSessionCache.expiresAt - 60_000) {
+            return ComixScraper.cfSessionCache;
+        }
+
+        const envClearance = process.env.COMIX_CF_CLEARANCE?.trim();
+        if (envClearance && !forceRefresh) {
+            const session: ComixCfSession = {
+                cfClearance: envClearance,
+                userAgent: process.env.COMIX_CF_USER_AGENT?.trim() || appConfig.scraper.comix.userAgent,
+                expiresAt: Date.now() + 30 * 60 * 1000,
+                browserCookies: [{ name: 'cf_clearance', value: envClearance, domain: '.comix.to', path: '/' }],
+            };
+            ComixScraper.cfSessionCache = session;
+            return session;
+        }
+
+        if (!ComixScraper.cfSessionPromise || forceRefresh) {
+            ComixScraper.cfSessionPromise = (async () => {
+                try {
+                    if (getFlareSolverrUrl()) {
+                        return await this.getCfSessionViaFlareSolverr();
+                    }
+                    return await this.getCfSessionViaPlaywright();
+                } finally {
+                    ComixScraper.cfSessionPromise = null;
+                }
+            })();
+        }
+
+        const session = await ComixScraper.cfSessionPromise;
+        ComixScraper.cfSessionCache = session;
+        return session;
+    }
+
+    private async selectBrowseContentRating(page: any, rating: string): Promise<void> {
+        await page.evaluate(() => {
+            const adv = document.querySelector<HTMLButtonElement>('button.filter-adv-toggle');
+            if (adv && adv.getAttribute('aria-expanded') !== 'true') {
+                adv.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            }
+        });
+        await page.waitForTimeout(500);
+
+        await page.evaluate(() => {
+            const ratingDrop = [...document.querySelectorAll('div.fdrop')].find(drop =>
+                drop.querySelector('label.fdrop__label')?.textContent?.includes('CONTENT RATING'),
+            );
+            ratingDrop?.querySelector<HTMLButtonElement>('button.fdrop__btn')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        await page.waitForTimeout(500);
+
+        const applied = await page.evaluate((targetRating: string) => {
+            const ratingDrop = [...document.querySelectorAll('div.fdrop')].find(drop =>
+                drop.querySelector('label.fdrop__label')?.textContent?.includes('CONTENT RATING'),
+            );
+            if (!ratingDrop) return false;
+            const item = [...ratingDrop.querySelectorAll('li.fdrop__item')].find(li => li.textContent?.trim() === targetRating);
+            if (!item) return false;
+            item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            return ratingDrop.querySelector('.fdrop__value')?.textContent?.trim() === targetRating;
+        }, rating);
+
+        await page.waitForTimeout(1500);
+        if (!applied) {
+            logger.debug(`[Comix] Could not set browse content rating to "${rating}"`, { service: 'comixScraper' });
+        }
+    }
+
+    private async extractBrowseRows(page: any): Promise<Array<{ href: string; title: string }>> {
+        return page.evaluate((siteBase: string) => {
+            const resolveUrl = (href: string) => {
+                if (!href) return '';
+                if (href.startsWith('http')) return href;
+                try {
+                    return new URL(href, siteBase).href;
+                } catch {
+                    return '';
+                }
+            };
+
+            return Array.from(document.querySelectorAll<HTMLElement>('.list-grid .lrow'))
+                .map(row => {
+                    const link = row.querySelector<HTMLAnchorElement>('a.lrow__title-link, a.lrow__poster');
+                    const href = link?.getAttribute('href') || '';
+                    const title = row.querySelector<HTMLElement>('h3.lrow__title')?.textContent?.trim() || '';
+                    return { href: resolveUrl(href), title };
+                })
+                .filter(row => row.href && row.title);
+        }, SITE_BASE);
+    }
+
+    private async searchViaBrowser(session: ComixCfSession, query: string, limit: number): Promise<MangaSearchResult[]> {
+        const browser = await ComixScraper.getBrowser();
+        const context = await browser.newContext({
+            userAgent: session.userAgent,
+            viewport: { width: 1366, height: 768 },
+            locale: 'en-US',
+        });
+        const cookies = session.browserCookies.length
+            ? session.browserCookies
+            : [{ name: 'cf_clearance', value: session.cfClearance, domain: '.comix.to', path: '/' }];
+        await context.addCookies(cookies);
+        const page = await context.newPage();
+
+        const apiCapture: { items: ComixSearchItem[] | null } = { items: null };
+        page.on('response', async (res: { url: () => string; json: () => Promise<ComixSearchResponse> }) => {
+            const url = res.url();
+            if (!url.includes('/api/v1/manga') || !url.includes('content_rating=pornographic')) return;
+            try {
+                const data = await res.json();
+                if (data?.result?.items?.length) {
+                    apiCapture.items = data.result.items;
+                }
+            } catch {
+                // Ignore malformed API payloads.
+            }
+        });
+
+        try {
+            const browseUrl = `${SITE_BASE}/browse?q=${encodeURIComponent(query)}&sort=relevance%3Adesc`;
+            await page.goto(browseUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await page.waitForSelector('.list-grid .lrow, button.filter-adv-toggle', { timeout: 20000 }).catch(() => {});
+            await this.selectBrowseContentRating(page, 'Pornographic');
+            for (let i = 0; i < 8 && !apiCapture.items?.length; i++) {
+                await page.waitForTimeout(500);
+            }
+
+            if (apiCapture.items?.length) {
+                logger.info(`[Comix] Browser API search returned ${apiCapture.items.length} result(s) for "${query}"`, { service: 'comixScraper' });
+                return mapSearchResults(apiCapture.items, query, limit);
+            }
+
+            const rows = await this.extractBrowseRows(page);
+            logger.info(`[Comix] DOM browse returned ${rows.length} result(s) for "${query}"`, { service: 'comixScraper' });
+            const items: ComixSearchItem[] = rows.map(row => ({ title: row.title, url: row.href }));
+            return mapSearchResults(items, query, limit);
+        } finally {
+            await page.close().catch(() => {});
+            await context.close().catch(() => {});
+            await ComixScraper.releaseBrowser(browser);
+        }
+    }
+
+    private async searchComix(query: string, limit: number): Promise<MangaSearchResult[]> {
+        const q = (query || '').trim();
+        if (!q) return [];
+
+        try {
+            let session = await this.getCfSession();
+            try {
+                return await this.searchViaBrowser(session, q, limit);
+            } catch (browserError: any) {
+                const message = browserError?.message || String(browserError);
+                if (message.includes('403') || message.includes('Cloudflare') || message.includes('Just a moment')) {
+                    logger.warn(`[Comix] Browser search blocked (${message}), refreshing CF session and retrying`, { service: 'comixScraper' });
+                    ComixScraper.cfSessionCache = null;
+                    session = await this.getCfSession(true);
+                    return await this.searchViaBrowser(session, q, limit);
+                }
+                throw browserError;
+            }
+        } catch (error) {
+            logger.error(`[Comix] searchComix() failed for "${q}": ${error}`, { service: 'comixScraper' });
+            return [];
+        }
+    }
+
     async findBestMatch(mangaName: string, options?: SearchOptions): Promise<MangaSearchResult | undefined> {
         const baseVariants = [
             mangaName,
@@ -241,32 +565,7 @@ export class ComixScraper implements IChapterScraper {
 
         for (const variant of variants) {
             try {
-                const response = await ComixScraper.axiosInstance.get<ComixSearchResponse>(SEARCH_API, {
-                    params: {
-                        keyword: variant,
-                        limit: 6,
-                    },
-                });
-
-                const items = response.data?.result?.items || [];
-                if (!items.length) {
-                    continue;
-                }
-
-                const scored = items
-                    .map(item => {
-                        const href = item.url?.startsWith('http')
-                            ? item.url
-                            : new URL(item.url || '', SITE_BASE).href;
-                        return {
-                            href,
-                            title: item.title || '',
-                            score: calculateTitleSimilarity(item.title || '', variant),
-                        };
-                    })
-                    .filter(r => r.href && r.title && r.score >= 50)
-                    .sort((a, b) => b.score - a.score);
-
+                const scored = await this.searchComix(variant, 6);
                 if (!scored.length) {
                     continue;
                 }
@@ -292,31 +591,7 @@ export class ComixScraper implements IChapterScraper {
     }
 
     async search(query: string, _options?: SearchOptions, limit = 10): Promise<MangaSearchResult[]> {
-        const q = (query || '').trim();
-        if (!q) return [];
-
-        try {
-            const response = await ComixScraper.axiosInstance.get<ComixSearchResponse>(SEARCH_API, {
-                params: {
-                    keyword: q,
-                    limit: Math.min(Math.max(limit, 1), 20),
-                },
-            });
-
-            const items = response.data?.result?.items || [];
-            return items
-                .map(item => ({
-                    href: item.url?.startsWith('http') ? item.url : new URL(item.url || '', SITE_BASE).href,
-                    title: item.title || '',
-                    score: calculateTitleSimilarity(item.title || '', q),
-                }))
-                .filter(r => r.href && r.title && r.score >= 50)
-                .sort((a, b) => b.score - a.score)
-                .slice(0, limit);
-        } catch (error) {
-            logger.error(`[Comix] search() failed: ${error}`, { service: 'comixScraper' });
-            return [];
-        }
+        return this.searchComix(query, Math.min(Math.max(limit, 1), 20));
     }
 
     async* scrapeChapters(
