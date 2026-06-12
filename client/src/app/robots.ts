@@ -20,7 +20,7 @@ export default function robots(): MetadataRoute.Robots {
           '/register',
           '/reset-password',
           '/error-500',
-          '/manga/',
+          '/manga/*/read/',
         ],
       },
     ],
