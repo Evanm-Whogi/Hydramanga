@@ -1,6 +1,7 @@
 import { db, schema } from '@/db/index';
 import { and, count, eq } from 'drizzle-orm';
 import { resolveUserId } from '@/services/profileSectionService';
+import { badgeService } from '@/services/badgeService';
 
 class UserFollowService {
   async getFollowMeta(targetUserId: string, viewerUserId: string | null): Promise<{ followerCount: number; isFollowing: boolean }> {
@@ -29,6 +30,7 @@ class UserFollowService {
     });
     if (!existing) {
       await db.insert(schema.userFollows).values({ followerId, followingId: resolved.userId });
+      badgeService.evaluateBadgesAsync(resolved.userId, 'follow');
     }
 
     return this.getFollowMeta(resolved.userId, followerId);

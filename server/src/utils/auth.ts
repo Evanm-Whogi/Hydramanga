@@ -7,6 +7,7 @@ import { discordService } from "@/services/discordService";
 import { eq, sql } from "drizzle-orm";
 import { auditLogService } from "@/services/auditLogService";
 import { siteSettingsService } from "@/services/siteSettingsService";
+import { badgeService } from "@/services/badgeService";
 import { fromNodeHeaders } from "better-auth/node";
 
 function getRequestMeta(context: { request?: Request } | null | undefined) {
@@ -261,6 +262,8 @@ export const auth = betterAuth({
                             .set({ role: 'admin' })
                             .where(eq(schema.user.id, user.id));
                     }
+
+                    badgeService.evaluateBadgesAsync(user.id, 'signup');
                 },
             },
             update: {
@@ -278,6 +281,9 @@ export const auth = betterAuth({
                             name: display,
                         },
                     };
+                },
+                after: async (user: { id: string }) => {
+                    badgeService.evaluateBadgesAsync(user.id, 'profile_update');
                 },
             },
         },

@@ -8,6 +8,7 @@ import logger from '@/services/loggerService';
 import { recordAuditFromRequest } from '@/audit/record';
 import { resolveSafeProfileImagePath } from '@/lib/profileImagePath';
 import { fileMatchesAllowedImageSignature } from '@/lib/imageMagicBytes';
+import { badgeService } from '@/services/badgeService';
 
 export const uploadProfilePicture = async (req: Request, res: Response) => {
   try {
@@ -77,6 +78,8 @@ export const uploadProfilePicture = async (req: Request, res: Response) => {
       resourceType: 'user',
       resourceId: userId,
     });
+
+    badgeService.evaluateBadgesAsync(userId, 'profile_update');
 
     return res.status(200).json({
       message: 'Profile picture uploaded successfully',

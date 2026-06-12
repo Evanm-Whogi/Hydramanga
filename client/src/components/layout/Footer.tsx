@@ -1,4 +1,7 @@
 import Link from 'next/link';
+import FooterLogo from '@/components/layout/FooterLogo';
+import { getPublicVersion } from '@/lib/versionConfig';
+
 const DISCORD_URL = process.env.NEXT_PUBLIC_DISCORD ?? "https://discord.gg/A27sQQTWWe";
 
 export default  function Footer() {
@@ -7,8 +10,11 @@ export default  function Footer() {
             <div className="container mx-auto">
                 <div className="flex flex-col md:flex-row place-content-between pt-24 pb-12 space-y-6 md:space-y-0">
                     {/* About */}
-                    <div className="flex flex-col w-full md:w-1/4 space-y-4 text-muted">
-                        <h1 className="text-3xl text-primary">{process.env.NEXT_PUBLIC_NAME}</h1>
+                    <div className="flex flex-col w-full md:w-1/4 space-y-2 text-muted">
+                        <div className="flex flex-row items-center">
+                            <FooterLogo />
+                            <h1 className="text-3xl text-primary flex ml-3">Hydra <span className="text-accent">Manga</span></h1>
+                        </div>
                         <p>{process.env.NEXT_PUBLIC_DESC}</p>
                     </div>
                     {/* Quick Links */}
@@ -50,7 +56,7 @@ export default  function Footer() {
                     <hr className="border border-borders w-full" />
                     <div className="flex flex-col md:flex-row space-y-3 md:space-y-0 py-5 items-center justify-between w-full text-sm">
                     <span className="">© 2026 {process.env.NEXT_PUBLIC_NAME}, LLC. All rights reserved.<br/>We do not host any files on our servers.</span>
-                        <span className="flex flex-col md:flex-row gap-2">Site Version: B-1.00</span>
+                        <span className="flex flex-col md:flex-row gap-2">Site Version: {getPublicVersion()}</span>
                     </div>
                 </div>
             </div>

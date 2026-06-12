@@ -11,6 +11,7 @@ import { CONTENT_LIMITS } from '@/lib/securityLimits';
 import { karmaService } from '@/services/karmaService';
 import { notificationService } from '@/services/notificationService';
 import { metricsService } from '@/services/metricsService';
+import { badgeService } from '@/services/badgeService';
 
 export type ListVisibility = 'public' | 'private';
 export type ListSort = 'popular' | 'views' | 'newest' | 'title' | 'itemCount';
@@ -521,6 +522,7 @@ class CuratedListService {
     await db.update(schema.curatedLists)
       .set({ saveCount: sql`${schema.curatedLists.saveCount} + 1`, updatedAt: new Date() })
       .where(eq(schema.curatedLists.id, listId));
+    badgeService.evaluateBadgesAsync(list.userId, 'list_save');
     return { userSaved: true };
   }
 

@@ -1,26 +1,11 @@
 "use client";
 
-import type { LucideIcon } from "lucide-react";
-import { MessageCircle, MessagesSquare, Flag, Megaphone, BookOpen, Timer, Flame, EyeOff, CheckCircle2, Library, Shield, Skull } from "lucide-react";
+import { Shield } from "lucide-react";
 import type { EarnedBadge } from "@/lib/badgeConfig";
+import { BADGE_ICON_MAP } from "@/lib/badgeIcons";
 
-const ICON_MAP: Record<string, LucideIcon> = {
-  MessageCircle,
-  MessagesSquare,
-  Flag,
-  Megaphone,
-  BookOpen,
-  Timer,
-  Flame,
-  EyeOff,
-  CheckCircle2,
-  Library,
-  Shield,
-  Skull,
-};
-
-export default function BadgeIcon({ badge, size = 16, onClick }: { badge: Pick<EarnedBadge, "icon" | "color" | "name">; size?: number; onClick?: () => void }) {
-  const Icon = ICON_MAP[badge.icon] ?? Shield;
+export default function BadgeIcon({ badge, size = 16, onClick }: { badge: Pick<EarnedBadge, "icon" | "color" | "name">; size?: number; onClick?: (e: React.MouseEvent) => void }) {
+  const Icon = BADGE_ICON_MAP[badge.icon] ?? Shield;
   const Tag = onClick ? "button" : "span";
 
   return (

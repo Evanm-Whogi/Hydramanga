@@ -14,6 +14,7 @@ import { getAdminSiteSettings, patchAdminSiteSettings } from '@/controllers/admi
 import { requireRole } from '@/middlewares/requireRole';
 import { listAdminStickers, createAdminSticker, updateAdminSticker, deleteAdminSticker, scanAdminStickers } from '@/controllers/adminStickerController';
 import { listAdminLogContainers, getAdminContainerLogs } from '@/controllers/adminDockerLogController';
+import { listAdminBadges } from '@/controllers/adminBadgeController';
 
 const router = Router();
 
@@ -36,6 +37,9 @@ router.get('/audit', requireRole('admin'), listAdminAuditLogs as RequestHandler)
 // Stats
 router.get('/stats/overview', requireRole('admin'), getAdminOverviewStats as RequestHandler);
 router.get('/stats/timeseries', requireRole('admin'), getAdminTimeseries as RequestHandler);
+
+// Badges
+router.get('/badges', requireRole('admin'), listAdminBadges as RequestHandler);
 
 // Users
 router.get('/users', requireRole('admin'), listAdminUsers as RequestHandler);

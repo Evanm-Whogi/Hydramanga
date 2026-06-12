@@ -6,6 +6,7 @@ import { seriesCardColumns, enrichSeriesListExtras } from '@/lib/seriesQueries';
 import { resolveCoverUrl } from '@/lib/coverUtils';
 import { getCatalogFilterConditions, getExcludeNovelConditions, isNovelType } from '@/config/contentFilter';
 import { BookmarkService, type BookmarkSort, type BookmarkStatus } from '@/services/bookmarkService';
+import { badgeService } from '@/services/badgeService';
 
 const MAX_FAVORITES = 10;
 const AUTHOR_COLUMNS = { id: true, name: true, image: true, role: true, username: true, displayUsername: true } as const;
@@ -81,6 +82,7 @@ class ProfileSectionService {
         uniqueIds.map((seriesId, index) => ({ userId, seriesId, sortOrder: index }))
       );
     }
+    badgeService.evaluateBadgesAsync(userId, 'profile_update');
     return this.getFavorites('me', userId);
   }
 

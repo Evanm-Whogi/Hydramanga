@@ -45,6 +45,7 @@
     "@types/pg": "^8.16.0",
     "@types/pg-copy-streams": "^1.2.5",
     "drizzle-kit": "^0.31.8",
+    "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   },
   "name": "server",
@@ -56,7 +57,8 @@
     "worker": "RUN_WORKERS=true nodemon src/worker.ts",
     "build": "tsc",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "badges:backfill": "npx ts-node -r tsconfig-paths/register scripts/backfill-badges.ts"
   },
   "author": "",
   "license": "ISC",

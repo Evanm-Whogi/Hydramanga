@@ -8,12 +8,14 @@ import { listMyAuthAuditLogs } from '@/controllers/userAuditController';
 import { exportMyData, importMyData } from '@/controllers/profileExtensionController';
 import { getProfileStats, getProfileFavorites, setMyFavorites, getProfileWall, createProfileWallPost, updateProfileWallPost, voteProfileWallPost, deleteProfileWallPost, getProfileComments, getProfileRecentReads, getProfileBookmarks, getProfileLists } from '@/controllers/profileSectionController';
 import { followUser, unfollowUser } from '@/controllers/userFollowController';
+import { claimEasterEggBadge } from '@/controllers/userBadgeController';
 import { reportUser } from '@/controllers/userReportController';
 import { publicFormRateLimiter } from '@/middlewares/rateLimit';
 import { dataExportRateLimit, dataImportRateLimit, profilePictureRateLimit, settingsPatchRateLimit, commentMutationRateLimit, listVoteRateLimit, listWriteRateLimit } from '@/middlewares/userActionRateLimit';
 
 const router = Router();
 
+router.post('/me/badges/easter-egg', authMiddleware, claimEasterEggBadge as RequestHandler);
 router.get('/me/audit', authMiddleware, listMyAuthAuditLogs as RequestHandler);
 router.get('/me/export', authMiddleware, dataExportRateLimit, exportMyData as RequestHandler);
 router.post('/me/import', authMiddleware, dataImportRateLimit, importMyData as RequestHandler);

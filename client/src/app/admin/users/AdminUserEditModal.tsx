@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { X, Loader2, Mail, KeyRound, LogIn, Ban, ShieldCheck } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { X, Loader2, Mail, KeyRound, LogIn, Ban, ShieldCheck, User, Award, Shield } from "lucide-react";
 import { toast } from "react-toastify";
 import Input from "@/components/InputField";
+import BadgeMultiSelect from "@/components/badges/BadgeMultiSelect";
 import {
+  getAdminUser,
   updateAdminUser,
   sendAdminUserVerificationEmail,
   sendAdminUserPasswordReset,
@@ -16,6 +18,20 @@ import { authClient } from "@/lib/auth";
 import { useUser } from "@/providers/UserProvider";
 import { BAN_DURATION_OPTIONS, formatBanExpiry, isUserBanned } from "@/lib/banHelpers";
 
+type AdminUserEditTab = "profile" | "badges" | "moderation";
+
+const EDIT_TABS: { id: AdminUserEditTab; label: string; icon: ReactNode }[] = [
+  { id: "profile", label: "Profile", icon: <User className="size-4" /> },
+  { id: "badges", label: "Badges", icon: <Award className="size-4" /> },
+  { id: "moderation", label: "Moderation", icon: <Shield className="size-4" /> },
+];
+
+function tabClass(active: boolean): string {
+  return `inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors border mb-2 ${
+    active ? "bg-accent text-white border-accent" : "bg-foreground text-muted border-borders hover:text-primary"
+  }`;
+}
+
 interface AdminUserEditModalProps {
   user: AdminUser;
   onClose: () => void;
@@ -24,6 +40,7 @@ interface AdminUserEditModalProps {
 
 export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUserEditModalProps) {
   const { user: currentUser, session } = useUser();
+  const [loading, setLoading] = useState(true);
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
   const [role, setRole] = useState<"user" | "admin" | "moderator">(
@@ -32,6 +49,8 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
   const [bio, setBio] = useState(user.bio ?? "");
   const [emailVerified, setEmailVerified] = useState(user.emailVerified);
   const [image, setImage] = useState(user.image ?? "");
+  const [badgeIds, setBadgeIds] = useState<string[]>(user.badgeIds ?? []);
+  const [activeTab, setActiveTab] = useState<AdminUserEditTab>("profile");
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [banReasonInput, setBanReasonInput] = useState("");
@@ -41,6 +60,30 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
     banReason: user.banReason,
     banExpires: user.banExpires,
   });
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    getAdminUser(user.id)
+      .then((fresh) => {
+        if (!alive) return;
+        setName(fresh.name);
+        setEmail(fresh.email);
+        setRole(fresh.role === "admin" ? "admin" : fresh.role === "moderator" ? "moderator" : "user");
+        setBio(fresh.bio ?? "");
+        setEmailVerified(fresh.emailVerified);
+        setImage(fresh.image ?? "");
+        setBadgeIds(fresh.badgeIds ?? []);
+        setBanState({ isBanned: fresh.isBanned, banReason: fresh.banReason, banExpires: fresh.banExpires });
+      })
+      .catch(() => toast.error("Failed to load user details"))
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [user.id]);
 
   useEffect(() => {
     setBanState({
@@ -66,6 +109,7 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
         bio: bio.trim() || null,
         emailVerified,
         image: image.trim() || null,
+        badgeIds,
       });
       toast.success(`Updated ${updated.name}`);
       onSaved(updated);
@@ -108,13 +152,7 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
     if (!canBan) return;
     const reason = banReasonInput.trim() || "Banned by administrator";
     const durationLabel = BAN_DURATION_OPTIONS.find((o) => o.value === banDuration)?.label ?? "Permanent";
-    if (
-      !window.confirm(
-        `Ban ${user.name} (${durationLabel})?\n\nReason: ${reason}\n\nThey will be signed out immediately.`
-      )
-    ) {
-      return;
-    }
+    if (!window.confirm(`Ban ${user.name} (${durationLabel})?\n\nReason: ${reason}\n\nThey will be signed out immediately.`)) return;
     setActionLoading("ban");
     try {
       const updated = await banAdminUser(user.id, {
@@ -122,11 +160,7 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
         banExpiresIn: banDuration ? Number(banDuration) : undefined,
       });
       toast.success(`${updated.name} has been banned`);
-      setBanState({
-        isBanned: updated.isBanned,
-        banReason: updated.banReason,
-        banExpires: updated.banExpires,
-      });
+      setBanState({ isBanned: updated.isBanned, banReason: updated.banReason, banExpires: updated.banExpires });
       onSaved(updated);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to ban user");
@@ -142,11 +176,7 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
     try {
       const updated = await unbanAdminUser(user.id);
       toast.success(`${updated.name} has been unbanned`);
-      setBanState({
-        isBanned: updated.isBanned,
-        banReason: updated.banReason,
-        banExpires: updated.banExpires,
-      });
+      setBanState({ isBanned: updated.isBanned, banReason: updated.banReason, banExpires: updated.banExpires });
       setBanReasonInput("");
       setBanDuration("");
       onSaved(updated);
@@ -159,13 +189,7 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
 
   const handleImpersonate = async () => {
     if (!canImpersonate) return;
-    if (
-      !window.confirm(
-        `Sign in as ${user.name} (${user.email})? You will be logged in as this user for up to 1 hour.`
-      )
-    ) {
-      return;
-    }
+    if (!window.confirm(`Sign in as ${user.name} (${user.email})? You will be logged in as this user for up to 1 hour.`)) return;
     setActionLoading("impersonate");
     try {
       const { error } = await authClient.admin.impersonateUser({ userId: user.id });
@@ -180,256 +204,184 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={onClose}>
-      <div className="bg-foreground border border-borders rounded-lg shadow-xl max-h-[90vh] overflow-y-auto"  onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b border-borders sticky top-0 bg-foreground z-10">
+      <div className="bg-foreground border border-borders rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-borders shrink-0">
           <h2 className="text-lg font-semibold text-primary">Edit user</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-md text-muted hover:text-primary hover:bg-background transition-colors"
-            aria-label="Close"
-          >
+          <button type="button" onClick={onClose} className="p-2 rounded-md text-muted hover:text-primary hover:bg-background transition-colors" aria-label="Close">
             <X className="size-5" />
           </button>
         </div>
 
-        <div className="p-4 space-y-4">
-          <div className="flex items-center gap-4 pb-2 border-b border-borders">
-            <img
-              src={image || "/default-avatar.jpg"}
-              alt=""
-              width={64}
-              height={64}
-              className="rounded-full border border-borders object-cover"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = "/default-avatar.jpg";
-              }}
-            />
-            <div className="text-sm text-muted space-y-1">
-              <p>
-                <span className="text-primary my-1 text-xl">{user.name}<br/></span>
-                <span className="text-primary font-medium">Level {user.xp.level}</span>
-                <span className="px-2">·</span>
-                {user.xp.levelName}
-                <span className="px-2">·</span>
-                {user.xp.totalXp.toLocaleString()} karma
-              </p>
-              <p className="text-xs">ID: {user.id}</p>
-              <p className="text-xs text-muted">Joined {new Date(user.createdAt).toLocaleString()}</p>
-            </div>
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 p-12 text-muted flex-1">
+            <Loader2 className="size-5 animate-spin" />
+            Loading user…
           </div>
-
-          {/* Meta */}
-          <div className="flex flex-col pb-5 space-y-3">
-            <div className="flex flex-col gap-4">
-              <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} />
-              <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </div>
-            <div className="flex flex-row gap-4">
-              <Input
-                label="Profile image URL"
-                value={image}
-                onChange={(e) => setImage(e.target.value)}
-                placeholder="/default-avatar.jpg or https://…"
+        ) : (
+          <>
+            <div className="flex items-center gap-4 px-4 py-3 border-b border-borders shrink-0">
+              <img
+                src={image || "/default-avatar.jpg"}
+                alt=""
+                width={56}
+                height={56}
+                className="rounded-full border border-borders object-cover"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = "/default-avatar.jpg";
+                }}
               />
-
-              <div className="flex flex-col gap-1.5 w-full">
-                  <label className="text-sm font-medium text-muted ml-1">Role</label>
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value as "user" | "admin" | "moderator")}
-                    className="w-full bg-foreground border border-borders text-primary px-4 py-2.5 rounded-xl outline-none focus:border-borders focus:ring-1 focus:ring-borders"
-                  >
-                    <option value="user">user</option>
-                    <option value="moderator">moderator</option>
-                    <option value="admin">admin</option>
-                  </select>
+              <div className="text-sm text-muted space-y-0.5 min-w-0">
+                <p className="text-primary text-lg truncate">{name}</p>
+                <p className="truncate">
+                  <span className="text-primary font-medium">Level {user.xp.level}</span>
+                  <span className="px-2">·</span>
+                  {user.xp.levelName}
+                  <span className="px-2">·</span>
+                  {user.xp.totalXp.toLocaleString()} karma
+                </p>
+                <p className="text-xs truncate">ID: {user.id}</p>
               </div>
             </div>
 
-            <div className="flex flex-col gap-1.5 w-full">
-              <label className="text-sm font-medium text-muted ml-1">Bio</label>
-              <textarea
-                value={bio}
-                onChange={(e) => setBio(e.target.value)}
-                rows={3}
-                maxLength={500}
-                className="w-full bg-foreground border border-borders text-primary px-4 py-2.5 rounded-xl outline-none resize-y focus:border-borders focus:ring-1 focus:ring-borders"
-                placeholder="Optional bio"
-              />
+            <div className="flex flex-wrap gap-2 px-4 pt-3 border-b border-borders shrink-0">
+              {EDIT_TABS.map((tab) => (
+                <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={tabClass(activeTab === tab.id)}>
+                  {tab.icon}
+                  {tab.label}
+                  {tab.id === "badges" && badgeIds.length > 0 ? (
+                    <span className="ml-1 opacity-80 tabular-nums">({badgeIds.length})</span>
+                  ) : null}
+                </button>
+              ))}
             </div>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={emailVerified}
-                onChange={(e) => setEmailVerified(e.target.checked)}
-                className="size-4 rounded border-borders accent-accent"
-              />
-              <span className="text-sm text-primary">Email verified</span>
-            </label>
-          </div>
-          
-          {/* Moderation */}
-          <div className="flex flex-col md:flex-row gap-6">
-            <div className={`rounded-lg border p-3 space-y-3 w-full md:w-1/2 ${userBanned  ? "border-red-500/40 bg-red-500/10" : "border-borders bg-background/30"}`}>
-              <h3 className="text-sm font-semibold text-primary inline-flex items-center gap-2">
-                {userBanned ? (
-                  <>
-                    <Ban className="size-4 text-red-400" />
-                    Banned
-                  </>
-                ) : (
-                  "Moderation"
-                )}
-              </h3>
-              {userBanned ? (
-                <div className="space-y-2 text-sm">
-                  <p className="text-primary">
-                    <span className="text-muted">Reason:</span> {banState.banReason || "No reason provided"}
-                  </p>
-                  <p className="text-muted text-xs">
-                    Expires: {formatBanExpiry(banState.banExpires)}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleUnban}
-                    disabled={actionLoading !== null}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-green-500/50 text-green-400 hover:bg-green-500/10 disabled:opacity-50 hover:cursor-pointer"
-                  >
-                    {actionLoading === "unban" ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <ShieldCheck className="size-3.5" />
-                    )}
-                    Unban user
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-sm font-medium text-muted ml-1">Ban reason</label>
+
+            <div className="flex-1 overflow-y-auto p-4 min-h-0">
+              {activeTab === "profile" && (
+                <section className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+                    <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input label="Profile image URL" value={image} onChange={(e) => setImage(e.target.value)} placeholder="/default-avatar.jpg or https://…" />
+                    <div className="flex flex-col gap-1.5 w-full">
+                      <label className="text-sm font-medium text-muted ml-1">Role</label>
+                      <select
+                        value={role}
+                        onChange={(e) => setRole(e.target.value as "user" | "admin" | "moderator")}
+                        className="w-full bg-foreground border border-borders text-primary px-4 py-2.5 rounded-xl outline-none focus:border-borders focus:ring-1 focus:ring-borders"
+                      >
+                        <option value="user">user</option>
+                        <option value="moderator">moderator</option>
+                        <option value="admin">admin</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5 w-full">
+                    <label className="text-sm font-medium text-muted ml-1">Bio</label>
                     <textarea
-                      value={banReasonInput}
-                      onChange={(e) => setBanReasonInput(e.target.value)}
-                      rows={2}
+                      value={bio}
+                      onChange={(e) => setBio(e.target.value)}
+                      rows={4}
                       maxLength={500}
-                      placeholder="Optional reason shown to the user"
-                      disabled={!canBan || actionLoading !== null}
-                      className="w-full bg-foreground border border-borders text-primary px-4 py-2.5 rounded-xl outline-none resize-y disabled:opacity-50"
+                      className="w-full bg-foreground border border-borders text-primary px-4 py-2.5 rounded-xl outline-none resize-y focus:border-borders focus:ring-1 focus:ring-borders"
+                      placeholder="Optional bio"
                     />
                   </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-sm font-medium text-muted ml-1">Duration</label>
-                    <select
-                      value={banDuration}
-                      onChange={(e) => setBanDuration(e.target.value)}
-                      disabled={!canBan || actionLoading !== null}
-                      className="w-full bg-foreground border border-borders text-primary px-4 py-2.5 rounded-xl outline-none disabled:opacity-50"
-                    >
-                      {BAN_DURATION_OPTIONS.map((opt) => (
-                        <option key={opt.label} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleBan}
-                    disabled={!canBan || actionLoading !== null}
-                    title={
-                      isSelf
-                        ? "You cannot ban yourself"
-                        : user.role === "admin"
-                          ? "Admin accounts cannot be banned"
-                          : undefined
-                    }
-                    className="inline-flex items-center gap-1.5 px-3 py-2 mt-2 text-sm rounded-lg border border-red-500/50 text-red-400 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed hover:cursor-pointer"
-                  >
-                    {actionLoading === "ban" ? (
-                      <Loader2 className="size-3.5 animate-spin" />
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={emailVerified} onChange={(e) => setEmailVerified(e.target.checked)} className="size-4 rounded border-borders accent-accent" />
+                    <span className="text-sm text-primary">Email verified</span>
+                  </label>
+                  <p className="text-xs text-muted">Joined {new Date(user.createdAt).toLocaleString()}</p>
+                </section>
+              )}
+
+              {activeTab === "badges" && (
+                <section className="space-y-2">
+                  <p className="text-sm text-muted">Grant or revoke badges. Staff and ban badges still sync automatically on role changes.</p>
+                  <BadgeMultiSelect value={badgeIds} onChange={setBadgeIds} disabled={saving} />
+                </section>
+              )}
+
+              {activeTab === "moderation" && (
+                <div className="space-y-4">
+                  <section className={`rounded-lg border p-4 space-y-3 ${userBanned ? "border-red-500/40 bg-red-500/10" : "border-borders bg-background/30"}`}>
+                    {userBanned ? (
+                      <div className="space-y-2 text-sm">
+                        <h3 className="text-sm font-semibold text-primary inline-flex items-center gap-2">
+                          <Ban className="size-4 text-red-400" />
+                          Banned
+                        </h3>
+                        <p className="text-primary">
+                          <span className="text-muted">Reason:</span> {banState.banReason || "No reason provided"}
+                        </p>
+                        <p className="text-muted text-xs">Expires: {formatBanExpiry(banState.banExpires)}</p>
+                        <button type="button" onClick={handleUnban} disabled={actionLoading !== null} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-green-500/50 text-green-400 hover:bg-green-500/10 disabled:opacity-50 hover:cursor-pointer">
+                          {actionLoading === "unban" ? <Loader2 className="size-3.5 animate-spin" /> : <ShieldCheck className="size-3.5" />}
+                          Unban user
+                        </button>
+                      </div>
                     ) : (
-                      <Ban className="size-3.5" />
+                      <div className="space-y-3">
+                        <h3 className="text-sm font-semibold text-primary">Ban user</h3>
+                        <textarea
+                          value={banReasonInput}
+                          onChange={(e) => setBanReasonInput(e.target.value)}
+                          rows={3}
+                          maxLength={500}
+                          placeholder="Optional reason shown to the user"
+                          disabled={!canBan || actionLoading !== null}
+                          className="w-full bg-foreground border border-borders text-primary px-4 py-2.5 rounded-xl outline-none resize-y disabled:opacity-50 text-sm"
+                        />
+                        <select
+                          value={banDuration}
+                          onChange={(e) => setBanDuration(e.target.value)}
+                          disabled={!canBan || actionLoading !== null}
+                          className="w-full bg-foreground border border-borders text-primary px-4 py-2.5 rounded-xl outline-none disabled:opacity-50 text-sm"
+                        >
+                          {BAN_DURATION_OPTIONS.map((opt) => (
+                            <option key={opt.label} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        <button type="button" onClick={handleBan} disabled={!canBan || actionLoading !== null} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-red-500/50 text-red-400 hover:bg-red-500/10 disabled:opacity-50 hover:cursor-pointer">
+                          {actionLoading === "ban" ? <Loader2 className="size-3.5 animate-spin" /> : <Ban className="size-3.5" />}
+                          Ban user
+                        </button>
+                      </div>
                     )}
-                    Ban user
-                  </button>
+                  </section>
+
+                  <section className="rounded-lg border border-borders p-4 space-y-3 bg-background/30">
+                    <h3 className="text-sm font-semibold text-primary">Account actions</h3>
+                    <p className="text-sm text-muted">Emails are sent to the address on file ({user.email}), not unsaved profile edits.</p>
+                    <div className="flex flex-col gap-2 max-w-sm">
+                      <button type="button" onClick={handleResendVerification} disabled={user.emailVerified || actionLoading !== null} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-borders text-primary hover:bg-background disabled:opacity-50">
+                        {actionLoading === "verification" ? <Loader2 className="size-3.5 animate-spin" /> : <Mail className="size-3.5" />}
+                        Resend verification
+                      </button>
+                      <button type="button" onClick={handleSendPasswordReset} disabled={actionLoading !== null} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-borders text-primary hover:bg-background disabled:opacity-50">
+                        {actionLoading === "reset" ? <Loader2 className="size-3.5 animate-spin" /> : <KeyRound className="size-3.5" />}
+                        Send password reset
+                      </button>
+                      <button type="button" onClick={handleImpersonate} disabled={!canImpersonate || actionLoading !== null} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-amber-500/50 text-amber-400 hover:bg-amber-500/10 disabled:opacity-50">
+                        {actionLoading === "impersonate" ? <Loader2 className="size-3.5 animate-spin" /> : <LogIn className="size-3.5" />}
+                        Login as user
+                      </button>
+                    </div>
+                  </section>
                 </div>
               )}
             </div>
+          </>
+        )}
 
-
-            <div className="rounded-lg border border-borders p-3 space-y-2 bg-background/30 w-full md:w-1/2">
-              <h3 className="text-sm font-semibold text-primary">Account actions</h3>
-              <p className="text-xs text-muted">Emails are sent to the address on file ({user.email}), not unsaved edits.</p>
-              <div className="flex flex-col flex-wrap gap-2 ">
-                <button
-                  type="button"
-                  onClick={handleResendVerification}
-                  disabled={user.emailVerified || actionLoading !== null}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-borders text-primary hover:bg-background disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {actionLoading === "verification" ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Mail className="size-3.5" />
-                  )}
-                  Resend verification
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSendPasswordReset}
-                  disabled={actionLoading !== null}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-borders text-primary hover:bg-background disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {actionLoading === "reset" ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <KeyRound className="size-3.5" />
-                  )}
-                  Send password reset
-                </button>
-                <button
-                  type="button"
-                  onClick={handleImpersonate}
-                  disabled={!canImpersonate || actionLoading !== null}
-                  title={
-                    user.role === "admin"
-                      ? "Cannot impersonate admin accounts"
-                      : isSelf
-                        ? "Cannot impersonate yourself"
-                        : isImpersonating
-                          ? "Exit current impersonation first"
-                          : undefined
-                  }
-                  className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-amber-500/50 text-amber-400 hover:bg-amber-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {actionLoading === "impersonate" ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <LogIn className="size-3.5" />
-                  )}
-                  Login as user
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-2 p-4 border-t border-borders sticky bottom-0 bg-foreground">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            className="px-4 py-2 rounded-lg border border-borders text-muted hover:text-primary transition-colors disabled:opacity-50 hover:cursor-pointer"
-          >
+        <div className="flex justify-end gap-2 p-4 border-t border-borders shrink-0 bg-foreground">
+          <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 rounded-lg border border-borders text-muted hover:text-primary transition-colors disabled:opacity-50 hover:cursor-pointer">
             Cancel
           </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || !name.trim() || !email.trim()}
-            className="px-4 py-2 rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors disabled:opacity-50 inline-flex items-center gap-2 hover:cursor-pointer"
-          >
+          <button type="button" onClick={handleSave} disabled={saving || loading || !name.trim() || !email.trim()} className="px-4 py-2 rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors disabled:opacity-50 inline-flex items-center gap-2 hover:cursor-pointer">
             {saving && <Loader2 className="size-4 animate-spin" />}
             Save changes
           </button>

@@ -4,6 +4,7 @@ import { userProgressService } from '@/services/userProgressService';
 import { isUserBanned } from '@/lib/banHelpers';
 import { isAllowedProfileImageUrl } from '@/lib/profileImagePath';
 import { badgeService } from '@/services/badgeService';
+import { BADGE_BY_ID } from '@/config/badgeConfig';
 
 const VALID_ROLES = ['user', 'admin', 'moderator'] as const;
 type UserRole = (typeof VALID_ROLES)[number];
@@ -32,6 +33,7 @@ export interface AdminUserRow {
   isBanned: boolean;
   createdAt: Date;
   lastOnlineAt: Date | null;
+  badgeIds: string[];
   xp: {
     totalXp: number;
     level: number;
@@ -95,6 +97,7 @@ function toAdminUserRow(
     banExpires: row.banExpires,
     isBanned: isUserBanned({ banned, banExpires: row.banExpires }),
     lastOnlineAt: null,
+    badgeIds: [],
     xp,
   };
 }
@@ -153,10 +156,12 @@ class AdminUserService {
     const xpMap = await userProgressService.getUserXpSummaries(rows.map((r) => r.id));
     const lastOnlineMap = await getLastOnlineMap(rows.map((r) => r.id));
 
+    const badgeMap = await badgeService.getBadgesForUsers(rows.map((r) => r.id));
     const users: AdminUserRow[] = rows.map((row) =>
       ({
         ...toAdminUserRow(row, xpMap[row.id] ?? { totalXp: 0, level: 1, levelName: 'Rookie Reader' }),
         lastOnlineAt: lastOnlineMap[row.id] ?? row.createdAt,
+        badgeIds: (badgeMap[row.id] ?? []).map((b) => b.id),
       })
     );
 
@@ -194,8 +199,16 @@ class AdminUserService {
   async getUserForAdmin(userId: string): Promise<AdminUserRow | null> {
     const [row] = await db.select(userSelectFields).from(schema.user).where(eq(schema.user.id, userId)).limit(1);
     if (!row) return null;
-    const xpMap = await userProgressService.getUserXpSummaries([userId]);
-    return toAdminUserRow(row, xpMap[userId] ?? { totalXp: 0, level: 1, levelName: 'Rookie Reader' });
+    const [xpMap, lastOnlineMap, badgeMap] = await Promise.all([
+      userProgressService.getUserXpSummaries([userId]),
+      getLastOnlineMap([userId]),
+      badgeService.getBadgesForUsers([userId]),
+    ]);
+    return {
+      ...toAdminUserRow(row, xpMap[userId] ?? { totalXp: 0, level: 1, levelName: 'Rookie Reader' }),
+      lastOnlineAt: lastOnlineMap[userId] ?? row.createdAt,
+      badgeIds: (badgeMap[userId] ?? []).map((b) => b.id),
+    };
   }
 
   async countAdmins(): Promise<number> {
@@ -206,7 +219,7 @@ class AdminUserService {
     return Number(result?.total ?? 0);
   }
 
-  async updateUser(userId: string, updates: {name?: string; email?: string; role?: string; bio?: string | null; emailVerified?: boolean; image?: string | null;}) {
+  async updateUser(userId: string, updates: {name?: string; email?: string; role?: string; bio?: string | null; emailVerified?: boolean; image?: string | null; badgeIds?: string[];}) {
     const [existing] = await db
       .select({
         id: schema.user.id,
@@ -227,11 +240,26 @@ class AdminUserService {
       updates.role !== undefined ||
       updates.bio !== undefined ||
       updates.emailVerified !== undefined ||
-      updates.image !== undefined;
+      updates.image !== undefined ||
+      updates.badgeIds !== undefined;
 
     if (!hasChange) {
       return { error: 'no_changes' as const };
     }
+
+    if (updates.badgeIds !== undefined) {
+      const invalid = updates.badgeIds.filter((id) => !BADGE_BY_ID[id]);
+      if (invalid.length > 0) return { error: 'invalid_badges' as const };
+      await badgeService.setUserBadges(userId, updates.badgeIds);
+    }
+
+    const profileOnlyBadges = updates.badgeIds !== undefined &&
+      updates.name === undefined &&
+      updates.email === undefined &&
+      updates.role === undefined &&
+      updates.bio === undefined &&
+      updates.emailVerified === undefined &&
+      updates.image === undefined;
 
     const patch: {
       name?: string;
@@ -309,21 +337,21 @@ class AdminUserService {
       patch.image = image ?? '/default-avatar.jpg';
     }
 
-    const [updated] = await db
-      .update(schema.user)
-      .set(patch)
-      .where(eq(schema.user.id, userId))
-      .returning(userSelectFields);
+    if (!profileOnlyBadges) {
+      await db.update(schema.user).set(patch).where(eq(schema.user.id, userId));
+    }
 
     if (updates.role !== undefined) {
       badgeService.evaluateBadgesAsync(userId, 'role_change');
     }
+    if (updates.bio !== undefined || updates.image !== undefined) {
+      badgeService.evaluateBadgesAsync(userId, 'profile_update');
+    }
 
-    const xpMap = await userProgressService.getUserXpSummaries([userId]);
+    const adminUser = await this.getUserForAdmin(userId);
+    if (!adminUser) return { error: 'not_found' as const };
 
-    return {
-      user: toAdminUserRow(updated, xpMap[userId] ?? { totalXp: 0, level: 1, levelName: 'Rookie Reader' }),
-    };
+    return { user: adminUser };
   }
 }
 

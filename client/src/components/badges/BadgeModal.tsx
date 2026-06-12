@@ -1,28 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import { X } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { MessageCircle, MessagesSquare, Flag, Megaphone, BookOpen, Timer, Flame, EyeOff, CheckCircle2, Library, Shield, Skull } from "lucide-react";
-import type { EarnedBadge } from "@/lib/badgeConfig";
-
-const ICON_MAP: Record<string, LucideIcon> = {
-  MessageCircle,
-  MessagesSquare,
-  Flag,
-  Megaphone,
-  BookOpen,
-  Timer,
-  Flame,
-  EyeOff,
-  CheckCircle2,
-  Library,
-  Shield,
-  Skull,
-};
+import { X, Shield } from "lucide-react";
+import { BADGE_ICON_MAP } from '@/lib/badgeIcons';
+import type { EarnedBadge } from '@/lib/badgeConfig';
 
 export default function BadgeModal({ badge, onClose }: { badge: EarnedBadge; onClose: () => void }) {
-  const Icon = ICON_MAP[badge.icon] ?? Shield;
+  const Icon = BADGE_ICON_MAP[badge.icon] ?? Shield;
 
   useEffect(() => {
     const root = document.documentElement;

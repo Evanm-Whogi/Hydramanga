@@ -18,6 +18,7 @@ import { fetchSeriesChapterFlags } from '@/lib/seriesQueries';
 import { commentService } from '@/services/commentService';
 import { recordAuditFromRequest } from '@/audit/record';
 import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
+import { badgeService } from '@/services/badgeService';
 
 // Normalize curly/smart quotes to ASCII so search matches titles regardless of apostrophe type
 function normalizeApostrophes(s: string): string {
@@ -692,6 +693,7 @@ export async function trackMangaViewEndpoint(req: Request, res: Response, next: 
     if (trackingData) {
         try {
             await metricsService.trackMangaView(id, trackingData);
+            if (userId) badgeService.evaluateBadgesAsync(userId, 'manga_view');
         } catch (err) {
             logger.error(`Failed to track manga view: ${err}`, { service: 'mangaController' });
         }

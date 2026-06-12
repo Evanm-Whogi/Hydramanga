@@ -4,6 +4,7 @@ import { karmaService } from '@/services/karmaService';
 import { notificationService } from '@/services/notificationService';
 import { buildThreadTree } from '@/lib/buildThreadTree';
 import { enrichAuthors } from '@/lib/enrichAuthors';
+import { badgeService } from '@/services/badgeService';
 
 class BoardService {
   async listPosts(page = 1, limit = 20) {
@@ -96,6 +97,8 @@ class BoardService {
       idempotencyKey: `board_post:${post.id}`,
     });
 
+    badgeService.evaluateBadgesAsync(userId, 'board_post');
+
     return post;
   }
 
@@ -131,6 +134,9 @@ class BoardService {
       sourceId: String(reply.id),
       idempotencyKey: `board_reply:${reply.id}`,
     });
+
+    badgeService.evaluateBadgesAsync(userId, 'board_reply');
+    badgeService.evaluateBadgesAsync(post.userId, 'board_reply');
 
     const [replier] = await db
       .select({ name: schema.user.name })

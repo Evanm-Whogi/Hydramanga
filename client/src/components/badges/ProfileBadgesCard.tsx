@@ -15,7 +15,7 @@ export default function ProfileBadgesCard({ badges }: { badges?: EarnedBadge[] }
       {earned.length === 0 ? (
         <p className="text-sm text-muted">No badges earned yet.</p>
       ) : (
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-1">
           {earned.map((badge) => (
             <button
               key={badge.id}
@@ -23,8 +23,8 @@ export default function ProfileBadgesCard({ badges }: { badges?: EarnedBadge[] }
               onClick={() => setSelected(badge)}
               className="flex items-center gap-2 rounded-lg border border-borders bg-background px-3 py-2 text-sm text-primary hover:border-accent transition-colors"
             >
-              <BadgeIcon badge={badge} size={18} />
-              <span>{badge.name}</span>
+              <BadgeIcon badge={badge} size={14} />
+              <span className="text-sm">{badge.name}</span>
             </button>
           ))}
         </div>

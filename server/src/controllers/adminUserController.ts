@@ -39,10 +39,18 @@ export async function getAdminUser(req: Request, res: Response, next: NextFuncti
     const userId = req.params.id;
     if (!userId) return res.status(400).json({ message: 'User ID is required' });
 
-    const user = await adminUserService.getUserById(userId);
+    const user = await adminUserService.getUserForAdmin(userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    return res.json({ status: 200, user });
+    return res.json({
+      status: 200,
+      user: {
+        ...user,
+        createdAt: user.createdAt.toISOString(),
+        banExpires: user.banExpires?.toISOString() ?? null,
+        lastOnlineAt: user.lastOnlineAt?.toISOString() ?? null,
+      },
+    });
   } catch (error) {
     logger.error(`Failed to get admin user: ${error}`, { service: 'adminUserController' });
     return next(error);
@@ -54,7 +62,7 @@ export async function patchAdminUser(req: Request, res: Response, next: NextFunc
     const userId = req.params.id;
     if (!userId) return res.status(400).json({ message: 'User ID is required' });
 
-    const { name, email, role, bio, emailVerified, image } = req.body ?? {};
+    const { name, email, role, bio, emailVerified, image, badgeIds } = req.body ?? {};
     const updates: {
       name?: string;
       email?: string;
@@ -62,6 +70,7 @@ export async function patchAdminUser(req: Request, res: Response, next: NextFunc
       bio?: string | null;
       emailVerified?: boolean;
       image?: string | null;
+      badgeIds?: string[];
     } = {};
 
     if (name !== undefined) updates.name = name;
@@ -70,6 +79,12 @@ export async function patchAdminUser(req: Request, res: Response, next: NextFunc
     if (bio !== undefined) updates.bio = bio;
     if (emailVerified !== undefined) updates.emailVerified = emailVerified;
     if (image !== undefined) updates.image = image;
+    if (badgeIds !== undefined) {
+      if (!Array.isArray(badgeIds) || badgeIds.some((id) => typeof id !== 'string')) {
+        return res.status(400).json({ message: 'badgeIds must be an array of strings' });
+      }
+      updates.badgeIds = badgeIds;
+    }
 
     const result = await adminUserService.updateUser(userId, updates);
 
@@ -91,6 +106,8 @@ export async function patchAdminUser(req: Request, res: Response, next: NextFunc
           return res.status(400).json({ message: 'Bio must be 500 characters or less' });
         case 'invalid_image':
           return res.status(400).json({ message: 'Image path is too long' });
+        case 'invalid_badges':
+          return res.status(400).json({ message: 'One or more badge IDs are invalid' });
         case 'no_changes':
           return res.status(400).json({ message: 'No valid fields to update' });
         default:
@@ -99,7 +116,15 @@ export async function patchAdminUser(req: Request, res: Response, next: NextFunc
       }
     }
 
-    return res.json({ status: 200, user: result.user });
+    return res.json({
+      status: 200,
+      user: {
+        ...result.user,
+        createdAt: result.user.createdAt.toISOString(),
+        banExpires: result.user.banExpires?.toISOString() ?? null,
+        lastOnlineAt: result.user.lastOnlineAt?.toISOString() ?? null,
+      },
+    });
   } catch (error) {
     logger.error(`Failed to update admin user: ${error}`, { service: 'adminUserController' });
     return next(error);

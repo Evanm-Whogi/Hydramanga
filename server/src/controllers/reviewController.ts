@@ -89,6 +89,8 @@ export async function createReview(req: Request, res: Response, next: NextFuncti
             }),
         });
 
+        badgeService.evaluateBadgesAsync(userId, 'review_create');
+
         return res.status(201).json({ review });
     } catch (error) {
         return next(error);

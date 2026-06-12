@@ -2,6 +2,7 @@ import { db, schema } from '@/db/index';
 import { eq, or, ilike, desc, count, and, SQL } from 'drizzle-orm';
 import { notificationService } from '@/services/notificationService';
 import { isNovelType } from '@/config/contentFilter';
+import { badgeService } from '@/services/badgeService';
 
 const VALID_STATUSES = ['pending', 'in_progress', 'completed', 'rejected'] as const;
 export type ImportRequestStatus = (typeof VALID_STATUSES)[number];
@@ -243,6 +244,9 @@ class ImportRequestService {
           seriesId: updated.seriesId,
         })
         .catch(() => undefined);
+      if (updated.status === 'completed') {
+        badgeService.evaluateBadgesAsync(existing.userId, 'import_request_complete');
+      }
     }
 
     const adminRow = await this.getAdminById(updated.id);

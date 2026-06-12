@@ -20,6 +20,7 @@ export interface AdminUser {
   isBanned: boolean;
   createdAt: string;
   lastOnlineAt: string | null;
+  badgeIds: string[];
   xp: AdminUserXp;
 }
 
@@ -57,6 +58,11 @@ export async function listAdminUsers(params: ListAdminUsersParams = {}): Promise
   };
 }
 
+export async function getAdminUser(userId: string): Promise<AdminUser> {
+  const data = await apiGet(`/admin/users/${userId}`);
+  return (data as { user: AdminUser }).user;
+}
+
 export interface AdminUserUpdatePayload {
   name?: string;
   email?: string;
@@ -64,6 +70,7 @@ export interface AdminUserUpdatePayload {
   bio?: string | null;
   emailVerified?: boolean;
   image?: string | null;
+  badgeIds?: string[];
 }
 
 export async function updateAdminUser(userId: string, updates: AdminUserUpdatePayload): Promise<AdminUser> {
