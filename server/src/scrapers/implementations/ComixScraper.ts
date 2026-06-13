@@ -690,39 +690,35 @@ export class ComixScraper implements IChapterScraper {
                 deduped = this.dedupeAndSortChapters(chapters);
             } else {
                 const orderedGroups = [...groupStats].sort((a, b) => b.chapterCount - a.chapterCount);
-                let bestFallback: Array<{ url: string; title: string; number: string; isSpecial: boolean; specialType?: string }> = [];
+                const merged = new Map<string, { url: string; title: string; number: string; isSpecial: boolean; specialType?: string }>();
 
                 for (const group of orderedGroups) {
                     await this.gotoComixPage(page, pageUrl);
                     await page.waitForSelector('section.mpage__chapters ul.mchap-list li.mchap-item', { timeout: 20000 });
                     await this.selectGroupFilter(page, group.name);
 
-                    const chapters = await this.collectPaginatedChapters(page);
-                    const currentDeduped = this.dedupeAndSortChapters(chapters);
-
+                    const added = this.mergeChaptersInto(merged, await this.collectPaginatedChapters(page));
                     logger.info(
-                        `[Comix] Group "${group.name}" yielded ${currentDeduped.length} unique chapters`,
+                        `[Comix] Group "${group.name}" contributed ${added} new chapter(s); ${merged.size} unique total`,
                         { service: 'comixScraper' },
                     );
-
-                    if (currentDeduped.length > bestFallback.length) {
-                        bestFallback = currentDeduped;
-                    }
-
-                    if (expectedMaxChapter <= 0 || this.hasCompleteChapterRange(currentDeduped, expectedMaxChapter)) {
-                        deduped = currentDeduped;
-                        logger.info(
-                            `[Comix] Group "${group.name}" covers chapters 1..${expectedMaxChapter}, selecting it`,
-                            { service: 'comixScraper' },
-                        );
-                        break;
-                    }
                 }
 
-                if (!deduped.length) {
-                    deduped = bestFallback;
+                await this.gotoComixPage(page, pageUrl);
+                await page.waitForSelector('section.mpage__chapters ul.mchap-list li.mchap-item', { timeout: 20000 });
+                const unfilteredAdded = this.mergeChaptersInto(merged, await this.collectPaginatedChapters(page));
+                if (unfilteredAdded > 0) {
+                    logger.info(
+                        `[Comix] Unfiltered view contributed ${unfilteredAdded} additional chapter(s); ${merged.size} unique total`,
+                        { service: 'comixScraper' },
+                    );
+                }
+
+                deduped = Array.from(merged.values()).sort((a, b) => ChapterNumberParser.compareNumbers(a.number, b.number));
+
+                if (expectedMaxChapter > 0 && !this.hasCompleteChapterRange(deduped, expectedMaxChapter)) {
                     logger.warn(
-                        `[Comix] No single group fully covered 1..${expectedMaxChapter}; using largest fallback set (${deduped.length})`,
+                        `[Comix] Merged set still missing chapters in 1..${expectedMaxChapter} (${deduped.length} unique found)`,
                         { service: 'comixScraper' },
                     );
                 }
@@ -1873,6 +1869,20 @@ export class ComixScraper implements IChapterScraper {
         }
 
         return allRows;
+    }
+
+    private mergeChaptersInto(
+        target: Map<string, { url: string; title: string; number: string; isSpecial: boolean; specialType?: string }>,
+        chapters: Array<{ url: string; title: string; number: string; isSpecial: boolean; specialType?: string }>,
+    ): number {
+        let added = 0;
+        for (const chapter of this.dedupeAndSortChapters(chapters)) {
+            if (!target.has(chapter.number)) {
+                target.set(chapter.number, chapter);
+                added++;
+            }
+        }
+        return added;
     }
 
     private dedupeAndSortChapters(
