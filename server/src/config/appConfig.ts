@@ -102,6 +102,7 @@ export interface ScraperConfig {
         timeout: number; // milliseconds
         priority: number; // 1 = highest priority
         enabled: boolean;
+        flareSolverrUrl: string;
     };
     atsuMoe: {
         apiUrl: string;
@@ -148,6 +149,14 @@ export interface ScraperConfig {
         timeout: number; // milliseconds
         priority: number; // 1 = highest priority
         enabled: boolean;
+    };
+    mangaFire: {
+        baseUrl: string;
+        userAgent: string;
+        timeout: number; // milliseconds
+        priority: number; // 1 = highest priority
+        enabled: boolean;
+        language: string;
     };
 }
 
@@ -348,8 +357,9 @@ export class AppConfigService {
                     searchApiUrl: 'https://comix.to/api/v1/manga',
                     userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     timeout: parseEnvNumber('COMIX_TIMEOUT', 30000), // 30 seconds
-                    priority: parseEnvNumber('COMIX_PRIORITY', 3), // 3 = third priority tier
                     enabled: parseEnvBoolean('COMIX_ENABLED', true),
+                    priority: parseEnvNumber('COMIX_PRIORITY', 4), // 4 = third priority tier
+                    flareSolverrUrl: parseEnvString('KAGANE_FLARESOLVERR_URL') || parseEnvString('FLARESOLVERR_URL'),
                 },
                 atsuMoe: {
                     apiUrl: 'https://atsu.moe/collections/manga/documents/search',
@@ -396,6 +406,14 @@ export class AppConfigService {
                     timeout: parseEnvNumber('KAGANE_TIMEOUT', 30000), // 30 seconds
                     priority: parseEnvNumber('KAGANE_PRIORITY', 3), // 3 = third priority tier
                     enabled: parseEnvBoolean('KAGANE_ENABLED', true),
+                },
+                mangaFire: {
+                    baseUrl: 'https://mangafire.to/',
+                    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    timeout: parseEnvNumber('MANGAFIRE_TIMEOUT', 30000), // 30 seconds
+                    priority: parseEnvNumber('MANGAFIRE_PRIORITY', 2), // 2 = second priority
+                    enabled: parseEnvBoolean('MANGAFIRE_ENABLED', true),
+                    language: 'en'
                 },
             },
 

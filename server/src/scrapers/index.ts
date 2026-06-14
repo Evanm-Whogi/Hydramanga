@@ -21,6 +21,7 @@ import { AsuraComicScraper } from './implementations/AsuraComicScraper';
 import { ComixScraper } from './implementations/ComixScraper';
 import { KaganeScraper } from './implementations/KaganeScraper';
 import logger from '@/services/loggerService';
+import { MangaFireScraper } from './implementations/mangaFireScraper';
 
 /**
  * Initialize all scrapers
@@ -64,6 +65,10 @@ export function initializeScrapers(): void {
     // Register Kagane scraper
     const kaganeScraper = new KaganeScraper();
     scraperManager.registerScraper(kaganeScraper);
+
+    // Register MangaFire scraper
+    const mangaFireScraper = new MangaFireScraper();
+    scraperManager.registerScraper(mangaFireScraper);
 
     // Log registration summary
     const stats = scraperManager.getStats();

@@ -1,3 +1,35 @@
+/**
+ * Comix Scraper Implementation
+ *
+ * Scraper for comix.to manga source.
+ * Implements the IChapterScraper interface for integration with ScraperManager.
+ *
+ * Site characteristics (verified from live HTML + HAR capture):
+ * - Cloudflare-protected: a cf_clearance cookie is required for every request.
+ *   Obtained via FlareSolverr (preferred, FLARESOLVERR_URL) or a Playwright
+ *   challenge-solve fallback. A raw COMIX_CF_CLEARANCE env may also be supplied.
+ * - The title/overview page embeds machine-readable JSON in two <script> tags:
+ *     #syncData       -> { manga_id, manga_url, name, anilist_id, mal_id, ... }
+ *     #initial-data   -> queries["[\"manga\",\"detail\",\"<hid>\"]"] with
+ *                        latestChapter / finalChapter / firstChapterUrl, plus
+ *                        queries["[\"manga\",\"groups\",\"<hid>\"]"] = scanlation groups.
+ *   We parse these for reliable metadata and a baseline expected-max chapter.
+ * - The chapter list itself renders as `section.mpage__chapters li.mchap-item`
+ *   rows, filterable per scanlation group via the `div.fdrop.mpage__group` menu,
+ *   and paginated via `nav.npager`.
+ * - The reader calls `GET /api/v1/chapters/{chapterId}` which returns an
+ *   ENCRYPTED payload ({ "e": "<base64-ish blob>" }); the page image list is
+ *   only decrypted client-side. We therefore never parse that API directly and
+ *   instead read the rendered reader DOM (`.rpage-page[data-page]`).
+ * - Page images are served from a rotating CDN host of the form
+ *     https://<sub>.wowpic<N>.store/i4/<token>/NN.webp
+ *   with 2-digit zero-padded page numbers. Most pages are plain <img> loads and
+ *   can be fetched directly with a `Referer: https://comix.to/` header. Periodic
+ *   "protected" pages are re-fetched by the reader via JS (carrying a `?v<N>`
+ *   query marker) and drawn to a <canvas>; those must be captured from the
+ *   browser rather than fetched directly.
+ */
+
 import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
@@ -5,17 +37,46 @@ import axios from 'axios';
 import sharp from 'sharp';
 import http from 'http';
 import https from 'https';
-import {IChapterScraper, ScrapedChapter, DownloadedChapter, MangaSearchResult, SearchOptions, ScraperMetadata} from '../interfaces/IChapterScraper';
+import {
+    IChapterScraper,
+    ScrapedChapter,
+    DownloadedChapter,
+    MangaSearchResult,
+    SearchOptions,
+    ScraperMetadata,
+} from '../interfaces/IChapterScraper';
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
+
 const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const SITE_BASE = appConfig.scraper.comix.baseUrl;
 
-function calculateTitleSimilarity(title1: string, title2: string): number {
-    if (title1.toLowerCase() === title2.toLowerCase()) {
-        return 100;
+const PLACEHOLDER_FILENAME = '_placeholder.webp';
+const PLACEHOLDER_PATH = path.join(STORAGE_ROOT, PLACEHOLDER_FILENAME);
+
+/** One-time creation of a shared placeholder image for irrecoverable pages. */
+async function ensurePlaceholderExists(): Promise<void> {
+    if (fs.existsSync(PLACEHOLDER_PATH)) return;
+    try {
+        if (!fs.existsSync(STORAGE_ROOT)) {
+            fs.mkdirSync(STORAGE_ROOT, { recursive: true });
+        }
+        const buffer = await sharp({
+            create: { width: 400, height: 600, channels: 3, background: { r: 45, g: 45, b: 48 } },
+        })
+            .webp({ quality: 80, effort: 1 })
+            .toBuffer();
+        fs.writeFileSync(PLACEHOLDER_PATH, buffer);
+        logger.info('[Comix] Created shared placeholder image for missing pages', { service: 'comixScraper' });
+    } catch (err: any) {
+        logger.warn(`[Comix] Could not create placeholder image: ${err?.message || err}`, { service: 'comixScraper' });
     }
+}
+
+function calculateTitleSimilarity(title1: string, title2: string): number {
+    if (!title1 || !title2) return 0;
+    if (title1.toLowerCase() === title2.toLowerCase()) return 100;
 
     const normalize = (s: string) =>
         s
@@ -26,10 +87,7 @@ function calculateTitleSimilarity(title1: string, title2: string): number {
 
     const words1 = normalize(title1);
     const words2 = normalize(title2);
-
-    if (words1.length === 0 || words2.length === 0) {
-        return 0;
-    }
+    if (words1.length === 0 || words2.length === 0) return 0;
 
     const matches = words1.filter(w => words2.includes(w)).length;
     return Math.round((matches / Math.max(words1.length, words2.length)) * 100);
@@ -44,31 +102,58 @@ function normalizeForSearch(value?: string): string {
         .trim();
 }
 
+function isComixSearchApiUrl(url: string, query: string): boolean {
+    try {
+        const parsed = new URL(url);
+        if (!/\/api\/v\d+\/(manga|search)/i.test(parsed.pathname)) return false;
+        const keyword = parsed.searchParams.get('keyword') || parsed.searchParams.get('q') || '';
+        if (!keyword.trim()) return false;
+        const normalizedQuery = normalizeForSearch(query);
+        const normalizedKeyword = normalizeForSearch(keyword);
+        return (
+            normalizedKeyword === normalizedQuery ||
+            normalizedKeyword.includes(normalizedQuery) ||
+            normalizedQuery.includes(normalizedKeyword)
+        );
+    } catch {
+        return false;
+    }
+}
+
+function parseComixSearchItems(raw: unknown): ComixSearchItem[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .map((it: any) => {
+            const hid = it.hid ?? it.hash_id ?? it.id;
+            const slug = typeof it.slug === 'string' ? it.slug : '';
+            const title = (it.title || it.name || '').trim();
+            let url = it.url || it.href || '';
+            if (!url && hid) url = slug ? `/title/${hid}-${slug}` : `/title/${hid}`;
+            return { title, url: String(url) };
+        })
+        .filter((it: ComixSearchItem) => it.title && it.url);
+}
+
 interface ComixSearchItem {
     title: string;
     url: string;
 }
 
-interface ComixSearchResponse {
-    status?: string;
-    result?: {
-        items?: ComixSearchItem[];
-    };
-}
-
-interface GroupStats {
-    href: string;
-    name: string;
-    chapterCount: number;
-}
-
 interface ComixPageAsset {
     page: number;
+    /** Direct CDN URL (plain <img> pages). */
     imageUrl?: string;
+    /** Base64 data URL produced by a browser canvas/screenshot capture. */
     dataUrl?: string;
     width?: number;
     height?: number;
     source?: 'url' | 'canvas' | 'canvas-screenshot';
+}
+
+interface ComixGroup {
+    id: number;
+    name: string;
+    slug?: string | null;
 }
 
 interface ComixCfSession {
@@ -95,113 +180,74 @@ interface FlareSolverrResult {
     };
 }
 
-const COMIX_CF_HELP = 'Set FLARESOLVERR_URL (or KAGANE_FLARESOLVERR_URL) for automatic Cloudflare bypass, or export COMIX_CF_CLEARANCE (+ COMIX_CF_USER_AGENT) from a browser session on comix.to.';
+const COMIX_CF_HELP =
+    'Set FLARESOLVERR_URL for automatic Cloudflare bypass, or export COMIX_CF_CLEARANCE ' +
+    '(+ COMIX_CF_USER_AGENT) captured from a real browser session on comix.to.';
+
+/** Comix browse defaults to Suggestive; NSFW titles require selecting Pornographic in the UI filter. */
+const COMIX_SEARCH_CONTENT_RATING = 'pornographic';
+const COMIX_SEARCH_CONTENT_RATING_LABEL = 'Pornographic';
+
+function getComixSearchCapturePriority(url: string, query: string): number {
+    if (!isComixSearchApiUrl(url, query)) return -1;
+    try {
+        const rating = new URL(url).searchParams.get('content_rating') || '';
+        if (rating === COMIX_SEARCH_CONTENT_RATING) return 2;
+        if (!rating) return 1;
+        return 0;
+    } catch {
+        return -1;
+    }
+}
 
 function getFlareSolverrUrl(): string | undefined {
-    const url = process.env.FLARESOLVERR_URL?.trim()
-        || process.env.KAGANE_FLARESOLVERR_URL?.trim()
-        || appConfig.scraper.kagane.flareSolverrUrl?.trim();
+    const url =
+        process.env.FLARESOLVERR_URL?.trim() ||
+        appConfig.scraper.comix.flareSolverrUrl?.trim();
     return url ? url.replace(/\/$/, '') : undefined;
 }
 
-function mapSearchResults(items: ComixSearchItem[], query: string, limit: number): MangaSearchResult[] {
-    return items
-        .map(item => ({
-            href: item.url?.startsWith('http') ? item.url : new URL(item.url || '', SITE_BASE).href,
-            title: item.title || '',
-            score: calculateTitleSimilarity(item.title || '', query),
-        }))
-        .filter(r => r.href && r.title && r.score >= 50)
+function mapSearchResults(items: ComixSearchItem[], query: string, limit: number, opts?: { trustSiteRanking?: boolean }): MangaSearchResult[] {
+    const mapped = items
+        .map((item, index) => {
+            const similarity = calculateTitleSimilarity(item.title || '', query);
+            const score = opts?.trustSiteRanking ? Math.max(similarity, Math.max(50, 100 - index * 3)) : similarity;
+            return {
+                href: item.url?.startsWith('http') ? item.url : new URL(item.url || '', SITE_BASE).href,
+                title: item.title || '',
+                score,
+            };
+        })
+        .filter(r => r.href && r.title && (opts?.trustSiteRanking || r.score >= 50))
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
-}
 
-export class ComixScraper implements IChapterScraper {
-    /** Full-size canvas elements in the reader (portrait-oriented pages). */
-    private static readonly MIN_CAPTURE_WIDTH = 700;
-    private static readonly MIN_CAPTURE_HEIGHT = 900;
-    /** Accepts landscape pages (e.g. 1024×768) — long/short edge, not both ≥ portrait mins. */
-    private static readonly MIN_CHAPTER_LONG_EDGE = 650;
-    private static readonly MIN_CHAPTER_SHORT_EDGE = 400;
-    /** DOM readiness threshold (lower than capture min — reader thumbs load before full decode). */
-    private static readonly MIN_IMAGE_NATURAL_WIDTH = 320;
-    private static readonly MIN_IMAGE_NATURAL_HEIGHT = 400;
-    /** Placeholder/spinner assets from Comix CDN are ~1–2 KB; small but valid webp pages can be ~5 KB. */
-    private static readonly MIN_IMAGE_DOWNLOAD_BYTES = 2_000;
-    private static readonly SCREENSHOT_TIMEOUT_MS = 15_000;
-    private static cfSessionCache: ComixCfSession | null = null;
-    private static cfSessionPromise: Promise<ComixCfSession> | null = null;
-
-    private static isValidChapterImageDimensions(width: number, height: number): boolean {
-        if (width <= 0 || height <= 0) return false;
-        const longEdge = Math.max(width, height);
-        const shortEdge = Math.min(width, height);
-        return longEdge >= ComixScraper.MIN_CHAPTER_LONG_EDGE && shortEdge >= ComixScraper.MIN_CHAPTER_SHORT_EDGE;
-    }
-
-    /** Comix serves 3 direct CDN pages, then 1 scrambled page that must be browser-captured. */
-    private static isScrambledCdnPage(pageNum: number): boolean {
-        return pageNum > 0 && (pageNum - 1) % 4 === 3;
-    }
-
-    private static describeDownloadBuffer(buffer: Buffer): string {
-        if (buffer.length >= 12 && buffer.slice(0, 4).toString('ascii') === 'RIFF' && buffer.slice(8, 12).toString('ascii') === 'WEBP') {
-            return `webp (${buffer.length} bytes)`;
-        }
-        if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8) {
-            return `jpeg (${buffer.length} bytes)`;
-        }
-        if (buffer.length >= 8 && buffer.slice(0, 8).toString('ascii') === '\x89PNG\r\n\x1a\n') {
-            return `png (${buffer.length} bytes)`;
-        }
-        const preview = buffer.slice(0, 120).toString('utf8').replace(/[^\x20-\x7E]/g, '.');
-        if (/^\s*<(!DOCTYPE|html|body|head|svg)/i.test(preview)) {
-            return `likely HTML error page (${buffer.length} bytes): ${preview.slice(0, 80)}`;
-        }
-        return `unknown payload (${buffer.length} bytes): ${preview.slice(0, 60)}`;
-    }
-
-    private static summarizeAssetUrl(url: string): string {
-        try {
-            const parsed = new URL(url);
-            const pathTail = parsed.pathname.split('/').slice(-2).join('/');
-            return `${parsed.hostname}/.../${pathTail}`;
-        } catch {
-            return url.slice(0, 80);
-        }
-    }
-
-    private logAssetCollectionSummary(assets: ComixPageAsset[], chapterNumber: string, contextLabel: string): void {
-        const withDataUrl = assets.filter(a => !!a.dataUrl).length;
-        const withImageUrl = assets.filter(a => !!a.imageUrl).length;
-        const urlOnly = assets.filter(a => a.imageUrl && !a.dataUrl).length;
-        const samples = assets.slice(0, 3).map(a => ({
-            page: a.page,
-            source: a.dataUrl ? (a.source || 'canvas') : a.imageUrl ? 'url' : 'none',
-            url: a.imageUrl ? ComixScraper.summarizeAssetUrl(a.imageUrl) : undefined,
-            dataUrlBytes: a.dataUrl ? Math.max(0, a.dataUrl.length - (a.dataUrl.indexOf(',') + 1)) : undefined,
-            width: a.width,
-            height: a.height,
-        }));
-        logger.info(
-            `[Comix] [${contextLabel}] Asset summary for chapter ${chapterNumber}: total=${assets.length}, dataUrl=${withDataUrl}, imageUrl=${withImageUrl}, urlOnly=${urlOnly}`,
-            { service: 'comixScraper', samples },
+    if (items.length && !mapped.length) {
+        logger.debug(
+            `[Comix] All ${items.length} search item(s) filtered out for "${query}" (top title: "${items[0]?.title || ''}")`,
+            { service: 'comixScraper' },
         );
     }
 
-    private static readonly readerDefaultState = {
-        readingDirection: 'ttb',
-        pageLayout: 'single',
-        preload: 'all',
-        progressBar: 'left',
-        doubleOffset: false,
-        stripMargin: 0,
-        greyscale: false,
-        dim: false,
-        dimAmount: 30,
-        maxImgWidth: 0,
-        stretch: false,
-    };
+    return mapped;
+}
+
+export class ComixScraper implements IChapterScraper {
+    /** Portrait full pages. */
+    private static readonly MIN_CAPTURE_WIDTH = 700;
+    private static readonly MIN_CAPTURE_HEIGHT = 900;
+    /** Accept landscape spreads too: validate by long/short edge, not both portrait mins. */
+    private static readonly MIN_CHAPTER_LONG_EDGE = 650;
+    private static readonly MIN_CHAPTER_SHORT_EDGE = 400;
+    /** Reader thumbnails decode before the full image; lower bar for DOM readiness. */
+    private static readonly MIN_IMAGE_NATURAL_WIDTH = 320;
+    private static readonly MIN_IMAGE_NATURAL_HEIGHT = 400;
+    /** CDN placeholders/spinners are ~1-2 KB; real webp pages are far larger. */
+    private static readonly MIN_IMAGE_DOWNLOAD_BYTES = 2_000;
+    private static readonly SCREENSHOT_TIMEOUT_MS = 15_000;
+
+    private static cfSessionCache: ComixCfSession | null = null;
+    private static cfSessionPromise: Promise<ComixCfSession> | null = null;
 
     private readonly metadata: ScraperMetadata = {
         id: 'comix',
@@ -210,7 +256,6 @@ export class ComixScraper implements IChapterScraper {
         priority: appConfig.scraper.comix.priority,
         enabled: appConfig.scraper.comix.enabled,
     };
-
 
     private static readonly httpAgent = new http.Agent({
         keepAlive: true,
@@ -243,6 +288,65 @@ export class ComixScraper implements IChapterScraper {
         return { ...this.metadata };
     }
 
+    async canHandle(_mangaName: string, _seriesId?: number): Promise<boolean> {
+        return this.metadata.enabled;
+    }
+
+    // ---------------------------------------------------------------------
+    // Validation helpers
+    // ---------------------------------------------------------------------
+
+    private static isValidChapterImageDimensions(width: number, height: number): boolean {
+        if (width <= 0 || height <= 0) return false;
+        const longEdge = Math.max(width, height);
+        const shortEdge = Math.min(width, height);
+        return longEdge >= ComixScraper.MIN_CHAPTER_LONG_EDGE && shortEdge >= ComixScraper.MIN_CHAPTER_SHORT_EDGE;
+    }
+
+    /**
+     * Pages the reader re-fetches via JS and renders to a <canvas> carry a
+     * `?v<N>` query marker on the CDN URL. When we only have a constructed
+     * (marker-less) URL list, the site's observed pattern is that every 4th
+     * page is protected, so we fall back to that heuristic.
+     */
+    private static isProtectedPage(pageNum: number, imageUrl?: string): boolean {
+        if (imageUrl && /[?&]v\d+/i.test(imageUrl)) return true;
+        return pageNum > 0 && pageNum % 4 === 0;
+    }
+
+    private static describeDownloadBuffer(buffer: Buffer): string {
+        if (
+            buffer.length >= 12 &&
+            buffer.slice(0, 4).toString('ascii') === 'RIFF' &&
+            buffer.slice(8, 12).toString('ascii') === 'WEBP'
+        ) {
+            return `webp (${buffer.length} bytes)`;
+        }
+        if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8) return `jpeg (${buffer.length} bytes)`;
+        if (buffer.length >= 8 && buffer.slice(0, 8).toString('ascii') === '\x89PNG\r\n\x1a\n') {
+            return `png (${buffer.length} bytes)`;
+        }
+        const preview = buffer.slice(0, 120).toString('utf8').replace(/[^\x20-\x7E]/g, '.');
+        if (/^\s*<(!DOCTYPE|html|body|head|svg)/i.test(preview)) {
+            return `likely HTML error page (${buffer.length} bytes): ${preview.slice(0, 80)}`;
+        }
+        return `unknown payload (${buffer.length} bytes): ${preview.slice(0, 60)}`;
+    }
+
+    private static summarizeAssetUrl(url: string): string {
+        try {
+            const parsed = new URL(url);
+            const pathTail = parsed.pathname.split('/').slice(-2).join('/');
+            return `${parsed.hostname}/.../${pathTail}`;
+        } catch {
+            return url.slice(0, 80);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Browser lifecycle
+    // ---------------------------------------------------------------------
+
     private static async getBrowser() {
         logger.debug('[Comix] Launching new browser', { service: 'comixScraper' });
         return chromium.launch({
@@ -261,25 +365,19 @@ export class ComixScraper implements IChapterScraper {
         }
     }
 
-    async canHandle(_mangaName: string, _seriesId?: number): Promise<boolean> {
-        return true;
-    }
+    // ---------------------------------------------------------------------
+    // Cloudflare clearance
+    // ---------------------------------------------------------------------
 
     private async requestFlareSolverr(payload: Record<string, unknown>): Promise<FlareSolverrResult> {
         const flareSolverrUrl = getFlareSolverrUrl();
-        if (!flareSolverrUrl) {
-            throw new Error('FlareSolverr URL is not configured');
-        }
+        if (!flareSolverrUrl) throw new Error('FlareSolverr URL is not configured');
 
-        const response = await axios.post<FlareSolverrResult>(
-            `${flareSolverrUrl}/v1`,
-            payload,
-            {
-                timeout: 120000,
-                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-                validateStatus: () => true,
-            },
-        );
+        const response = await axios.post<FlareSolverrResult>(`${flareSolverrUrl}/v1`, payload, {
+            timeout: 120000,
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            validateStatus: () => true,
+        });
 
         if (response.status < 200 || response.status >= 300) {
             throw new Error(`FlareSolverr HTTP ${response.status}`);
@@ -290,23 +388,19 @@ export class ComixScraper implements IChapterScraper {
         return response.data;
     }
 
-    private buildBrowserCookies(cookies: FlareSolverrCookie[]): Array<{ name: string; value: string; domain: string; path: string }> {
-        return cookies.map(cookie => ({
-            name: cookie.name,
-            value: cookie.value,
-            domain: '.comix.to',
-            path: '/',
-        }));
+    private buildBrowserCookies(
+        cookies: FlareSolverrCookie[],
+    ): Array<{ name: string; value: string; domain: string; path: string }> {
+        return cookies.map(cookie => ({ name: cookie.name, value: cookie.value, domain: '.comix.to', path: '/' }));
     }
 
     private flareSessionFromSolution(solution: FlareSolverrResult['solution']): ComixCfSession {
         const cookies = solution?.cookies || [];
         const clearance = cookies.find(cookie => cookie.name === 'cf_clearance');
-        if (!clearance?.value) {
-            throw new Error('FlareSolverr response missing cf_clearance cookie');
-        }
+        if (!clearance?.value) throw new Error('FlareSolverr response missing cf_clearance cookie');
 
-        const expirySeconds = clearance.expiry && clearance.expiry > 0 ? clearance.expiry : Math.floor(Date.now() / 1000) + 1800;
+        const expirySeconds =
+            clearance.expiry && clearance.expiry > 0 ? clearance.expiry : Math.floor(Date.now() / 1000) + 1800;
         return {
             cfClearance: clearance.value,
             userAgent: solution?.userAgent || appConfig.scraper.comix.userAgent,
@@ -338,9 +432,7 @@ export class ComixScraper implements IChapterScraper {
 
         const envClearance = process.env.COMIX_CF_CLEARANCE?.trim();
         if (envClearance) {
-            await context.addCookies([
-                { name: 'cf_clearance', value: envClearance, domain: '.comix.to', path: '/' },
-            ]);
+            await context.addCookies([{ name: 'cf_clearance', value: envClearance, domain: '.comix.to', path: '/' }]);
         }
 
         const page = await context.newPage();
@@ -348,13 +440,18 @@ export class ComixScraper implements IChapterScraper {
             await page.goto(`${SITE_BASE}/browse`, { waitUntil: 'domcontentloaded', timeout: 90000 });
             for (let i = 0; i < 60; i++) {
                 const cookies = await context.cookies();
-                const clearance = cookies.find((cookie: { name: string; value: string; expires?: number }) => cookie.name === 'cf_clearance');
+                const clearance = cookies.find(
+                    (cookie: { name: string; value: string; expires?: number }) => cookie.name === 'cf_clearance',
+                );
                 if (clearance?.value) {
                     const allCookies = await context.cookies();
                     return {
                         cfClearance: clearance.value,
                         userAgent: process.env.COMIX_CF_USER_AGENT?.trim() || appConfig.scraper.comix.userAgent,
-                        expiresAt: (clearance.expires && clearance.expires > 0 ? clearance.expires : Math.floor(Date.now() / 1000) + 1800) * 1000,
+                        expiresAt:
+                            (clearance.expires && clearance.expires > 0
+                                ? clearance.expires
+                                : Math.floor(Date.now() / 1000) + 1800) * 1000,
                         browserCookies: allCookies.map((cookie: { name: string; value: string }) => ({
                             name: cookie.name,
                             value: cookie.value,
@@ -376,7 +473,11 @@ export class ComixScraper implements IChapterScraper {
     }
 
     private async getCfSession(forceRefresh = false): Promise<ComixCfSession> {
-        if (!forceRefresh && ComixScraper.cfSessionCache && Date.now() < ComixScraper.cfSessionCache.expiresAt - 60_000) {
+        if (
+            !forceRefresh &&
+            ComixScraper.cfSessionCache &&
+            Date.now() < ComixScraper.cfSessionCache.expiresAt - 60_000
+        ) {
             return ComixScraper.cfSessionCache;
         }
 
@@ -395,9 +496,7 @@ export class ComixScraper implements IChapterScraper {
         if (!ComixScraper.cfSessionPromise || forceRefresh) {
             ComixScraper.cfSessionPromise = (async () => {
                 try {
-                    if (getFlareSolverrUrl()) {
-                        return await this.getCfSessionViaFlareSolverr();
-                    }
+                    if (getFlareSolverrUrl()) return await this.getCfSessionViaFlareSolverr();
                     return await this.getCfSessionViaPlaywright();
                 } finally {
                     ComixScraper.cfSessionPromise = null;
@@ -410,191 +509,10 @@ export class ComixScraper implements IChapterScraper {
         return session;
     }
 
-    private async selectBrowseContentRating(page: any, rating: string): Promise<void> {
-        await page.evaluate(() => {
-            const adv = document.querySelector<HTMLButtonElement>('button.filter-adv-toggle');
-            if (adv && adv.getAttribute('aria-expanded') !== 'true') {
-                adv.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-            }
-        });
-        await page.waitForTimeout(500);
-
-        await page.evaluate(() => {
-            const ratingDrop = [...document.querySelectorAll('div.fdrop')].find(drop =>
-                drop.querySelector('label.fdrop__label')?.textContent?.includes('CONTENT RATING'),
-            );
-            ratingDrop?.querySelector<HTMLButtonElement>('button.fdrop__btn')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        });
-        await page.waitForTimeout(500);
-
-        const applied = await page.evaluate((targetRating: string) => {
-            const ratingDrop = [...document.querySelectorAll('div.fdrop')].find(drop =>
-                drop.querySelector('label.fdrop__label')?.textContent?.includes('CONTENT RATING'),
-            );
-            if (!ratingDrop) return false;
-            const item = [...ratingDrop.querySelectorAll('li.fdrop__item')].find(li => li.textContent?.trim() === targetRating);
-            if (!item) return false;
-            item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-            return ratingDrop.querySelector('.fdrop__value')?.textContent?.trim() === targetRating;
-        }, rating);
-
-        await page.waitForTimeout(1500);
-        if (!applied) {
-            logger.debug(`[Comix] Could not set browse content rating to "${rating}"`, { service: 'comixScraper' });
-        }
-    }
-
-    private async extractBrowseRows(page: any): Promise<Array<{ href: string; title: string }>> {
-        return page.evaluate((siteBase: string) => {
-            const resolveUrl = (href: string) => {
-                if (!href) return '';
-                if (href.startsWith('http')) return href;
-                try {
-                    return new URL(href, siteBase).href;
-                } catch {
-                    return '';
-                }
-            };
-
-            return Array.from(document.querySelectorAll<HTMLElement>('.list-grid .lrow'))
-                .map(row => {
-                    const link = row.querySelector<HTMLAnchorElement>('a.lrow__title-link, a.lrow__poster');
-                    const href = link?.getAttribute('href') || '';
-                    const title = row.querySelector<HTMLElement>('h3.lrow__title')?.textContent?.trim() || '';
-                    return { href: resolveUrl(href), title };
-                })
-                .filter(row => row.href && row.title);
-        }, SITE_BASE);
-    }
-
-    private async searchViaBrowser(session: ComixCfSession, query: string, limit: number): Promise<MangaSearchResult[]> {
-        const browser = await ComixScraper.getBrowser();
-        const context = await browser.newContext({
-            userAgent: session.userAgent,
-            viewport: { width: 1366, height: 768 },
-            locale: 'en-US',
-        });
-        const cookies = session.browserCookies.length
-            ? session.browserCookies
-            : [{ name: 'cf_clearance', value: session.cfClearance, domain: '.comix.to', path: '/' }];
-        await context.addCookies(cookies);
-        const page = await context.newPage();
-
-        const apiCapture: { items: ComixSearchItem[] | null } = { items: null };
-        page.on('response', async (res: { url: () => string; json: () => Promise<ComixSearchResponse> }) => {
-            const url = res.url();
-            if (!url.includes('/api/v1/manga') || !url.includes('content_rating=pornographic')) return;
-            try {
-                const data = await res.json();
-                if (data?.result?.items?.length) {
-                    apiCapture.items = data.result.items;
-                }
-            } catch {
-                // Ignore malformed API payloads.
-            }
-        });
-
-        try {
-            const browseUrl = `${SITE_BASE}/browse?q=${encodeURIComponent(query)}&sort=relevance%3Adesc`;
-            await page.goto(browseUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            await page.waitForSelector('.list-grid .lrow, button.filter-adv-toggle', { timeout: 20000 }).catch(() => {});
-            await this.selectBrowseContentRating(page, 'Pornographic');
-            for (let i = 0; i < 8 && !apiCapture.items?.length; i++) {
-                await page.waitForTimeout(500);
-            }
-
-            if (apiCapture.items?.length) {
-                logger.info(`[Comix] Browser API search returned ${apiCapture.items.length} result(s) for "${query}"`, { service: 'comixScraper' });
-                return mapSearchResults(apiCapture.items, query, limit);
-            }
-
-            const rows = await this.extractBrowseRows(page);
-            logger.info(`[Comix] DOM browse returned ${rows.length} result(s) for "${query}"`, { service: 'comixScraper' });
-            const items: ComixSearchItem[] = rows.map(row => ({ title: row.title, url: row.href }));
-            return mapSearchResults(items, query, limit);
-        } finally {
-            await page.close().catch(() => {});
-            await context.close().catch(() => {});
-            await ComixScraper.releaseBrowser(browser);
-        }
-    }
-
-    private async searchComix(query: string, limit: number): Promise<MangaSearchResult[]> {
-        const q = (query || '').trim();
-        if (!q) return [];
-
-        try {
-            let session = await this.getCfSession();
-            try {
-                return await this.searchViaBrowser(session, q, limit);
-            } catch (browserError: any) {
-                const message = browserError?.message || String(browserError);
-                if (message.includes('403') || message.includes('Cloudflare') || message.includes('Just a moment')) {
-                    logger.warn(`[Comix] Browser search blocked (${message}), refreshing CF session and retrying`, { service: 'comixScraper' });
-                    ComixScraper.cfSessionCache = null;
-                    session = await this.getCfSession(true);
-                    return await this.searchViaBrowser(session, q, limit);
-                }
-                throw browserError;
-            }
-        } catch (error) {
-            logger.error(`[Comix] searchComix() failed for "${q}": ${error}`, { service: 'comixScraper' });
-            return [];
-        }
-    }
-
-    async findBestMatch(mangaName: string, options?: SearchOptions): Promise<MangaSearchResult | undefined> {
-        const baseVariants = [
-            mangaName,
-            options?.romanizedTitle,
-            options?.nativeTitle,
-            ...(options?.secondaryTitles || []),
-        ].filter((v): v is string => !!v && v.trim().length > 0);
-
-        const normalizedExtras = baseVariants
-            .map(v => normalizeForSearch(v))
-            .filter(v => v && !baseVariants.includes(v));
-
-        const variants = [...baseVariants, ...normalizedExtras];
-        let bestOverall: MangaSearchResult | undefined;
-
-        logger.info(
-            `[Comix] Trying ${variants.length} search variant(s) for "${mangaName}"`,
-            { service: 'comixScraper' },
-        );
-
-        for (const variant of variants) {
-            try {
-                const scored = await this.searchComix(variant, 6);
-                if (!scored.length) {
-                    continue;
-                }
-
-                const best = scored[0];
-                logger.info(
-                    `[Comix] Best for variant "${variant}": "${best.title}" (${best.score})`,
-                    { service: 'comixScraper' },
-                );
-
-                if (!bestOverall || best.score > bestOverall.score) {
-                    bestOverall = best;
-                }
-            } catch (error: any) {
-                logger.debug(
-                    `[Comix] Search failed for variant "${variant}": ${error?.message || error}`,
-                    { service: 'comixScraper' },
-                );
-            }
-        }
-
-        return bestOverall;
-    }
-
-    async search(query: string, _options?: SearchOptions, limit = 10): Promise<MangaSearchResult[]> {
-        return this.searchComix(query, Math.min(Math.max(limit, 1), 20));
-    }
-
-    private async createBrowserContext(browser: any, viewport: { width: number; height: number } = { width: 1800, height: 2600 }): Promise<any> {
+    private async createBrowserContext(
+        browser: any,
+        viewport: { width: number; height: number } = { width: 1800, height: 2600 },
+    ): Promise<any> {
         const session = await this.getCfSession();
         const context = await browser.newContext({
             userAgent: session.userAgent,
@@ -619,7 +537,485 @@ export class ComixScraper implements IChapterScraper {
         }
     }
 
-    async* scrapeChapters(
+    // ---------------------------------------------------------------------
+    // Search
+    // ---------------------------------------------------------------------
+
+    private async extractBrowseRows(page: any): Promise<Array<{ href: string; title: string }>> {
+        return page.evaluate((siteBase: string) => {
+            const resolveUrl = (href: string) => {
+                if (!href) return '';
+                if (href.startsWith('http')) return href;
+                try {
+                    return new URL(href, siteBase).href;
+                } catch {
+                    return '';
+                }
+            };
+
+            // Prefer the embedded query cache if present (most reliable),
+            // else fall back to scraping rendered browse rows.
+            const rows: Array<{ href: string; title: string }> = [];
+            const seen = new Set<string>();
+
+            document
+                .querySelectorAll<HTMLAnchorElement>('a.lrow__title-link, a.lrow__poster, a[href^="/title/"]')
+                .forEach(link => {
+                    const href = resolveUrl(link.getAttribute('href') || '');
+                    if (!href || !/\/title\//.test(href) || seen.has(href)) return;
+                    const row = link.closest('.lrow, li, article') as HTMLElement | null;
+                    const title =
+                        row?.querySelector<HTMLElement>('h3.lrow__title, .lrow__title')?.textContent?.trim() ||
+                        link.getAttribute('title')?.trim() ||
+                        link.textContent?.trim() ||
+                        '';
+                    if (!title) return;
+                    seen.add(href);
+                    rows.push({ href, title });
+                });
+
+            return rows;
+        }, SITE_BASE);
+    }
+
+    private async ensureBrowseAdvancedFilters(page: any): Promise<void> {
+        const toggle = page.locator('.filter-adv-toggle');
+        await toggle.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+        if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+            await toggle.click();
+            await page.locator('.filter-grid .fdrop__label').first().waitFor({ timeout: 10000 }).catch(() => {});
+        }
+    }
+
+    /** Returns true when the dropdown value changed (triggers a fresh browse API request). */
+    private async setBrowseContentRating(page: any, label: string): Promise<boolean> {
+        await this.ensureBrowseAdvancedFilters(page);
+        const ratingDrop = page.locator('.fdrop').filter({
+            has: page.locator('.fdrop__label', { hasText: 'CONTENT RATING' }),
+        });
+        await ratingDrop.waitFor({ state: 'visible', timeout: 10000 });
+        const valueEl = ratingDrop.locator('.fdrop__value');
+        const current = ((await valueEl.textContent()) || '').trim();
+        if (current.localeCompare(label, undefined, { sensitivity: 'accent' }) === 0) return false;
+
+        await ratingDrop.locator('.fdrop__btn').click();
+        const option = ratingDrop.locator('[role="listbox"] [role="option"]', { hasText: label });
+        await option.waitFor({ state: 'visible', timeout: 5000 });
+        await option.click();
+        await valueEl.filter({ hasText: label }).waitFor({ timeout: 10000 }).catch(() => {});
+        return true;
+    }
+
+    private async searchViaBrowser(session: ComixCfSession, query: string, limit: number): Promise<MangaSearchResult[]> {
+        const browser = await ComixScraper.getBrowser();
+        const context = await browser.newContext({
+            userAgent: session.userAgent,
+            viewport: { width: 1366, height: 768 },
+            locale: 'en-US',
+        });
+        const cookies = session.browserCookies.length
+            ? session.browserCookies
+            : [{ name: 'cf_clearance', value: session.cfClearance, domain: '.comix.to', path: '/' }];
+        await context.addCookies(cookies);
+        const page = await context.newPage();
+
+        // Capture the JSON the browse page fetches internally (most reliable result set).
+        const apiCapture: { items: ComixSearchItem[] | null; priority: number } = { items: null, priority: -1 };
+        page.on('response', async (res: { url: () => string; json: () => Promise<any> }) => {
+            const url = res.url();
+            if (!/\/api\/v\d+\/(manga|search)/i.test(url)) return;
+            const priority = getComixSearchCapturePriority(url, query);
+            if (priority < 0 || priority < apiCapture.priority) return;
+            try {
+                const data = await res.json();
+                const items = parseComixSearchItems(data?.result?.items || data?.items);
+                if (!items.length) return;
+                apiCapture.items = items;
+                apiCapture.priority = priority;
+            } catch {
+                /* ignore malformed payloads */
+            }
+        });
+
+        try {
+            const browseUrl = `${SITE_BASE}/browse?q=${encodeURIComponent(query)}&sort=relevance%3Adesc`;
+            await page.goto(browseUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await page.waitForSelector('.filter-search input, .filter-grid', { timeout: 20000 }).catch(() => {});
+
+            apiCapture.items = null;
+            apiCapture.priority = -1;
+            await this.setBrowseContentRating(page, COMIX_SEARCH_CONTENT_RATING_LABEL);
+
+            for (let i = 0; i < 16; i++) {
+                const pendingItems = apiCapture.items as ComixSearchItem[] | null;
+                if (pendingItems !== null && pendingItems.length > 0 && apiCapture.priority >= 2) break;
+                await page.waitForTimeout(500);
+            }
+            await page.waitForSelector('.list-grid .lrow, a[href^="/title/"]', { timeout: 20000 }).catch(() => {});
+
+            const capturedItems = apiCapture.items as ComixSearchItem[] | null;
+            if (capturedItems !== null && capturedItems.length > 0 && apiCapture.priority >= 2) {
+                logger.info(`[Comix] Browse API returned ${capturedItems.length} result(s) for "${query}"`, {
+                    service: 'comixScraper',
+                });
+                return mapSearchResults(capturedItems, query, limit, { trustSiteRanking: true });
+            }
+
+            const rows = await this.extractBrowseRows(page);
+            logger.info(`[Comix] DOM browse returned ${rows.length} result(s) for "${query}"`, {
+                service: 'comixScraper',
+            });
+            return mapSearchResults(rows.map(r => ({ title: r.title, url: r.href })), query, limit);
+        } finally {
+            await page.close().catch(() => {});
+            await context.close().catch(() => {});
+            await ComixScraper.releaseBrowser(browser);
+        }
+    }
+
+    private async searchComix(query: string, limit: number): Promise<MangaSearchResult[]> {
+        const q = (query || '').trim();
+        if (!q) return [];
+
+        try {
+            let session = await this.getCfSession();
+            try {
+                return await this.searchViaBrowser(session, q, limit);
+            } catch (browserError: any) {
+                const message = browserError?.message || String(browserError);
+                if (/(403|Cloudflare|Just a moment)/i.test(message)) {
+                    logger.warn(
+                        `[Comix] Browser search blocked (${message}); refreshing CF session and retrying`,
+                        { service: 'comixScraper' },
+                    );
+                    ComixScraper.cfSessionCache = null;
+                    session = await this.getCfSession(true);
+                    return await this.searchViaBrowser(session, q, limit);
+                }
+                throw browserError;
+            }
+        } catch (error) {
+            logger.error(`[Comix] searchComix() failed for "${q}": ${error}`, { service: 'comixScraper' });
+            return [];
+        }
+    }
+
+    async findBestMatch(mangaName: string, options?: SearchOptions): Promise<MangaSearchResult | undefined> {
+        const baseVariants = [
+            mangaName,
+            options?.romanizedTitle,
+            options?.nativeTitle,
+            ...(options?.secondaryTitles || []),
+        ].filter((v): v is string => !!v && v.trim().length > 0);
+
+        const normalizedExtras = baseVariants
+            .map(v => normalizeForSearch(v))
+            .filter(v => v && !baseVariants.includes(v));
+
+        const variants = [...new Set([...baseVariants, ...normalizedExtras])];
+        let bestOverall: MangaSearchResult | undefined;
+
+        logger.info(`[Comix] Trying ${variants.length} search variant(s) for "${mangaName}"`, {
+            service: 'comixScraper',
+        });
+
+        for (const variant of variants) {
+            try {
+                const scored = await this.searchComix(variant, 6);
+                if (!scored.length) continue;
+
+                const best = scored[0];
+                logger.info(`[Comix] Best for variant "${variant}": "${best.title}" (${best.score})`, {
+                    service: 'comixScraper',
+                });
+
+                if (!bestOverall || best.score > bestOverall.score) bestOverall = best;
+                if (bestOverall.score >= 100) break;
+            } catch (error: any) {
+                logger.debug(`[Comix] Search failed for variant "${variant}": ${error?.message || error}`, {
+                    service: 'comixScraper',
+                });
+            }
+        }
+
+        return bestOverall;
+    }
+
+    async search(query: string, _options?: SearchOptions, limit = 10): Promise<MangaSearchResult[]> {
+        return this.searchComix(query, Math.min(Math.max(limit, 1), 20));
+    }
+
+    // ---------------------------------------------------------------------
+    // Chapter discovery
+    // ---------------------------------------------------------------------
+
+    /**
+     * Parse the title page's embedded JSON (`#initial-data`) for reliable
+     * metadata: the manga hid, the scanlation groups, and the baseline
+     * latest/final chapter numbers used to decide when a single group's list
+     * is "complete".
+     */
+    private async extractOverviewData(page: any): Promise<{
+        hid?: string;
+        groups: ComixGroup[];
+        latestChapter: number;
+        finalChapter: number;
+    }> {
+        return page.evaluate(() => {
+            const out: { hid?: string; groups: ComixGroup[]; latestChapter: number; finalChapter: number } = {
+                hid: undefined,
+                groups: [],
+                latestChapter: 0,
+                finalChapter: 0,
+            };
+            try {
+                const sync = JSON.parse(document.getElementById('syncData')?.textContent || '{}');
+                if (sync?.manga_id) out.hid = String(sync.manga_id);
+            } catch {
+                /* ignore */
+            }
+            try {
+                const initial = JSON.parse(document.getElementById('initial-data')?.textContent || '{}');
+                const queries = initial?.queries || {};
+                const hid = out.hid || initial?.manga?.hid;
+                if (hid) out.hid = String(hid);
+
+                for (const [key, value] of Object.entries<any>(queries)) {
+                    if (key.includes('"detail"') && value && typeof value === 'object') {
+                        if (typeof value.latestChapter === 'number') out.latestChapter = value.latestChapter;
+                        if (typeof value.finalChapter === 'number') out.finalChapter = value.finalChapter;
+                    }
+                    if (key.includes('"groups"') && Array.isArray(value)) {
+                        out.groups = value
+                            .filter((g: any) => g && g.name)
+                            .map((g: any) => ({ id: Number(g.id) || 0, name: String(g.name), slug: g.slug ?? null }));
+                    }
+                }
+            } catch {
+                /* ignore */
+            }
+            return out;
+        });
+    }
+
+    /**
+     * Read scanlation groups from the rendered group-filter menu. Used as a
+     * fallback when the embedded #initial-data JSON doesn't include the groups
+     * query (groups are often fetched post-hydration).
+     */
+    private async extractGroupsFromMenu(page: any): Promise<ComixGroup[]> {
+        const section = page.locator('div.fdrop.mpage__group');
+        if (!(await section.count())) return [];
+        const trigger = section.locator('button.ubtn.ubtn--soft').first();
+        if (!(await trigger.count())) return [];
+
+        try {
+            await trigger.click({ force: true, timeout: 8000 });
+        } catch {
+            return [];
+        }
+        const menu = page.locator('div.fdrop__pop.fdrop__pop--menu');
+        await menu.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+
+        const names: string[] = await page.evaluate(() => {
+            const items = Array.from(
+                document.querySelectorAll<HTMLElement>(
+                    'div.fdrop__pop.fdrop__pop--menu button, div.fdrop__pop.fdrop__pop--menu a',
+                ),
+            );
+            return items
+                .map(el => el.textContent?.trim() || '')
+                .filter(t => t && !/^all groups$/i.test(t));
+        });
+
+        // Close the menu again so later interactions start from a known state.
+        await trigger.click({ force: true }).catch(() => {});
+        await page.waitForTimeout(200);
+
+        const seen = new Set<string>();
+        const groups: ComixGroup[] = [];
+        for (const name of names) {
+            if (seen.has(name)) continue;
+            seen.add(name);
+            groups.push({ id: 0, name });
+        }
+        return groups;
+    }
+
+    private async selectGroupFilter(page: any, groupName: string): Promise<void> {
+        const groupSection = page.locator('div.fdrop.mpage__group');
+        if (!(await groupSection.count())) return;
+
+        const trigger = groupSection.locator('button.ubtn.ubtn--soft').first();
+        if (!(await trigger.count())) {
+            logger.debug('[Comix] No group filter button on title page; skipping group selection', {
+                service: 'comixScraper',
+            });
+            return;
+        }
+
+        try {
+            await trigger.click({ force: true, timeout: 10000 });
+        } catch (error) {
+            logger.warn(`[Comix] Group filter click failed for "${groupName}": ${error}`, {
+                service: 'comixScraper',
+            });
+            return;
+        }
+
+        const menu = page.locator('div.fdrop__pop.fdrop__pop--menu');
+        await menu.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+
+        const option = page
+            .locator('div.fdrop__pop.fdrop__pop--menu button, div.fdrop__pop.fdrop__pop--menu a')
+            .filter({ hasText: groupName })
+            .first();
+
+        if (await option.count()) {
+            await option.click();
+            await page.waitForTimeout(700);
+            await page
+                .waitForSelector('section.mpage__chapters ul.mchap-list li.mchap-item', { timeout: 10000 })
+                .catch(() => {});
+        }
+    }
+
+    private async collectPaginatedChapters(
+        page: any,
+    ): Promise<Array<{ url: string; title: string; number: string; isSpecial: boolean; specialType?: string }>> {
+        const allRows: Array<{ url: string; title: string; number: string; isSpecial: boolean; specialType?: string }> =
+            [];
+        const maxPages = 500;
+
+        for (let pageIndex = 1; pageIndex <= maxPages; pageIndex++) {
+            const rows = await page.evaluate(() => {
+                const chapterRows = Array.from(
+                    document.querySelectorAll<HTMLElement>(
+                        'section.mpage__chapters ul.mchap-list li.mchap-item',
+                    ),
+                );
+                return chapterRows
+                    .map(row => {
+                        const primary = row.querySelector<HTMLAnchorElement>('a.mchap-row__primary');
+                        if (!primary) return null;
+                        const href = primary.getAttribute('href') || '';
+                        if (!href) return null;
+                        const ch = row.querySelector<HTMLElement>('span.mchap-row__ch')?.textContent?.trim() || '';
+                        const vol = row.querySelector<HTMLElement>('span.mchap-row__vol')?.textContent?.trim() || '';
+                        const tail =
+                            row.querySelector<HTMLElement>('span.mchap-row__title')?.textContent?.trim() || '';
+                        // Compose a label ChapterNumberParser understands (e.g. "Ch.2 I'm gonna Say It").
+                        const label = [ch, vol, tail].filter(Boolean).join(' ').trim() || primary.textContent?.trim() || '';
+                        return { href, label };
+                    })
+                    .filter((v): v is { href: string; label: string } => !!v);
+            });
+
+            for (const row of rows) {
+                const parsed = ChapterNumberParser.parse(row.label);
+                allRows.push({
+                    url: row.href.startsWith('http') ? row.href : new URL(row.href, SITE_BASE).href,
+                    title: parsed.title,
+                    number: parsed.number,
+                    isSpecial: parsed.isSpecial,
+                    specialType: parsed.specialType,
+                });
+            }
+
+            const nextButton = page
+                .locator('div.mchap-foot nav.npager button.npager__nav[aria-label="Next page"]')
+                .first();
+            if (!(await nextButton.count())) break;
+
+            const isDisabled = await nextButton.evaluate((el: HTMLButtonElement) => {
+                return (
+                    !!el.disabled ||
+                    el.getAttribute('aria-disabled') === 'true' ||
+                    el.classList.contains('is-disabled')
+                );
+            });
+            if (isDisabled) break;
+
+            const firstHrefBefore = await page.evaluate(() => {
+                return (
+                    document
+                        .querySelector<HTMLAnchorElement>(
+                            'section.mpage__chapters ul.mchap-list li.mchap-item a.mchap-row__primary',
+                        )
+                        ?.getAttribute('href') || ''
+                );
+            });
+
+            let advanced = false;
+            try {
+                await nextButton.scrollIntoViewIfNeeded();
+                await nextButton.click({ force: true, timeout: 5000 });
+                advanced = true;
+            } catch {
+                advanced = await page
+                    .evaluate(() => {
+                        const btn = document.querySelector<HTMLButtonElement>(
+                            'div.mchap-foot nav.npager button.npager__nav[aria-label="Next page"]',
+                        );
+                        if (!btn) return false;
+                        btn.click();
+                        return true;
+                    })
+                    .catch(() => false);
+            }
+
+            if (!advanced) {
+                logger.warn('[Comix] Failed to advance chapter pagination; stopping', { service: 'comixScraper' });
+                break;
+            }
+
+            await page
+                .waitForFunction(
+                    (prevHref: string) => {
+                        const cur =
+                            document
+                                .querySelector<HTMLAnchorElement>(
+                                    'section.mpage__chapters ul.mchap-list li.mchap-item a.mchap-row__primary',
+                                )
+                                ?.getAttribute('href') || '';
+                        return !!cur && cur !== prevHref;
+                    },
+                    firstHrefBefore,
+                    { timeout: 10000 },
+                )
+                .catch(() => {});
+            await page.waitForTimeout(400);
+        }
+
+        return allRows;
+    }
+
+    private dedupeAndSortChapters(
+        chapters: Array<{ url: string; title: string; number: string; isSpecial: boolean; specialType?: string }>,
+    ): Array<{ url: string; title: string; number: string; isSpecial: boolean; specialType?: string }> {
+        const byNumber = new Map<string, (typeof chapters)[number]>();
+        for (const chapter of chapters) {
+            if (!byNumber.has(chapter.number)) byNumber.set(chapter.number, chapter);
+        }
+        return Array.from(byNumber.values()).sort((a, b) =>
+            ChapterNumberParser.compareNumbers(a.number, b.number),
+        );
+    }
+
+    private hasCompleteChapterRange(chapters: Array<{ number: string }>, expectedMaxChapter: number): boolean {
+        if (expectedMaxChapter < 1) return true;
+        const present = new Set<number>();
+        for (const chapter of chapters) {
+            const value = Number(chapter.number);
+            if (Number.isFinite(value) && value >= 1) present.add(Math.floor(value));
+        }
+        for (let n = 1; n <= expectedMaxChapter; n++) {
+            if (!present.has(n)) return false;
+        }
+        return true;
+    }
+
+    async *scrapeChapters(
         mangaName: string,
         checkExists: (chapterNumber: string) => Promise<boolean>,
         seriesId?: number,
@@ -645,98 +1041,106 @@ export class ComixScraper implements IChapterScraper {
                     secondaryTitles,
                     coverUrl,
                 });
-
-                if (!match) {
-                    throw new Error(`[Comix] Could not find manga link for "${mangaName}"`);
-                }
+                if (!match) throw new Error(`[Comix] Could not find manga link for "${mangaName}"`);
                 pageUrl = match.href;
             }
 
             await this.gotoComixPage(page, pageUrl);
+            await page
+                .waitForSelector('section.mpage__chapters ul.mchap-list li.mchap-item, div.fdrop.mpage__group', {
+                    timeout: 20000,
+                })
+                .catch(() => {});
 
-            const chapterItemCount = await page.locator('section.mpage__chapters ul.mchap-list li.mchap-item').count();
-            const hasGroupFilter = await page.locator('div.fdrop.mpage__group button.ubtn.ubtn--soft').count() > 0;
-
-            if (chapterItemCount === 0 && !hasGroupFilter) {
-                logger.info(`[Comix] No chapters on title page for "${mangaName}", skipping`, { service: 'comixScraper' });
-                return;
-            }
-
-            if (chapterItemCount === 0) {
-                try {
-                    await page.waitForSelector('section.mpage__chapters ul.mchap-list li.mchap-item', { timeout: 5000 });
-                } catch {
-                    logger.info(`[Comix] No chapters found for "${mangaName}", skipping`, { service: 'comixScraper' });
-                    return;
-                }
-            } else {
-                await page.waitForSelector('section.mpage__chapters ul.mchap-list li.mchap-item', { timeout: 20000 });
-            }
-
-            const groupStats = await this.extractGroupStats(page);
-            const expectedMaxChapter = await this.extractHighestChapterNumberFromCurrentPage(page);
+            const overview = await this.extractOverviewData(page);
+            const expectedMaxChapter = Math.floor(Math.max(overview.latestChapter, overview.finalChapter, 0));
             logger.info(
-                `[Comix] Baseline expected max chapter from all-groups first page: ${expectedMaxChapter}`,
+                `[Comix] "${mangaName}": hid=${overview.hid || '?'}, groups=${overview.groups.length}, ` +
+                    `expectedMaxChapter=${expectedMaxChapter}`,
                 { service: 'comixScraper' },
             );
 
-            let deduped: Array<{ url: string; title: string; number: string; isSpecial: boolean; specialType?: string }> = [];
+            const hasChapterRows =
+                (await page.locator('section.mpage__chapters ul.mchap-list li.mchap-item').count()) > 0;
+            const hasGroupFilter = (await page.locator('div.fdrop.mpage__group button.ubtn.ubtn--soft').count()) > 0;
+            if (!hasChapterRows && !hasGroupFilter && !overview.groups.length && expectedMaxChapter <= 0) {
+                logger.info(`[Comix] No chapters for "${mangaName}"; skipping`, { service: 'comixScraper' });
+                return;
+            }
 
-            if (!groupStats.length) {
-                logger.warn('[Comix] No group stats found on first page; collecting all groups without filtering', {
-                    service: 'comixScraper',
-                });
+            let deduped: Array<{
+                url: string;
+                title: string;
+                number: string;
+                isSpecial: boolean;
+                specialType?: string;
+            }> = [];
+
+            // Prefer groups from embedded JSON; fall back to the rendered filter
+            // menu when that query wasn't part of #initial-data.
+            let groups = overview.groups;
+            if (!groups.length) {
+                groups = await this.extractGroupsFromMenu(page);
+                if (groups.length) {
+                    logger.info(`[Comix] Recovered ${groups.length} group(s) from filter menu`, {
+                        service: 'comixScraper',
+                    });
+                }
+            }
+
+            // Groups whose name is meaningful (skip "Unknown group" placeholder id 0 when others exist).
+            const realGroups = groups.filter(g => g.id !== 0 || groups.length === 1 || g.name !== 'Unknown group');
+
+            if (!realGroups.length) {
                 const chapters = await this.collectPaginatedChapters(page);
                 deduped = this.dedupeAndSortChapters(chapters);
             } else {
-                const orderedGroups = [...groupStats].sort((a, b) => b.chapterCount - a.chapterCount);
-                const merged = new Map<string, { url: string; title: string; number: string; isSpecial: boolean; specialType?: string }>();
-
-                for (const group of orderedGroups) {
+                let bestFallback: typeof deduped = [];
+                for (const group of realGroups) {
                     await this.gotoComixPage(page, pageUrl);
-                    await page.waitForSelector('section.mpage__chapters ul.mchap-list li.mchap-item', { timeout: 20000 });
+                    await page
+                        .waitForSelector('section.mpage__chapters ul.mchap-list li.mchap-item', { timeout: 20000 })
+                        .catch(() => {});
                     await this.selectGroupFilter(page, group.name);
 
-                    const added = this.mergeChaptersInto(merged, await this.collectPaginatedChapters(page));
+                    const chapters = await this.collectPaginatedChapters(page);
+                    const currentDeduped = this.dedupeAndSortChapters(chapters);
                     logger.info(
-                        `[Comix] Group "${group.name}" contributed ${added} new chapter(s); ${merged.size} unique total`,
+                        `[Comix] Group "${group.name}" -> ${currentDeduped.length} unique chapter(s)`,
                         { service: 'comixScraper' },
                     );
+
+                    if (currentDeduped.length > bestFallback.length) bestFallback = currentDeduped;
+
+                    if (expectedMaxChapter <= 0 || this.hasCompleteChapterRange(currentDeduped, expectedMaxChapter)) {
+                        deduped = currentDeduped;
+                        logger.info(
+                            `[Comix] Group "${group.name}" covers 1..${expectedMaxChapter}; selecting it`,
+                            { service: 'comixScraper' },
+                        );
+                        break;
+                    }
                 }
-
-                await this.gotoComixPage(page, pageUrl);
-                await page.waitForSelector('section.mpage__chapters ul.mchap-list li.mchap-item', { timeout: 20000 });
-                const unfilteredAdded = this.mergeChaptersInto(merged, await this.collectPaginatedChapters(page));
-                if (unfilteredAdded > 0) {
-                    logger.info(
-                        `[Comix] Unfiltered view contributed ${unfilteredAdded} additional chapter(s); ${merged.size} unique total`,
-                        { service: 'comixScraper' },
-                    );
-                }
-
-                deduped = Array.from(merged.values()).sort((a, b) => ChapterNumberParser.compareNumbers(a.number, b.number));
-
-                if (expectedMaxChapter > 0 && !this.hasCompleteChapterRange(deduped, expectedMaxChapter)) {
+                if (!deduped.length) {
+                    deduped = bestFallback;
                     logger.warn(
-                        `[Comix] Merged set still missing chapters in 1..${expectedMaxChapter} (${deduped.length} unique found)`,
+                        `[Comix] No single group fully covered 1..${expectedMaxChapter}; using largest set (${deduped.length})`,
                         { service: 'comixScraper' },
                     );
                 }
             }
 
-            logger.info(`[Comix] Final selected set has ${deduped.length} unique chapter(s)`, { service: 'comixScraper' });
+            logger.info(`[Comix] Final set: ${deduped.length} unique chapter(s)`, { service: 'comixScraper' });
 
             for (const chap of deduped) {
-                if (await checkExists(chap.number)) {
-                    continue;
-                }
-
+                if (await checkExists(chap.number)) continue;
                 yield {
                     url: chap.url,
                     title: chap.title,
                     number: chap.number,
                     isSpecial: chap.isSpecial,
                     specialType: chap.specialType,
+                    scraperId: this.metadata.id,
                 };
             }
         } finally {
@@ -746,6 +1150,10 @@ export class ComixScraper implements IChapterScraper {
         }
     }
 
+    // ---------------------------------------------------------------------
+    // Chapter download
+    // ---------------------------------------------------------------------
+
     async downloadChapter(
         url: string,
         seriesId: number,
@@ -753,132 +1161,109 @@ export class ComixScraper implements IChapterScraper {
         _mangaName: string,
         _folderName: string,
     ): Promise<DownloadedChapter> {
+        await ensurePlaceholderExists();
         const maxAttempts = 2;
         let lastError: any;
         const contextLabel = `series=${seriesId} ch=${chapterNumber}`;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             const attemptLabel = `${contextLabel} attempt=${attempt}/${maxAttempts}`;
-            logger.info(`[Comix] [${attemptLabel}] Starting download attempt for ${url}`, {
-                service: 'comixScraper',
-            });
+            logger.info(`[Comix] [${attemptLabel}] Starting download for ${url}`, { service: 'comixScraper' });
             const browser = await ComixScraper.getBrowser();
             const context = await this.createBrowserContext(browser);
             const page = await context.newPage();
 
             try {
-                logger.info(`[Comix] [${attemptLabel}] Navigating to chapter page`, { service: 'comixScraper' });
                 await this.gotoComixPage(page, url);
-                logger.info(`[Comix] [${attemptLabel}] Waiting for reader shell`, { service: 'comixScraper' });
                 await page.waitForSelector(
-                    'main.rpage-main, div.rpage-main, button.rpage-progress__seg, div.rpage-chap-ending__nav',
+                    'main.rpage-main, div.rpage-main, button.rpage-progress__seg, div.rpage-chap-ending__nav, .rpage-page',
                     { timeout: 30000 },
                 );
                 await this.dismissReaderHint(page);
-                logger.info(`[Comix] [${attemptLabel}] Reader shell ready`, { service: 'comixScraper' });
 
-                const expectedPageCount = await page.evaluate(() => {
-                    const buttons = Array.from(
-                        document.querySelectorAll<HTMLButtonElement>(
-                            'div.rpage-progress.rpage-progress--left button.rpage-progress__seg',
-                        ),
-                    );
-                    return buttons.length;
+                const expectedPageCount: number = await page.evaluate(() => {
+                    const segs = document.querySelectorAll(
+                        'div.rpage-progress.rpage-progress--left button.rpage-progress__seg',
+                    ).length;
+                    if (segs > 0) return segs;
+                    return document.querySelectorAll('.rpage-page[data-page]').length;
                 });
-                logger.info(
-                    `[Comix] Chapter ${chapterNumber}: expected pages from progress bar = ${expectedPageCount}`,
-                    { service: 'comixScraper' },
-                );
+                logger.info(`[Comix] Chapter ${chapterNumber}: expected pages = ${expectedPageCount}`, {
+                    service: 'comixScraper',
+                });
 
-                logger.info(
-                    `[Comix] [${attemptLabel}] Collecting page assets (expected=${expectedPageCount})`,
-                    { service: 'comixScraper' },
-                );
-                const pageAssets = await this.collectPageAssetsFromReader(page, expectedPageCount, contextLabel, url);
-                const uniqueImages: string[] = [...new Set<string>(pageAssets.map(a => a.imageUrl).filter((v): v is string => !!v))];
-                logger.info(
-                    `[Comix] Chapter ${chapterNumber}: collected ${pageAssets.length} page assets (${uniqueImages.length} URL-backed) on first pass`,
-                    { service: 'comixScraper' },
-                );
-                if (!pageAssets.length) {
-                    throw new Error(`[Comix] No images found for chapter ${url}`);
-                }
+                let assets = await this.collectPageAssetsFromReader(page, expectedPageCount, attemptLabel);
+                if (!assets.length) throw new Error(`[Comix] No images found for chapter ${url}`);
 
-                let finalAssets = pageAssets;
-
-                if (expectedPageCount > 0 && finalAssets.length < expectedPageCount) {
+                if (expectedPageCount > 0 && assets.length < expectedPageCount) {
                     logger.warn(
-                        `[Comix] Loaded ${finalAssets.length}/${expectedPageCount} page assets after first pass, retrying capture`,
+                        `[Comix] Captured ${assets.length}/${expectedPageCount}; retrying capture`,
                         { service: 'comixScraper' },
                     );
-                    const retryAssets = await this.collectPageAssetsFromReader(
+                    const retry = await this.collectPageAssetsFromReader(
                         page,
                         expectedPageCount,
-                        `${contextLabel} retry`,
-                        url,
+                        `${attemptLabel} retry`,
                     );
-                    const retryUnique: string[] = [...new Set<string>(retryAssets.map(a => a.imageUrl).filter((v): v is string => !!v))];
-                    logger.info(
-                        `[Comix] Chapter ${chapterNumber}: retry collected ${retryAssets.length} page assets (${retryUnique.length} URL-backed)`,
-                        { service: 'comixScraper' },
-                    );
-                    if (retryAssets.length > finalAssets.length) {
-                        finalAssets = retryAssets;
-                    }
+                    if (retry.length > assets.length) assets = retry;
                 }
 
-                if (expectedPageCount > 0 && finalAssets.length < expectedPageCount) {
-                    const missingPages = this.getMissingPages(finalAssets, expectedPageCount);
+                const missingPages =
+                    expectedPageCount > 0 ? this.getMissingPages(assets, expectedPageCount) : [];
+                if (missingPages.length) {
                     logger.warn(
-                        `[Comix] Proceeding with partial page set for ${url}. expected=${expectedPageCount}, captured=${finalAssets.length}, missingPages=${missingPages.join(',') || 'none'}`,
+                        `[Comix] Proceeding with partial set for ${url}: missing ${missingPages.join(',')}`,
                         { service: 'comixScraper' },
                     );
                 }
 
-                this.logAssetCollectionSummary(finalAssets, chapterNumber, attemptLabel);
+                const storagePrefix = await this.downloadPageAssets(
+                    assets,
+                    seriesId,
+                    chapterNumber,
+                    url,
+                    expectedPageCount,
+                    attemptLabel,
+                );
+                const pageCount = expectedPageCount > 0 ? expectedPageCount : assets.length;
                 logger.info(
-                    `[Comix] [${attemptLabel}] Downloading ${finalAssets.length} assets to storage`,
+                    `[Comix] [${attemptLabel}] Completed (prefix=${storagePrefix}, pages=${pageCount})`,
                     { service: 'comixScraper' },
                 );
-                const storagePrefix = await this.downloadPageAssets(finalAssets, seriesId, chapterNumber, url, attemptLabel);
-                logger.info(
-                    `[Comix] [${attemptLabel}] Chapter download completed (prefix=${storagePrefix}, pages=${finalAssets.length})`,
-                    { service: 'comixScraper' },
-                );
-                return {
-                    storagePrefix,
-                    pageCount: finalAssets.length,
-                };
+                return { storagePrefix, pageCount };
             } catch (error: any) {
                 lastError = error;
                 const message = `${error?.message || error}`;
-                const isCrash = /target crashed|target page, context or browser has been closed|browser has been closed/i.test(message);
-                logger.error(
-                    `[Comix] [${attemptLabel}] Download attempt failed: ${message}`,
-                    { service: 'comixScraper' },
-                );
-                if (attempt < maxAttempts && isCrash) {
-                    logger.warn(
-                        `[Comix] [${attemptLabel}] Browser target crash classified=true; retrying with fresh browser`,
-                        { service: 'comixScraper' },
+                const isCrash =
+                    /target crashed|target page, context or browser has been closed|browser has been closed/i.test(
+                        message,
                     );
+                logger.error(`[Comix] [${attemptLabel}] Download failed: ${message}`, { service: 'comixScraper' });
+                if (attempt < maxAttempts && isCrash) {
                     await new Promise(resolve => setTimeout(resolve, 500));
                     continue;
                 }
-                logger.error(
-                    `[Comix] [${attemptLabel}] Non-retryable failure or attempts exhausted (isCrash=${isCrash})`,
-                    { service: 'comixScraper' },
-                );
                 throw error;
             } finally {
                 await page.close().catch(() => {});
                 await context.close().catch(() => {});
                 await ComixScraper.releaseBrowser(browser);
-                logger.debug(`[Comix] [${attemptLabel}] Browser/context released`, { service: 'comixScraper' });
             }
         }
 
         throw lastError || new Error(`[Comix] Failed to download chapter ${chapterNumber}`);
+    }
+
+    private hasCompleteAsset(asset: ComixPageAsset): boolean {
+        return !!(asset.imageUrl || asset.dataUrl);
+    }
+
+    private getMissingPages(assets: ComixPageAsset[], expectedPageCount: number): number[] {
+        if (expectedPageCount <= 0) return [];
+        const have = new Set<number>(assets.filter(a => this.hasCompleteAsset(a)).map(a => a.page));
+        const missing: number[] = [];
+        for (let i = 1; i <= expectedPageCount; i++) if (!have.has(i)) missing.push(i);
+        return missing;
     }
 
     private mergePageAssets(base: ComixPageAsset[], incoming: ComixPageAsset[]): ComixPageAsset[] {
@@ -890,7 +1275,13 @@ export class ComixScraper implements IChapterScraper {
                 continue;
             }
             if (!existing.dataUrl && asset.dataUrl) {
-                merged.set(asset.page, { ...existing, dataUrl: asset.dataUrl, width: asset.width, height: asset.height, source: asset.source });
+                merged.set(asset.page, {
+                    ...existing,
+                    dataUrl: asset.dataUrl,
+                    width: asset.width,
+                    height: asset.height,
+                    source: asset.source,
+                });
                 continue;
             }
             if (!existing.imageUrl && asset.imageUrl) {
@@ -900,216 +1291,23 @@ export class ComixScraper implements IChapterScraper {
         return Array.from(merged.values()).sort((a, b) => a.page - b.page);
     }
 
-    private hasCompleteAsset(asset: ComixPageAsset): boolean {
-        return !!(asset.imageUrl || asset.dataUrl);
-    }
-
-    private async extractWowpicCdnBase(page: any): Promise<string | null> {
-        return page.evaluate(() => {
-            const imgSrc =
-                document.querySelector<HTMLImageElement>('img.rpage-page__img, .rpage-page img')?.currentSrc ||
-                document.querySelector<HTMLImageElement>('img.rpage-page__img, .rpage-page img')?.src ||
-                '';
-            const fromImg = imgSrc.match(/^(https:\/\/[a-z0-9]+\.wowpic\d*\.store\/i3\/[^/]+\/)/i);
-            if (fromImg) {
-                return fromImg[1];
-            }
-
-            const html = document.documentElement.innerHTML;
-            const fromHtml = html.match(/https:\/\/[a-z0-9]+\.wowpic\d*\.store\/i3\/[A-Za-z0-9]+\//i);
-            return fromHtml ? fromHtml[0] : null;
-        });
-    }
-
-    private buildCdnPageAssets(cdnBase: string, pageCount: number): ComixPageAsset[] {
-        const normalizedBase = cdnBase.endsWith('/') ? cdnBase : `${cdnBase}/`;
-        return Array.from({ length: pageCount }, (_, index) => ({
-            page: index + 1,
-            imageUrl: `${normalizedBase}${String(index + 1).padStart(3, '0')}.webp`,
-            source: 'url' as const,
-        }));
-    }
-
-    private async probeCdnAssets(
-        assets: ComixPageAsset[],
-        referer: string,
-        contextLabel: string,
-    ): Promise<{ directAssets: ComixPageAsset[]; browserCapturePages: number[] }> {
-        const browserCapturePages: number[] = [];
-        const batchSize = 25;
-
-        for (let start = 0; start < assets.length; start += batchSize) {
-            const chunk = assets.slice(start, Math.min(start + batchSize, assets.length));
-            await Promise.all(
-                chunk.map(async (asset) => {
-                    if (ComixScraper.isScrambledCdnPage(asset.page)) {
-                        browserCapturePages.push(asset.page);
-                        return;
-                    }
-                    if (!asset.imageUrl) {
-                        browserCapturePages.push(asset.page);
-                        return;
-                    }
-                    try {
-                        const response = await ComixScraper.axiosInstance.get(asset.imageUrl, {
-                            responseType: 'arraybuffer',
-                            timeout: 20000,
-                            headers: {
-                                Referer: referer,
-                                Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-                                'User-Agent': appConfig.scraper.comix.userAgent,
-                            },
-                        });
-                        const buffer = Buffer.from(response.data as ArrayBuffer);
-                        const metadata = await sharp(buffer, { failOn: 'none' }).metadata();
-                        const width = metadata.width || 0;
-                        const height = metadata.height || 0;
-                        const dimsOk = ComixScraper.isValidChapterImageDimensions(width, height);
-                        if (!dimsOk) {
-                            browserCapturePages.push(asset.page);
-                        }
-                    } catch {
-                        browserCapturePages.push(asset.page);
-                    }
-                }),
-            );
-
-            const checked = Math.min(start + batchSize, assets.length);
-            if (checked < assets.length || start === 0) {
-                logger.info(
-                    `[Comix] [${contextLabel}] CDN probe progress: ${checked}/${assets.length}`,
-                    { service: 'comixScraper' },
-                );
-            }
-        }
-
-        const browserCaptureSet = new Set(browserCapturePages);
-        return {
-            directAssets: assets.filter(a => !browserCaptureSet.has(a.page)),
-            browserCapturePages: browserCapturePages.sort((a, b) => a - b),
-        };
-    }
-
-    private async collectBrowserCapturedAssets(
-        page: any,
-        contextLabel: string,
-        targetPages: number[],
-    ): Promise<ComixPageAsset[]> {
-        if (!targetPages.length) return [];
-
-        await this.dismissReaderHint(page);
-        const captured: ComixPageAsset[] = [];
-        const visitTotal = targetPages.length;
-
-        for (let visitIndex = 0; visitIndex < targetPages.length; visitIndex++) {
-            const pageNum = targetPages[visitIndex];
-            const node = page.locator(`.rpage-page[data-page="${pageNum}"]`).first();
-            if (!(await node.count())) continue;
-
-            let asset: ComixPageAsset | null = null;
-            for (let attempt = 1; attempt <= 2; attempt++) {
-                await node.scrollIntoViewIfNeeded().catch(() => {});
-                await page.waitForTimeout(300);
-                await this.dismissReaderHint(page);
-                asset = await this.capturePageViaScreenshot(page, pageNum, contextLabel);
-                if (asset) break;
-            }
-            if (asset) {
-                captured.push(asset);
-            }
-
-            const shouldLog =
-                visitIndex === 0 ||
-                visitIndex === visitTotal - 1 ||
-                (visitIndex + 1) % 10 === 0;
-            if (shouldLog) {
-                logger.info(
-                    `[Comix] [${contextLabel}] Browser capture ${visitIndex + 1}/${visitTotal}: page=${pageNum} captured=${captured.length}`,
-                    { service: 'comixScraper' },
-                );
-            }
-        }
-
-        logger.info(
-            `[Comix] [${contextLabel}] Browser capture complete: targets=${targetPages.length}, captured=${captured.length}`,
-            { service: 'comixScraper' },
-        );
-        return captured;
-    }
-
+    /**
+     * Read the rendered reader. Plain <img> pages give us a direct CDN URL we can
+     * fetch with a referer; protected/canvas pages are captured via screenshot.
+     */
     private async collectPageAssetsFromReader(
         page: any,
         expectedPageCount: number,
         contextLabel: string,
-        chapterUrl: string,
     ): Promise<ComixPageAsset[]> {
         await this.dismissReaderHint(page);
 
-        if (expectedPageCount > 0) {
-            const cdnBase = await this.extractWowpicCdnBase(page);
-            if (cdnBase) {
-                logger.info(
-                    `[Comix] [${contextLabel}] Resolved wowpic CDN base (${ComixScraper.summarizeAssetUrl(`${cdnBase}001.webp`)}) for ${expectedPageCount} page(s)`,
-                    { service: 'comixScraper' },
-                );
-                const cdnAssets = this.buildCdnPageAssets(cdnBase, expectedPageCount);
-                const scrambledCount = cdnAssets.filter(a => ComixScraper.isScrambledCdnPage(a.page)).length;
-                const { directAssets, browserCapturePages } = await this.probeCdnAssets(cdnAssets, chapterUrl, contextLabel);
-                logger.info(
-                    `[Comix] [${contextLabel}] CDN probe complete: ${directAssets.length} direct URL(s), ${browserCapturePages.length} need browser capture (${scrambledCount} scrambled)`,
-                    { service: 'comixScraper' },
-                );
-                if (!browserCapturePages.length) {
-                    return directAssets;
-                }
-                const browserAssets = await this.collectBrowserCapturedAssets(page, contextLabel, browserCapturePages);
-                return this.mergePageAssets(directAssets, browserAssets);
-            }
-
-            logger.warn(
-                `[Comix] [${contextLabel}] No wowpic CDN base found; falling back to scroll/progress extraction`,
-                { service: 'comixScraper' },
-            );
-        }
-
-        let assets = await this.collectPageAssetsByScrolling(page, expectedPageCount, contextLabel);
-        logger.info(
-            `[Comix] [${contextLabel}] Scroll extraction captured ${assets.length} page slot(s), ${assets.filter(a => this.hasCompleteAsset(a)).length} with image data`,
-            { service: 'comixScraper' },
-        );
-
-        let missingPages = this.getMissingPages(assets, expectedPageCount);
-        if (missingPages.length > 0) {
-            const canvasAssets = await this.collectCanvasAssetsByPage(page, expectedPageCount, assets, contextLabel, missingPages);
-            if (canvasAssets.length) {
-                assets = this.mergePageAssets(assets, canvasAssets);
-            }
-            missingPages = this.getMissingPages(assets, expectedPageCount);
-        }
-
-        if (expectedPageCount <= 0 || missingPages.length === 0) {
-            return assets;
-        }
-
-        logger.info(
-            `[Comix] [${contextLabel}] Filling ${missingPages.length} missing page(s) via progress: ${missingPages.join(', ')}`,
-            { service: 'comixScraper' },
-        );
-        const progressAssets = await this.collectPageAssetsFromProgressButtons(page, expectedPageCount, contextLabel, missingPages);
-        return this.mergePageAssets(assets, progressAssets);
-    }
-
-    private async collectPageAssetsByScrolling(
-        page: any,
-        expectedPageCount: number,
-        contextLabel: string,
-    ): Promise<ComixPageAsset[]> {
         const pageMap = new Map<number, ComixPageAsset>();
         const maxSteps = Math.max(expectedPageCount > 0 ? expectedPageCount * 8 : 420, 160);
-        const minCaptureWidth = ComixScraper.MIN_IMAGE_NATURAL_WIDTH;
-        const minCaptureHeight = ComixScraper.MIN_IMAGE_NATURAL_HEIGHT;
-        const minCanvasWidth = ComixScraper.MIN_CHAPTER_LONG_EDGE;
-        const minCanvasHeight = ComixScraper.MIN_CHAPTER_SHORT_EDGE;
+        const minW = ComixScraper.MIN_IMAGE_NATURAL_WIDTH;
+        const minH = ComixScraper.MIN_IMAGE_NATURAL_HEIGHT;
+        const minCanvasW = ComixScraper.MIN_CHAPTER_LONG_EDGE;
+        const minCanvasH = ComixScraper.MIN_CHAPTER_SHORT_EDGE;
         let stagnantSteps = 0;
         let reachedEnd = false;
 
@@ -1117,294 +1315,141 @@ export class ComixScraper implements IChapterScraper {
         await page.waitForTimeout(500);
 
         for (let step = 1; step <= maxSteps; step++) {
-            const beforeSize = pageMap.size;
+            const before = pageMap.size;
             const snapshot = await page.evaluate(
                 ({ minW, minH, canvasMinW, canvasMinH }: { minW: number; minH: number; canvasMinW: number; canvasMinH: number }) => {
-                const nodes = Array.from(document.querySelectorAll<HTMLElement>('.rpage-page[data-page], div.rpage-page'));
-                const out: Array<{
-                    page: number;
-                    imageUrl?: string;
-                    visible: boolean;
-                    hasCanvas: boolean;
-                    canvasWidth?: number;
-                    canvasHeight?: number;
-                }> = [];
+                    const nodes = Array.from(
+                        document.querySelectorAll<HTMLElement>('.rpage-page[data-page], div.rpage-page'),
+                    );
+                    const out: Array<{
+                        page: number;
+                        imageUrl?: string;
+                        hasCanvas: boolean;
+                        canvasWidth?: number;
+                        canvasHeight?: number;
+                    }> = [];
 
-                for (const node of nodes) {
-                    const rect = node.getBoundingClientRect();
-                    const visible = rect.bottom >= 0 && rect.top <= window.innerHeight;
-                    const img = node.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
-                    const src = img?.currentSrc || img?.getAttribute('src') || img?.getAttribute('data-src') || '';
-                    const srcMatch = src.match(/\/(\d{1,4})\.(webp|jpg|jpeg|png)(\?|$)/i);
-                    const dataPage = Number(node.getAttribute('data-page') || '');
-                    const inferredPage = srcMatch ? Number(srcMatch[1]) : NaN;
-                    const pageNum = Number.isFinite(dataPage) && dataPage > 0 ? dataPage : inferredPage;
-                    if (!Number.isFinite(pageNum) || pageNum < 1) continue;
+                    for (const node of nodes) {
+                        const rect = node.getBoundingClientRect();
+                        const visible = rect.bottom >= 0 && rect.top <= window.innerHeight;
+                        const img = node.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
+                        const src = img?.currentSrc || img?.getAttribute('src') || img?.getAttribute('data-src') || '';
+                        // CDN files are NN.webp (2-digit). Allow optional ?v<N> marker.
+                        const srcMatch = src.match(/\/(\d{1,4})\.(webp|jpg|jpeg|png)(\?[^/]*)?$/i);
+                        const dataPage = Number(node.getAttribute('data-page') || '');
+                        const inferred = srcMatch ? Number(srcMatch[1]) : NaN;
+                        const pageNum = Number.isFinite(dataPage) && dataPage > 0 ? dataPage : inferred;
+                        if (!Number.isFinite(pageNum) || pageNum < 1) continue;
 
-                    const imgReady =
-                        !!img &&
-                        img.complete &&
-                        img.naturalWidth >= minW &&
-                        img.naturalHeight >= minH;
+                        const imgReady =
+                            !!img && img.complete && img.naturalWidth >= minW && img.naturalHeight >= minH;
 
-                    const canvas = node.querySelector('canvas.rpage-page__img, canvas') as HTMLCanvasElement | null;
-                    const canvasWidth = canvas?.width || 0;
-                    const canvasHeight = canvas?.height || 0;
-                    const hasCanvas =
-                        !!canvas &&
-                        visible &&
-                        canvasWidth >= canvasMinW &&
-                        canvasHeight >= canvasMinH;
+                        const canvas = node.querySelector('canvas.rpage-page__img, canvas') as HTMLCanvasElement | null;
+                        const cw = canvas?.width || 0;
+                        const ch = canvas?.height || 0;
+                        const hasCanvas = !!canvas && visible && cw >= canvasMinW && ch >= canvasMinH;
 
-                    if (imgReady && src && src.startsWith('http') && /\.(webp|jpg|jpeg|png)(\?|$)/i.test(src)) {
-                        if (!srcMatch || Number(srcMatch[1]) === pageNum) {
-                            out.push({ page: pageNum, imageUrl: src, visible, hasCanvas, canvasWidth, canvasHeight });
-                            continue;
+                        // Prefer a real <img> CDN URL when the page is NOT protected.
+                        const isProtected = /[?&]v\d+/i.test(src);
+                        if (imgReady && !isProtected && /^https?:\/\//i.test(src) && /\.(webp|jpg|jpeg|png)(\?|$)/i.test(src)) {
+                            if (!srcMatch || Number(srcMatch[1]) === pageNum) {
+                                out.push({ page: pageNum, imageUrl: src, hasCanvas, canvasWidth: cw, canvasHeight: ch });
+                                continue;
+                            }
+                        }
+                        if (hasCanvas) {
+                            out.push({ page: pageNum, hasCanvas, canvasWidth: cw, canvasHeight: ch });
                         }
                     }
 
-                    if (hasCanvas) {
-                        out.push({ page: pageNum, visible, hasCanvas, canvasWidth, canvasHeight });
-                    }
-                }
-
-                const hasEndMarker = !!document.querySelector('div.rpage-chap-ending__nav');
-                return { out, hasEndMarker };
+                    return { out, hasEndMarker: !!document.querySelector('div.rpage-chap-ending__nav') };
                 },
-                { minW: minCaptureWidth, minH: minCaptureHeight, canvasMinW: minCanvasWidth, canvasMinH: minCanvasHeight },
+                { minW, minH, canvasMinW: minCanvasW, canvasMinH: minCanvasH },
             );
 
-            for (const asset of snapshot.out) {
-                const existing = pageMap.get(asset.page);
+            for (const a of snapshot.out) {
+                const existing = pageMap.get(a.page);
                 if (!existing) {
-                    pageMap.set(asset.page, {
-                        page: asset.page,
-                        imageUrl: asset.imageUrl,
-                        width: asset.canvasWidth,
-                        height: asset.canvasHeight,
-                        source: asset.imageUrl ? 'url' : undefined,
+                    pageMap.set(a.page, {
+                        page: a.page,
+                        imageUrl: a.imageUrl,
+                        width: a.canvasWidth,
+                        height: a.canvasHeight,
+                        source: a.imageUrl ? 'url' : undefined,
                     });
-                    continue;
-                }
-                if (!existing.imageUrl && asset.imageUrl) {
-                    pageMap.set(asset.page, { ...existing, imageUrl: asset.imageUrl });
+                } else if (!existing.imageUrl && a.imageUrl) {
+                    pageMap.set(a.page, { ...existing, imageUrl: a.imageUrl, source: 'url' });
                 }
             }
 
-            const canvasCandidates = snapshot.out.filter((a: {
-                page: number;
-                hasCanvas: boolean;
-            }) =>
-                a.hasCanvas &&
-                !pageMap.get(a.page)?.dataUrl,
+            // Capture protected/canvas pages that have no direct URL yet.
+            const canvasCandidates = snapshot.out.filter(
+                (a: { page: number; hasCanvas: boolean }) =>
+                    a.hasCanvas && !pageMap.get(a.page)?.dataUrl && !pageMap.get(a.page)?.imageUrl,
             );
-            for (const candidate of canvasCandidates) {
-                const captured = await this.capturePageViaScreenshot(page, candidate.page, contextLabel);
-                if (captured) {
-                    const existing = pageMap.get(candidate.page);
-                    pageMap.set(candidate.page, {
-                        ...(existing || { page: candidate.page }),
-                        ...captured,
-                    });
-                }
+            for (const c of canvasCandidates) {
+                const captured = await this.capturePageViaScreenshot(page, c.page, contextLabel);
+                if (captured) pageMap.set(c.page, { ...(pageMap.get(c.page) || { page: c.page }), ...captured });
             }
 
-            const grew = pageMap.size > beforeSize;
-            stagnantSteps = grew ? 0 : stagnantSteps + 1;
+            stagnantSteps = pageMap.size > before ? 0 : stagnantSteps + 1;
+            if (snapshot.hasEndMarker && pageMap.size >= Math.min(expectedPageCount || 0, 20)) reachedEnd = true;
 
-            if (snapshot.hasEndMarker && pageMap.size >= Math.min(expectedPageCount || 0, 20)) {
-                reachedEnd = true;
-            }
-
-            if (expectedPageCount > 0 && pageMap.size >= expectedPageCount) {
-                break;
-            }
-            if (reachedEnd && stagnantSteps >= 12) {
-                break;
-            }
-            if (stagnantSteps >= 60) {
-                break;
-            }
+            if (expectedPageCount > 0 && pageMap.size >= expectedPageCount) break;
+            if (reachedEnd && stagnantSteps >= 12) break;
+            if (stagnantSteps >= 60) break;
 
             await page.evaluate(() => window.scrollBy(0, Math.max(900, Math.floor(window.innerHeight * 0.85))));
             await page.waitForTimeout(320);
         }
 
-        // Final settle at end and full DOM sweep for lazy-loaded img URLs.
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        await page.waitForTimeout(900);
-        await page.evaluate(() => window.scrollTo(0, 0));
-        await page.waitForTimeout(300);
+        const assets = Array.from(pageMap.values()).sort((a, b) => a.page - b.page);
 
-        const finalSweep = await page.evaluate(
-            ({ minW, minH }: { minW: number; minH: number }) => {
-                const nodes = Array.from(document.querySelectorAll<HTMLElement>('.rpage-page[data-page], div.rpage-page'));
-                const out: ComixPageAsset[] = [];
-
-                for (const node of nodes) {
-                    const dataPage = Number(node.getAttribute('data-page') || '');
-                    const img = node.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
-                    const src = img?.currentSrc || img?.getAttribute('src') || img?.getAttribute('data-src') || '';
-                    const srcMatch = src.match(/\/(\d{1,4})\.(webp|jpg|jpeg|png)(\?|$)/i);
-                    const inferredPage = srcMatch ? Number(srcMatch[1]) : NaN;
-                    const pageNum = Number.isFinite(dataPage) && dataPage > 0 ? dataPage : inferredPage;
-                    if (!Number.isFinite(pageNum) || pageNum < 1) continue;
-
-                    const imgReady =
-                        !!img &&
-                        img.complete &&
-                        img.naturalWidth >= minW &&
-                        img.naturalHeight >= minH;
-
-                    if (imgReady && src && src.startsWith('http') && /\.(webp|jpg|jpeg|png)(\?|$)/i.test(src)) {
-                        if (!srcMatch || Number(srcMatch[1]) === pageNum) {
-                            out.push({ page: pageNum, imageUrl: src });
-                        }
-                    }
-                }
-                return out;
-            },
-            { minW: minCaptureWidth, minH: minCaptureHeight },
-        );
-
-        for (const asset of finalSweep) {
-            const existing = pageMap.get(asset.page);
-            if (!existing) {
-                pageMap.set(asset.page, asset);
-                continue;
-            }
-            if (!existing.imageUrl && asset.imageUrl) {
-                pageMap.set(asset.page, { ...existing, imageUrl: asset.imageUrl });
-            }
+        // Fill any still-missing pages via the progress bar (deterministic per-page seek).
+        const missing = this.getMissingPages(assets, expectedPageCount);
+        if (missing.length) {
+            const filled = await this.collectPagesFromProgressButtons(page, expectedPageCount, contextLabel, missing);
+            return this.mergePageAssets(assets, filled);
         }
 
         logger.info(
-            `[Comix] [${contextLabel}] Scroll extraction complete: captured=${pageMap.size}, expected=${expectedPageCount}, reachedEnd=${reachedEnd}`,
+            `[Comix] [${contextLabel}] Reader capture: ${assets.length} page(s) ` +
+                `(${assets.filter(a => a.imageUrl).length} URL, ${assets.filter(a => a.dataUrl).length} canvas), ` +
+                `reachedEnd=${reachedEnd}`,
             { service: 'comixScraper' },
         );
-        if (pageMap.size > 1) {
-            return Array.from(pageMap.values()).sort((a, b) => a.page - b.page);
-        }
-
-        return [];
+        return assets;
     }
 
-    private async collectCanvasAssetsByPage(
-        page: any,
-        expectedPageCount: number,
-        currentAssets: ComixPageAsset[],
-        contextLabel: string,
-        onlyPages?: number[],
-    ): Promise<ComixPageAsset[]> {
-        const existingPages = new Set(currentAssets.filter(a => this.hasCompleteAsset(a)).map(a => a.page));
-        const onlyPageSet = onlyPages?.length ? new Set(onlyPages) : null;
-        const canvasPages: number[] = await page.evaluate((expected: number) => {
-            const nodes = Array.from(document.querySelectorAll<HTMLElement>('.rpage-page[data-page], div.rpage-page'));
-            return nodes
-                .map((node) => {
-                    const pageNum = Number(node.getAttribute('data-page') || '');
-                    if (!Number.isFinite(pageNum) || pageNum < 1 || (expected > 0 && pageNum > expected)) return null;
-                    const hasCanvas = !!node.querySelector('canvas.rpage-page__img, canvas');
-                    return hasCanvas ? pageNum : null;
-                })
-                .filter((v): v is number => v !== null)
-                .sort((a, b) => a - b);
-        }, expectedPageCount);
-
-        const targetPages = canvasPages.filter((pageNum) => {
-            if (existingPages.has(pageNum)) return false;
-            if (onlyPageSet && !onlyPageSet.has(pageNum)) return false;
-            return true;
-        });
-        if (!targetPages.length) return [];
-
-        await this.dismissReaderHint(page);
-        const captured: ComixPageAsset[] = [];
-        for (const pageNum of targetPages) {
-            const selector = `.rpage-page[data-page="${pageNum}"]`;
-            const node = page.locator(selector).first();
-            if (!(await node.count())) continue;
-
-            for (let attempt = 1; attempt <= 2; attempt++) {
-                await node.scrollIntoViewIfNeeded().catch(() => {});
-                await page.waitForTimeout(200);
-                await this.dismissReaderHint(page);
-                const asset = await this.capturePageViaScreenshot(page, pageNum, contextLabel);
-                if (asset) {
-                    captured.push(asset);
-                    existingPages.add(pageNum);
-                    break;
-                }
-            }
-        }
-
-        logger.info(
-            `[Comix] [${contextLabel}] Canvas page pass: targets=${targetPages.length}, captured=${captured.length} (min=${ComixScraper.MIN_CAPTURE_WIDTH}x${ComixScraper.MIN_CAPTURE_HEIGHT})`,
-            { service: 'comixScraper' },
-        );
-        return captured;
-    }
-
-    private async collectPageAssetsFromProgressButtons(
+    private async collectPagesFromProgressButtons(
         page: any,
         expectedPageCount: number,
         contextLabel: string,
-        onlyPages?: number[],
+        onlyPages: number[],
     ): Promise<ComixPageAsset[]> {
         const pageMap = new Map<number, ComixPageAsset>();
+        const buttons = page.locator('div.rpage-progress.rpage-progress--left button.rpage-progress__seg');
+        const buttonCount = await buttons.count();
+        if (!buttonCount) return [];
 
-        const progressButtons = page.locator('div.rpage-progress.rpage-progress--left button.rpage-progress__seg');
-        const buttonCount = await progressButtons.count();
-        const totalPages = expectedPageCount > 0 ? expectedPageCount : buttonCount;
-        const pagesToVisit =
-            onlyPages?.length
-                ? onlyPages.filter((n) => n >= 1 && (totalPages <= 0 || n <= totalPages))
-                : Array.from({ length: totalPages }, (_, i) => i + 1);
-        logger.info(
-            `[Comix] [${contextLabel}] Progress traversal: expected=${expectedPageCount}, buttonsFound=${buttonCount}, visiting=${pagesToVisit.length} page(s)`,
-            { service: 'comixScraper' },
-        );
+        const total = expectedPageCount > 0 ? expectedPageCount : buttonCount;
+        const pagesToVisit = onlyPages.filter(n => n >= 1 && (total <= 0 || n <= total));
 
-        if (buttonCount > 0 && pagesToVisit.length > 0) {
-            const visitTotal = pagesToVisit.length;
-            for (let visitIndex = 0; visitIndex < pagesToVisit.length; visitIndex++) {
-                const pageNum = pagesToVisit[visitIndex];
-                const button = progressButtons.nth(Math.min(pageNum - 1, buttonCount - 1));
-                if (!(await button.count())) continue;
-                const clicked = await button.click({ force: true }).then(() => true).catch(() => false);
-                await this.waitForReaderPageIndex(page, pageNum);
+        for (const pageNum of pagesToVisit) {
+            const button = buttons.nth(Math.min(pageNum - 1, buttonCount - 1));
+            if (!(await button.count())) continue;
+            await button.click({ force: true }).catch(() => {});
+            await this.waitForReaderPageIndex(page, pageNum);
 
-                let asset = await this.capturePageViaScreenshot(page, pageNum, contextLabel);
-                if (!asset) {
-                    asset = await this.captureAssetForActivePage(page, pageNum);
-                }
-                if (asset) {
-                    pageMap.set(pageNum, asset);
-                }
-
-                const source = asset?.imageUrl ? 'url' : asset?.dataUrl ? 'canvas' : 'none';
-                const shouldLog =
-                    visitIndex === 0 ||
-                    visitIndex === visitTotal - 1 ||
-                    (visitIndex + 1) % 10 === 0;
-                if (shouldLog) {
-                    logger.info(
-                        `[Comix] [${contextLabel}] Progress capture ${visitIndex + 1}/${visitTotal}: page=${pageNum} clicked=${clicked} source=${source} captured=${pageMap.size}`,
-                        { service: 'comixScraper' },
-                    );
-                }
-            }
-        } else {
-            await this.scrollUntilReaderEnd(page);
-            logger.info(
-                `[Comix] [${contextLabel}] Progress buttons unavailable; scroll fallback only`,
-                { service: 'comixScraper' },
-            );
+            let asset = await this.captureAssetForActivePage(page, pageNum);
+            if (!asset) asset = await this.capturePageViaScreenshot(page, pageNum, contextLabel);
+            if (asset) pageMap.set(pageNum, asset);
         }
 
-        logger.info(`[Comix] [${contextLabel}] Progress traversal complete: total captured assets=${pageMap.size}`, {
-            service: 'comixScraper',
-        });
+        logger.info(
+            `[Comix] [${contextLabel}] Progress fill: requested ${pagesToVisit.length}, captured ${pageMap.size}`,
+            { service: 'comixScraper' },
+        );
         return Array.from(pageMap.values()).sort((a, b) => a.page - b.page);
     }
 
@@ -1415,16 +1460,8 @@ export class ComixScraper implements IChapterScraper {
                     const btn = document.querySelector<HTMLButtonElement>(
                         'div.rpage-progress.rpage-progress--left button.rpage-progress__seg.is-active',
                     );
-                    const title = btn?.getAttribute('title') || '';
-                    const m = title.match(/Page\s+(\d+)/i);
-                    if (!m || Number(m[1]) !== n) return false;
-
-                    const slide = document.querySelector('.swiper-slide.rpage-slide.swiper-slide-active');
-                    const pageEl = slide?.querySelector('.rpage-page');
-                    const dataPage = pageEl?.getAttribute('data-page');
-                    if (dataPage != null && Number(dataPage) !== n) return false;
-
-                    return true;
+                    const m = (btn?.getAttribute('title') || '').match(/Page\s+(\d+)/i);
+                    return !!m && Number(m[1]) === n;
                 },
                 pageNum,
                 { timeout: 12000 },
@@ -1435,76 +1472,33 @@ export class ComixScraper implements IChapterScraper {
         }
     }
 
-    private async waitForReaderPageImageLoaded(page: any, pageNum: number, timeoutMs = 8000): Promise<boolean> {
-        const minW = ComixScraper.MIN_IMAGE_NATURAL_WIDTH;
-        const minH = ComixScraper.MIN_IMAGE_NATURAL_HEIGHT;
-        try {
-            await page.waitForFunction(
-                ({ n, minW, minH }: { n: number; minW: number; minH: number }) => {
-                    const findImg = (): HTMLImageElement | null => {
-                        const slide = document.querySelector('.swiper-slide.rpage-slide.swiper-slide-active');
-                        if (slide) {
-                            const pageEl = slide.querySelector('.rpage-page');
-                            const dp = pageEl?.getAttribute('data-page');
-                            if (dp != null && Number(dp) === n) {
-                                return slide.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
-                            }
-                        }
-                        const node = document.querySelector(`.rpage-page[data-page="${n}"]`);
-                        return node?.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
-                    };
-                    const img = findImg();
-                    if (!img) return false;
-                    const src = img.currentSrc || img.src || img.getAttribute('data-src') || '';
-                    if (!src || !/^https?:\/\//i.test(src)) return false;
-                    if (!/\.(webp|jpg|jpeg|png)(\?|$)/i.test(src)) return false;
-                    if (!img.complete) return false;
-                    if (img.naturalWidth < minW || img.naturalHeight < minH) return false;
-                    return true;
-                },
-                { n: pageNum, minW, minH },
-                { timeout: timeoutMs },
-            );
-            return true;
-        } catch {
-            return false;
-        }
-    }
-
     private async captureAssetForActivePage(page: any, pageNum: number): Promise<ComixPageAsset | null> {
-        await this.waitForReaderPageImageLoaded(page, pageNum, 6000);
         const minW = ComixScraper.MIN_IMAGE_NATURAL_WIDTH;
         const minH = ComixScraper.MIN_IMAGE_NATURAL_HEIGHT;
-        return page.evaluate(({ n, minW, minH }: { n: number; minW: number; minH: number }) => {
-            const slide = document.querySelector('.swiper-slide.rpage-slide.swiper-slide-active');
-            const root = slide || document.querySelector('.rpage-page');
-            if (!root) return null;
-
-            const pageEl = (root as HTMLElement).matches?.('.rpage-page')
-                ? (root as HTMLElement)
-                : (root.querySelector('.rpage-page') as HTMLElement | null);
-            const dataPage = pageEl?.getAttribute('data-page');
-            if (dataPage != null && Number(dataPage) !== n) return null;
-
-            const img = root.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
-            const src = img?.currentSrc || img?.getAttribute('src') || img?.getAttribute('data-src') || '';
-            if (
-                img &&
-                img.complete &&
-                img.naturalWidth >= minW &&
-                img.naturalHeight >= minH &&
-                src &&
-                src.startsWith('http') &&
-                /\.(webp|jpg|jpeg|png)(\?|$)/i.test(src)
-            ) {
-                const m = src.match(/\/(\d{1,4})\.(webp|jpg|jpeg|png)(\?|$)/i);
-                if (!m || Number(m[1]) === n) {
-                    return { page: n, imageUrl: src };
+        return page.evaluate(
+            ({ n, minW, minH }: { n: number; minW: number; minH: number }) => {
+                const node = document.querySelector(`.rpage-page[data-page="${n}"]`) as HTMLElement | null;
+                if (!node) return null;
+                const img = node.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
+                const src = img?.currentSrc || img?.getAttribute('src') || '';
+                const isProtected = /[?&]v\d+/i.test(src);
+                if (
+                    img &&
+                    img.complete &&
+                    img.naturalWidth >= minW &&
+                    img.naturalHeight >= minH &&
+                    src &&
+                    !isProtected &&
+                    /^https?:\/\//i.test(src) &&
+                    /\.(webp|jpg|jpeg|png)(\?|$)/i.test(src)
+                ) {
+                    const m = src.match(/\/(\d{1,4})\.(webp|jpg|jpeg|png)(\?|$)/i);
+                    if (!m || Number(m[1]) === n) return { page: n, imageUrl: src };
                 }
-            }
-
-            return null;
-        }, { n: pageNum, minW, minH });
+                return null;
+            },
+            { n: pageNum, minW, minH },
+        );
     }
 
     private async capturePageViaScreenshot(
@@ -1517,31 +1511,26 @@ export class ComixScraper implements IChapterScraper {
             const node = page.locator(`.rpage-page[data-page="${pageNum}"]`).first();
             if (!(await node.count())) return null;
             await node.scrollIntoViewIfNeeded().catch(() => {});
-            await page.waitForFunction(
-                ({ n, minCanvasW, minImgW, minImgH }: { n: number; minCanvasW: number; minImgW: number; minImgH: number }) => {
-                    const root = document.querySelector(`.rpage-page[data-page="${n}"]`);
-                    if (!root) return false;
-                    const canvas = root.querySelector('canvas.rpage-page__img, canvas') as HTMLCanvasElement | null;
-                    if (canvas && canvas.width >= minCanvasW) {
-                        return true;
-                    }
-                    const img = root.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
-                    return !!(
-                        img &&
-                        img.complete &&
-                        img.naturalWidth >= minImgW &&
-                        img.naturalHeight >= minImgH
-                    );
-                },
-                {
-                    n: pageNum,
-                    minCanvasW: ComixScraper.MIN_CHAPTER_SHORT_EDGE,
-                    minImgW: ComixScraper.MIN_IMAGE_NATURAL_WIDTH,
-                    minImgH: ComixScraper.MIN_IMAGE_NATURAL_HEIGHT,
-                },
-                { timeout: 8000 },
-            ).catch(() => {});
-            await page.waitForTimeout(300);
+            await page
+                .waitForFunction(
+                    ({ n, minCanvasW, minImgW, minImgH }: { n: number; minCanvasW: number; minImgW: number; minImgH: number }) => {
+                        const root = document.querySelector(`.rpage-page[data-page="${n}"]`);
+                        if (!root) return false;
+                        const canvas = root.querySelector('canvas.rpage-page__img, canvas') as HTMLCanvasElement | null;
+                        if (canvas && canvas.width >= minCanvasW) return true;
+                        const img = root.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
+                        return !!(img && img.complete && img.naturalWidth >= minImgW && img.naturalHeight >= minImgH);
+                    },
+                    {
+                        n: pageNum,
+                        minCanvasW: ComixScraper.MIN_CHAPTER_SHORT_EDGE,
+                        minImgW: ComixScraper.MIN_IMAGE_NATURAL_WIDTH,
+                        minImgH: ComixScraper.MIN_IMAGE_NATURAL_HEIGHT,
+                    },
+                    { timeout: 8000 },
+                )
+                .catch(() => {});
+            await page.waitForTimeout(250);
             await page.evaluate((styleId: string) => {
                 let style = document.getElementById(styleId) as HTMLStyleElement | null;
                 if (!style) {
@@ -1549,31 +1538,17 @@ export class ComixScraper implements IChapterScraper {
                     style.id = styleId;
                     document.head.appendChild(style);
                 }
-                style.textContent = `
-                    div.rpage-header,
-                    header.rpage-header,
-                    .rpage-topbar,
-                    .rpage-reader__header {
-                        display: none !important;
-                        visibility: hidden !important;
-                        opacity: 0 !important;
-                        pointer-events: none !important;
-                    }
-                `;
+                style.textContent =
+                    'div.rpage-header, header.rpage-header, .rpage-topbar, .rpage-reader__header ' +
+                    '{ display:none !important; visibility:hidden !important; opacity:0 !important; pointer-events:none !important; }';
             }, hideStyleId);
             await page.waitForTimeout(60);
 
             const canvasLoc = node.locator('canvas.rpage-page__img, canvas').first();
             const imgLoc = node.locator('img.rpage-page__img, img').first();
             let target = node;
-            let source: ComixPageAsset['source'] = 'canvas-screenshot';
-            if (await canvasLoc.count()) {
-                target = canvasLoc;
-                source = 'canvas-screenshot';
-            } else if (await imgLoc.count()) {
-                target = imgLoc;
-                source = 'canvas-screenshot';
-            }
+            if (await canvasLoc.count()) target = canvasLoc;
+            else if (await imgLoc.count()) target = imgLoc;
 
             const buffer: Buffer = await target.screenshot({
                 type: 'png',
@@ -1586,7 +1561,7 @@ export class ComixScraper implements IChapterScraper {
             const height = metadata.height || 0;
             if (!ComixScraper.isValidChapterImageDimensions(width, height)) {
                 logger.debug(
-                    `[Comix] [${contextLabel}] Rejecting browser screenshot page ${pageNum} due to size ${width}x${height}`,
+                    `[Comix] [${contextLabel}] Rejecting screenshot page ${pageNum} (${width}x${height})`,
                     { service: 'comixScraper' },
                 );
                 return null;
@@ -1596,70 +1571,49 @@ export class ComixScraper implements IChapterScraper {
                 dataUrl: `data:image/png;base64,${buffer.toString('base64')}`,
                 width,
                 height,
-                source,
+                source: 'canvas-screenshot',
             };
         } catch (error) {
-            logger.debug(`[Comix] [${contextLabel}] Browser screenshot capture failed for page ${pageNum}: ${error}`, {
+            logger.debug(`[Comix] [${contextLabel}] Screenshot capture failed page ${pageNum}: ${error}`, {
                 service: 'comixScraper',
             });
             return null;
         } finally {
-            await page.evaluate((styleId: string) => {
-                const style = document.getElementById(styleId);
-                if (style) style.remove();
-            }, hideStyleId).catch(() => {});
+            await page
+                .evaluate((styleId: string) => document.getElementById(styleId)?.remove(), hideStyleId)
+                .catch(() => {});
         }
-    }
-
-    private getMissingPages(assets: ComixPageAsset[], expectedPageCount: number): number[] {
-        if (expectedPageCount <= 0) return [];
-        const have = new Set<number>(assets.filter(a => this.hasCompleteAsset(a)).map(a => a.page));
-        const missing: number[] = [];
-        for (let i = 1; i <= expectedPageCount; i++) {
-            if (!have.has(i)) missing.push(i);
-        }
-        return missing;
-    }
-
-    private async dismissPageOverlays(page: any): Promise<void> {
-        await page.evaluate(() => {
-            document.querySelectorAll('a[href="#"][target="_blank"]').forEach(el => el.remove());
-        }).catch(() => {});
     }
 
     private async dismissReaderHint(page: any): Promise<void> {
-        const hint = page.locator('div.rpage-hint[role="dialog"][aria-label="Reader gestures"]');
+        const hint = page.locator('div.rpage-hint[role="dialog"]');
         if (!(await hint.count())) return;
-
         try {
-            const visible = await hint.isVisible().catch(() => false);
-            if (!visible) return;
-
+            if (!(await hint.isVisible().catch(() => false))) return;
             const dontShowAgain = hint.locator('label.rpage-hint__check input[type="checkbox"]');
-            if (await dontShowAgain.count()) {
-                await dontShowAgain.check({ force: true }).catch(() => {});
-            }
-
+            if (await dontShowAgain.count()) await dontShowAgain.check({ force: true }).catch(() => {});
             const gotIt = hint.locator('button.ubtn.ubtn--primary', { hasText: 'Got it' });
-            if (await gotIt.count()) {
-                await gotIt.click({ force: true });
-            } else {
+            if (await gotIt.count()) await gotIt.click({ force: true });
+            else {
                 const backdrop = hint.locator('.rpage-hint__backdrop');
-                if (await backdrop.count()) {
-                    await backdrop.click({ force: true }).catch(() => {});
-                }
+                if (await backdrop.count()) await backdrop.click({ force: true }).catch(() => {});
             }
-
             await hint.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
             await page.waitForTimeout(150);
-            logger.debug('[Comix] Dismissed reader gestures hint', { service: 'comixScraper' });
         } catch {
-            // Non-fatal; capture may still succeed.
+            /* non-fatal */
         }
     }
 
     private async applyReaderDefaults(context: any): Promise<void> {
-        const defaults = ComixScraper.readerDefaultState;
+        const defaults = {
+            readingDirection: 'ttb',
+            pageLayout: 'single',
+            preload: 'all',
+            progressBar: 'left',
+            maxImgWidth: 0,
+            stretch: false,
+        };
         await context.addInitScript((state: typeof defaults) => {
             try {
                 const existingRaw = window.localStorage.getItem('reader.default');
@@ -1671,408 +1625,121 @@ export class ComixScraper implements IChapterScraper {
                         existing = {};
                     }
                 }
-
                 const existingState = (existing && typeof existing === 'object' ? existing.state : {}) || {};
                 const nextValue = {
                     ...existing,
-                    state: {
-                        ...state,
-                        ...existingState,
-                        readingDirection: 'ttb',
-                        preload: 'all',
-                        maxImgWidth: 0,
-                        stretch: false,
-                    },
+                    state: { ...state, ...existingState, readingDirection: 'ttb', preload: 'all', maxImgWidth: 0, stretch: false },
                     version: typeof existing?.version === 'number' ? existing.version : 0,
                 };
                 window.localStorage.setItem('reader.default', JSON.stringify(nextValue));
             } catch {
-                // Ignore localStorage failures.
+                /* ignore */
             }
         }, defaults);
     }
 
-    private async extractGroupStats(page: any): Promise<GroupStats[]> {
-        return page.evaluate(() => {
-            const rows = Array.from(
-                document.querySelectorAll<HTMLElement>('section.mpage__chapters ul.mchap-list li.mchap-item'),
-            );
-            const map = new Map<string, GroupStats>();
-
-            for (const row of rows) {
-                const groupAnchor = row.querySelector<HTMLAnchorElement>('a.mchap-row__group');
-                if (!groupAnchor) continue;
-                const href = groupAnchor.getAttribute('href') || '';
-                if (!href.startsWith('/groups/')) continue;
-
-                const spans = groupAnchor.querySelectorAll('span');
-                const name = spans[spans.length - 1]?.textContent?.trim() || '';
-                if (!name) continue;
-
-                const key = `${href}::${name}`;
-                const existing = map.get(key);
-                if (existing) {
-                    existing.chapterCount += 1;
-                } else {
-                    map.set(key, { href, name, chapterCount: 1 });
-                }
-            }
-
-            return Array.from(map.values());
-        });
-    }
-
-    private async selectGroupFilter(page: any, groupName: string): Promise<void> {
-        const groupSection = page.locator('div.fdrop.mpage__group');
-        if (!(await groupSection.count())) {
-            return;
-        }
-
-        const trigger = groupSection.locator('button.ubtn.ubtn--soft').first();
-        if (!(await trigger.count())) {
-            logger.debug('[Comix] No group filter button on title page, skipping group selection', { service: 'comixScraper' });
-            return;
-        }
-
-        await this.dismissPageOverlays(page);
-
-        try {
-            await trigger.click({ force: true, timeout: 10000 });
-        } catch (error) {
-            logger.warn(`[Comix] Group filter click failed for "${groupName}", continuing with current list: ${error}`, {
-                service: 'comixScraper',
-            });
-            return;
-        }
-
-        const menu = page.locator('div.fdrop__pop.fdrop__pop--menu');
-        await menu.waitFor({ state: 'visible', timeout: 5000 });
-
-        const option = page
-            .locator('div.fdrop__pop.fdrop__pop--menu button, div.fdrop__pop.fdrop__pop--menu a')
-            .filter({ hasText: groupName })
-            .first();
-
-        if (await option.count()) {
-            await option.click();
-            await page.waitForTimeout(700);
-            await page.waitForSelector('section.mpage__chapters ul.mchap-list li.mchap-item', { timeout: 10000 });
-        }
-    }
-
-    private async collectPaginatedChapters(page: any): Promise<Array<{ url: string; title: string; number: string; isSpecial: boolean; specialType?: string }>> {
-        const allRows: Array<{ url: string; title: string; number: string; isSpecial: boolean; specialType?: string }> = [];
-        const maxPages = 500;
-
-        for (let pageIndex = 1; pageIndex <= maxPages; pageIndex++) {
-            const rows = await page.evaluate(() => {
-                const chapterRows = Array.from(
-                    document.querySelectorAll<HTMLElement>('section.mpage__chapters ul.mchap-list li.mchap-item'),
-                );
-
-                return chapterRows
-                    .map(row => {
-                        const primary = row.querySelector<HTMLAnchorElement>('a.mchap-row__primary');
-                        if (!primary) return null;
-                        const href = primary.getAttribute('href') || '';
-                        if (!href) return null;
-                        const chapterLabel =
-                            row.querySelector<HTMLElement>('span.mchap-row__ch')?.textContent?.trim() ||
-                            primary.textContent?.trim() ||
-                            '';
-                        return {
-                            href,
-                            label: chapterLabel,
-                        };
-                    })
-                    .filter((v): v is { href: string; label: string } => !!v);
-            });
-
-            for (const row of rows) {
-                const parsed = ChapterNumberParser.parse(row.label);
-                allRows.push({
-                    url: row.href.startsWith('http') ? row.href : new URL(row.href, SITE_BASE).href,
-                    title: parsed.title,
-                    number: parsed.number,
-                    isSpecial: parsed.isSpecial,
-                    specialType: parsed.specialType,
-                });
-            }
-
-            const nextButton = page
-                .locator('div.mchap-foot nav.npager button.npager__nav[aria-label="Next page"]')
-                .first();
-
-            if (!(await nextButton.count())) {
-                break;
-            }
-
-            const isDisabled = await nextButton.evaluate((el: HTMLButtonElement) => {
-                return (
-                    !!el.disabled ||
-                    el.getAttribute('aria-disabled') === 'true' ||
-                    el.classList.contains('is-disabled')
-                );
-            });
-
-            if (isDisabled) {
-                break;
-            }
-
-            const firstRowHrefBefore = await page.evaluate(() => {
-                const first = document.querySelector<HTMLAnchorElement>(
-                    'section.mpage__chapters ul.mchap-list li.mchap-item a.mchap-row__primary',
-                );
-                return first?.getAttribute('href') || '';
-            });
-
-            let advanced = false;
-            try {
-                await nextButton.scrollIntoViewIfNeeded();
-                await nextButton.click({ force: true, timeout: 5000 });
-                advanced = true;
-            } catch {
-                try {
-                    advanced = await page.evaluate(() => {
-                        const btn = document.querySelector<HTMLButtonElement>(
-                            'div.mchap-foot nav.npager button.npager__nav[aria-label="Next page"]',
-                        );
-                        if (!btn) return false;
-                        btn.click();
-                        return true;
-                    });
-                } catch {
-                    advanced = false;
-                }
-            }
-
-            if (!advanced) {
-                logger.warn('[Comix] Failed to advance chapter list pagination; stopping at current page', {
-                    service: 'comixScraper',
-                });
-                break;
-            }
-
-            await page.waitForFunction(
-                (prevHref: string) => {
-                    const first = document.querySelector<HTMLAnchorElement>(
-                        'section.mpage__chapters ul.mchap-list li.mchap-item a.mchap-row__primary',
-                    );
-                    const currentHref = first?.getAttribute('href') || '';
-                    return !!currentHref && currentHref !== prevHref;
-                },
-                firstRowHrefBefore,
-                { timeout: 10000 },
-            ).catch(() => {});
-            await page.waitForTimeout(500);
-            await page.waitForSelector('section.mpage__chapters ul.mchap-list li.mchap-item', { timeout: 10000 });
-        }
-
-        return allRows;
-    }
-
-    private mergeChaptersInto(
-        target: Map<string, { url: string; title: string; number: string; isSpecial: boolean; specialType?: string }>,
-        chapters: Array<{ url: string; title: string; number: string; isSpecial: boolean; specialType?: string }>,
-    ): number {
-        let added = 0;
-        for (const chapter of this.dedupeAndSortChapters(chapters)) {
-            if (!target.has(chapter.number)) {
-                target.set(chapter.number, chapter);
-                added++;
-            }
-        }
-        return added;
-    }
-
-    private dedupeAndSortChapters(
-        chapters: Array<{ url: string; title: string; number: string; isSpecial: boolean; specialType?: string }>,
-    ): Array<{ url: string; title: string; number: string; isSpecial: boolean; specialType?: string }> {
-        const byNumber = new Map<string, { url: string; title: string; number: string; isSpecial: boolean; specialType?: string }>();
-        for (const chapter of chapters) {
-            if (!byNumber.has(chapter.number)) {
-                byNumber.set(chapter.number, chapter);
-            }
-        }
-
-        return Array.from(byNumber.values()).sort((a, b) => ChapterNumberParser.compareNumbers(a.number, b.number));
-    }
-
-    private async extractHighestChapterNumberFromCurrentPage(page: any): Promise<number> {
-        const labels: string[] = await page.evaluate(() => {
-            const rows = Array.from(
-                document.querySelectorAll<HTMLElement>('section.mpage__chapters ul.mchap-list li.mchap-item'),
-            );
-            return rows
-                .map(row => row.querySelector<HTMLElement>('span.mchap-row__ch')?.textContent?.trim() || '')
-                .filter(Boolean);
-        });
-
-        let max = 0;
-        for (const label of labels) {
-            const parsed = ChapterNumberParser.parse(label);
-            const value = Number(parsed.number);
-            if (Number.isFinite(value) && value > max) {
-                max = value;
-            }
-        }
-
-        return Math.floor(max);
-    }
-
-    private hasCompleteChapterRange(
-        chapters: Array<{ number: string }>,
-        expectedMaxChapter: number,
-    ): boolean {
-        if (expectedMaxChapter < 1) return true;
-
-        const present = new Set<number>();
-        for (const chapter of chapters) {
-            const value = Number(chapter.number);
-            if (Number.isFinite(value) && value >= 1) {
-                present.add(Math.floor(value));
-            }
-        }
-
-        for (let n = 1; n <= expectedMaxChapter; n++) {
-            if (!present.has(n)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private async scrollUntilReaderEnd(page: any): Promise<void> {
-        const maxSteps = 300;
-        let step = 0;
-        let reachedEnd = false;
-
-        while (step < maxSteps) {
-            step += 1;
-            await page.evaluate(() => window.scrollBy(0, Math.max(window.innerHeight, 900)));
-            await page.waitForTimeout(100);
-
-            reachedEnd = await page.evaluate(() => {
-                return !!document.querySelector('div.rpage-chap-ending__nav');
-            });
-            if (reachedEnd) {
-                break;
-            }
-        }
-
-        if (!reachedEnd) {
-            logger.warn('[Comix] Reader end marker not found while scrolling', { service: 'comixScraper' });
-        }
-    }
+    // ---------------------------------------------------------------------
+    // Storage
+    // ---------------------------------------------------------------------
 
     private async downloadPageAssets(
         assets: ComixPageAsset[],
         seriesId: number,
         chapterNumber: string,
         referer: string,
+        expectedPageCount: number,
         contextLabel = 'download',
     ): Promise<string> {
         const storagePrefix = `${seriesId}/${chapterNumber}`;
         const dir = path.join(STORAGE_ROOT, storagePrefix);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
+        const byPage = new Map<number, ComixPageAsset>(assets.map(a => [a.page, a]));
+        const totalPages = expectedPageCount > 0 ? expectedPageCount : assets.length;
 
         const batchSize = 10;
         const maxRetries = 3;
         const retryDelayMs = 1000;
 
-        const downloadOne = async (asset: ComixPageAsset) => {
-            const filePath = path.join(dir, `${asset.page.toString().padStart(2, '0')}.webp`);
-            const assetSource = asset.dataUrl ? (asset.source || 'canvas') : asset.imageUrl ? 'url' : 'none';
-            let lastError: any;
+        const writePlaceholder = (filePath: string) => {
+            try {
+                if (fs.existsSync(PLACEHOLDER_PATH)) fs.copyFileSync(PLACEHOLDER_PATH, filePath);
+            } catch (err: any) {
+                logger.warn(`[Comix] [${contextLabel}] Failed to write placeholder: ${err?.message || err}`, {
+                    service: 'comixScraper',
+                });
+            }
+        };
 
+        const downloadOne = async (pageNum: number) => {
+            const filePath = path.join(dir, `${pageNum.toString().padStart(2, '0')}.webp`);
+            const asset = byPage.get(pageNum);
+            if (!asset) {
+                logger.warn(`[Comix] [${contextLabel}] Page ${pageNum} missing; writing placeholder`, {
+                    service: 'comixScraper',
+                });
+                writePlaceholder(filePath);
+                return;
+            }
+
+            let lastError: any;
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
                 try {
                     if (asset.dataUrl?.startsWith('data:image')) {
-                        const base64Part = asset.dataUrl.split(',')[1] || '';
-                        const raw = Buffer.from(base64Part, 'base64');
-                        logger.debug(
-                            `[Comix] [${contextLabel}] Page ${asset.page}: saving canvas capture (${raw.length} bytes raw, source=${assetSource})`,
-                            { service: 'comixScraper' },
-                        );
-                        // Preserve rendered pages at highest possible fidelity.
-                        const out = await sharp(raw, { failOn: 'none' })
-                            .webp({
-                                lossless: true,
-                                effort: 4,
-                            })
-                            .toBuffer();
+                        const raw = Buffer.from(asset.dataUrl.split(',')[1] || '', 'base64');
+                        const out = await sharp(raw, { failOn: 'none' }).webp({ lossless: true, effort: 4 }).toBuffer();
                         fs.writeFileSync(filePath, out);
-                    } else if (asset.imageUrl) {
-                        const urlSummary = ComixScraper.summarizeAssetUrl(asset.imageUrl);
-                        logger.debug(
-                            `[Comix] [${contextLabel}] Page ${asset.page}: fetching URL (attempt ${attempt}/${maxRetries}, source=${assetSource}, url=${urlSummary})`,
-                            { service: 'comixScraper' },
-                        );
+                        return;
+                    }
+                    if (asset.imageUrl) {
                         const response = await ComixScraper.axiosInstance.get(asset.imageUrl, {
                             responseType: 'arraybuffer',
                             timeout: 30000,
                             headers: {
-                                Referer: referer,
+                                Referer: `${SITE_BASE}/`,
                                 Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
                                 'User-Agent': appConfig.scraper.comix.userAgent,
                             },
                         });
                         const buffer = Buffer.from(response.data as ArrayBuffer);
-                        const contentType = String(response.headers['content-type'] || 'unknown');
-                        const metadata = await sharp(buffer, { failOn: 'none' }).metadata();
-                        const width = metadata.width || 0;
-                        const height = metadata.height || 0;
-                        const dimsOk = ComixScraper.isValidChapterImageDimensions(width, height);
-                        if (!dimsOk) {
-                            if (buffer.length < ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES) {
-                                logger.warn(
-                                    `[Comix] [${contextLabel}] Page ${asset.page}: URL payload too small (${buffer.length}/${ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES} bytes, status=${response.status}, contentType=${contentType}, url=${urlSummary}, payload=${ComixScraper.describeDownloadBuffer(buffer)})`,
-                                    { service: 'comixScraper' },
-                                );
-                                throw new Error(
-                                    `Downloaded image too small for page ${asset.page}: ${buffer.length}/${ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES} bytes (url=${urlSummary}, contentType=${contentType})`,
-                                );
-                            }
-                            logger.warn(
-                                `[Comix] [${contextLabel}] Page ${asset.page}: URL image dimensions too small (${width}x${height}, bytes=${buffer.length}, url=${urlSummary})`,
-                                { service: 'comixScraper' },
-                            );
+                        if (buffer.length < ComixScraper.MIN_IMAGE_DOWNLOAD_BYTES) {
                             throw new Error(
-                                `Downloaded image dimensions too small for page ${asset.page}: ${width}x${height} (need long edge ≥${ComixScraper.MIN_CHAPTER_LONG_EDGE}, short edge ≥${ComixScraper.MIN_CHAPTER_SHORT_EDGE})`,
+                                `Payload too small page ${pageNum}: ${ComixScraper.describeDownloadBuffer(buffer)}`,
                             );
                         }
-                        logger.debug(
-                            `[Comix] [${contextLabel}] Page ${asset.page}: saved URL image (${buffer.length} bytes, ${width}x${height}, contentType=${contentType})`,
-                            { service: 'comixScraper' },
-                        );
-                        // Comix CDN image URLs are already webp; avoid expensive no-op transcode.
+                        const metadata = await sharp(buffer, { failOn: 'none' }).metadata();
+                        if (!ComixScraper.isValidChapterImageDimensions(metadata.width || 0, metadata.height || 0)) {
+                            throw new Error(
+                                `Dimensions too small page ${pageNum}: ${metadata.width}x${metadata.height}`,
+                            );
+                        }
+                        // CDN already serves webp; write through without a no-op transcode.
                         fs.writeFileSync(filePath, buffer);
-                    } else {
-                        throw new Error(`No imageUrl or dataUrl captured for page ${asset.page}`);
+                        return;
                     }
-                    return;
+                    throw new Error(`No imageUrl or dataUrl for page ${pageNum}`);
                 } catch (err: any) {
                     lastError = err;
                     logger.warn(
-                        `[Comix] [${contextLabel}] Page ${asset.page}: download attempt ${attempt}/${maxRetries} failed (source=${assetSource}): ${err?.message || err}`,
+                        `[Comix] [${contextLabel}] Page ${pageNum} attempt ${attempt}/${maxRetries}: ${err?.message || err}`,
                         { service: 'comixScraper' },
                     );
                     if (attempt < maxRetries) {
-                        const delay = retryDelayMs * Math.pow(2, attempt - 1);
-                        await new Promise(resolve => setTimeout(resolve, delay));
+                        await new Promise(resolve => setTimeout(resolve, retryDelayMs * Math.pow(2, attempt - 1)));
                     }
                 }
             }
-
-            throw new Error(`[Comix] Failed to download page ${asset.page}: ${lastError?.message || lastError}`);
+            logger.error(
+                `[Comix] [${contextLabel}] Page ${pageNum} unrecoverable (${lastError?.message || lastError}); placeholder`,
+                { service: 'comixScraper' },
+            );
+            writePlaceholder(filePath);
         };
 
-        for (let start = 0; start < assets.length; start += batchSize) {
-            const chunk = assets.slice(start, Math.min(start + batchSize, assets.length));
-            await Promise.all(chunk.map((asset) => downloadOne(asset)));
+        const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
+        for (let start = 0; start < pageNumbers.length; start += batchSize) {
+            const chunk = pageNumbers.slice(start, start + batchSize);
+            await Promise.all(chunk.map(downloadOne));
         }
 
         return storagePrefix;
