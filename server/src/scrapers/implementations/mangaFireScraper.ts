@@ -8,7 +8,7 @@
  * - Manga pages:   https://mangafire.to/manga/<slug>.<shortId>
  * - Reader pages:  https://mangafire.to/read/<slug>.<shortId>/<lang>/chapter-<n>
  * - Search:        GET /filter?keyword=<q>&vrf=<token>   (HTML; results are `.unit`
- *                  cards linking to /manga/<slug>.<shortId>; VRF from mangaFireVrf.ts)
+ *                  cards linking to /manga/<slug>.<shortId>; VRF from scrapers/lib/mangaFireVrf.ts)
  * - Chapter list:  GET /ajax/read/<shortId>/chapter/<lang>?vrf=<token>
  *                  -> { status, result: { html: "<a data-number=… href=…>…</a>" } }
  *                  VRF input: `<shortId>@chapter@<lang>`.
@@ -40,7 +40,7 @@ import {
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
-import { generateMangaFireVrf } from './mangaFireVrf';
+import { generateMangaFireVrf } from '@/scrapers/lib/mangaFireVrf';
 
 const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const SITE_BASE = appConfig.scraper.mangaFire.baseUrl;
