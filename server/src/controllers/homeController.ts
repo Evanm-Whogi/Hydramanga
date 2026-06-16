@@ -9,6 +9,7 @@ import { getUserSettings } from '@/services/userSettingsService';
 import { getCatalogFilterConditions } from '@/config/contentFilter';
 import { enrichNestedSeriesExtras, enrichSeriesListExtras, seriesCardColumns} from '@/lib/seriesQueries';
 import { badgeService } from '@/services/badgeService';
+import { getThreshold } from '@/lib/periodUtils';
 
 dotenv.config();
 
@@ -20,16 +21,7 @@ const HOME_CACHE_TTL = {
     global: 5 * 60,            // 5 min: Popular Chapters, Most Popular Manga, High Score, Most Followed, Collections, Comments
 };
 
-// Helper function to get date threshold based on period
-export const getThreshold = (period: string) => {
-    const now = new Date();
-    switch (period) {
-        case 'today': return new Date(now.setHours(0, 0, 0, 0));
-        case 'week': return new Date(now.setDate(now.getDate() - 7));
-        case 'month': return new Date(now.setMonth(now.getMonth() - 1));
-        default: return null;
-    }
-};
+
 
 // RECENTLY READ (No caching)
 export const getRecentlyRead = async (req: Request, res: Response) => {

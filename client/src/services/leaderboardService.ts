@@ -1,18 +1,18 @@
 import { apiGet } from '@/lib/api';
-import type { LeaderboardSummary, LeaderboardUserRow } from '@/types/leaderboard';
+import type { LeaderboardPeriod, LeaderboardResponse, LeaderboardSummary, LeaderboardTab } from '@/types/leaderboard';
+
+export const LEADERBOARD_PAGE_SIZE = 50;
 
 export async function getLeaderboardSummary(): Promise<LeaderboardSummary> {
   return apiGet('/leaderboard/summary');
 }
 
-export async function getLeaderboardCommenters(): Promise<{ rows: LeaderboardUserRow[] }> {
-  return apiGet('/leaderboard/commenters?limit=50');
-}
-
-export async function getLeaderboardReaders(): Promise<{ rows: LeaderboardUserRow[] }> {
-  return apiGet('/leaderboard/readers?limit=50');
-}
-
-export async function getLeaderboardStreaks(): Promise<{ rows: LeaderboardUserRow[] }> {
-  return apiGet('/leaderboard/streaks?limit=50');
+export async function getLeaderboard(params: { tab: LeaderboardTab; period?: LeaderboardPeriod; page?: number; limit?: number }): Promise<LeaderboardResponse> {
+  const search = new URLSearchParams({
+    tab: params.tab,
+    period: params.period ?? 'all',
+    page: String(params.page ?? 1),
+    limit: String(params.limit ?? LEADERBOARD_PAGE_SIZE),
+  });
+  return apiGet(`/leaderboard?${search.toString()}`);
 }
