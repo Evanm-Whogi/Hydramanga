@@ -400,7 +400,7 @@ export class AsuraComicScraper implements IChapterScraper {
             return scored.slice(0, limit);
         } catch (error) {
             logger.error(`[AsuraComic] search() failed: ${error}`, { service: 'asuraComicScraper' });
-            return [];
+            throw error;
         } finally {
             await page.close().catch(() => {});
             await context.close().catch(() => {});

@@ -23,6 +23,7 @@ import {
     ScrapedChapter,
     DownloadedChapter,
     MangaSearchResult,
+    MangaSearchResponse,
     SearchOptions,
 } from './interfaces/IChapterScraper';
 import logger from '@/services/loggerService';
@@ -42,11 +43,21 @@ interface ScraperAttempt {
     timestamp: Date;
 }
 
+interface ScraperSourceSearchRow {
+    scraperId: string;
+    scraperName: string;
+    priority: number;
+    results: MangaSearchResult[];
+    error?: string;
+    summary?: string;
+}
+
 /**
  * Scraper Manager
  * Manages all registered scrapers and handles fallback logic
  */
 export class ScraperManager {
+    private static readonly SOURCE_SEARCH_TIMEOUT_MS = 20_000;
     private scrapers: IChapterScraper[] = [];
     private attemptHistory: Map<string, ScraperAttempt[]> = new Map();
 
@@ -95,7 +106,9 @@ export class ScraperManager {
      * Get enabled scrapers only (sorted by priority)
      */
     getEnabledScrapers(): IChapterScraper[] {
-        return this.scrapers.filter(s => s.getMetadata().enabled);
+        return this.scrapers
+            .filter(s => s.getMetadata().enabled)
+            .sort((a, b) => a.getMetadata().priority - b.getMetadata().priority);
     }
 
     /**
@@ -606,41 +619,103 @@ export class ScraperManager {
      * @param mangaName - Primary manga name / search query.
      * @param options - Search options (romanized title, native title, secondary titles, etc.).
      * @param limitPerSource - Max results per scraper (default 10).
-     * @returns Array of { scraperId, scraperName, results } for each enabled scraper.
+     * @returns Array of { scraperId, scraperName, results, error? } for each enabled scraper.
      */
-    async searchAllSources(mangaName: string, options?: SearchOptions, limitPerSource = 10): Promise<Array<{ scraperId: string; scraperName: string; results: MangaSearchResult[] }>> {
-        const enabledScrapers = this.getEnabledScrapers();
+    async searchAllSources(mangaName: string, options?: SearchOptions, limitPerSource = 10): Promise<ScraperSourceSearchRow[]> {
+        let enabledScrapers: IChapterScraper[] = [];
+        try {
+            enabledScrapers = this.getEnabledScrapers();
+            const settled = await Promise.allSettled(
+                enabledScrapers.map((scraper) => this.searchOneSource(scraper, mangaName, options, limitPerSource))
+            );
 
-        const settled = await Promise.allSettled(
-            enabledScrapers.map(async (scraper): Promise<{ scraperId: string; scraperName: string; results: MangaSearchResult[] }> => {
-                const meta = scraper.getMetadata();
-                try {
-                    const canHandle = await scraper.canHandle(mangaName, options?.seriesId);
-                    if (!canHandle) {
-                        return { scraperId: meta.id, scraperName: meta.name, results: [] };
-                    }
-                    const results = await scraper.search(mangaName, options, limitPerSource);
-                    return { scraperId: meta.id, scraperName: meta.name, results: results || [] };
-                } catch (err) {
-                    logger.warn(
-                        `Scraper ${meta.name} search failed: ${err instanceof Error ? err.message : err}`,
-                        { service: 'scraperManager' }
-                    );
-                    return { scraperId: meta.id, scraperName: meta.name, results: [] };
+            return settled.map((result, index) => {
+                if (result.status === 'fulfilled') return result.value;
+                return { ...this.emptySourceResult(enabledScrapers[index]), error: this.formatSourceSearchError(result.reason) };
+            }).sort((a, b) => a.priority - b.priority);
+        } catch (err) {
+            logger.error(`searchAllSources failed: ${err instanceof Error ? err.message : err}`, { service: 'scraperManager' });
+            if (!enabledScrapers.length) enabledScrapers = this.scrapers;
+            return enabledScrapers.map((scraper) => ({
+                ...this.emptySourceResult(scraper),
+                error: this.formatSourceSearchError(err),
+            })).sort((a, b) => a.priority - b.priority);
+        }
+    }
+
+    private withSourceSearchDeadline<T>(promise: Promise<T>): Promise<T> {
+        return new Promise<T>((resolve, reject) => {
+            const timer = setTimeout(() => {
+                reject(new Error(`search timed out after ${ScraperManager.SOURCE_SEARCH_TIMEOUT_MS}ms`));
+            }, ScraperManager.SOURCE_SEARCH_TIMEOUT_MS);
+            promise.then(
+                (value) => {
+                    clearTimeout(timer);
+                    resolve(value);
+                },
+                (err) => {
+                    clearTimeout(timer);
+                    reject(err);
                 }
-            })
-        );
-
-        return settled.map((result) => {
-            if (result.status === 'fulfilled') return result.value;
-            const scraper = enabledScrapers[settled.indexOf(result)];
-            const meta = scraper?.getMetadata();
-            return {
-                scraperId: meta?.id ?? 'unknown',
-                scraperName: meta?.name ?? 'Unknown',
-                results: [] as MangaSearchResult[],
-            };
+            );
         });
+    }
+
+    private formatSourceSearchError(err: unknown): string {
+        return `search() failed: ${err}`;
+    }
+
+    private buildSourceSearchSummary(query: string, results: MangaSearchResult[]): string {
+        const q = query.trim() || '(empty)';
+        if (!results.length) return `Search "${q}" -> 0 results`;
+        const top = [...results].sort((a, b) => b.score - a.score)[0];
+        const title = top.title?.trim() || '(untitled)';
+        return `Search "${q}" -> ${results.length} result(s); top: "${title}" (score: ${top.score})`;
+    }
+
+    private normalizeSearchResponse(response: MangaSearchResult[] | MangaSearchResponse): { results: MangaSearchResult[]; summary?: string } {
+        if (Array.isArray(response)) return { results: response };
+        return { results: response.results || [], summary: response.summary };
+    }
+
+    private emptySourceResult(scraper?: IChapterScraper): ScraperSourceSearchRow {
+        try {
+            const meta = scraper?.getMetadata();
+            return { scraperId: meta?.id ?? 'unknown', scraperName: meta?.name ?? 'Unknown', priority: meta?.priority ?? 999, results: [] };
+        } catch {
+            return { scraperId: 'unknown', scraperName: 'Unknown', priority: 999, results: [] };
+        }
+    }
+
+    private async searchOneSource(scraper: IChapterScraper, mangaName: string, options: SearchOptions | undefined, limitPerSource: number): Promise<ScraperSourceSearchRow> {
+        let scraperId = 'unknown';
+        let scraperName = 'Unknown';
+        let scraperPriority = 999;
+        try {
+            const meta = scraper.getMetadata();
+            scraperId = meta.id;
+            scraperName = meta.name;
+            scraperPriority = meta.priority;
+
+            const canHandle = await scraper.canHandle(mangaName, options?.seriesId);
+            if (!canHandle) {
+                return { scraperId, scraperName, priority: scraperPriority, results: [], summary: `Skipped "${mangaName}" (scraper cannot handle this title)` };
+            }
+
+            const response = await this.withSourceSearchDeadline(scraper.search(mangaName, options, limitPerSource));
+            const { results: normalized, summary: scraperSummary } = this.normalizeSearchResponse(response);
+            return {
+                scraperId,
+                scraperName,
+                priority: scraperPriority,
+                results: normalized,
+                summary: scraperSummary ?? this.buildSourceSearchSummary(mangaName, normalized),
+            };
+        } catch (err) {
+            const error = this.formatSourceSearchError(err);
+            logger.warn(`Scraper ${scraperName} search failed: ${error}`, { service: 'scraperManager' });
+            return { scraperId, scraperName, priority: scraperPriority, results: [], error };
+        }
     }
 
     /**

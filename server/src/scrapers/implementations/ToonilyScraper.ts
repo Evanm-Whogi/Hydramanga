@@ -389,7 +389,7 @@ export class ToonilyScraper implements IChapterScraper {
             return scored.slice(0, limit).map(({ href, title, score }) => ({ href, title, score }));
         } catch (error) {
             logger.error(`[Toonily] search() failed: ${error}`, { service: 'toonilyScraper' });
-            return [];
+            throw error;
         } finally {
             await page.close().catch(() => {});
             await context.close().catch(() => {});

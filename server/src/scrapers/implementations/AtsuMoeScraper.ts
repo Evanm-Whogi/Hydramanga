@@ -354,7 +354,7 @@ export class AtsuMoeScraper implements IChapterScraper {
                 `[AtsuMoe] search() failed: ${error}`,
                 { service: 'atsuMoeScraper' }
             );
-            return [];
+            throw error;
         }
     }
 

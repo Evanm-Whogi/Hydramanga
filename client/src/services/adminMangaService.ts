@@ -9,13 +9,16 @@ export interface ScraperSearchResult {
 export interface ScraperSourceResult {
   scraperId: string;
   scraperName: string;
+  priority: number;
   results: ScraperSearchResult[];
+  error?: string;
+  summary?: string;
 }
 
 /** Admin: search all scrapers for a manga (by series id, optional query override) */
 export async function adminScraperSearch(mangaId: number, queryOverride?: string): Promise<{ sources: ScraperSourceResult[] }> {
   const qs = queryOverride ? `?q=${encodeURIComponent(queryOverride)}` : '';
-  return apiGet(`/admin/manga/${mangaId}/scraper-search${qs}`);
+  return apiGet(`/admin/manga/${mangaId}/scraper-search${qs}`, { timeoutMs: 35_000 });
 }
 
 /** Admin: set the scraper source for a series (next scan will use this source) */

@@ -52,6 +52,12 @@ export interface MangaSearchResult {
     score: number;
 }
 
+/** Optional admin source-search payload with a human-readable summary line. */
+export interface MangaSearchResponse {
+    results: MangaSearchResult[];
+    summary?: string;
+}
+
 /**
  * Options for manga search
  */
@@ -142,7 +148,7 @@ export interface IChapterScraper {
         query: string,
         options?: SearchOptions,
         limit?: number
-    ): Promise<MangaSearchResult[]>;
+    ): Promise<MangaSearchResult[] | MangaSearchResponse>;
 
     /**
      * Scrape chapter list from manga page

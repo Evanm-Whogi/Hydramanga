@@ -359,7 +359,7 @@ export class MangaDexScraper implements IChapterScraper {
             return results.slice(0, limit);
         } catch (error) {
             logger.error(`[MangaDex] search() failed: ${error}`, { service: 'mangaDexScraper' });
-            return [];
+            throw error;
         }
     }
 

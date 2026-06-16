@@ -182,6 +182,9 @@ const KAGANE_CF_HELP = 'Set KAGANE_FLARESOLVERR_URL (or FLARESOLVERR_URL) for au
 
 function parseFlareSolverrJsonPayload(raw: string): unknown {
     const trimmed = raw.trim();
+    if (!trimmed) {
+        throw new Error('FlareSolverr returned empty response body');
+    }
     try {
         return JSON.parse(trimmed);
     } catch {
@@ -190,7 +193,7 @@ function parseFlareSolverrJsonPayload(raw: string): unknown {
             const inner = preMatch[1].replace(/\\/g, '').trim();
             return JSON.parse(inner);
         }
-        throw new Error('Could not parse FlareSolverr response body');
+        throw new Error(`FlareSolverr response was not JSON: ${trimmed.slice(0, 200)}`);
     }
 }
 
@@ -231,20 +234,6 @@ export class KaganeScraper implements IChapterScraper {
         maxSockets: 50,
         maxFreeSockets: 10,
         timeout: 30000,
-    });
-
-    private static readonly axiosInstance = axios.create({
-        timeout: appConfig.scraper.kagane.timeout,
-        httpAgent: KaganeScraper.httpAgent,
-        httpsAgent: KaganeScraper.httpsAgent,
-        headers: {
-            Accept: 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Content-Type': 'application/json',
-            Origin: SITE_BASE,
-            Referer: `${SITE_BASE}/`,
-            'User-Agent': appConfig.scraper.kagane.userAgent,
-        },
     });
 
     private static async getBrowser() {
@@ -298,29 +287,118 @@ export class KaganeScraper implements IChapterScraper {
         return [...baseVariants, ...normalizedExtras];
     }
 
-    private async searchApi(query: string, limit: number): Promise<KaganeSearchItem[]> {
+    private kaganeApiHeaders(session: KaganeIntegritySession, method: 'GET' | 'POST' = 'POST', cfClearance?: string): Record<string, string> {
+        const headers: Record<string, string> = {
+            Accept: 'application/json, text/plain, */*',
+            Origin: SITE_BASE,
+            Referer: `${SITE_BASE}/`,
+            'User-Agent': session.userAgent,
+            'X-Integrity-Token': session.token,
+        };
+        if (cfClearance) {
+            headers.Cookie = `cf_clearance=${cfClearance}`;
+        }
+        if (method === 'POST') {
+            headers['Content-Type'] = 'application/json';
+        }
+        return headers;
+    }
+
+    private async resolveCfClearance(): Promise<string | undefined> {
+        const cached = KaganeScraper.cfSessionCache;
+        if (cached && Date.now() < cached.expiresAt - 60_000) {
+            return cached.cfClearance;
+        }
+
+        const envClearance = process.env.KAGANE_CF_CLEARANCE?.trim();
+        if (envClearance) return envClearance;
+
+        if (appConfig.scraper.kagane.flareSolverrUrl) {
+            return (await this.getCfSession()).cfClearance;
+        }
+
+        return undefined;
+    }
+
+    private invalidateKaganeSessions(): void {
+        this.invalidateIntegritySession();
+        KaganeScraper.cfSessionCache = null;
+        KaganeScraper.cfSessionPromise = null;
+    }
+
+    private isCloudflareBlock(status: number, body: string): boolean {
+        return status === 403 && /just a moment|cloudflare/i.test(body);
+    }
+
+    private async searchApi(query: string, limit: number, allowRetry = true): Promise<KaganeSearchItem[]> {
         const q = (query || '').trim();
         if (!q) return [];
 
-        try {
-            const response = await KaganeScraper.axiosInstance.post<KaganeSearchResponse>(
-                `${API_BASE}/api/v2/search/series?page=0&size=${Math.max(limit, 12)}`,
-                { title: q }
-            );
-            return response.data?.content || [];
-        } catch (error: any) {
-            logger.debug(
-                `[Kagane] searchApi failed for "${query}": ${error?.message || error}`,
-                { service: 'kaganeScraper' }
-            );
-            return [];
+        const session = await this.getIntegritySession();
+        const cfClearance = await this.resolveCfClearance();
+        const response = await axios.post<KaganeSearchResponse>(
+            `${API_BASE}/api/v2/search/series?page=0&size=${Math.max(limit, 12)}`,
+            { title: q },
+            {
+                timeout: appConfig.scraper.kagane.timeout,
+                httpAgent: KaganeScraper.httpAgent,
+                httpsAgent: KaganeScraper.httpsAgent,
+                headers: this.kaganeApiHeaders(session, 'POST', cfClearance),
+                validateStatus: () => true,
+            }
+        );
+
+        if ((response.status === 401 || response.status === 403) && allowRetry) {
+            const body = typeof response.data === 'string' ? response.data : JSON.stringify(response.data || '');
+            if (this.isCloudflareBlock(response.status, body)) {
+                logger.warn('[Kagane] Search API blocked by Cloudflare — refreshing CF and integrity session', { service: 'kaganeScraper' });
+                this.invalidateKaganeSessions();
+                return this.searchApi(query, limit, false);
+            }
+            logger.warn(`[Kagane] Search API returned ${response.status} — refreshing integrity session`, { service: 'kaganeScraper' });
+            this.invalidateIntegritySession();
+            return this.searchApi(query, limit, false);
         }
+
+        if (response.status < 200 || response.status >= 300) {
+            const body = typeof response.data === 'string' ? response.data : JSON.stringify(response.data || '');
+            throw new Error(`Search API failed (${response.status}): ${body.slice(0, 300)}`);
+        }
+
+        return response.data?.content || [];
     }
 
-    private async fetchSeries(seriesId: string): Promise<KaganeSeriesResponse> {
-        const response = await KaganeScraper.axiosInstance.get<KaganeSeriesResponse>(
-            `${API_BASE}/api/v2/series/${seriesId}`
+    private async fetchSeries(seriesId: string, allowRetry = true): Promise<KaganeSeriesResponse> {
+        const session = await this.getIntegritySession();
+        const cfClearance = await this.resolveCfClearance();
+        const response = await axios.get<KaganeSeriesResponse>(
+            `${API_BASE}/api/v2/series/${seriesId}`,
+            {
+                timeout: appConfig.scraper.kagane.timeout,
+                httpAgent: KaganeScraper.httpAgent,
+                httpsAgent: KaganeScraper.httpsAgent,
+                headers: this.kaganeApiHeaders(session, 'GET', cfClearance),
+                validateStatus: () => true,
+            }
         );
+
+        if ((response.status === 401 || response.status === 403) && allowRetry) {
+            const body = typeof response.data === 'string' ? response.data : JSON.stringify(response.data || '');
+            if (this.isCloudflareBlock(response.status, body)) {
+                logger.warn('[Kagane] Series API blocked by Cloudflare — refreshing CF and integrity session', { service: 'kaganeScraper' });
+                this.invalidateKaganeSessions();
+                return this.fetchSeries(seriesId, false);
+            }
+            logger.warn(`[Kagane] Series API returned ${response.status} — refreshing integrity session`, { service: 'kaganeScraper' });
+            this.invalidateIntegritySession();
+            return this.fetchSeries(seriesId, false);
+        }
+
+        if (response.status < 200 || response.status >= 300) {
+            const body = typeof response.data === 'string' ? response.data : JSON.stringify(response.data || '');
+            throw new Error(`Series API failed (${response.status}): ${body.slice(0, 300)}`);
+        }
+
         if (!response.data?.series_id) {
             throw new Error(`Invalid series response for ${seriesId}`);
         }
@@ -378,7 +456,7 @@ export class KaganeScraper implements IChapterScraper {
                 .slice(0, limit);
         } catch (error) {
             logger.error(`[Kagane] search() failed: ${error}`, { service: 'kaganeScraper' });
-            return [];
+            throw error;
         }
     }
 
@@ -690,6 +768,7 @@ export class KaganeScraper implements IChapterScraper {
 
     private async fetchBookManifest(bookId: string, allowRetry = true): Promise<KaganeBookResponse> {
         const session = await this.getIntegritySession();
+        const cfClearance = await this.resolveCfClearance();
         const response = await axios.post<KaganeBookResponse>(
             `${API_BASE}/api/v2/books/${bookId}?is_datasaver=false`,
             {},
@@ -697,20 +776,19 @@ export class KaganeScraper implements IChapterScraper {
                 timeout: appConfig.scraper.kagane.timeout,
                 httpAgent: KaganeScraper.httpAgent,
                 httpsAgent: KaganeScraper.httpsAgent,
-                headers: {
-                    Accept: 'application/json',
-                    'Content-Type': 'application/json',
-                    Origin: SITE_BASE,
-                    Referer: `${SITE_BASE}/`,
-                    'User-Agent': session.userAgent,
-                    'X-Integrity-Token': session.token,
-                },
+                headers: this.kaganeApiHeaders(session, 'POST', cfClearance),
                 validateStatus: () => true,
             }
         );
 
-        if (response.status === 401 && allowRetry) {
-            logger.warn('[Kagane] Books API returned 401 — refreshing integrity session', { service: 'kaganeScraper' });
+        if ((response.status === 401 || response.status === 403) && allowRetry) {
+            const body = typeof response.data === 'string' ? response.data : JSON.stringify(response.data || '');
+            if (this.isCloudflareBlock(response.status, body)) {
+                logger.warn('[Kagane] Books API blocked by Cloudflare — refreshing CF and integrity session', { service: 'kaganeScraper' });
+                this.invalidateKaganeSessions();
+                return this.fetchBookManifest(bookId, false);
+            }
+            logger.warn(`[Kagane] Books API returned ${response.status} — refreshing integrity session`, { service: 'kaganeScraper' });
             this.invalidateIntegritySession();
             return this.fetchBookManifest(bookId, false);
         }

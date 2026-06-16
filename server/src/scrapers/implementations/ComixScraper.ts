@@ -42,6 +42,7 @@ import {
     ScrapedChapter,
     DownloadedChapter,
     MangaSearchResult,
+    MangaSearchResponse,
     SearchOptions,
     ScraperMetadata,
 } from '../interfaces/IChapterScraper';
@@ -606,7 +607,14 @@ export class ComixScraper implements IChapterScraper {
         return true;
     }
 
-    private async searchViaBrowser(session: ComixCfSession, query: string, limit: number): Promise<MangaSearchResult[]> {
+    private formatComixSearchSummary(sourceLine: string, query: string, results: MangaSearchResult[]): string {
+        const top = [...results].sort((a, b) => b.score - a.score)[0];
+        if (!top) return `${sourceLine} for "${query}"`;
+        const title = top.title?.trim() || '(untitled)';
+        return `${sourceLine} for "${query}"; top: "${title}" (score: ${top.score})`;
+    }
+
+    private async searchViaBrowser(session: ComixCfSession, query: string, limit: number): Promise<MangaSearchResponse> {
         const browser = await ComixScraper.getBrowser();
         const context = await browser.newContext({
             userAgent: session.userAgent,
@@ -658,14 +666,16 @@ export class ComixScraper implements IChapterScraper {
                 logger.info(`[Comix] Browse API returned ${capturedItems.length} result(s) for "${query}"`, {
                     service: 'comixScraper',
                 });
-                return mapSearchResults(capturedItems, query, limit, { trustSiteRanking: true });
+                const results = mapSearchResults(capturedItems, query, limit, { trustSiteRanking: true });
+                return { results, summary: this.formatComixSearchSummary(`Browse API returned ${capturedItems.length} result(s)`, query, results) };
             }
 
             const rows = await this.extractBrowseRows(page);
             logger.info(`[Comix] DOM browse returned ${rows.length} result(s) for "${query}"`, {
                 service: 'comixScraper',
             });
-            return mapSearchResults(rows.map(r => ({ title: r.title, url: r.href })), query, limit);
+            const results = mapSearchResults(rows.map(r => ({ title: r.title, url: r.href })), query, limit);
+            return { results, summary: this.formatComixSearchSummary(`DOM browse returned ${rows.length} result(s)`, query, results) };
         } finally {
             await page.close().catch(() => {});
             await context.close().catch(() => {});
@@ -673,9 +683,9 @@ export class ComixScraper implements IChapterScraper {
         }
     }
 
-    private async searchComix(query: string, limit: number): Promise<MangaSearchResult[]> {
+    private async searchComix(query: string, limit: number): Promise<MangaSearchResponse> {
         const q = (query || '').trim();
-        if (!q) return [];
+        if (!q) return { results: [], summary: `Search "${q}" -> 0 results` };
 
         try {
             let session = await this.getCfSession();
@@ -696,7 +706,7 @@ export class ComixScraper implements IChapterScraper {
             }
         } catch (error) {
             logger.error(`[Comix] searchComix() failed for "${q}": ${error}`, { service: 'comixScraper' });
-            return [];
+            throw error;
         }
     }
 
@@ -721,7 +731,7 @@ export class ComixScraper implements IChapterScraper {
 
         for (const variant of variants) {
             try {
-                const scored = await this.searchComix(variant, 6);
+                const { results: scored } = await this.searchComix(variant, 6);
                 if (!scored.length) continue;
 
                 const best = scored[0];
@@ -741,7 +751,7 @@ export class ComixScraper implements IChapterScraper {
         return bestOverall;
     }
 
-    async search(query: string, _options?: SearchOptions, limit = 10): Promise<MangaSearchResult[]> {
+    async search(query: string, _options?: SearchOptions, limit = 10): Promise<MangaSearchResponse> {
         return this.searchComix(query, Math.min(Math.max(limit, 1), 20));
     }
 

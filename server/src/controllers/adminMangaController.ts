@@ -36,12 +36,17 @@ export async function adminScraperSearch(req: Request, res: Response, next: Next
         if (!mangaName) return res.status(400).json({ error: 'No search query (provide ?q= or ensure series has a title)' });
         
         const secondaryTitles = extractSecondaryTitleStrings(row.secondaryTitles);
-        const sources = await scraperManager.searchAllSources(mangaName, {
-            seriesId: id,
-            romanizedTitle: row.romanizedTitle || undefined,
-            nativeTitle: row.nativeTitle || undefined,
-            secondaryTitles: secondaryTitles.length > 0 ? secondaryTitles : undefined,
-        }, 10);
+        let sources: Awaited<ReturnType<typeof scraperManager.searchAllSources>> = [];
+        try {
+            sources = await scraperManager.searchAllSources(mangaName, {
+                seriesId: id,
+                romanizedTitle: row.romanizedTitle || undefined,
+                nativeTitle: row.nativeTitle || undefined,
+                secondaryTitles: secondaryTitles.length > 0 ? secondaryTitles : undefined,
+            }, 10);
+        } catch (error) {
+            logger.error(`Admin scraper search failed: ${(error as Error).message}`, { service: 'adminMangaController' });
+        }
 
         return res.json({ sources });
     } catch (error) {

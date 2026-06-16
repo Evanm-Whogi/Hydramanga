@@ -34,6 +34,7 @@ import {
     ScrapedChapter,
     DownloadedChapter,
     MangaSearchResult,
+    MangaSearchResponse,
     SearchOptions,
     ScraperMetadata,
 } from '../interfaces/IChapterScraper';
@@ -286,9 +287,9 @@ export class MangaFireScraper implements IChapterScraper {
         return results;
     }
 
-    private async searchMangaFire(query: string, limit: number): Promise<MangaSearchResult[]> {
+    private async searchMangaFire(query: string, limit: number): Promise<MangaSearchResponse> {
         const q = (query || '').trim();
-        if (!q) return [];
+        if (!q) return { results: [], summary: `Search "${q}" -> 0 results` };
         try {
             const response = await MangaFireScraper.axiosInstance.get(`${SITE_BASE}/filter`, {
                 params: { keyword: q, vrf: generateMangaFireVrf(q) },
@@ -300,16 +301,21 @@ export class MangaFireScraper implements IChapterScraper {
             const rows = this.parseSearchHtml(String(response.data || ''));
             logger.info(`[MangaFire] Search "${q}" -> ${rows.length} row(s)`, { service: 'mangaFireScraper' });
 
-            return rows
+            const results = rows
                 .map(r => ({ href: r.href, title: r.title, score: calculateTitleSimilarity(r.title, q) }))
                 .filter(r => r.href && r.title && r.score >= 50)
                 .sort((a, b) => b.score - a.score)
                 .slice(0, limit);
+            const top = results[0];
+            const summary = top
+                ? `Search "${q}" -> ${rows.length} row(s); top: "${top.title}" (score: ${top.score})`
+                : `Search "${q}" -> ${rows.length} row(s)`;
+            return { results, summary };
         } catch (error: any) {
             logger.error(`[MangaFire] searchMangaFire() failed for "${q}": ${error?.message || error}`, {
                 service: 'mangaFireScraper',
             });
-            return [];
+            throw error;
         }
     }
 
@@ -334,7 +340,7 @@ export class MangaFireScraper implements IChapterScraper {
 
         for (const variant of variants) {
             try {
-                const scored = await this.searchMangaFire(variant, 6);
+                const { results: scored } = await this.searchMangaFire(variant, 6);
                 if (!scored.length) continue;
                 const best = scored[0];
                 logger.info(`[MangaFire] Best for "${variant}": "${best.title}" (${best.score})`, {
@@ -352,7 +358,7 @@ export class MangaFireScraper implements IChapterScraper {
         return bestOverall;
     }
 
-    async search(query: string, _options?: SearchOptions, limit = 10): Promise<MangaSearchResult[]> {
+    async search(query: string, _options?: SearchOptions, limit = 10): Promise<MangaSearchResponse> {
         return this.searchMangaFire(query, Math.min(Math.max(limit, 1), 20));
     }
 

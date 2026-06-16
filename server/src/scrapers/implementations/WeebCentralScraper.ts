@@ -21,6 +21,7 @@ import {
     ScrapedChapter,
     DownloadedChapter,
     MangaSearchResult,
+    MangaSearchResponse,
     SearchOptions,
     ScraperMetadata,
 } from '../interfaces/IChapterScraper';
@@ -166,16 +167,26 @@ export class WeebCentralScraper implements IChapterScraper {
         }
     }
 
-    async search(query: string, options?: SearchOptions, limit = 10): Promise<MangaSearchResult[]> {
+    async search(query: string, options?: SearchOptions, limit = 10): Promise<MangaSearchResponse> {
         try {
-            const results = await WeebCentralSearcher.queryAPI((query || '').trim());
-            return results
+            const q = (query || '').trim();
+            const results = await WeebCentralSearcher.queryAPI(q);
+            const filtered = results
                 .filter((r) => r.score > 0)
                 .slice(0, limit)
                 .map((r) => ({ href: r.href, title: r.title, score: r.score }));
+            let summary: string;
+            if (!results.length) {
+                summary = `Search "${q}" -> 0 results`;
+            } else {
+                summary = `Top result for "${q}": "${results[0].title}" (score: ${results[0].score}); ${results.length} raw result(s)`;
+                if (!filtered.length) summary += '; 0 passed score filter';
+                else if (filtered.length < results.length) summary += `; ${filtered.length} shown`;
+            }
+            return { results: filtered, summary };
         } catch (error) {
             logger.error(`[WeebCentral] search() failed: ${error}`, { service: 'weebCentralScraper' });
-            return [];
+            throw error;
         }
     }
 

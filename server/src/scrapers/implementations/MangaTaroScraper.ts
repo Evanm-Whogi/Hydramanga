@@ -366,7 +366,7 @@ export class MangaTaroScraper implements IChapterScraper {
             return scored.slice(0, limit);
         } catch (error) {
             logger.error(`[MangaTaro] search() failed: ${error}`, { service: 'mangaTaroScraper' });
-            return [];
+            throw error;
         }
     }
 

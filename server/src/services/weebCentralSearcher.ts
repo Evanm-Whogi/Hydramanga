@@ -97,12 +97,12 @@ export class WeebCentralSearcher {
             // Parse HTML response
             const results = this.parseSearchResults(response.data, searchTerm);
 
-            console.log(`[WEEB_SEARCH] Found ${results.length} results for "${searchTerm}"`);
+            // console.log(`[WEEB_SEARCH] Found ${results.length} results for "${searchTerm}"`);
 
             if (results.length > 0) {
-                console.log(
-                    `[WEEB_SEARCH] Top result: "${results[0].title}" (score: ${results[0].score})`
-                );
+                // console.log(
+                //     `[WEEB_SEARCH] Top result: "${results[0].title}" (score: ${results[0].score})`
+                // );
                 logger.info(
                     `[WEEB_SEARCH] Top result for "${searchTerm}": "${results[0].title}" (score: ${results[0].score})`,
                     { service: 'weebCentralSearcher' }

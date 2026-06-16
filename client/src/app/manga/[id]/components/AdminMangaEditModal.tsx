@@ -146,7 +146,8 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
     setSources(null);
     try {
       const res = await adminScraperSearch(mangaId, searchQuery.trim() || undefined);
-      setSources(res.sources || []);
+      const ordered = (res.sources || []).slice().sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999));
+      setSources(ordered);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Search failed");
     } finally {
@@ -483,8 +484,15 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
                 {sources.map((src) => (
                   <div key={src.scraperId} className="bg-foreground rounded-md p-3">
                     <h4 className="text-sm font-medium mb-2">{src.scraperName}</h4>
+                    {src.summary && !src.error && (
+                      <p className="text-xs text-muted mb-2 wrap-break-words">{src.summary}</p>
+                    )}
                     {src.results.length === 0 ? (
-                      <p className="text-sm text-muted">No results</p>
+                      src.error ? (
+                        <p className="text-sm text-red-400/90 bg-red-500/10 rounded-md p-2 wrap-break-words">{src.error}</p>
+                      ) : !src.summary ? (
+                        <p className="text-sm text-muted">No results</p>
+                      ) : null
                     ) : (
                       <div className="flex gap-2 overflow-x-auto pb-2">
                         {src.results.map((r: ScraperSearchResult, i: number) => (

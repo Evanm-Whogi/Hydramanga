@@ -262,7 +262,7 @@ export class NHentaiScraper implements IChapterScraper {
             return scored.slice(0, limit).map(({ href, title, score }: { href: string; title: string; score: number }) => ({ href, title, score }));
         } catch (error) {
             logger.error(`[nHentai] search() failed: ${error}`, { service: 'nHentaiScraper' });
-            return [];
+            throw error;
         } finally {
             await page.close().catch(() => {});
             await context.close().catch(() => {});
