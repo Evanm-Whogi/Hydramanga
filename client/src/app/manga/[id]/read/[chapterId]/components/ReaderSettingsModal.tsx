@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { X } from 'lucide-react';
 import {
   ReaderSettings,
-  ReadingMode,
+  ReadingDirection,
   AutoScrollSpeed,
   ProgressIndicatorPosition,
   loadReaderSettings,
@@ -60,7 +60,7 @@ export default function ReaderSettingsModal({
       <div className="fixed inset-0 bg-black/50 z-200" onMouseDown={onClose} />
 
       {/* Modal */}
-      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-foreground rounded-lg shadow-xl z-201 w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-foreground rounded-lg shadow-xl z-201 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-borders">
           <h2 className="text-xl font-bold text-white">Reader Settings</h2>
@@ -70,7 +70,88 @@ export default function ReaderSettingsModal({
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6">
+        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-x-6 space-y-4">
+          {/* Reading Direction */}
+          <div className="md:col-span-2">
+            <label className="block text-sm font-semibold text-primary mb-2">
+              Reading Direction
+            </label>
+            <select
+              value={settings.readingDirection}
+              onChange={(e) => handleChange('readingDirection', e.target.value as ReadingDirection)}
+              className="w-full px-3 py-2 bg-background text-primary border border-borders rounded-md focus:outline-none focus:ring-2 focus:ring-accent"
+            >
+              <option value="ttb">Top to bottom (default)</option>
+              <option value="ltr">Left to right</option>
+              <option value="rtl">Right to left</option>
+            </select>
+            <p className="text-xs text-muted/70 mt-1">
+              {settings.readingDirection === 'ttb' && 'Vertical scroll through pages'}
+              {settings.readingDirection === 'ltr' && 'One page at a time, advance left to right'}
+              {settings.readingDirection === 'rtl' && 'One page at a time, advance right to left'}
+            </p>
+          </div>
+
+          {/* Greyscale */}
+          <div>
+            <label className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-primary">Greyscale Pages</span>
+              <button
+                onClick={() => handleChange('greyscale', !settings.greyscale)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  settings.greyscale ? 'bg-accent' : 'bg-muted/30'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    settings.greyscale ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </label>
+            <p className="text-xs text-muted/70 mt-1">
+              Display page images in greyscale
+            </p>
+          </div>
+
+          {/* Dim Pages */}
+          <div>
+            <label className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-primary">Dim Pages</span>
+              <button
+                onClick={() => handleChange('dimPages', !settings.dimPages)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  settings.dimPages ? 'bg-accent' : 'bg-muted/30'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    settings.dimPages ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </label>
+            {settings.dimPages && (
+              <div className="mt-3">
+                <label className="block text-sm text-primary mb-2">
+                  Dim intensity: {settings.dimLevel}%
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={settings.dimLevel}
+                  onChange={(e) => handleChange('dimLevel', parseInt(e.target.value, 10))}
+                  className="w-full h-2 bg-muted/30 rounded-lg appearance-none cursor-pointer accent-accent"
+                />
+              </div>
+            )}
+            <p className="text-xs text-muted/70 mt-1">
+              Darken page images to reduce eye strain
+            </p>
+          </div>
+
           {/* Continuous Mode */}
           <div>
             <label className="flex items-center justify-between">
@@ -142,7 +223,7 @@ export default function ReaderSettingsModal({
           </div>
 
           {/* Vertical padding between images */}
-          <div>
+          <div className="md:col-span-2">
             <label className="block text-sm font-semibold text-primary mb-2">
               Vertical padding between images: {settings.imageGap}px
             </label>
@@ -161,7 +242,7 @@ export default function ReaderSettingsModal({
           </div>
 
           {/* Reader Padding */}
-          <div>
+          <div className="md:col-span-2">
             <label className="block text-sm font-semibold text-primary mb-2">
               Reader Padding: {settings.readerPadding.toFixed(2)}
             </label>
@@ -186,7 +267,7 @@ export default function ReaderSettingsModal({
           </div>
 
           {/* Auto Scroll */}
-          <div>
+          <div className="md:col-span-2">
             <label className="block text-sm font-semibold text-primary mb-2">
               Auto Scroll
             </label>
@@ -208,7 +289,7 @@ export default function ReaderSettingsModal({
           </div>
 
           {/* Progress Indicator */}
-          <div>
+          <div className="md:col-span-2">
             <label className="block text-sm font-semibold text-primary mb-2">
               Progress Indicator
             </label>

@@ -269,6 +269,7 @@ export const comments = pgTable("comments", {
   content: text("content").notNull(),
   userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
   seriesId: integer("seriesId").notNull().references(() => series.id, { onDelete: "cascade" }),
+  chapterId: integer("chapterId").references((): any => chapters.id, { onDelete: "cascade" }),
   parentId: integer("parentId").references((): any => comments.id, { onDelete: "cascade" }),
   isSpoiler: boolean("isSpoiler").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -277,7 +278,8 @@ export const comments = pgTable("comments", {
   // Performance indexes for comment queries
   seriesIdIdx: index("idx_comments_series_id").on(t.seriesId),
   userIdIdx: index("idx_comments_user_id").on(t.userId),
-  seriesCreatedAtIdx: index("idx_comments_series_created_at").on(t.seriesId, t.createdAt.desc()).where(sql`${t.parentId} IS NULL`),
+  seriesCreatedAtIdx: index("idx_comments_series_created_at").on(t.seriesId, t.createdAt.desc()).where(sql`${t.parentId} IS NULL AND ${t.chapterId} IS NULL`),
+  chapterCreatedAtIdx: index("idx_comments_chapter_created_at").on(t.chapterId, t.createdAt.desc()).where(sql`${t.parentId} IS NULL AND ${t.chapterId} IS NOT NULL`),
   parentIdIdx: index("idx_comments_parent_id").on(t.parentId).where(sql`${t.parentId} IS NOT NULL`),
 }));
 
@@ -752,6 +754,10 @@ export const commentsRelations = relations(comments, ({ one, many }) => ({
   series: one(series, {
     fields: [comments.seriesId],
     references: [series.id],
+  }),
+  chapter: one(chapters, {
+    fields: [comments.chapterId],
+    references: [chapters.id],
   }),
   parent: one(comments, {
     fields: [comments.parentId],

@@ -9,8 +9,9 @@ export type CommentPagination = {
   hasMore: boolean;
 };
 
-export async function fetchComments(seriesId: number, options: { sort?: CommentSort; page?: number; limit?: number } = {}): Promise<{ comments: any[]; pagination: CommentPagination }> {
+export async function fetchComments(seriesId: number, options: { chapterId?: number; sort?: CommentSort; page?: number; limit?: number } = {}): Promise<{ comments: any[]; pagination: CommentPagination }> {
   const params = new URLSearchParams({ seriesId: String(seriesId) });
+  if (options.chapterId != null) params.set('chapterId', String(options.chapterId));
   if (options.sort) params.set('sort', options.sort);
   if (options.page) params.set('page', String(options.page));
   if (options.limit) params.set('limit', String(options.limit));
@@ -19,8 +20,8 @@ export async function fetchComments(seriesId: number, options: { sort?: CommentS
   return data;
 }
 
-export async function postComment({ seriesId, content, parentId, isSpoiler }: { seriesId: number, content: string, parentId?: number | null, isSpoiler?: boolean }): Promise<any> {
-    const data = await apiPost('/comments', { seriesId, content, parentId, isSpoiler });
+export async function postComment({ seriesId, chapterId, content, parentId, isSpoiler }: { seriesId: number, chapterId?: number | null, content: string, parentId?: number | null, isSpoiler?: boolean }): Promise<any> {
+    const data = await apiPost('/comments', { seriesId, chapterId: chapterId ?? null, content, parentId, isSpoiler });
     if (!data) throw new Error('Failed to post comment');
     return data;
 }

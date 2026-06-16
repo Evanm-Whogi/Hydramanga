@@ -4,12 +4,14 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { fetchMangaPages, updateProgress, recordReadingTime, markChapterAsRead } from '@/services/mangaService';
 import { useUser } from '@/providers/UserProvider';
-import { MenuIcon, X, ChevronLeft, ChevronRight, Settings } from 'lucide-react';
+import { MenuIcon, X, ChevronLeft, ChevronRight, Settings, Maximize, Minimize, Home, BookOpen, MessageSquare, Keyboard } from 'lucide-react';
 import { useChapterViewTracking } from '@/hooks/useViewTracking';
 import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
 import { updateImportProgressToast, dismissImportProgressToast } from '@/components/ImportProgressToast';
 import { showContinuousModeToast, dismissContinuousModeToast } from '@/components/ContinuousModeToast';
 import ReaderSettingsModal from './ReaderSettingsModal';
+import KeybindsModal from './KeybindsModal';
+import Comments from '@/app/manga/[id]/components/Comments';
 import { 
   ReaderSettings, 
   loadReaderSettings, 
@@ -18,7 +20,11 @@ import {
 } from '@/lib/readerSettings';
 
 const SIDEBAR_WIDTH_PX = 260;
+const COMMENTS_SIDEBAR_WIDTH_PX = 525;
 const EAGER_COUNT = 5;
+const SIDEBAR_BTN = "p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer rounded flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-30";
+const SIDEBAR_BTN_HALF = `${SIDEBAR_BTN} w-1/2`;
+const SIDEBAR_BTN_FULL = `${SIDEBAR_BTN} w-full`;
 
 const LazyMangaPage = React.memo(function LazyMangaPage({
   src,
@@ -131,9 +137,13 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [commentsSidebarOpen, setCommentsSidebarOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [keybindsModalOpen, setKeybindsModalOpen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
   
   // Reader settings
   const [settings, setSettings] = useState<ReaderSettings>(() => loadReaderSettings());
@@ -150,6 +160,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   const hasTrackedContinuousRef = useRef(false);
   const wasMergedModeRef = useRef(false);
   const mobileChapterListRef = useRef<HTMLDivElement | null>(null);
+  const readerRootRef = useRef<HTMLDivElement>(null);
+
+  const isHorizontalMode = settings.readingDirection === 'ltr' || settings.readingDirection === 'rtl';
 
   // Reading time tracking
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -226,16 +239,22 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     };
   }, [paddingValue, settings.imageGap]);
 
-  // Get image styles
+  // Get image styles (scale, greyscale, dim)
   const getImageStyle = useMemo((): React.CSSProperties => {
+    const style: React.CSSProperties = {};
     if (imageScale !== 1) {
-      return {
-        transform: `scale(${imageScale})`,
-        transformOrigin: 'center center',
-      };
+      style.transform = `scale(${imageScale})`;
+      style.transformOrigin = 'center center';
     }
-    return {};
-  }, [imageScale]);
+    const filters: string[] = [];
+    if (settings.greyscale) filters.push('grayscale(100%)');
+    if (settings.dimPages && settings.dimLevel > 0) {
+      const brightness = 1 - (settings.dimLevel / 100) * 0.6;
+      filters.push(`brightness(${brightness})`);
+    }
+    if (filters.length > 0) style.filter = filters.join(' ');
+    return style;
+  }, [imageScale, settings.greyscale, settings.dimPages, settings.dimLevel]);
 
   // Get image class name
   const getImageClassName = 'manga-page w-full h-auto block';
@@ -351,8 +370,28 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   }, [isNavigating, isMergedMode, scrollToMergedChapter, data, chapterId, id, mangaTitle, router]);
 
   // Page navigation
+  const goToPageIndex = useCallback((index: number) => {
+    const clamped = Math.max(0, Math.min(totalPages - 1, index));
+    if (isHorizontalMode) {
+      setCurrentPage(clamped + 1);
+      return;
+    }
+    scrollToImageIndex(clamped);
+  }, [totalPages, isHorizontalMode, scrollToImageIndex]);
+
+  const handleHorizontalPageNav = useCallback((direction: 'next' | 'prev') => {
+    const isRtl = settings.readingDirection === 'rtl';
+    const delta = direction === 'next' ? 1 : -1;
+    const actualDelta = isRtl ? -delta : delta;
+    goToPageIndex((currentPage - 1) + actualDelta);
+  }, [settings.readingDirection, currentPage, goToPageIndex]);
+
   const handlePageClick = useCallback((direction: 'next' | 'prev') => {
-    // Default scroll navigation
+    if (isHorizontalMode) {
+      handleHorizontalPageNav(direction);
+      return;
+    }
+
     if (!containerRef.current) return;
     
     const images = Array.from(containerRef.current.querySelectorAll('img'));
@@ -381,7 +420,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     }
-  }, []);
+  }, [isHorizontalMode, handleHorizontalPageNav]);
 
   // Toggle controls visibility (for tap zones center click)
   const toggleControls = useCallback(() => {
@@ -399,15 +438,54 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   // Handle tap zone clicks
   const handleTapZoneClick = useCallback((zone: 'left' | 'right' | 'center') => {
     if (!settings.tapZones) return;
-    
+
     if (zone === 'center') {
       toggleControls();
-    } else if (zone === 'left') {
+      return;
+    }
+
+    if (isHorizontalMode) {
+      const isRtl = settings.readingDirection === 'rtl';
+      if (zone === 'left') {
+        handleHorizontalPageNav(isRtl ? 'next' : 'prev');
+      } else {
+        handleHorizontalPageNav(isRtl ? 'prev' : 'next');
+      }
+      return;
+    }
+
+    if (zone === 'left') {
       handlePageClick('prev');
     } else {
       handlePageClick('next');
     }
-  }, [settings.tapZones, toggleControls, handlePageClick]);
+  }, [settings.tapZones, settings.readingDirection, isHorizontalMode, toggleControls, handleHorizontalPageNav, handlePageClick]);
+
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      console.error('Fullscreen toggle failed', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const update = () => setIsDesktop(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   // Settings change handler
   const handleSettingsChange = useCallback((newSettings: ReaderSettings) => {
@@ -575,9 +653,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [elapsedSeconds]);
 
-  // Auto-scroll functionality
+  // Auto-scroll functionality (vertical mode only)
   useEffect(() => {
-    if (settings.autoScroll === 'off') {
+    if (isHorizontalMode || settings.autoScroll === 'off') {
       if (autoScrollIntervalRef.current) {
         clearInterval(autoScrollIntervalRef.current);
         autoScrollIntervalRef.current = null;
@@ -597,11 +675,11 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         clearInterval(autoScrollIntervalRef.current);
       }
     };
-  }, [settings.autoScroll]);
+  }, [isHorizontalMode, settings.autoScroll]);
 
   // Pause auto-scroll on user interaction
   useEffect(() => {
-    if (settings.autoScroll === 'off') return;
+    if (isHorizontalMode || settings.autoScroll === 'off') return;
 
     const pauseAutoScroll = () => {
       if (autoScrollIntervalRef.current) {
@@ -619,7 +697,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       window.removeEventListener('touchmove', pauseAutoScroll);
       window.removeEventListener('keydown', pauseAutoScroll);
     };
-  }, [settings.autoScroll]);
+  }, [isHorizontalMode, settings.autoScroll]);
 
   // Handle navigation offset for main nav
   useEffect(() => {
@@ -776,9 +854,9 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     };
   }, [user, data, id, chapterId, currentPage, lastTrackedPage, imageItems]);
 
-  // Track current page based on scroll position
+  // Track current page based on scroll position (vertical mode only)
   useEffect(() => {
-    if (!containerRef.current || imageItems.length === 0) return;
+    if (isHorizontalMode || !containerRef.current || imageItems.length === 0) return;
 
     const handleScroll = () => {
       if (!containerRef.current) return;
@@ -806,7 +884,14 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     handleScroll();
 
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [imageItems, currentPage]);
+  }, [imageItems, currentPage, isHorizontalMode]);
+
+  // Reset to first page when switching to horizontal mode
+  useEffect(() => {
+    if (isHorizontalMode && currentPage === 0 && totalPages > 0) {
+      setCurrentPage(1);
+    }
+  }, [isHorizontalMode, currentPage, totalPages]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -814,6 +899,34 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
       if (loading || isNavigating) return;
+
+      if (event.key === 'Escape') {
+        if (keybindsModalOpen) { setKeybindsModalOpen(false); return; }
+        if (settingsModalOpen) { setSettingsModalOpen(false); return; }
+        if (commentsSidebarOpen) { setCommentsSidebarOpen(false); return; }
+        if (sidebarOpen) { setSidebarOpen(false); return; }
+        return;
+      }
+
+      if (isHorizontalMode) {
+        const isRtl = settings.readingDirection === 'rtl';
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault();
+          handleHorizontalPageNav(isRtl ? 'next' : 'prev');
+        } else if (event.key === 'ArrowRight') {
+          event.preventDefault();
+          handleHorizontalPageNav(isRtl ? 'prev' : 'next');
+        } else if (event.key === 'ArrowUp') {
+          if (!prevChapter) return;
+          event.preventDefault();
+          navigateToChapter(prevChapter);
+        } else if (event.key === 'ArrowDown') {
+          if (!nextChapter) return;
+          event.preventDefault();
+          navigateToChapter(nextChapter);
+        }
+        return;
+      }
 
       if (event.key === 'ArrowUp') {
         event.preventDefault();
@@ -834,7 +947,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handlePageClick, loading, isNavigating, nextChapter, prevChapter, navigateToChapter]);
+  }, [handlePageClick, handleHorizontalPageNav, loading, isNavigating, isHorizontalMode, settings.readingDirection, nextChapter, prevChapter, navigateToChapter, keybindsModalOpen, settingsModalOpen, commentsSidebarOpen, sidebarOpen]);
 
   if (loading) {
     return <div className="loading text-primary p-5 text-center">Loading Chapter...</div>;
@@ -849,7 +962,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
     if (settings.progressIndicator === 'right') {
       return (
-        <div className="fixed right-0 top-0 h-screen w-2 bg-foreground/30 z-50 pointer-events-none">
+        <div className="fixed top-0 h-screen w-2 bg-foreground/30 z-50 pointer-events-none transition-all duration-300" style={{ right: isDesktop && commentsSidebarOpen ? COMMENTS_SIDEBAR_WIDTH_PX : 0 }}>
           <div
             className="w-full bg-accent transition-all duration-200 ease-out"
             style={{ height: `${percentage}%` }}
@@ -901,42 +1014,65 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
     return null;
   };
 
+  const renderSidebarControls = () => (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <button type="button" onClick={() => router.push('/')} title="Back to Home" aria-label="Back to Home" className={SIDEBAR_BTN_HALF}>
+          <Home size={18} />
+        </button>
+        <button type="button" onClick={() => router.push(`/manga/${id}`)} title="Back to Overview" aria-label="Back to Overview" className={SIDEBAR_BTN_HALF}>
+          <BookOpen size={18} />
+        </button>
+      </div>
+      <div className="flex gap-2">
+        <button type="button" onClick={() => prevChapter && navigateToChapter(prevChapter)} disabled={!prevChapter || isNavigating} title="Previous Chapter" aria-label="Previous Chapter" className={SIDEBAR_BTN_HALF}>
+          <ChevronLeft size={18} />
+        </button>
+        <button type="button" onClick={() => nextChapter && navigateToChapter(nextChapter)} disabled={!nextChapter || isNavigating} title="Next Chapter" aria-label="Next Chapter" className={SIDEBAR_BTN_HALF}>
+          <ChevronRight size={18} />
+        </button>
+      </div>
+      <div className="flex gap-2">
+        <button type="button" onClick={() => setSettingsModalOpen(true)} title="Reader Settings" aria-label="Reader Settings" className={SIDEBAR_BTN_HALF}>
+          <Settings size={18} />
+        </button>
+        <button type="button" onClick={() => void toggleFullscreen()} title={isFullscreen ? 'Exit Full Screen' : 'Full Screen'} aria-label={isFullscreen ? 'Exit Full Screen' : 'Full Screen'} className={SIDEBAR_BTN_HALF}>
+          {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+        </button>
+      </div>
+      <button type="button" onClick={() => setCommentsSidebarOpen((open) => !open)} title="Comments" aria-label="Comments" className={SIDEBAR_BTN_FULL}>
+        <MessageSquare size={18} />
+      </button>
+      <button type="button" onClick={() => setKeybindsModalOpen(true)} title="Keybinds" aria-label="Keybinds" className={SIDEBAR_BTN_FULL}>
+        <Keyboard size={18} />
+      </button>
+    </div>
+  );
+
+  const mainLayoutClass = 'content w-full md:py-18.25 pt-24 md:pt-18.25 pb-20 md:pb-0 relative flex flex-col items-center transition-all duration-300';
+
+  const tapZoneClass = 'click-zones fixed top-0 bottom-0 left-0 right-0 flex z-10 pointer-events-none pt-24 md:pt-0 transition-all duration-300';
+
+  const mainLayoutStyle: React.CSSProperties | undefined = isDesktop ? {
+    marginLeft: sidebarCollapsed ? 0 : SIDEBAR_WIDTH_PX,
+    marginRight: commentsSidebarOpen ? COMMENTS_SIDEBAR_WIDTH_PX : 0,
+    width: `calc(100% - ${(sidebarCollapsed ? 0 : SIDEBAR_WIDTH_PX) + (commentsSidebarOpen ? COMMENTS_SIDEBAR_WIDTH_PX : 0)}px)`,
+  } : undefined;
+
+  const tapZoneStyle: React.CSSProperties | undefined = isDesktop ? {
+    left: sidebarCollapsed ? 0 : SIDEBAR_WIDTH_PX,
+    right: commentsSidebarOpen ? COMMENTS_SIDEBAR_WIDTH_PX : 0,
+  } : undefined;
+
   return (
-    <div className="reader-root flex bg-background min-h-screen text-primary flex-col md:flex-row">
+    <div ref={readerRootRef} className="reader-root flex bg-background min-h-screen text-primary flex-col md:flex-row">
       {/* Desktop Sidebar */}
       <aside className={`sidebar hidden md:flex md:h-screen md:fixed md:left-0 md:top-0 md:bg-foreground md:border-r md:border-r-borders md:flex-col md:z-100 md:transition-all md:duration-300 ${
         sidebarCollapsed ? 'md:w-0 md:overflow-hidden' : 'md:w-65'
       }`}>
-        <div className="sidebar-header px-6 py-4 border-b border-borders">
+        <div className="sidebar-header px-4 py-4 border-b border-borders">
           <h2 className="text-[1.25rem] font-bold mb-4 text-white">Chapter {activeChapterNumber}</h2>
-          
-          <button onClick={() => router.push(`/manga/${id}`)} className="mb-4 w-full p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer rounded">
-            Back to Overview
-          </button>
-
-          <div className="flex gap-2 mb-4">
-            <button onClick={() => prevChapter && navigateToChapter(prevChapter)} disabled={!prevChapter || isNavigating} className="flex-1 p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 rounded">
-              Prev
-            </button>
-            <button onClick={() => nextChapter && navigateToChapter(nextChapter)} disabled={!nextChapter || isNavigating} className="flex-1 p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 rounded">
-              Next
-            </button>
-          </div>
-
-          {/* Settings Button */}
-          <button onClick={() => setSettingsModalOpen(true)} className="w-full mt-2 p-2.5 flex items-center justify-center gap-2 bg-background hover:bg-background/50 text-primary border-0 rounded cursor-pointer">
-            <Settings size={18} />
-            Reader Settings
-          </button>
-
-          {/* Keybinds */}
-          <div className="mt-4 text-sm text-primary/70">
-            <p className="mb-1">Keybinds:</p>
-            <ul className="list-disc list-inside text-xs">
-              <li>↑ / ↓ : Scroll Pages</li>
-              <li>← / → : Prev/Next Chapter</li>
-            </ul>
-          </div>
+          {renderSidebarControls()}
         </div>
 
         {/* Chapter List */}
@@ -958,11 +1094,14 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         <>
           <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />
           <aside className="sidebar fixed top-0 left-0 h-screen w-72 bg-foreground border-r border-r-borders flex flex-col z-50 md:hidden">
-            <div className="sidebar-header px-6 py-4 border-b border-borders flex justify-between items-center">
-              <h2 className="text-[1.25rem] font-bold text-white">Chapter {activeChapterNumber}</h2>
-              <button onClick={() => setSidebarOpen(false)} className="text-primary hover:text-accent">
-                <X className="size-6" />
-              </button>
+            <div className="sidebar-header px-4 py-4 border-b border-borders flex flex-col gap-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-[1.25rem] font-bold text-white">Chapter {activeChapterNumber}</h2>
+                <button onClick={() => setSidebarOpen(false)} className="text-primary hover:text-accent">
+                  <X className="size-6" />
+                </button>
+              </div>
+              {renderSidebarControls()}
             </div>
             <div ref={mobileChapterListRef} className="chapter-list-scroll flex-1 overflow-y-auto p-4">
               <div className="grid-list grid grid-cols-1 gap-2">
@@ -986,9 +1125,16 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       {renderProgressIndicator()}
 
       {/* Sidebar Collapse/Expand Button */}
-      <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="hidden md:flex md:fixed md:top-1/2 cursor-pointer md:-translate-y-1/2 md:bg-foreground md:hover:bg-background md:text-primary md:border md:border-borders md:rounded-full md:p-2 md:z-50 md:transition-all md:duration-300" style={sidebarCollapsed ? { left: '8px' } : { left: `${SIDEBAR_WIDTH_PX + 8}px` }} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+      <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="hidden md:flex md:fixed md:top-1/2 cursor-pointer md:-translate-y-1/2 md:bg-foreground md:hover:bg-background md:text-primary md:border md:border-borders md:rounded-full md:p-2 md:z-50 md:transition-all md:duration-300" style={{ left: sidebarCollapsed ? '8px' : `${SIDEBAR_WIDTH_PX + 8}px` }} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
         {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
       </button>
+
+      {/* Comments Sidebar Collapse Button */}
+      {commentsSidebarOpen && (
+        <button onClick={() => setCommentsSidebarOpen(false)} className="hidden md:flex md:fixed md:top-1/2 cursor-pointer md:-translate-y-1/2 md:bg-foreground md:hover:bg-background md:text-primary md:border md:border-borders md:rounded-full md:p-2 md:z-[110] md:transition-all md:duration-300" style={{ right: `${COMMENTS_SIDEBAR_WIDTH_PX + 8}px` }} title="Collapse comments">
+          <ChevronLeft size={18} />
+        </button>
+      )}
 
       {/* Mobile Header */}
       <div ref={mobileHeaderRef} className="md:hidden fixed top-16 left-0 right-0 bg-foreground/90 border-b border-borders px-4 py-3 z-40 flex items-center justify-between transition-transform duration-300">
@@ -1004,56 +1150,119 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       </div>
 
       {/* Main Content */}
-      <main className={`content w-full md:py-18.25 pt-24 md:pt-18.25 pb-20 md:pb-0 relative flex flex-col items-center transition-all duration-300 ${
-        sidebarCollapsed ? 'md:ml-0 md:w-full' : 'md:ml-65 md:w-[calc(100%-260px)]'
-      }`}>
+      <main className={mainLayoutClass} style={mainLayoutStyle}>
         {/* Tap Zones */}
         {settings.tapZones && (
-          <div className={`click-zones fixed top-0 right-0 bottom-0 left-0 flex z-10 pointer-events-none pt-24 md:pt-0 transition-all duration-300 ${
-            sidebarCollapsed ? 'md:left-0' : 'md:left-65'
-          }`}>
+          <div className={tapZoneClass} style={tapZoneStyle}>
             <div onClick={() => handleTapZoneClick('left')} className="prev-zone flex-1 pointer-events-auto cursor-w-resize" />
             <div onClick={() => handleTapZoneClick('center')} className="center-zone flex-1 pointer-events-auto cursor-pointer" />
             <div onClick={() => handleTapZoneClick('right')} className="next-zone flex-1 pointer-events-auto cursor-e-resize" />
           </div>
         )}
 
-        {/* Image Container */}
-        <div ref={containerRef} className="image-stack w-full max-w-212.5 z-5" style={containerStyles}>
-          {imageItems.map((item, index) => (
-            <LazyMangaPage
-              key={`${item.chapterId}-${index}`}
-              src={item.src}
-              index={index}
-              alt={`Page ${index + 1}`}
-              className={getImageClassName}
-              style={getImageStyle}
-            />
-          ))}
-        </div>
+        {/* Horizontal Reader (LTR / RTL) */}
+        {isHorizontalMode ? (
+          <div className="horizontal-reader w-full min-h-[calc(100vh-8rem)] flex items-center justify-center z-5 px-4">
+            {imageItems[currentPage - 1] && (
+              <img
+                src={imageItems[currentPage - 1].src}
+                alt={`Page ${currentPage}`}
+                className="max-h-[calc(100vh-10rem)] max-w-full object-contain manga-page"
+                style={getImageStyle}
+                referrerPolicy="strict-origin-when-cross-origin"
+              />
+            )}
+          </div>
+        ) : (
+          /* Vertical Image Container */
+          <div ref={containerRef} className="image-stack w-full max-w-212.5 z-5" style={containerStyles}>
+            {imageItems.map((item, index) => (
+              <LazyMangaPage
+                key={`${item.chapterId}-${index}`}
+                src={item.src}
+                index={index}
+                alt={`Page ${index + 1}`}
+                className={getImageClassName}
+                style={getImageStyle}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Footer Navigation */}
-        <div className="footer-nav py-10 text-center z-40 ">
-          {isMergedMode ? (
-            <div className="flex flex-col py-2">
-              <span className="text-primary/70">You have reached the end of available chapters.</span>
-              <button className="mt-5 ml-2 text-accent hover:underline cursor-pointer" onClick={() => router.push(`/manga/${id}`)}>Return to Manga Overview</button>
+        <div className="footer-nav py-10 text-center z-40 w-full max-w-212.5 px-4">
+          {nextChapter || prevChapter ? (
+            <div className="flex flex-wrap items-center justify-center gap-4">
+              {prevChapter ? (
+                <button onClick={() => navigateToChapter(prevChapter)} disabled={isNavigating} className="px-8 py-4 bg-foreground hover:bg-foreground/80 text-primary border border-borders rounded-md text-[1.1rem] font-bold cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors">
+                  ← Chapter {prevChapter.chapterNumber}
+                </button>
+              ) : (
+                <div className="w-45 hidden sm:block" aria-hidden />
+              )}
+              {nextChapter ? (
+                <button onClick={() => navigateToChapter(nextChapter)} disabled={isNavigating} className="px-12 py-4 bg-accent hover:bg-accent/80 text-white border-none rounded-md text-[1.1rem] font-bold cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors">
+                  Read Chapter {nextChapter.chapterNumber} →
+                </button>
+              ) : (
+                <div className="flex flex-col py-2">
+                  <span className="text-primary/70">You have reached the end of available chapters.</span>
+                  <button className="mt-5 text-accent hover:underline cursor-pointer" onClick={() => router.push(`/manga/${id}`)}>Return to Manga Overview</button>
+                </div>
+              )}
             </div>
-          ) : nextChapter ? (
-            <button onClick={() => navigateToChapter(nextChapter)} disabled={isNavigating} className="px-12 py-4 bg-accent hover:bg-accent/80 text-white border-none rounded-md text-[1.1rem] font-bold cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors">
-              Read Chapter {nextChapter.chapterNumber} →
-            </button>
           ) : (
             <div className="flex flex-col py-2">
               <span className="text-primary/70">You have reached the end of available chapters.</span>
-              <button className="mt-5 ml-2 text-accent hover:underline cursor-pointer" onClick={() => router.push(`/manga/${id}`)}>Return to Manga Overview</button>
+              <button className="mt-5 text-accent hover:underline cursor-pointer" onClick={() => router.push(`/manga/${id}`)}>Return to Manga Overview</button>
             </div>
           )}
         </div>
       </main>
 
+      {/* Desktop Comments Sidebar — anchored to viewport right edge */}
+      <aside
+        className={`hidden md:flex md:flex-col md:fixed md:inset-y-0 md:left-auto md:top-0 md:bg-foreground md:border-l md:border-l-borders md:z-[110] md:transition-all md:duration-300 md:overflow-hidden ${
+          commentsSidebarOpen ? '' : 'md:pointer-events-none'
+        }`}
+        style={{ right: 0, width: commentsSidebarOpen ? COMMENTS_SIDEBAR_WIDTH_PX : 0 }}
+      >
+        <div className="px-4 py-4 border-b border-borders flex justify-between items-center shrink-0">
+          <h2 className="text-[1.25rem] font-bold text-white">Comments</h2>
+          <button onClick={() => setCommentsSidebarOpen(false)} className="text-primary hover:text-accent cursor-pointer" aria-label="Close comments">
+            <X className="size-5" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          {activeChapterId && id && (
+            <Comments key={activeChapterId} manga={{ id: Number(id) }} chapterId={activeChapterId} className="text-left" />
+          )}
+        </div>
+      </aside>
+
+      {/* Mobile Comments Drawer */}
+      {commentsSidebarOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setCommentsSidebarOpen(false)} />
+          <aside className="fixed inset-0 z-50 flex flex-col bg-foreground overflow-hidden md:hidden pb-[env(safe-area-inset-bottom)]">
+            <div className="px-4 py-3 border-b border-borders flex justify-between items-center shrink-0">
+              <h2 className="text-lg font-bold text-white">Comments</h2>
+              <button onClick={() => setCommentsSidebarOpen(false)} className="text-primary hover:text-accent p-1" aria-label="Close comments">
+                <X className="size-6" />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4">
+              {activeChapterId && id && (
+                <Comments key={activeChapterId} manga={{ id: Number(id) }} chapterId={activeChapterId} className="text-left min-w-0 max-w-full" />
+              )}
+            </div>
+          </aside>
+        </>
+      )}
+
       {/* Modals */}
       <ReaderSettingsModal isOpen={settingsModalOpen} onClose={() => setSettingsModalOpen(false)} onSettingsChange={handleSettingsChange} />
+      <KeybindsModal isOpen={keybindsModalOpen} onClose={() => setKeybindsModalOpen(false)} readingDirection={settings.readingDirection} />
     </div>
   );
 }

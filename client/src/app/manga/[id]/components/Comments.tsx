@@ -80,12 +80,16 @@ function countReplies(node: CommentNode): number {
 
 export default function Comments({
   manga,
+  chapterId,
   comments: initialComments,
   commentPagination: initialPagination,
+  className,
 }: {
   manga: { id: number };
-  comments: CommentNode[];
+  chapterId?: number;
+  comments?: CommentNode[];
   commentPagination?: CommentPagination;
+  className?: string;
 }) {
   const [comments, setComments] = useState<CommentNode[]>(initialComments ?? []);
   const [pagination, setPagination] = useState<CommentPagination | undefined>(initialPagination);
@@ -99,29 +103,44 @@ export default function Comments({
   const [editText, setEditText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [initialLoadDone, setInitialLoadDone] = useState(!chapterId);
   const router = useRouter();
   const { user } = useUser();
   const isAdmin = isAdminUser(user?.role);
   const {isRateLimited: isCommentRateLimited, applyRateLimitFromError: applyCommentRateLimit, rateLimitSecondsLeft: commentRateLimitSecondsLeft} = useSubmitRateLimit();
+
+  const returnTo = chapterId ? `/manga/${manga.id}/read/${chapterId}` : `/manga/${manga.id}`;
 
   const commentRateHint = isCommentRateLimited
     ? `Please wait ${commentRateLimitSecondsLeft}s before commenting again.`
     : undefined;
 
   useEffect(() => {
-    setComments(initialComments ?? []);
-    setPagination(initialPagination);
-  }, [initialComments, initialPagination]);
+    if (!chapterId) {
+      setComments(initialComments ?? []);
+      setPagination(initialPagination);
+    }
+  }, [chapterId, initialComments, initialPagination]);
 
   const reloadComments = useCallback(async (nextSort: CommentSort, page = 1, append = false) => {
     try {
-      const result = await fetchComments(manga.id, { sort: nextSort, page });
+      const result = await fetchComments(manga.id, { chapterId, sort: nextSort, page });
       setComments((prev) => (append ? [...prev, ...result.comments] : result.comments));
       setPagination(result.pagination);
+      setInitialLoadDone(true);
     } catch {
       toast.error("Failed to load comments");
     }
-  }, [manga.id]);
+  }, [manga.id, chapterId]);
+
+  useEffect(() => {
+    if (!chapterId) return;
+    setInitialLoadDone(false);
+    setSort("recent");
+    setReplyingTo(null);
+    setEditingId(null);
+    void reloadComments("recent", 1, false);
+  }, [chapterId, manga.id, reloadComments]);
 
   const handleSortChange = async (nextSort: CommentSort) => {
     setSort(nextSort);
@@ -139,12 +158,12 @@ export default function Comments({
   };
 
   const handleSubmit = async (content: string, parentId: number | null = null) => {
-    if (!requireAuth(user, `/manga/${manga.id}`)) return;
+    if (!requireAuth(user, returnTo)) return;
     if (isSubmitting || isCommentRateLimited) return;
     if (!requireTrimmed(content, parentId ? "Please write a reply." : "Please write a comment.")) return;
     setIsSubmitting(true);
     try {
-      await postComment({ seriesId: manga.id, content, parentId, isSpoiler: false });
+      await postComment({ seriesId: manga.id, chapterId, content, parentId, isSpoiler: false });
       setText("");
       setReplyText("");
       setReplyingTo(null);
@@ -173,7 +192,7 @@ export default function Comments({
   };
 
   const handleVote = async (commentId: number, type: "like" | "dislike") => {
-    if (!requireAuth(user, `/manga/${manga.id}`)) return;
+    if (!requireAuth(user, returnTo)) return;
     try {
       await voteComment(commentId, type);
       await reloadComments(sort, pagination?.page ?? 1, false);
@@ -234,7 +253,7 @@ export default function Comments({
           userId={user?.id}
           onVote={handleVote}
           onReply={() => {
-            if (!requireAuth(user, `/manga/${manga.id}`)) return;
+            if (!requireAuth(user, returnTo)) return;
             setReplyingTo(replyingTo === comment.id ? null : comment.id);
           }}
           replyActive={replyingTo === comment.id}
@@ -297,6 +316,10 @@ export default function Comments({
   };
 
   return (
+    <section className={className}>
+      {chapterId && !initialLoadDone ? (
+        <p className="text-muted text-sm py-4">Loading comments…</p>
+      ) : (
     <>
       {user && (
       <ContentComposer
@@ -319,7 +342,7 @@ export default function Comments({
       )}
 
       {comments.length > 0 && (
-        <div className="flex items-center justify-between gap-3 mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mb-4">
           <label className="text-sm text-muted">
             Sort by{" "}
             <select
@@ -356,5 +379,7 @@ export default function Comments({
       </div>
       )}
     </>
+      )}
+    </section>
   );
 }

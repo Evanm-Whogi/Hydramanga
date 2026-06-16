@@ -96,7 +96,7 @@ export default function SocialPostCard({
           height={avatarSize}
           className={`rounded-full object-cover shrink-0 ${isNested ? "size-8" : "size-10"}`}
         />
-        <div className={`min-w-0 flex-1 ${showTopRightAbsolute ? (isNested ? "pr-14" : "pr-24") : ""}`}>
+        <div className={`min-w-0 flex-1`}>
           <AuthorByline author={author} createdAt={createdAt} />
           <div className={title ? "mt-1" : "mt-2"}>{body}</div>
         </div>

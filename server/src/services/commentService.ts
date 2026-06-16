@@ -1,5 +1,5 @@
 import { db, schema } from '@/db/index';
-import { eq } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 import { buildThreadTree, type ThreadNode } from '@/lib/buildThreadTree';
 import { enrichCommentsWithAuthorMeta } from '@/lib/enrichAuthors';
 
@@ -15,6 +15,7 @@ type FlatComment = {
   content: string;
   userId: string;
   seriesId: number;
+  chapterId: number | null;
   parentId: number | null;
   isSpoiler: boolean;
   createdAt: Date;
@@ -57,12 +58,24 @@ function sortTopLevel(comments: CommentTreeNode[], sort: CommentSort): CommentTr
 }
 
 export async function fetchSeriesComments(seriesId: number, options: { sort?: CommentSort; page?: number; limit?: number } = {}) {
+  return fetchScopedComments(seriesId, null, options);
+}
+
+export async function fetchChapterComments(seriesId: number, chapterId: number, options: { sort?: CommentSort; page?: number; limit?: number } = {}) {
+  return fetchScopedComments(seriesId, chapterId, options);
+}
+
+async function fetchScopedComments(seriesId: number, chapterId: number | null, options: { sort?: CommentSort; page?: number; limit?: number } = {}) {
   const sort = options.sort ?? 'recent';
   const page = Math.max(1, options.page ?? 1);
   const limit = Math.min(100, Math.max(1, options.limit ?? COMMENT_PAGE_LIMIT));
 
+  const scopeCondition = chapterId == null
+    ? and(eq(schema.comments.seriesId, seriesId), isNull(schema.comments.chapterId))
+    : and(eq(schema.comments.seriesId, seriesId), eq(schema.comments.chapterId, chapterId));
+
   const flat = await db.query.comments.findMany({
-    where: eq(schema.comments.seriesId, seriesId),
+    where: scopeCondition,
     with: {
       author: { columns: AUTHOR_COLUMNS },
       votes: true,
@@ -88,13 +101,16 @@ export async function fetchSeriesComments(seriesId: number, options: { sort?: Co
   };
 }
 
-export async function validateCommentParent(seriesId: number, parentId: number): Promise<{ ok: true } | { ok: false; message: string }> {
+export async function validateCommentParent(seriesId: number, parentId: number, chapterId?: number | null): Promise<{ ok: true } | { ok: false; message: string }> {
   const parent = await db.query.comments.findFirst({
     where: eq(schema.comments.id, parentId),
   });
   if (!parent) return { ok: false, message: 'Parent comment not found' };
   if (parent.seriesId !== seriesId) return { ok: false, message: 'Parent comment belongs to a different series' };
+  const expectedChapterId = chapterId ?? null;
+  const parentChapterId = parent.chapterId ?? null;
+  if (parentChapterId !== expectedChapterId) return { ok: false, message: 'Parent comment belongs to a different thread' };
   return { ok: true };
 }
 
-export const commentService = { fetchSeriesComments, validateCommentParent, COMMENT_PAGE_LIMIT };
+export const commentService = { fetchSeriesComments, fetchChapterComments, validateCommentParent, COMMENT_PAGE_LIMIT };

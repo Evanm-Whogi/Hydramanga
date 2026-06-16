@@ -3,14 +3,14 @@
  * Handles localStorage persistence and default values for manga reader settings
  */
 
-export type ReadingMode = 'default';
+export type ReadingDirection = 'ttb' | 'ltr' | 'rtl';
 
 export type AutoScrollSpeed = 'off' | 'slow' | 'medium' | 'fast';
 
 export type ProgressIndicatorPosition = 'off' | 'top' | 'bottom' | 'right';
 
 export interface ReaderSettings {
-  readingMode: ReadingMode;
+  readingDirection: ReadingDirection;
   tapZones: boolean;
   readerPadding: number; // -1.00 to 1.00
   imageGap: number; // vertical padding between images in px (0-48)
@@ -18,10 +18,13 @@ export interface ReaderSettings {
   progressIndicator: ProgressIndicatorPosition;
   continuousMode: boolean;
   stickyHeader: boolean;
+  greyscale: boolean;
+  dimPages: boolean;
+  dimLevel: number; // 0-100, higher = darker
 }
 
 const DEFAULT_SETTINGS: ReaderSettings = {
-  readingMode: 'default',
+  readingDirection: 'ttb',
   tapZones: true,
   readerPadding: 0,
   imageGap: 0,
@@ -29,6 +32,9 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   progressIndicator: 'right',
   continuousMode: true,
   stickyHeader: false,
+  greyscale: false,
+  dimPages: false,
+  dimLevel: 30,
 };
 
 const STORAGE_KEY = 'manga-reader-settings';
@@ -48,14 +54,20 @@ export function loadReaderSettings(): ReaderSettings {
     }
 
     const parsed = JSON.parse(stored);
-    
-    // Validate and merge with defaults to handle new settings
+
+    // Migrate legacy readingMode field
+    const readingDirection: ReadingDirection =
+      parsed.readingDirection === 'ltr' || parsed.readingDirection === 'rtl' || parsed.readingDirection === 'ttb'
+        ? parsed.readingDirection
+        : DEFAULT_SETTINGS.readingDirection;
+
     return {
       ...DEFAULT_SETTINGS,
       ...parsed,
-      // Ensure values are within valid ranges
+      readingDirection,
       readerPadding: Math.max(-1, Math.min(1, parsed.readerPadding ?? DEFAULT_SETTINGS.readerPadding)),
       imageGap: Math.max(0, Math.min(48, parsed.imageGap ?? DEFAULT_SETTINGS.imageGap)),
+      dimLevel: Math.max(0, Math.min(100, parsed.dimLevel ?? DEFAULT_SETTINGS.dimLevel)),
     };
   } catch (error) {
     console.error('Failed to load reader settings:', error);

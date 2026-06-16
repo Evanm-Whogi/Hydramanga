@@ -15,10 +15,16 @@ import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
 import { validateContentImagesAsync } from '@/lib/externalImageValidation';
 dotenv.config();
 
-// Fetch comments for a manga series (nested tree, sortable, paginated)
+// Fetch comments for a manga series or chapter (nested tree, sortable, paginated)
 export async function fetchComments(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     const seriesId = parseInt(req.query.seriesId as string, 10);
     if (isNaN(seriesId)) return res.status(400).json({ message: 'Invalid seriesId parameter' });
+
+    const chapterIdRaw = req.query.chapterId as string | undefined;
+    const chapterId = chapterIdRaw != null && chapterIdRaw !== '' ? parseInt(chapterIdRaw, 10) : null;
+    if (chapterIdRaw != null && chapterIdRaw !== '' && isNaN(chapterId!)) {
+        return res.status(400).json({ message: 'Invalid chapterId parameter' });
+    }
 
     const sort = (req.query.sort as CommentSort) || 'recent';
     const validSorts: CommentSort[] = ['recent', 'oldest', 'top', 'worst'];
@@ -27,7 +33,16 @@ export async function fetchComments(req: Request, res: Response, next: NextFunct
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? commentService.COMMENT_PAGE_LIMIT), 10) || commentService.COMMENT_PAGE_LIMIT));
 
     try {
-        const result = await commentService.fetchSeriesComments(seriesId, { sort: sortParam, page, limit });
+        if (chapterId != null) {
+            const chapter = await db.query.chapters.findFirst({
+                where: (chapters, { eq, and }) => and(eq(chapters.id, chapterId), eq(chapters.seriesId, seriesId)),
+            });
+            if (!chapter) return res.status(404).json({ message: 'Chapter not found' });
+        }
+
+        const result = chapterId != null
+            ? await commentService.fetchChapterComments(seriesId, chapterId, { sort: sortParam, page, limit })
+            : await commentService.fetchSeriesComments(seriesId, { sort: sortParam, page, limit });
         return res.status(200).json(result);
     } catch (error) {
         return next(error);
@@ -36,8 +51,9 @@ export async function fetchComments(req: Request, res: Response, next: NextFunct
 
 // Create a new comment (no star rating)
 export async function createComment(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
-    const { content, seriesId, parentId, isSpoiler } = req.body;
+    const { content, seriesId, chapterId: chapterIdRaw, parentId, isSpoiler } = req.body;
     const userId = req.user.id;
+    const chapterId = chapterIdRaw != null && chapterIdRaw !== '' ? parseInt(String(chapterIdRaw), 10) : null;
 
     const normalizedContent = typeof content === 'string' ? normalizeUserContent(content) : '';
     if (!normalizedContent) return res.status(400).json({ message: 'Content is required' });
@@ -47,10 +63,20 @@ export async function createComment(req: Request, res: Response, next: NextFunct
     const imageError = await validateContentImagesAsync(normalizedContent);
     if (imageError) return res.status(400).json({ message: imageError });
     if (!seriesId)        return res.status(400).json({ message: 'seriesId is required' });
+    if (chapterIdRaw != null && chapterIdRaw !== '' && (chapterId == null || isNaN(chapterId))) {
+        return res.status(400).json({ message: 'Invalid chapterId' });
+    }
 
     try {
+        if (chapterId != null) {
+            const chapter = await db.query.chapters.findFirst({
+                where: (chapters, { eq, and }) => and(eq(chapters.id, chapterId), eq(chapters.seriesId, seriesId)),
+            });
+            if (!chapter) return res.status(404).json({ message: 'Chapter not found' });
+        }
+
         if (parentId) {
-            const parentCheck = await commentService.validateCommentParent(seriesId, parentId);
+            const parentCheck = await commentService.validateCommentParent(seriesId, parentId, chapterId);
             if (!parentCheck.ok) return res.status(400).json({ message: parentCheck.message });
         }
 
@@ -58,6 +84,7 @@ export async function createComment(req: Request, res: Response, next: NextFunct
             content: normalizedContent,
             userId,
             seriesId,
+            chapterId,
             parentId: parentId || null,
             isSpoiler: isSpoiler || false,
         }).returning();
@@ -118,7 +145,7 @@ export async function createComment(req: Request, res: Response, next: NextFunct
                 href: mangaPageHref(seriesId),
                 summary: `Posted a comment${seriesRow?.title ? ` on ${seriesRow.title}` : ''}`,
                 content: normalizedContent,
-                extra: { seriesId, seriesTitle: seriesRow?.title ?? null, parentId: parentId ?? null },
+                extra: { seriesId, seriesTitle: seriesRow?.title ?? null, chapterId, parentId: parentId ?? null },
             }),
         });
 
