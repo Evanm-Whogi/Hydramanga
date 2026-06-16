@@ -22,6 +22,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 class EmailService {
+    private partialsRegistered = false;
+
     private transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST,
         port: Number(process.env.SMTP_PORT),
@@ -32,6 +34,22 @@ class EmailService {
         },
     });
 
+    private ensurePartials(): void {
+        if (this.partialsRegistered) return;
+        const partialsDir = path.join(__dirname, '../templates/partials');
+        if (!fs.existsSync(partialsDir)) {
+            this.partialsRegistered = true;
+            return;
+        }
+        for (const file of fs.readdirSync(partialsDir)) {
+            if (!file.endsWith('.hbs')) continue;
+            const partialName = path.basename(file, '.hbs');
+            const partialPath = path.join(partialsDir, file);
+            handlebars.registerPartial(partialName, fs.readFileSync(partialPath, 'utf8'));
+        }
+        this.partialsRegistered = true;
+    }
+
     public sendEmail: SendEmailFunction = async (to, templateName, subject, locals) => {
         const emailData = { to, templateName, subject, locals };
         await queueService.addJob('emailQueue', 'sendEmail', emailData); // QueueName, JobName, JobData
@@ -40,9 +58,10 @@ class EmailService {
 
     public processEmailJob = async (jobData: emailJobData, job?: Job) => {
         var { to, templateName, subject, locals } = jobData;
-        locals = { ...locals, appName: process.env.PUBLIC_NAME, year: new Date().getFullYear() }; // Add appName and year to locals
+        locals = { ...locals, appName: process.env.PUBLIC_NAME, appUrl: process.env.PUBLIC_APP_URL, year: new Date().getFullYear() };
 
         await setJobProgress(job, 10);
+        this.ensurePartials();
         const templatePath = path.join(__dirname, '../templates', `${templateName}.hbs`);
         const source = fs.readFileSync(templatePath, 'utf8');
         const template = handlebars.compile(source);
