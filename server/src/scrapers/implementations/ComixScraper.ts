@@ -1012,6 +1012,54 @@ export class ComixScraper implements IChapterScraper {
         );
     }
 
+    /** Prefer the largest group's chapters, then fill any missing numbers from other groups. */
+    private mergeChapterSetsFromGroups(
+        groupSets: Array<{ groupName: string; chapters: Array<{ url: string; title: string; number: string; isSpecial: boolean; specialType?: string }> }>,
+    ): Array<{ url: string; title: string; number: string; isSpecial: boolean; specialType?: string }> {
+        if (!groupSets.length) return [];
+        const ordered = [...groupSets].sort((a, b) => b.chapters.length - a.chapters.length);
+        const primary = ordered[0];
+        const byNumber = new Map<string, (typeof primary.chapters)[number]>();
+        for (const chapter of primary.chapters) byNumber.set(chapter.number, chapter);
+
+        const filledFrom: string[] = [];
+        for (let i = 1; i < ordered.length; i++) {
+            for (const chapter of ordered[i].chapters) {
+                if (byNumber.has(chapter.number)) continue;
+                byNumber.set(chapter.number, chapter);
+                filledFrom.push(`${chapter.number} (${ordered[i].groupName})`);
+            }
+        }
+
+        const merged = Array.from(byNumber.values()).sort((a, b) =>
+            ChapterNumberParser.compareNumbers(a.number, b.number),
+        );
+        if (filledFrom.length) {
+            logger.info(
+                `[Comix] Merged ${merged.length} chapter(s): primary "${primary.groupName}" (${primary.chapters.length}) + fill-ins ${filledFrom.join(', ')}`,
+                { service: 'comixScraper' },
+            );
+        } else {
+            logger.info(
+                `[Comix] Using ${merged.length} chapter(s) from primary group "${primary.groupName}"`,
+                { service: 'comixScraper' },
+            );
+        }
+        return merged;
+    }
+
+    private getMissingChapterNumbers(chapters: Array<{ number: string }>, expectedMaxChapter: number): number[] {
+        if (expectedMaxChapter < 1) return [];
+        const present = new Set<number>();
+        for (const chapter of chapters) {
+            const value = Number(chapter.number);
+            if (Number.isFinite(value) && value >= 1) present.add(Math.floor(value));
+        }
+        const missing: number[] = [];
+        for (let n = 1; n <= expectedMaxChapter; n++) if (!present.has(n)) missing.push(n);
+        return missing;
+    }
+
     private hasCompleteChapterRange(chapters: Array<{ number: string }>, expectedMaxChapter: number): boolean {
         if (expectedMaxChapter < 1) return true;
         const present = new Set<number>();
@@ -1105,7 +1153,7 @@ export class ComixScraper implements IChapterScraper {
                 const chapters = await this.collectPaginatedChapters(page);
                 deduped = this.dedupeAndSortChapters(chapters);
             } else {
-                let bestFallback: typeof deduped = [];
+                const groupSets: Array<{ groupName: string; chapters: typeof deduped }> = [];
                 for (const group of realGroups) {
                     await this.gotoComixPage(page, pageUrl);
                     await page
@@ -1115,12 +1163,11 @@ export class ComixScraper implements IChapterScraper {
 
                     const chapters = await this.collectPaginatedChapters(page);
                     const currentDeduped = this.dedupeAndSortChapters(chapters);
+                    groupSets.push({ groupName: group.name, chapters: currentDeduped });
                     logger.info(
                         `[Comix] Group "${group.name}" -> ${currentDeduped.length} unique chapter(s)`,
                         { service: 'comixScraper' },
                     );
-
-                    if (currentDeduped.length > bestFallback.length) bestFallback = currentDeduped;
 
                     if (expectedMaxChapter <= 0 || this.hasCompleteChapterRange(currentDeduped, expectedMaxChapter)) {
                         deduped = currentDeduped;
@@ -1132,11 +1179,16 @@ export class ComixScraper implements IChapterScraper {
                     }
                 }
                 if (!deduped.length) {
-                    deduped = bestFallback;
-                    logger.warn(
-                        `[Comix] No single group fully covered 1..${expectedMaxChapter}; using largest set (${deduped.length})`,
-                        { service: 'comixScraper' },
-                    );
+                    deduped = this.mergeChapterSetsFromGroups(groupSets);
+                    if (expectedMaxChapter > 0) {
+                        const missing = this.getMissingChapterNumbers(deduped, expectedMaxChapter);
+                        if (missing.length) {
+                            logger.warn(
+                                `[Comix] Merged set still missing chapter(s) in 1..${expectedMaxChapter}: ${missing.join(', ')}`,
+                                { service: 'comixScraper' },
+                            );
+                        }
+                    }
                 }
             }
 
@@ -1342,6 +1394,8 @@ export class ComixScraper implements IChapterScraper {
                     for (const node of nodes) {
                         const rect = node.getBoundingClientRect();
                         const visible = rect.bottom >= 0 && rect.top <= window.innerHeight;
+                        const isErrored =
+                            node.classList.contains('is-errored') || !!node.querySelector('button.rpage-page__retry');
                         const img = node.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
                         const src = img?.currentSrc || img?.getAttribute('src') || img?.getAttribute('data-src') || '';
                         // CDN files are NN.webp (2-digit). Allow optional ?v<N> marker.
@@ -1357,11 +1411,11 @@ export class ComixScraper implements IChapterScraper {
                         const canvas = node.querySelector('canvas.rpage-page__img, canvas') as HTMLCanvasElement | null;
                         const cw = canvas?.width || 0;
                         const ch = canvas?.height || 0;
-                        const hasCanvas = !!canvas && visible && cw >= canvasMinW && ch >= canvasMinH;
+                        const hasCanvas = !!canvas && visible && !isErrored && cw >= canvasMinW && ch >= canvasMinH;
 
                         // Prefer a real <img> CDN URL when the page is NOT protected.
                         const isProtected = /[?&]v\d+/i.test(src);
-                        if (imgReady && !isProtected && /^https?:\/\//i.test(src) && /\.(webp|jpg|jpeg|png)(\?|$)/i.test(src)) {
+                        if (!isErrored && imgReady && !isProtected && /^https?:\/\//i.test(src) && /\.(webp|jpg|jpeg|png)(\?|$)/i.test(src)) {
                             if (!srcMatch || Number(srcMatch[1]) === pageNum) {
                                 out.push({ page: pageNum, imageUrl: src, hasCanvas, canvasWidth: cw, canvasHeight: ch });
                                 continue;
@@ -1392,12 +1446,30 @@ export class ComixScraper implements IChapterScraper {
                 }
             }
 
+            const erroredPages: number[] = await page.evaluate(() => {
+                return Array.from(document.querySelectorAll<HTMLElement>('.rpage-page[data-page]'))
+                    .filter(node => {
+                        const rect = node.getBoundingClientRect();
+                        const visible = rect.bottom >= 0 && rect.top <= window.innerHeight;
+                        return (
+                            visible &&
+                            (node.classList.contains('is-errored') || !!node.querySelector('button.rpage-page__retry'))
+                        );
+                    })
+                    .map(node => Number(node.getAttribute('data-page') || ''))
+                    .filter(n => Number.isFinite(n) && n > 0);
+            });
+            for (const pageNum of erroredPages) {
+                await this.retryErroredPage(page, pageNum, contextLabel);
+            }
+
             // Capture protected/canvas pages that have no direct URL yet.
             const canvasCandidates = snapshot.out.filter(
                 (a: { page: number; hasCanvas: boolean }) =>
                     a.hasCanvas && !pageMap.get(a.page)?.dataUrl && !pageMap.get(a.page)?.imageUrl,
             );
             for (const c of canvasCandidates) {
+                await this.retryErroredPage(page, c.page, contextLabel);
                 const captured = await this.capturePageViaScreenshot(page, c.page, contextLabel);
                 if (captured) pageMap.set(c.page, { ...(pageMap.get(c.page) || { page: c.page }), ...captured });
             }
@@ -1450,6 +1522,7 @@ export class ComixScraper implements IChapterScraper {
             if (!(await button.count())) continue;
             await button.click({ force: true }).catch(() => {});
             await this.waitForReaderPageIndex(page, pageNum);
+            await this.retryErroredPage(page, pageNum, contextLabel);
 
             let asset = await this.captureAssetForActivePage(page, pageNum);
             if (!asset) asset = await this.capturePageViaScreenshot(page, pageNum, contextLabel);
@@ -1482,6 +1555,79 @@ export class ComixScraper implements IChapterScraper {
         }
     }
 
+    private async isReaderPageLoaded(page: any, pageNum: number): Promise<boolean> {
+        const minCanvasW = ComixScraper.MIN_CHAPTER_SHORT_EDGE;
+        const minImgW = ComixScraper.MIN_IMAGE_NATURAL_WIDTH;
+        const minImgH = ComixScraper.MIN_IMAGE_NATURAL_HEIGHT;
+        return page.evaluate(
+            ({ n, minCanvasW, minImgW, minImgH }: { n: number; minCanvasW: number; minImgW: number; minImgH: number }) => {
+                const root = document.querySelector(`.rpage-page[data-page="${n}"]`) as HTMLElement | null;
+                if (!root) return false;
+                if (root.classList.contains('is-errored')) return false;
+                const retry = root.querySelector('button.rpage-page__retry') as HTMLElement | null;
+                if (retry && retry.offsetParent !== null) return false;
+                const canvas = root.querySelector('canvas.rpage-page__img, canvas') as HTMLCanvasElement | null;
+                if (canvas && canvas.width >= minCanvasW) return true;
+                const img = root.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
+                return !!(img && img.complete && img.naturalWidth >= minImgW && img.naturalHeight >= minImgH);
+            },
+            { n: pageNum, minCanvasW, minImgW, minImgH },
+        );
+    }
+
+    /** Click the reader's "Tap to retry" control and wait until the page is no longer errored. */
+    private async retryErroredPage(page: any, pageNum: number, contextLabel: string): Promise<boolean> {
+        const node = page.locator(`.rpage-page[data-page="${pageNum}"]`).first();
+        if (!(await node.count())) return false;
+
+        const maxRetries = 3;
+        const minCanvasW = ComixScraper.MIN_CHAPTER_SHORT_EDGE;
+        const minImgW = ComixScraper.MIN_IMAGE_NATURAL_WIDTH;
+        const minImgH = ComixScraper.MIN_IMAGE_NATURAL_HEIGHT;
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            const errored = await node.evaluate((el: HTMLElement) =>
+                el.classList.contains('is-errored') || !!el.querySelector('button.rpage-page__retry'),
+            );
+            if (!errored) return this.isReaderPageLoaded(page, pageNum);
+
+            const retryBtn = node.locator('button.rpage-page__retry').first();
+            if (!(await retryBtn.count())) return this.isReaderPageLoaded(page, pageNum);
+
+            logger.info(
+                `[Comix] [${contextLabel}] Page ${pageNum} errored; retry click ${attempt}/${maxRetries}`,
+                { service: 'comixScraper' },
+            );
+            await node.scrollIntoViewIfNeeded().catch(() => {});
+            await retryBtn.click({ force: true }).catch(() => {});
+            await page.waitForTimeout(300);
+
+            try {
+                await page.waitForFunction(
+                    ({ n, minCanvasW, minImgW, minImgH }: { n: number; minCanvasW: number; minImgW: number; minImgH: number }) => {
+                        const root = document.querySelector(`.rpage-page[data-page="${n}"]`) as HTMLElement | null;
+                        if (!root) return false;
+                        if (root.classList.contains('is-errored')) return false;
+                        const retry = root.querySelector('button.rpage-page__retry') as HTMLElement | null;
+                        if (retry && retry.offsetParent !== null) return false;
+                        const canvas = root.querySelector('canvas.rpage-page__img, canvas') as HTMLCanvasElement | null;
+                        if (canvas && canvas.width >= minCanvasW) return true;
+                        const img = root.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
+                        return !!(img && img.complete && img.naturalWidth >= minImgW && img.naturalHeight >= minImgH);
+                    },
+                    { n: pageNum, minCanvasW, minImgW, minImgH },
+                    { timeout: 12000 },
+                );
+                await page.waitForTimeout(200);
+                return true;
+            } catch {
+                /* try another click */
+            }
+        }
+
+        return this.isReaderPageLoaded(page, pageNum);
+    }
+
     private async captureAssetForActivePage(page: any, pageNum: number): Promise<ComixPageAsset | null> {
         const minW = ComixScraper.MIN_IMAGE_NATURAL_WIDTH;
         const minH = ComixScraper.MIN_IMAGE_NATURAL_HEIGHT;
@@ -1489,6 +1635,7 @@ export class ComixScraper implements IChapterScraper {
             ({ n, minW, minH }: { n: number; minW: number; minH: number }) => {
                 const node = document.querySelector(`.rpage-page[data-page="${n}"]`) as HTMLElement | null;
                 if (!node) return null;
+                if (node.classList.contains('is-errored') || node.querySelector('button.rpage-page__retry')) return null;
                 const img = node.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
                 const src = img?.currentSrc || img?.getAttribute('src') || '';
                 const isProtected = /[?&]v\d+/i.test(src);
@@ -1521,11 +1668,15 @@ export class ComixScraper implements IChapterScraper {
             const node = page.locator(`.rpage-page[data-page="${pageNum}"]`).first();
             if (!(await node.count())) return null;
             await node.scrollIntoViewIfNeeded().catch(() => {});
+            await this.retryErroredPage(page, pageNum, contextLabel);
             await page
                 .waitForFunction(
                     ({ n, minCanvasW, minImgW, minImgH }: { n: number; minCanvasW: number; minImgW: number; minImgH: number }) => {
-                        const root = document.querySelector(`.rpage-page[data-page="${n}"]`);
+                        const root = document.querySelector(`.rpage-page[data-page="${n}"]`) as HTMLElement | null;
                         if (!root) return false;
+                        if (root.classList.contains('is-errored')) return false;
+                        const retry = root.querySelector('button.rpage-page__retry') as HTMLElement | null;
+                        if (retry && retry.offsetParent !== null) return false;
                         const canvas = root.querySelector('canvas.rpage-page__img, canvas') as HTMLCanvasElement | null;
                         if (canvas && canvas.width >= minCanvasW) return true;
                         const img = root.querySelector('img.rpage-page__img, img') as HTMLImageElement | null;
