@@ -1,4 +1,6 @@
 import { formatTimeAgo } from "@/lib/utils";
+import { computeReleaseSchedule } from "@/lib/releaseSchedule";
+import ReleaseTracker from "./ReleaseTracker";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { ClockIcon, CheckIcon, SearchIcon, ChevronDownIcon } from "lucide-react";
@@ -61,6 +63,11 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
     useClickOutside(sortRef, closeSortDropdown, sortOpen);
 
     const rawChapters = manga.chapters || [];
+
+    const releaseSchedule = useMemo(
+        () => computeReleaseSchedule(rawChapters, manga.status),
+        [rawChapters, manga.status]
+    );
 
     const fetchProgress = useCallback(async () => {
         try {
@@ -359,6 +366,7 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                     </div>
                 </div>
             </div>
+            {releaseSchedule && <ReleaseTracker schedule={releaseSchedule} isHiatus={manga.status === "hiatus"} />}
             {progress?.status === "scanning" ? (
                 <div className="p-8 text-center bg-foreground rounded-lg">
                     <p className="text-lg text-muted mb-2">Scanning for chapters...</p>

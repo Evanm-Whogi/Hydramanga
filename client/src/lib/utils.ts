@@ -71,3 +71,62 @@ export const formatTimeAgo = (value?: string | Date | null): string => {
     const years = Math.floor(diffDays / 365);
     return `${years} year${years === 1 ? '' : 's'} ago`;
 };
+
+function parseDisplayDate(value?: string | Date | null): Date | null {
+    if (!value) return null;
+
+    let date: Date;
+    if (value instanceof Date) {
+        date = value;
+    } else {
+        let normalized = value.replace(' ', 'T');
+        normalized = normalized.replace(/\.\d+/, (m) => m.slice(0, 4));
+        normalized = normalized.replace(/([+-])(\d{2}):?(\d{2})$/, '$1$2:$3');
+        normalized = normalized.replace(/([+-])(\d{2})$/, '$1$2:00');
+        if (!/([zZ]|[+-]\d{2}:\d{2})$/.test(normalized)) {
+            normalized += 'Z';
+        }
+        date = new Date(normalized);
+    }
+
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function formatTimeUntil(value?: string | Date | null): string {
+    const date = parseDisplayDate(value);
+    if (!date) return 'unknown';
+
+    const diffMs = date.getTime() - Date.now();
+    if (diffMs <= 0) return 'soon';
+
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffHours < 24) return 'soon';
+    if (diffDays === 1) return 'in 1 day';
+    if (diffDays < 7) return `in ${diffDays} days`;
+
+    const weeks = Math.floor(diffDays / 7);
+    if (diffDays < 30) return `in ${weeks} week${weeks === 1 ? '' : 's'}`;
+
+    const months = Math.floor(diffDays / 30);
+    if (diffDays < 365) return `${months} month${months === 1 ? '' : 's'} away`;
+
+    const years = Math.floor(diffDays / 365);
+    return `${years} year${years === 1 ? '' : 's'} away`;
+}
+
+export function formatOverdueDuration(days: number): string {
+    if (days < 1) return 'overdue';
+    if (days === 1) return 'overdue by 1 day';
+    if (days < 7) return `overdue by ${days} days`;
+
+    const weeks = Math.floor(days / 7);
+    if (days < 30) return `overdue by ${weeks} week${weeks === 1 ? '' : 's'}`;
+
+    const months = Math.floor(days / 30);
+    if (days < 365) return `${months} month${months === 1 ? '' : 's'} overdue`;
+
+    const years = Math.floor(days / 365);
+    return `${years} year${years === 1 ? '' : 's'} overdue`;
+}
