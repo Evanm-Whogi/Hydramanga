@@ -8,7 +8,7 @@ export default function SidebarCommentItem({ comment }: { comment: any }) {
     <article className="px-4 py-3 transition-colors hover:bg-background/40">
       <div className="flex items-center gap-2.5">
         <Image
-          src={comment.author?.image || "/default-avatar.jpg"}
+          src={comment.author?.image || "/media/pfp/default.jpg"}
           alt=""
           width={32}
           height={32}

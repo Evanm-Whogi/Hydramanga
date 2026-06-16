@@ -334,7 +334,7 @@ class AdminUserService {
       if (image && !isAllowedProfileImageUrl(image, userId)) {
         return { error: 'invalid_image' as const };
       }
-      patch.image = image ?? '/default-avatar.jpg';
+      patch.image = image ?? '/media/pfp/default.jpg';
     }
 
     if (!profileOnlyBadges) {

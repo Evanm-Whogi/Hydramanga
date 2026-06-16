@@ -349,7 +349,7 @@ export default function ProfileContent() {
             <h2 className="text-xl font-bold text-primary mb-4">Change profile picture</h2>
             <div className="flex flex-col gap-4">
               <div className="w-32 h-32 mx-auto rounded-md overflow-hidden border border-borders bg-background">
-                <img src={previewUrl || user?.image || '/default-avatar.jpg'} alt="Preview" className="w-full h-full object-cover" />
+                <img src={previewUrl || user?.image || '/media/pfp/default.jpg'} alt="Preview" className="w-full h-full object-cover" />
               </div>
               <input
                 ref={fileInputRef}

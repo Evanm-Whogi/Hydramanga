@@ -145,7 +145,7 @@ export default function NavbarClient() {
                                 <>
                                     <div className="relative" ref={profileRef}>
                                         <button onClick={() => setIsProfileOpen(!isProfileOpen)} className="block focus:outline-none focus:ring-2 focus:ring-borders rounded-full">
-                                            <img src={user.image || "/default-avatar.jpg"} alt="ProfileImage" width={44} height={44} className="rounded-full border-2 border-transparent hover:border-borders transition-all" /></button>
+                                            <img src={user.image || "/media/pfp/default.jpg"} alt="ProfileImage" width={44} height={44} className="rounded-full border-2 border-transparent hover:border-borders transition-all" /></button>
                                         {isProfileOpen && (
                                             <div className="absolute right-0 mt-2 w-56 bg-background border border-borders rounded-xl shadow-xl py-2 z-80 animate-in fade-in zoom-in duration-200">
                                                 <div className="px-4 py-2 border-b border-borders">
@@ -193,7 +193,7 @@ export default function NavbarClient() {
                             {user ? (
                                 <>
                                     <div className="flex items-center gap-3">
-                                        <img src={user.image || "/default-avatar.jpg"} alt="ProfileImage" width={48} height={48} className="rounded-full border border-borders" />
+                                        <img src={user.image || "/media/pfp/default.jpg"} alt="ProfileImage" width={48} height={48} className="rounded-full border border-borders" />
                                         <div className="min-w-0">
                                             <p className="text-sm font-semibold truncate capitalize">{user.name}</p>
                                             <p className="text-xs text-muted-foreground truncate capitalize">{user.role}</p>

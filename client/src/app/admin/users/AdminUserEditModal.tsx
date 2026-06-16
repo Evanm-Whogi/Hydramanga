@@ -221,13 +221,13 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
           <>
             <div className="flex items-center gap-4 px-4 py-3 border-b border-borders shrink-0">
               <img
-                src={image || "/default-avatar.jpg"}
+                src={image || "/media/pfp/default.jpg"}
                 alt=""
                 width={56}
                 height={56}
                 className="rounded-full border border-borders object-cover"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = "/default-avatar.jpg";
+                  (e.target as HTMLImageElement).src = "/media/pfp/default.jpg";
                 }}
               />
               <div className="text-sm text-muted space-y-0.5 min-w-0">
@@ -263,7 +263,7 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
                     <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Input label="Profile image URL" value={image} onChange={(e) => setImage(e.target.value)} placeholder="/default-avatar.jpg or https://…" />
+                    <Input label="Profile image URL" value={image} onChange={(e) => setImage(e.target.value)} placeholder="/media/pfp/default.jpg or https://…" />
                     <div className="flex flex-col gap-1.5 w-full">
                       <label className="text-sm font-medium text-muted ml-1">Role</label>
                       <select

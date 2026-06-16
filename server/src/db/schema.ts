@@ -10,7 +10,7 @@ export const user = pgTable("user", {
   role: text("role").notNull().default("user"),
   bio: text("bio"),
   emailVerified: boolean("emailVerified").notNull(),
-  image: text("image").default('/default-avatar.jpg'),
+  image: text("image").default('/media/pfp/default.jpg'),
   karmaTotal: integer("karma_total").notNull().default(0),
   banned: boolean("banned").default(false),
   banReason: text("banReason"),

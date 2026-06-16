@@ -99,7 +99,7 @@ class ChatService {
       author: author ?? {
         id: userId,
         name: 'Unknown',
-        image: '/default-avatar.jpg',
+        image: '/media/pfp/default.jpg',
         role: 'user',
       },
     };
@@ -172,7 +172,7 @@ class ChatService {
       author: author ?? {
         id: userId,
         name: 'Unknown',
-        image: '/default-avatar.jpg',
+        image: '/media/pfp/default.jpg',
         role: 'user',
       },
     };

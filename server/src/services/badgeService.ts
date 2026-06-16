@@ -26,7 +26,7 @@ export type BadgeTrigger =
   | 'role_change'
   | 'admin_set';
 
-const DEFAULT_AVATAR = '/default-avatar.jpg';
+const DEFAULT_AVATAR = '/media/pfp/default.jpg';
 
 class BadgeService {
   async getBadgesForUsers(userIds: string[]): Promise<Record<string, EarnedBadge[]>> {

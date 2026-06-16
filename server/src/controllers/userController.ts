@@ -123,7 +123,7 @@ export const deleteProfilePicture = async (req: Request, res: Response) => {
     }
 
     // Reset to default image
-    const defaultImage = '/default-avatar.jpg';
+    const defaultImage = '/media/pfp/default.jpg';
     await db
       .update(schema.user)
       .set({ image: defaultImage, updatedAt: new Date() })

@@ -90,7 +90,7 @@ export default function SocialPostCard({
 
       <div className="flex gap-3">
         <Image
-          src={author?.image || "/default-avatar.jpg"}
+          src={author?.image || "/media/pfp/default.jpg"}
           alt=""
           width={avatarSize}
           height={avatarSize}

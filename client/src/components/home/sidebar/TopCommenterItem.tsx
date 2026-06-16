@@ -43,7 +43,7 @@ export default function TopCommenterItem({ user, rank }: { user: any; rank: numb
         {rank}
       </span>
       <Image
-        src={user.image || "/default-avatar.jpg"}
+        src={user.image || "/media/pfp/default.jpg"}
         alt=""
         width={40}
         height={40}

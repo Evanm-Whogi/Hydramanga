@@ -92,7 +92,7 @@ function PodiumCard({ row, tab, place }: { row: LeaderboardUserRow; tab: Leaderb
       <div className="flex justify-center mb-3">
         <div className="relative inline-flex">
           <Image
-            src={row.image || "/default-avatar.jpg"}
+            src={row.image || "/media/pfp/default.jpg"}
             alt=""
             width={80}
             height={80}
@@ -229,7 +229,7 @@ export default function LeaderboardClient() {
                     <td className="px-4 py-3">
                       <Link href={getProfileHref(row)} className="flex items-center gap-3 hover:text-accent w-fit">
                         <Image
-                          src={row.image || "/default-avatar.jpg"}
+                          src={row.image || "/media/pfp/default.jpg"}
                           alt=""
                           width={40}
                           height={40}

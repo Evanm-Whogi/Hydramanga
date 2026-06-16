@@ -104,7 +104,7 @@ function PublicProfileView({ identifier }: { identifier: string }) {
   if (profile.isPrivate) {
     return (
       <div className="container mx-auto py-20 px-4 text-center ">
-        <img src={profile.image || "/default-avatar.jpg"} alt="" className="w-24 h-24 rounded-full mx-auto mb-4 mt-24" />
+        <img src={profile.image || "/media/pfp/default.jpg"} alt="" className="w-24 h-24 rounded-full mx-auto mb-4 mt-24" />
         <h1 className="text-2xl font-bold text-primary">{profile.name}</h1>
         <p className="text-muted mt-2">This profile is private.</p>
         {profile.isOwner && (
@@ -160,7 +160,7 @@ function PublicProfileView({ identifier }: { identifier: string }) {
       <div className="container mx-auto pt-5 px-4 xl:px-0 mb-5">
         <div className="flex flex-col lg:flex-row lg:place-content-center">
           <div className="relative mt-25 md:mt-0 md:-top-35 flex flex-col w-full lg:w-80 z-25 items-center lg:items-start">
-            <img src={profile.image || "/default-avatar.jpg"} alt="" className="w-48 lg:w-full aspect-square object-cover rounded-md border-4 border-background shadow-lg" />
+            <img src={profile.image || "/media/pfp/default.jpg"} alt="" className="w-48 lg:w-full aspect-square object-cover rounded-md border-4 border-background shadow-lg" />
             <div className="bg-foreground rounded-md p-5 w-full mt-5">
               <div className="text-primary">Username: <span className="text-muted ml-2">{profile.name}</span></div>
               {profile.role && <div className="text-primary mt-1">Role: <span className="text-muted ml-2">{profile.role}</span></div>}

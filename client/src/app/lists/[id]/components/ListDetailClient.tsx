@@ -196,7 +196,7 @@ export default function ListDetailClient({ list: initialList, initialComments, i
             {list.author && (
               <div className="bg-foreground rounded-md p-4 md:p-5 w-full">
                 <div className="flex items-center gap-3 mb-3">
-                  <Image src={list.author.image || "/default-avatar.jpg"} alt={authorName} width={48} height={48} className="rounded-full border border-borders object-cover size-12" />
+                  <Image src={list.author.image || "/media/pfp/default.jpg"} alt={authorName} width={48} height={48} className="rounded-full border border-borders object-cover size-12" />
                   <div className="min-w-0">
                     <p className="text-xs text-muted mb-0.5">Created by</p>
                     <Link href={authorHref} className="text-lg font-semibold text-primary hover:text-accent truncate block">{authorName}</Link>

@@ -173,7 +173,7 @@ export default function UsersClient() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3 min-w-0">
                         <img
-                          src={user.image || "/default-avatar.jpg"}
+                          src={user.image || "/media/pfp/default.jpg"}
                           alt=""
                           width={40}
                           height={40}

@@ -196,7 +196,7 @@ export default function ChatClient() {
                   <div key={msg.id} className="flex gap-3 relative">
                     <Link href={`/users/${msg.author.id}`} className="shrink-0">
                       <Image
-                        src={msg.author.image || "/default-avatar.jpg"}
+                        src={msg.author.image || "/media/pfp/default.jpg"}
                         alt=""
                         width={32}
                         height={32}
@@ -279,7 +279,7 @@ export default function ChatClient() {
                 >
                   <Link href={`/users/${online.id}`} className="flex min-w-0 flex-1 items-center gap-2">
                     <Image
-                      src={online.image || "/default-avatar.jpg"}
+                      src={online.image || "/media/pfp/default.jpg"}
                       alt=""
                       width={28}
                       height={28}
