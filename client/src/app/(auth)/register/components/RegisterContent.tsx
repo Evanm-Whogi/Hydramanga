@@ -82,7 +82,7 @@ export default function RegisterContent({ registrationEnabled = true, oauthGoogl
               <InputField label="Email" placeholder="Email" value={email} onChange={(e: any) => setEmail(e.target.value)} onKeyPress={handleKeyPress} disabled={fieldsDisabled} />
               <InputField label="Password" placeholder="Password" type="password" value={password} onChange={(e: any) => setPassword(e.target.value)} onKeyPress={handleKeyPress} disabled={fieldsDisabled} />
             </div>
-            <button onClick={handleRegister} disabled={fieldsDisabled} className="p-3 mt-5 bg-foreground text-primary hover:bg-foreground/50 hover:cursor-pointer rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
+            <button onClick={handleRegister} disabled={fieldsDisabled} className="p-3 mt-5 bg-foreground shadow-md text-primary hover:bg-foreground/50 hover:cursor-pointer rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
               {isRegistering ? "Creating account..." : "Create Account"}
             </button>
             <div className={registrationDisabled ? 'opacity-50 pointer-events-none' : ''}>

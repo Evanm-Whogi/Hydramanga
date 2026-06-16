@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import UserAvatar from "@/components/UserAvatar";
 import { BookOpen, Flame, MessageSquare, Star, Trophy, Crown, Medal } from "lucide-react";
 import { getLeaderboard, LEADERBOARD_PAGE_SIZE } from "@/services/leaderboardService";
 import type { LeaderboardPeriod, LeaderboardTab, LeaderboardUserRow } from "@/types/leaderboard";
@@ -87,17 +87,11 @@ function PodiumCard({ row, tab, place }: { row: LeaderboardUserRow; tab: Leaderb
   return (
     <Link
       href={getProfileHref(row)}
-      className={`flex-1 min-w-0 bg-foreground border border-borders rounded-lg p-5 text-center hover:border-accent/50 transition-colors w-full md:w-auto`}>
+      className={`flex-1 min-w-0 bg-foreground border border-borders rounded-lg p-5 text-center hover:border-accent/50 transition-colors w-full md:w-auto shadow-md`}>
       {showIcon(place)}
       <div className="flex justify-center mb-3">
         <div className="relative inline-flex">
-          <Image
-            src={row.image || "/media/pfp/default.jpg"}
-            alt=""
-            width={80}
-            height={80}
-            className="rounded-full object-cover border-2 border-borders"
-          />
+          <UserAvatar src={row.image} width={80} height={80} className="rounded-full object-cover border-2 border-borders" />
           <span className={`absolute -bottom-1 -right-1 flex size-7 items-center justify-center rounded-full border-2 border-foreground text-xs font-bold text-white ${placeBadgeClass(place)}`}>
             {place}
           </span>
@@ -186,7 +180,7 @@ export default function LeaderboardClient() {
         </div>
       )}
 
-      <div className="bg-foreground rounded-lg overflow-hidden border border-borders">
+      <div className="bg-foreground rounded-lg overflow-hidden border border-borders shadow-md">
         <div className="overflow-x-auto">
           <table className="w-full text-left min-w-[720px]">
             <thead className="bg-background text-muted text-sm">
@@ -228,13 +222,7 @@ export default function LeaderboardClient() {
                     <td className="px-4 py-3 font-semibold text-accent">{row.rank}</td>
                     <td className="px-4 py-3">
                       <Link href={getProfileHref(row)} className="flex items-center gap-3 hover:text-accent w-fit">
-                        <Image
-                          src={row.image || "/media/pfp/default.jpg"}
-                          alt=""
-                          width={40}
-                          height={40}
-                          className="rounded-full object-cover shrink-0"
-                        />
+                        <UserAvatar src={row.image} width={40} height={40} className="rounded-full object-cover shrink-0" />
                         <div className="min-w-0">
                           <p className="font-medium text-primary truncate">{getUserDisplayName(row)}</p>
                           <p className="text-xs text-muted">

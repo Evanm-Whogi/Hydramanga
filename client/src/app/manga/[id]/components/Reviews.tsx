@@ -7,6 +7,7 @@ import { useUser } from "@/providers/UserProvider";
 import { toast } from "react-toastify";
 import { fetchReviews, postReview, updateReview, deleteReview, voteReview } from "@/services/reviewService";
 import ContentComposer from "@/components/content/ContentComposer";
+import CommentListHeader from "@/components/content/CommentListHeader";
 import SocialPostCard from "@/components/social/SocialPostCard";
 import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
 import { requireTrimmed } from "@/lib/requireContent";
@@ -15,6 +16,34 @@ import { toastApiError } from "@/lib/rateLimit";
 import { isAdminUser } from "@/lib/contentMenu";
 import { requireAuth } from "@/lib/requireAuth";
 import { CONTENT_LIMITS } from "@/lib/contentLimits";
+
+type ReviewSort = "recent" | "oldest" | "top" | "worst";
+
+const SORT_OPTIONS: { value: ReviewSort; label: string }[] = [
+  { value: "top", label: "Best" },
+  { value: "recent", label: "Newest" },
+  { value: "oldest", label: "Oldest" },
+  { value: "worst", label: "Worst" },
+];
+
+function reviewVoteScore(votes?: { type: string }[]): number {
+  if (!votes?.length) return 0;
+  return votes.reduce((sum, v) => sum + (v.type === "like" ? 1 : -1), 0);
+}
+
+function sortReviews(reviews: any[], sort: ReviewSort): any[] {
+  const sorted = [...reviews];
+  switch (sort) {
+    case "oldest":
+      return sorted.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    case "top":
+      return sorted.sort((a, b) => reviewVoteScore(b.votes) - reviewVoteScore(a.votes));
+    case "worst":
+      return sorted.sort((a, b) => reviewVoteScore(a.votes) - reviewVoteScore(b.votes));
+    default:
+      return sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+}
 
 function RatingPicker({value, onChange, disabled = false}: {
     value: number;
@@ -29,7 +58,7 @@ function RatingPicker({value, onChange, disabled = false}: {
                     type="button"
                     disabled={disabled}
                     onClick={() => onChange(n)}
-                    className={`w-8 h-8 rounded-md text-sm font-bold transition-colors hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${value === n ? "bg-primary text-black" : "bg-background text-muted hover:bg-foreground/30 hover:text-white"}`}
+                    className={`w-8 h-8 rounded-md text-sm font-bold transition-colors hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-md ${value === n ? "bg-primary text-black" : "bg-background text-muted hover:bg-foreground/30 hover:text-white"}`}
                 >
                     {n}
                 </button>
@@ -78,6 +107,7 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
     const [editText, setEditText] = useState("");
     const [editRating, setEditRating] = useState(0);
     const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
+    const [sort, setSort] = useState<ReviewSort>("recent");
 
     const loadReviews = async () => {
         try {
@@ -167,10 +197,12 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
         setEditRating(review.rating);
     };
 
+    const sortedReviews = sortReviews(reviews, sort);
+
     return (
         <div className="flex flex-col gap-5">
             {avgRating !== null && (
-                <div className="flex flex-col gap-3 bg-foreground rounded-lg p-4 border border-borders">
+                <div className="flex flex-col gap-3 bg-foreground rounded-lg p-4 border border-borders shadow-md">
                     <div className="flex gap-4 items-center w-1/2">
                         <span className="text-3xl font-bold">{avgRating}</span>
                         <div className="flex flex-col text-xl">
@@ -200,13 +232,12 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
 
             {user && !myReview && (
                 <ContentComposer
-                    heading="Write a Review"
                     top={<RatingField value={rating} onChange={setRating} disabled={isReviewRateLimited} />}
                     value={text}
                     onChange={setText}
                     placeholder="Share your thoughts…"
-                    rows={6}
-                    minHeight="min-h-[120px]"
+                    rows={5}
+                    minHeight="min-h-[100px]"
                     maxLength={CONTENT_LIMITS.review}
                     onSubmit={handleSubmit}
                     submitLabel="Post review"
@@ -214,12 +245,15 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
                     disabled={submitting}
                     rateLimited={isReviewRateLimited}
                     rateLimitHint={reviewRateHint}
-                    layout="card"
+                    layout="comment"
+                    avatarUrl={user.image}
+                    onCancel={() => setRating(0)}
+                    className="mb-5"
                 />
             )}
 
             {user && myReview && editingId !== myReview.id && (
-                <p className="text-sm text-muted bg-foreground p-3 rounded-lg border border-borders">
+                <p className="text-sm text-muted bg-foreground p-3 rounded-lg border border-borders shadow-md mb-5">
                     You have already reviewed this series.
                     <button onClick={() => startEdit(myReview)} className="ml-2 text-primary underline hover:cursor-pointer">
                         Edit your review
@@ -227,13 +261,21 @@ export default function Reviews({ seriesId }: { seriesId: number }) {
                 </p>
             )}
 
+            <CommentListHeader
+                total={reviews.length}
+                sort={sort}
+                options={SORT_OPTIONS}
+                onSortChange={setSort}
+                itemNoun="review"
+            />
+
             {loading ? (
                 <p className="text-muted text-sm">Loading reviews…</p>
             ) : reviews.length === 0 ? (
                 <p className="text-muted text-sm">No reviews yet. Be the first!</p>
             ) : (
                 <div className="flex flex-col gap-4">
-                    {reviews.map((review) => (
+                    {sortedReviews.map((review) => (
                         <div key={review.id}>
                             {editingId === review.id ? (
                                 <div className="bg-foreground rounded-lg p-4 border border-borders space-y-3">

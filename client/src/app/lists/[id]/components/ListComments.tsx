@@ -5,6 +5,7 @@ import { fetchListComments, postListComment, voteListComment, deleteListComment,
 import { toast } from "react-toastify";
 import { useUser } from "@/providers/UserProvider";
 import ContentComposer from "@/components/content/ContentComposer";
+import CommentListHeader from "@/components/content/CommentListHeader";
 import SocialPostCard from "@/components/social/SocialPostCard";
 import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
 import { requireTrimmed } from "@/lib/requireContent";
@@ -15,9 +16,9 @@ import { requireAuth } from "@/lib/requireAuth";
 import { CONTENT_LIMITS } from "@/lib/contentLimits";
 
 const SORT_OPTIONS: { value: ListCommentSort; label: string }[] = [
-  { value: "recent", label: "Most recent" },
+  { value: "top", label: "Best" },
+  { value: "recent", label: "Newest" },
   { value: "oldest", label: "Oldest" },
-  { value: "top", label: "Top" },
   { value: "worst", label: "Worst" },
 ];
 
@@ -163,13 +164,14 @@ export default function ListComments({ listId, initialComments, initialPaginatio
     <section className={hideTitle ? "pt-2" : "mt-10"}>
       {!hideTitle && <h2 className="text-xl font-semibold text-primary mb-4">Comments</h2>}
       {user && (
-        <ContentComposer heading="Leave a Comment" value={text} onChange={setText} placeholder="Write your comment…" rows={5} minHeight="min-h-[100px]" maxLength={CONTENT_LIMITS.listComment} onSubmit={() => handleSubmit(text)} submitLabel="Post comment" submitting={isSubmitting} disabled={isSubmitting} rateLimited={isRateLimited} rateLimitHint={rateHint} layout="card" className="mb-5" />
+        <ContentComposer value={text} onChange={setText} placeholder="Write your comment…" rows={5} minHeight="min-h-[100px]" maxLength={CONTENT_LIMITS.listComment} onSubmit={() => handleSubmit(text)} submitLabel="Post comment" submitting={isSubmitting} disabled={isSubmitting} rateLimited={isRateLimited} rateLimitHint={rateHint} layout="comment" avatarUrl={user.image} className="mb-5" />
       )}
-      {comments.length > 0 && (
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <label className="text-sm text-muted">Sort by{" "}<select value={sort} onChange={(e) => { const v = e.target.value as ListCommentSort; setSort(v); void reload(v, 1, false); }} className="ml-1 px-2 py-1 bg-foreground border border-borders rounded text-primary text-sm">{SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
-        </div>
-      )}
+      <CommentListHeader
+        total={pagination?.total ?? comments.length}
+        sort={sort}
+        options={SORT_OPTIONS}
+        onSortChange={(v) => { setSort(v); void reload(v, 1, false); }}
+      />
       <div className="space-y-4">{comments.map((c) => renderComment(c))}</div>
       {!comments.length && <p className="text-muted text-center py-8">No comments yet.</p>}
       {pagination?.hasMore && (

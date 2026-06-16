@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import UserAvatar from "@/components/UserAvatar";
 import { formatTimeAgo } from "@/lib/utils";
 import MarkdownView from "@/components/markdown/MarkdownView";
 
@@ -7,13 +7,7 @@ export default function SidebarCommentItem({ comment }: { comment: any }) {
   return (
     <article className="px-4 py-3 transition-colors hover:bg-background/40">
       <div className="flex items-center gap-2.5">
-        <Image
-          src={comment.author?.image || "/media/pfp/default.jpg"}
-          alt=""
-          width={32}
-          height={32}
-          className="size-8 shrink-0 rounded-full object-cover"
-        />
+        <UserAvatar src={comment.author?.image} width={32} height={32} className="size-8 shrink-0 rounded-full object-cover" />
         <div className="min-w-0 flex-1">
           <Link href={`/users/${comment.author?.id}`} className="truncate text-sm font-medium text-primary hover:text-accent">{comment.author?.name}</Link>
           <p className="text-xs text-muted">{formatTimeAgo(comment.createdAt)}</p>

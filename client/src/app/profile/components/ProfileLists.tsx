@@ -12,7 +12,7 @@ type ListRow = Pick<ProfileListItem, "id" | "title" | "description" | "visibilit
 
 function ListRowLink({ list }: { list: ListRow }) {
   return (
-    <Link href={`/lists/${list.id}`} className="flex items-center gap-4 bg-foreground rounded-lg p-4 border border-borders hover:bg-foreground/80 transition-colors">
+    <Link href={`/lists/${list.id}`} className="flex items-center gap-4 bg-foreground rounded-lg p-4 border border-borders hover:bg-foreground/80 transition-colors shadow-md">
       <div className="size-12 rounded-lg bg-background flex items-center justify-center shrink-0">
         <ListIcon className="size-5 text-muted" />
       </div>
@@ -74,7 +74,7 @@ export default function ProfileLists({ identifier, mode = "public" }: { identifi
     load();
   }, [load]);
 
-  if (loading) return <div className="bg-foreground rounded-lg p-6 animate-pulse h-40" />;
+  if (loading) return <div className="bg-foreground rounded-lg p-6 animate-pulse h-40 shadow-md" />;
 
   const emptyMessage = mode === "mine"
     ? "You haven't created any lists yet."
@@ -93,7 +93,7 @@ export default function ProfileLists({ identifier, mode = "public" }: { identifi
       )}
 
       {lists.length === 0 ? (
-        <div className="bg-foreground rounded-lg p-6">
+        <div className="bg-foreground rounded-lg p-6 shadow-md">
           <p className="text-muted">{emptyMessage}</p>
         </div>
       ) : (

@@ -20,7 +20,7 @@ export default function AnnouncementsView({announcements}: {announcements: Annou
   const isAdmin = user?.role === "admin";
 
   return (
-    <div className="container mx-auto text-primary flex flex-col pt-[6vh] min-h-[65vh] overflow-hidden pb-20">
+    <div className="container mx-auto text-primary flex flex-col pt-[6vh] min-h-[65vh] overflow-hidden pb-20 shadow-md">
       <div className="flex flex-col space-y-4">
         {isAdmin && <AnnouncementForm />}
         {announcements.length === 0 && (
@@ -29,7 +29,7 @@ export default function AnnouncementsView({announcements}: {announcements: Annou
         {announcements.map((ann) => (
           <article
             key={ann.id}
-            className="bg-foreground p-5 rounded-lg border border-borders flex flex-col"
+            className="bg-foreground p-5 rounded-lg border border-borders flex flex-col shadow-md"
           >
             <div className="flex justify-between items-start gap-4">
               <h3 className="text-lg font-bold text-primary">{ann.title}</h3>

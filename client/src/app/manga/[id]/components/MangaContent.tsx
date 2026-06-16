@@ -76,7 +76,7 @@ const MangaDetails = memo(({ manga }: { manga: any }) => (
       <strong className="text-muted">Authors:</strong>
       {manga.authors &&
         manga.authors.slice(0, 10).map((author: string, index: number) => (
-          <Link key={index} href={`/discover?search=${author}`} className="px-2 py-1 bg-foreground rounded-md text-sm hover:bg-foreground/70 hover:cursor-pointer">
+          <Link key={index} href={`/discover?search=${author}`} className="px-2 py-1 bg-foreground rounded-md shadow-md text-sm hover:bg-foreground/70 hover:cursor-pointer">
             {author}
           </Link>
         ))}
@@ -86,7 +86,7 @@ const MangaDetails = memo(({ manga }: { manga: any }) => (
       <strong className="text-muted">Artists:</strong>
       {manga.artists &&
         manga.artists.slice(0, 10).map((artist: string, index: number) => (
-          <div key={index} className="px-2 py-1 bg-foreground rounded-md text-sm">
+          <div key={index} className="px-2 py-1 bg-foreground rounded-md text-sm shadow-md">
             {artist}
           </div>
         ))}
@@ -96,7 +96,7 @@ const MangaDetails = memo(({ manga }: { manga: any }) => (
       <strong className="text-muted">Publishers:</strong>
       {manga.publishers &&
         manga.publishers.map((publisher: { name: string, note: string, type: string }, index: number) => (
-          <span key={index} className="px-2 py-1 bg-foreground rounded-md text-sm hover:bg-foreground/70">
+          <span key={index} className="px-2 py-1 bg-foreground rounded-md text-sm hover:bg-foreground/70 shadow-md">
             {publisher.name}
           </span>
         ))}
@@ -105,7 +105,7 @@ const MangaDetails = memo(({ manga }: { manga: any }) => (
       <strong className="text-muted">Track Manga:</strong>
       {Object.entries(manga.source).map(([key, platform]: [key: any, platform: any], index) => {
           return (
-            <a key={index} href={`${PLATFORM_URLS[key]}${platform.id}`} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-foreground rounded-md text-sm hover:bg-foreground/50 transition-colors flex gap-2 items-center">
+            <a key={index} href={`${PLATFORM_URLS[key]}${platform.id}`} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-foreground rounded-md text-sm shadow-md hover:bg-foreground/50 transition-colors flex gap-2 items-center">
               <span className="capitalize">{key.replace(/_/g, ' ')}</span>
             </a>
           );
@@ -115,7 +115,7 @@ const MangaDetails = memo(({ manga }: { manga: any }) => (
       <strong className="text-muted">External Links:</strong>
       {manga.links &&
         manga.links.slice(0, 8).map((link: string, index: number) => (
-          <a key={index} href={link} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-foreground rounded-md text-sm hover:bg-foreground/70">
+          <a key={index} href={link} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-foreground rounded-md text-sm hover:bg-foreground/70 shadow-md">
             {getLinkName(link)}
           </a>
         ))}
@@ -368,7 +368,7 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
       WARNING_RATINGS.some((rating) => manga.contentRating?.toLowerCase() === rating);
 
     const containsAdultWarning = containsAdultContent ? (
-      <div className="bg-foreground/50 border border-borders rounded-md p-2 w-full flex items-center gap-2">
+      <div className="bg-foreground/50 border border-borders rounded-md p-2 w-full flex items-center gap-2 shadow-md">
         <p className="font-bold text-lg text-accent items-center"><TriangleAlert className="inline mr-2 size-5" />Reader Discretion:</p>
         <div className="flex gap-2 items-center flex-wrap mt-1">
           {WARNING_GENRES.filter((genre) => manga.genres?.includes(genre)).map((genre, index) => (
@@ -387,7 +387,7 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
 
     const mangaNote = manga.note?.trim();
     const mangaNoteBanner = mangaNote ? (
-      <div className="bg-foreground/50 border border-borders rounded-md p-2 w-full flex items-center">
+      <div className="bg-foreground/50 border border-borders rounded-md p-2 w-full flex items-center shadow-md">
           <StickyNote className="inline mr-2 size-5 text-accent" />
           <span className="text-sm mr-2 font-bold text-accent">Admin Note:</span>
         <p className="text-sm text-primary">{mangaNote}</p>
@@ -456,7 +456,7 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
             <div className="flex gap-2 flex-wrap">
               {manga.genres &&
                 manga.genres.map((item: string, index: number) => (
-                  <Link href={`/discover?genres=${item}`} key={index} className="bg-foreground w-fit px-2 py-1 rounded-lg text-xs md:text-sm capitalize hover:bg-foreground/50">
+                  <Link href={`/discover?genres=${item}`} key={index} className="bg-foreground w-fit px-2 py-1 rounded-lg text-xs md:text-sm capitalize hover:bg-foreground/50 shadow-md">
                     {item}
                   </Link>
                 ))}
@@ -465,7 +465,7 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
             <button
               onClick={() => startTransition(() => setShowDetails((prev) => !prev))}
               disabled={isPending}
-              className="mt-4 px-4 py-2 bg-foreground text-primary rounded-lg w-fit text-sm hover:bg-foreground/50 hover:cursor-pointer disabled:opacity-50"
+              className="mt-4 px-4 py-2 bg-foreground text-primary rounded-lg w-fit text-sm hover:bg-foreground/50 hover:cursor-pointer disabled:opacity-50 shadow-md"
             >
               {showDetails ? 'Hide Details' : 'Show Details...'}
             </button>
@@ -491,7 +491,7 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
             </div>
 
             {/* Info Box */}
-            <div className="bg-foreground rounded-md p-4 md:p-5 w-full">
+            <div className="bg-foreground rounded-md p-4 md:p-5 w-full shadow-md">
               <div className="flex flex-col gap-2 text-sm md:text-base">
                 <div className="flex justify-between text-muted capitalize">
                   Type <span>{manga.type}</span>
@@ -518,11 +518,11 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
                 <div className="flex justify-between text-muted">
                   <div className="w-full flex gap-2">
                     {user && (
-                    <button type="button" onClick={() => setReportModalOpen(true)} className="px-4 py-2 bg-background text-primary rounded-lg w-full text-sm hover:bg-background/50 hover:cursor-pointer disabled:opacity-50">
+                    <button type="button" onClick={() => setReportModalOpen(true)} className="px-4 py-2 bg-background text-primary shadow-md rounded-lg w-full text-sm hover:bg-background/50 hover:cursor-pointer disabled:opacity-50">
                       Report Issue
                     </button>
                     )}
-                    <button onClick={() => handleShareClick(manga.id, manga.title)} type="button" className="flex items-center justify-center gap-2 px-4 py-2 bg-background text-primary rounded-lg w-full text-sm hover:bg-background/50 hover:cursor-pointer disabled:opacity-50">
+                    <button onClick={() => handleShareClick(manga.id, manga.title)} type="button" className="flex items-center  shadow-md justify-center gap-2 px-4 py-2 bg-background text-primary rounded-lg w-full text-sm hover:bg-background/50 hover:cursor-pointer disabled:opacity-50">
                       <ShareIcon className="size-4" /> Share
                     </button>
                   </div>
@@ -531,7 +531,7 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
             </div>
 
             {/* Update Dates Box */}
-            <div className="bg-foreground rounded-md p-4 md:p-5 w-full">
+            <div className="bg-foreground rounded-md p-4 md:p-5 w-full shadow-md">
               <div className="flex flex-col gap-2 text-xs md:text-sm">
                 <div className="flex justify-between text-muted">
                   Meta Updated: <span className="text-normal">{formatTimeAgo(manga.lastUpdatedAt)}</span>
@@ -543,7 +543,7 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
             </div>
 
             {/* Relations Box */}
-            <div className="bg-foreground rounded-md p-4 md:p-5 w-full">
+            <div className="bg-foreground rounded-md p-4 md:p-5 w-full shadow-md">
               <div className="flex flex-col gap-3">
                 <h2 className="text-base md:text-lg font-bold">Relations</h2>
                 {manga.relationships && Object.keys(manga.relationships).length > 0 ? (

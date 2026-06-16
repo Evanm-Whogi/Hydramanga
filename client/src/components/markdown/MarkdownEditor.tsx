@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import MarkdownBlock from "./MarkdownBlock";
 import ContentMediaPicker from "@/components/content/ContentMediaPicker";
 import ContentImagePreviews from "@/components/content/ContentImagePreviews";
@@ -96,34 +96,8 @@ function ToolButton({
   );
 }
 
-export default function MarkdownEditor({
-  value,
-  onChange,
-  placeholder = "Markdown supported: **bold**, *italic*, `code`, ||spoiler||, lists...",
-  rows = 4,
-  showPreviewToggle = false,
-  minHeight = "min-h-[100px]",
-  maxLength,
-  onEnterSubmit = false,
-  onSubmit,
-  showMediaPicker = true,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  rows?: number;
-  showPreviewToggle?: boolean;
-  minHeight?: string;
-  maxLength?: number;
-  /** Enter submits; Shift+Enter inserts a newline. */
-  onEnterSubmit?: boolean;
-  onSubmit?: () => void;
-  showMediaPicker?: boolean;
-}) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [preview, setPreview] = useState(false);
-
-  const insert = (action: ToolbarAction) => {
+function useMarkdownInsert(value: string, onChange: (value: string) => void, textareaRef: RefObject<HTMLTextAreaElement | null>) {
+  return (action: ToolbarAction) => {
     const ta = textareaRef.current;
     if (!ta) return;
     const start = ta.selectionStart;
@@ -170,49 +144,128 @@ export default function MarkdownEditor({
     ta.focus();
     setTimeout(() => ta.setSelectionRange(start, end), 0);
   };
+}
+
+export function MarkdownToolbar({
+  value,
+  onChange,
+  textareaRef,
+  showMediaPicker = true,
+  className = "",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
+  showMediaPicker?: boolean;
+  className?: string;
+}) {
+  const insert = useMarkdownInsert(value, onChange, textareaRef);
+
+  return (
+    <div className={`flex rounded-lg border border-borders overflow-hidden shrink-0 ${className}`}>
+      <ToolButton onClick={() => insert("bold")} title="Bold" icon={<Bold className="size-4" />} />
+      <ToolButton onClick={() => insert("italic")} title="Italic" icon={<Italic className="size-4" />} />
+      <ToolButton onClick={() => insert("underline")} title="Underline" icon={<UnderlineIcon className="size-4" />} />
+      <ToolButton onClick={() => insert("code")} title="Inline code" icon={<Code className="size-4" />} />
+      <ToolButton onClick={() => insert("h1")} title="Heading 1" icon={<Heading1 className="size-4" />} />
+      <ToolButton onClick={() => insert("h2")} title="Heading 2" icon={<Heading2 className="size-4" />} />
+      <ToolButton onClick={() => insert("h3")} title="Heading 3" icon={<Heading3 className="size-4" />} />
+      <ToolButton onClick={() => insert("ul")} title="Bullet list" icon={<List className="size-4" />} />
+      <ToolButton onClick={() => insert("ol")} title="Numbered list" icon={<ListOrdered className="size-4" />} />
+      <ToolButton onClick={() => insert("spoiler")} title="Spoiler ||text||" icon={<EyeClosed className="size-4" />} />
+      {showMediaPicker && (
+        <ContentMediaPicker
+          value={value}
+          onChange={onChange}
+          getSelection={() => {
+            const ta = textareaRef.current;
+            return { start: ta?.selectionStart ?? value.length, end: ta?.selectionEnd ?? value.length };
+          }}
+          setSelection={(start, end) => {
+            const ta = textareaRef.current;
+            if (!ta) return;
+            ta.focus();
+            ta.setSelectionRange(start, end);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+export default function MarkdownEditor({
+  value,
+  onChange,
+  placeholder = "Markdown supported: **bold**, *italic*, `code`, ||spoiler||, lists...",
+  rows = 4,
+  showPreviewToggle = false,
+  minHeight = "min-h-[100px]",
+  maxLength,
+  onEnterSubmit = false,
+  onSubmit,
+  showMediaPicker = true,
+  hideToolbar = false,
+  showImagePreviews = true,
+  inputRef,
+  onFocus,
+  resizable = true,
+  inputClassName,
+  autoGrow = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  rows?: number;
+  showPreviewToggle?: boolean;
+  minHeight?: string;
+  maxLength?: number;
+  /** Enter submits; Shift+Enter inserts a newline. */
+  onEnterSubmit?: boolean;
+  onSubmit?: () => void;
+  showMediaPicker?: boolean;
+  hideToolbar?: boolean;
+  showImagePreviews?: boolean;
+  inputRef?: RefObject<HTMLTextAreaElement | null>;
+  onFocus?: () => void;
+  resizable?: boolean;
+  inputClassName?: string;
+  autoGrow?: boolean;
+}) {
+  const internalRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = inputRef ?? internalRef;
+  const [preview, setPreview] = useState(false);
+
+  const syncTextareaHeight = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta || !autoGrow) return;
+    ta.style.height = "auto";
+    const maxHeight = 320;
+    const nextHeight = Math.min(ta.scrollHeight, maxHeight);
+    ta.style.height = `${nextHeight}px`;
+    ta.style.overflowY = ta.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [autoGrow, textareaRef]);
+
+  useLayoutEffect(() => {
+    syncTextareaHeight();
+  }, [value, syncTextareaHeight]);
 
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex rounded-lg border border-borders overflow-hidden">
-          <ToolButton onClick={() => insert("bold")} title="Bold" icon={<Bold className="size-4" />} />
-          <ToolButton onClick={() => insert("italic")} title="Italic" icon={<Italic className="size-4" />} />
-          <ToolButton onClick={() => insert("underline")} title="Underline" icon={<UnderlineIcon className="size-4" />} />
-          <ToolButton onClick={() => insert("code")} title="Inline code" icon={<Code className="size-4" />} />
-          <ToolButton onClick={() => insert("h1")} title="Heading 1" icon={<Heading1 className="size-4" />} />
-          <ToolButton onClick={() => insert("h2")} title="Heading 2" icon={<Heading2 className="size-4" />} />
-          <ToolButton onClick={() => insert("h3")} title="Heading 3" icon={<Heading3 className="size-4" />} />
-          <ToolButton onClick={() => insert("ul")} title="Bullet list" icon={<List className="size-4" />} />
-          <ToolButton onClick={() => insert("ol")} title="Numbered list" icon={<ListOrdered className="size-4" />} />
-          <ToolButton onClick={() => insert("spoiler")} title="Spoiler ||text||" icon={<EyeClosed className="size-4" />} />
-          {showMediaPicker && (
-            <ContentMediaPicker
-              value={value}
-              onChange={onChange}
-              getSelection={() => {
-                const ta = textareaRef.current;
-                return { start: ta?.selectionStart ?? value.length, end: ta?.selectionEnd ?? value.length };
-              }}
-              setSelection={(start, end) => {
-                const ta = textareaRef.current;
-                if (!ta) return;
-                ta.focus();
-                ta.setSelectionRange(start, end);
-              }}
-            />
+      {!hideToolbar && (
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <MarkdownToolbar value={value} onChange={onChange} textareaRef={textareaRef} showMediaPicker={showMediaPicker} />
+          {showPreviewToggle && (
+            <button
+              type="button"
+              onClick={() => setPreview((p) => !p)}
+              className="flex items-center gap-1 text-xs text-muted hover:text-primary"
+            >
+              {preview ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+              {preview ? "Edit" : "Preview"}
+            </button>
           )}
         </div>
-        {showPreviewToggle && (
-          <button
-            type="button"
-            onClick={() => setPreview((p) => !p)}
-            className="flex items-center gap-1 text-xs text-muted hover:text-primary"
-          >
-            {preview ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-            {preview ? "Edit" : "Preview"}
-          </button>
-        )}
-      </div>
+      )}
       {showPreviewToggle && preview ? (
         <div
           className={`rounded-lg border border-borders bg-background p-4 text-primary prose prose-invert prose-sm max-w-none dark:prose-invert prose-pre:bg-foreground prose-pre:border prose-pre:border-borders prose-pre:rounded-lg prose-pre:overflow-x-auto prose-code:bg-foreground/80 prose-code:px-1 prose-code:rounded prose-code:before:content-none prose-code:after:content-none ${minHeight}`}
@@ -223,20 +276,29 @@ export default function MarkdownEditor({
         <textarea
           ref={textareaRef}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            onChange(e.target.value);
+            if (autoGrow) requestAnimationFrame(syncTextareaHeight);
+          }}
+          onFocus={(e) => {
+            onFocus?.();
+            if (autoGrow) syncTextareaHeight();
+          }}
           onKeyDown={(e) => {
             if (onEnterSubmit && e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               onSubmit?.();
+              return;
             }
+            if (autoGrow && e.key === "Enter") requestAnimationFrame(syncTextareaHeight);
           }}
           placeholder={placeholder}
-          rows={rows}
+          rows={autoGrow ? 1 : rows}
           maxLength={maxLength}
-          className={`w-full rounded-lg border border-borders bg-background px-3 py-2 text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent resize-y ${minHeight}`}
+          className={`w-full rounded-lg border border-borders bg-background px-3 py-2 text-primary placeholder:text-muted focus:outline-none ${autoGrow ? "resize-y overflow-hidden" : resizable ? "resize-y" : "resize-none"} ${minHeight} ${inputClassName ?? ""}`}
         />
       )}
-      {!preview && showMediaPicker && <ContentImagePreviews content={value} />}
+      {!preview && showMediaPicker && showImagePreviews && <ContentImagePreviews content={value} />}
     </div>
   );
 }

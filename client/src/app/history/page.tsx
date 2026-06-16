@@ -10,12 +10,12 @@ function HistorySkeleton() {
         <div className="space-y-6 animate-pulse">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                 {[1, 2, 3, 4].map((i) => (
-                    <div key={i} className="bg-foreground rounded-lg h-24" />
+                    <div key={i} className="bg-foreground rounded-lg h-24 shadow-md" />
                 ))}
             </div>
             <div className="space-y-4">
                 {[1, 2, 3].map((i) => (
-                    <div key={i} className="bg-foreground rounded-lg h-32" />
+                    <div key={i} className="bg-foreground rounded-lg h-32 shadow-md" />
                 ))}
             </div>
         </div>

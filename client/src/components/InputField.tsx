@@ -13,7 +13,7 @@ export default function Input({ label, icon, placeholder, ...props }: InputProps
         <input
           {...props}
           placeholder={placeholder}
-          className={`w-full bg-foreground border border-borders text-muted px-4 py-2.5 rounded-xl outline-none transition-all focus:border-borders focus:ring-1 focus:ring-borders ${icon ? 'pl-10' : ''}`}
+          className={`w-full bg-foreground shadow-md border border-borders text-muted px-4 py-2.5 rounded-xl outline-none transition-all focus:border-borders focus:ring-1 focus:ring-borders ${icon ? 'pl-10' : ''}`}
         />
       </div>
     </div>

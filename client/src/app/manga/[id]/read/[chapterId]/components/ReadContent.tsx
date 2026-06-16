@@ -23,8 +23,8 @@ const SIDEBAR_WIDTH_PX = 260;
 const COMMENTS_SIDEBAR_WIDTH_PX = 525;
 const EAGER_COUNT = 5;
 const SIDEBAR_BTN = "p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer rounded flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-30";
-const SIDEBAR_BTN_HALF = `${SIDEBAR_BTN} w-1/2`;
-const SIDEBAR_BTN_FULL = `${SIDEBAR_BTN} w-full`;
+const SIDEBAR_BTN_HALF = `${SIDEBAR_BTN} w-1/2 shadow-md`;
+const SIDEBAR_BTN_FULL = `${SIDEBAR_BTN} w-full shadow-md`;
 
 const LazyMangaPage = React.memo(function LazyMangaPage({
   src,
@@ -962,7 +962,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
     if (settings.progressIndicator === 'right') {
       return (
-        <div className="fixed top-0 h-screen w-2 bg-foreground/30 z-50 pointer-events-none transition-all duration-300" style={{ right: isDesktop && commentsSidebarOpen ? COMMENTS_SIDEBAR_WIDTH_PX : 0 }}>
+        <div className="fixed top-0 h-screen w-2 bg-foreground/30 z-50 pointer-events-none transition-all duration-300 shadow-md" style={{ right: isDesktop && commentsSidebarOpen ? COMMENTS_SIDEBAR_WIDTH_PX : 0 }}>
           <div
             className="w-full bg-accent transition-all duration-200 ease-out"
             style={{ height: `${percentage}%` }}
@@ -981,7 +981,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
     if (settings.progressIndicator === 'top') {
       return (
-        <div className="fixed top-0 left-0 right-0 h-1 bg-foreground/30 z-50 pointer-events-none">
+        <div className="fixed top-0 left-0 right-0 h-1 bg-foreground/30 z-50 pointer-events-none shadow-md">
           <div
             className="h-full bg-accent transition-all duration-200 ease-out"
             style={{ width: `${percentage}%` }}
@@ -997,7 +997,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
     if (settings.progressIndicator === 'bottom') {
       return (
-        <div className="fixed bottom-0 left-0 right-0 h-1 bg-foreground/30 z-50 pointer-events-none">
+        <div className="fixed bottom-0 left-0 right-0 h-1 bg-foreground/30 z-50 pointer-events-none shadow-md">
           <div
             className="h-full bg-accent transition-all duration-200 ease-out"
             style={{ width: `${percentage}%` }}
@@ -1067,7 +1067,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   return (
     <div ref={readerRootRef} className="reader-root flex bg-background min-h-screen text-primary flex-col md:flex-row">
       {/* Desktop Sidebar */}
-      <aside className={`sidebar hidden md:flex md:h-screen md:fixed md:left-0 md:top-0 md:bg-foreground md:border-r md:border-r-borders md:flex-col md:z-100 md:transition-all md:duration-300 ${
+      <aside className={`sidebar hidden md:flex md:h-screen md:fixed md:left-0 md:top-0 md:bg-foreground shadow-md md:border-r md:border-r-borders md:flex-col md:z-100 md:transition-all md:duration-300 ${
         sidebarCollapsed ? 'md:w-0 md:overflow-hidden' : 'md:w-65'
       }`}>
         <div className="sidebar-header px-4 py-4 border-b border-borders">
@@ -1093,7 +1093,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
       {sidebarOpen && (
         <>
           <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />
-          <aside className="sidebar fixed top-0 left-0 h-screen w-72 bg-foreground border-r border-r-borders flex flex-col z-50 md:hidden">
+          <aside className="sidebar fixed top-0 left-0 h-screen w-72 bg-foreground border-r border-r-borders shadow-md flex flex-col z-50 md:hidden">
             <div className="sidebar-header px-4 py-4 border-b border-borders flex flex-col gap-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-[1.25rem] font-bold text-white">Chapter {activeChapterNumber}</h2>

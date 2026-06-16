@@ -12,7 +12,7 @@ export default function HistoryStats({
 }: HistoryStatsProps) {
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <div className="bg-foreground/50 rounded-lg p-6 border border-borders/30 hover:border-borders/60 transition-colors">
+            <div className="bg-foreground/50 rounded-lg p-6 border border-borders/30 hover:border-borders/60 transition-colors shadow-md">
                 <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-semibold text-muted">Reading History</h3>
                     <BookOpen className="size-5 text-blue-400" />
@@ -22,7 +22,7 @@ export default function HistoryStats({
             </div>
 
             {/* View History */}
-            <div className="bg-foreground/50 rounded-lg p-6 border border-borders/30 hover:border-borders/60 transition-colors">
+            <div className="bg-foreground/50 rounded-lg p-6 border border-borders/30 hover:border-borders/60 transition-colors shadow-md">
                 <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-semibold text-muted">View History</h3>
                     <Eye className="size-5 text-purple-400" />
@@ -32,7 +32,7 @@ export default function HistoryStats({
             </div>
 
             {/* Total Reading Time */}
-            <div className="bg-foreground/50 rounded-lg p-6 border border-borders/30 hover:border-borders/60 transition-colors">
+            <div className="bg-foreground/50 rounded-lg p-6 border border-borders/30 hover:border-borders/60 transition-colors shadow-md">
                 <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-semibold text-muted">Reading Time</h3>
                     <Zap className="size-5 text-yellow-400" />
@@ -42,7 +42,7 @@ export default function HistoryStats({
             </div>
 
             {/* Most Recent */}
-            <div className="bg-foreground/50 rounded-lg p-6 border border-borders/30 hover:border-borders/60 transition-colors">
+            <div className="bg-foreground/50 rounded-lg p-6 border border-borders/30 hover:border-borders/60 transition-colors shadow-md">
                 <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-semibold text-muted">Latest Activity</h3>
                     <TrendingUp className="size-5 text-green-400" />

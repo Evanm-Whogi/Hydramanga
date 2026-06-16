@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import UserAvatar from "@/components/UserAvatar";
 import { toast } from "react-toastify";
 import { getChatMessages, postChatMessage, updateChatMessage, deleteChatMessage, muteChatUser } from "@/services/chatService";
 import { useChatSocket, type ChatPresenceUser } from "@/hooks/useChatSocket";
@@ -159,7 +159,7 @@ export default function ChatClient() {
   return (
     <div className="container mx-auto px-4 xl:px-0 py-8 w-full md:w-2/3">
       <div className="flex flex-col lg:flex-row gap-4 items-stretch">
-        <div className="flex-1 min-w-0 flex flex-col bg-foreground rounded-lg border border-borders h-[70vh] min-h-[420px]">
+        <div className="flex-1 min-w-0 flex flex-col bg-foreground rounded-lg border border-borders h-[70vh] min-h-[420px] shadow-md">
           <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-4">
             {messages.length === 0 ? (
               <p className="text-sm text-muted text-center py-8">No messages yet. Say hello!</p>
@@ -195,13 +195,7 @@ export default function ChatClient() {
                 return (
                   <div key={msg.id} className="flex gap-3 relative">
                     <Link href={`/users/${msg.author.id}`} className="shrink-0">
-                      <Image
-                        src={msg.author.image || "/media/pfp/default.jpg"}
-                        alt=""
-                        width={32}
-                        height={32}
-                        className="rounded-full size-8 object-cover"
-                      />
+                      <UserAvatar src={msg.author.image} width={32} height={32} className="rounded-full size-8 object-cover" />
                     </Link>
                     <div className="min-w-0 flex-1 pr-8">
                       <AuthorByline author={msg.author} createdAt={msg.createdAt} />
@@ -236,20 +230,20 @@ export default function ChatClient() {
             )}
           </div>
 
-          <div className="shrink-0 border-t border-borders p-2">
+          <div className="shrink-0 border-t border-borders p-3">
             {user ? (
             <ContentComposer
               value={text}
               onChange={setText}
               placeholder="Write a message… (Enter to send, Shift+Enter for newline)"
               variant="markdown"
-              rows={2}
-              minHeight="min-h-[72px]"
               maxLength={CONTENT_LIMITS.chatMessage}
               onEnterSubmit
               onSubmit={handleSend}
               submitLabel="Send"
-              layout="embedded"
+              layout="comment"
+              avatarUrl={user.image}
+              className="!border-0 !p-0 !bg-transparent rounded-none"
               rateLimited={isSendRateLimited}
               rateLimitHint={
                 isSendRateLimited
@@ -263,12 +257,12 @@ export default function ChatClient() {
           </div>
         </div>
 
-        <aside className="w-full lg:w-60 shrink-0 bg-foreground rounded-lg border border-borders flex flex-col h-[70vh] min-h-[420px] lg:min-h-0">
+        <aside className="w-full lg:w-60 shrink-0 bg-foreground rounded-lg border border-borders flex flex-col h-[70vh] min-h-[420px] lg:min-h-0 shadow-md">
           <div className="px-4 py-3 border-b border-borders shrink-0">
             <h2 className="text-sm font-semibold text-primary">Online</h2>
             <p className="text-xs text-muted mt-0.5">{sortedOnline.length} connected</p>
           </div>
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-2">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-2 shadow-md">
             {sortedOnline.length === 0 ? (
               <p className="text-xs text-muted px-1">No one else here yet.</p>
             ) : (
@@ -278,13 +272,7 @@ export default function ChatClient() {
                   className="relative flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-background transition-colors"
                 >
                   <Link href={`/users/${online.id}`} className="flex min-w-0 flex-1 items-center gap-2">
-                    <Image
-                      src={online.image || "/media/pfp/default.jpg"}
-                      alt=""
-                      width={28}
-                      height={28}
-                      className="rounded-full size-7 object-cover shrink-0"
-                    />
+                    <UserAvatar src={online.image} width={28} height={28} className="rounded-full size-7 object-cover shrink-0" />
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-primary truncate">{online.name}</p>
                       <p className={`text-xs truncate ${online.role === "admin" ? "text-teal-400" : "text-muted"}`}>

@@ -52,7 +52,7 @@ export default function BookmarkDropdown({ seriesId, initialStatus, mangaTitle }
   return (
     <div className="relative inline-flex items-center gap-3">
       <div ref={rootRef} className="relative">
-        <button onClick={() => { if (!requireAuth(user, `/manga/${seriesId}`)) return; setOpen(!open); }} disabled={loading} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none text-primary transition-all ${loading ? 'animate-manga-pulse' : ''}`}>
+        <button onClick={() => { if (!requireAuth(user, `/manga/${seriesId}`)) return; setOpen(!open); }} disabled={loading} className={`inline-flex items-center shadow-md bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none text-primary transition-all ${loading ? 'animate-manga-pulse' : ''}`}>
           <BookmarkIcon className={`size-6 mr-2 transition-colors ${status ? 'fill-accent text-accent' : ''}`} />
           <span className="capitalize">{label}</span>
           <ChevronDownIcon className={`ml-2 size-4 transition-transform ${open ? 'rotate-180' : ''}`} />

@@ -57,7 +57,7 @@ export default function HistoryList({ items, type, onDelete }: HistoryListProps)
                     return (
                         <div
                             key={`${type}-${item.seriesId}`}
-                            className="bg-foreground/50 rounded-lg overflow-hidden border border-borders/30 hover:border-borders/60 transition-colors"
+                            className="bg-foreground/50 rounded-lg overflow-hidden border border-borders/30 hover:border-borders/60 transition-colors shadow-md"
                         >
                             <div className="flex items-center gap-4 p-4">
                                 <Link href={type === "reading" && item.chapterId ? `/manga/${item.seriesId}/read/${item.chapterId}?page=${item.pageNumber || 1}` : `/manga/${item.seriesId}`} className="shrink-0 w-20 h-28 rounded-lg overflow-hidden group">

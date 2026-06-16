@@ -31,11 +31,11 @@ export default function ProfileRecentReads({ identifier }: { identifier: string 
     loadItems(1);
   }, [loadItems]);
 
-  if (loading && items.length === 0) return <div className="bg-foreground rounded-lg p-6 animate-pulse h-40" />;
+  if (loading && items.length === 0) return <div className="bg-foreground rounded-lg p-6 animate-pulse h-40 shadow-md" />;
 
   if (!loading && items.length === 0) {
     return (
-      <div className="bg-foreground rounded-lg p-6">
+      <div className="bg-foreground rounded-lg p-6 shadow-md">
         <p className="text-muted">No recent reads yet.</p>
       </div>
     );
@@ -45,10 +45,10 @@ export default function ProfileRecentReads({ identifier }: { identifier: string 
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {loading ? (
-          <div className="bg-foreground rounded-lg p-6 animate-pulse h-40" />
+          <div className="bg-foreground rounded-lg p-6 animate-pulse h-40 shadow-md" />
         ) : (
           items.map((item) => (
-            <Link key={`${item.seriesId}-${item.updatedAt}`} href={mangaPath(item.seriesId)} className="flex gap-4 bg-foreground rounded-lg p-4 hover:bg-foreground/80 transition-colors">
+            <Link key={`${item.seriesId}-${item.updatedAt}`} href={mangaPath(item.seriesId)} className="flex gap-4 bg-foreground rounded-lg p-4 hover:bg-foreground/80 transition-colors shadow-md">
               <img src={item.cover || "/notFound.png"} alt={item.title ?? "Manga"} className="w-16 aspect-2/3 object-cover rounded-md shrink-0" />
               <div className="min-w-0">
                 <p className="font-medium text-primary line-clamp-2">{item.title}</p>

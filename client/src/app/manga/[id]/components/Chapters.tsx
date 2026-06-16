@@ -295,7 +295,7 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                         placeholder="Search chapters..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2 bg-foreground border border-transparent rounded-md text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent"
+                        className="w-full pl-9 pr-3 py-2 bg-foreground shadow-md border border-transparent rounded-md text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent"
                     />
                 </div>
                 <div className="flex flex-row flex-wrap gap-2 items-center">
@@ -303,7 +303,7 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                     <button
                         type="button"
                         onClick={() => (selectModeEnabled ? exitSelectMode() : setSelectModeEnabled(true))}
-                        className={`px-4 py-2 rounded-md cursor-pointer transition-colors ${selectModeEnabled ? "bg-accent hover:bg-accent/80 text-white" : "bg-foreground hover:bg-foreground/50"}`}
+                        className={`px-4 py-2 rounded-md cursor-pointer transition-colors ${selectModeEnabled ? "bg-accent hover:bg-accent/80 text-white shadow-md" : "bg-foreground hover:bg-foreground/50 shadow-md"}`}
                     >
                         {selectModeEnabled ? "Done" : "Select Mode"}
                     </button>
@@ -312,13 +312,13 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                         <button
                             type="button"
                             onClick={() => { setFilterOpen((o) => !o); setSortOpen(false); }}
-                            className="flex items-center gap-2 px-4 py-2 bg-foreground hover:bg-foreground/50 rounded-md cursor-pointer"
+                            className="flex items-center gap-2 px-4 py-2 bg-foreground hover:bg-foreground/50 rounded-md cursor-pointer shadow-md"
                         >
                             Filter: {FILTER_OPTIONS.find((o) => o.value === filter)?.label ?? "All"}
                             <ChevronDownIcon className={`size-4 transition-transform ${filterOpen ? "rotate-180" : ""}`} />
                         </button>
                         {filterOpen && (
-                            <div className="absolute top-full left-0 mt-1 min-w-[140px] bg-foreground rounded-md shadow-xl z-50 border border-white/10 overflow-hidden">
+                            <div className="absolute top-full left-0 mt-1 min-w-[140px] bg-foreground rounded-md shadow-xl z-50 border border-white/10 overflow-hidden shadow-md">
                                 {FILTER_OPTIONS.map((opt) => (
                                     <button
                                         key={opt.value}
@@ -336,13 +336,13 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                         <button
                             type="button"
                             onClick={() => { setSortOpen((o) => !o); setFilterOpen(false); }}
-                            className="flex items-center gap-2 px-4 py-2 bg-foreground hover:bg-foreground/50 rounded-md cursor-pointer"
+                            className="flex items-center gap-2 px-4 py-2 bg-foreground hover:bg-foreground/50 rounded-md cursor-pointer shadow-md"
                         >
                             {SORT_OPTIONS.find((o) => o.value === sortBy)?.label ?? "Sort"}
                             <ChevronDownIcon className={`size-4 transition-transform ${sortOpen ? "rotate-180" : ""}`} />
                         </button>
                         {sortOpen && (
-                            <div className="absolute top-full right-0 mt-1 min-w-[180px] bg-foreground rounded-md shadow-xl z-50 border border-white/10 overflow-hidden">
+                            <div className="absolute top-full right-0 mt-1 min-w-[180px] bg-foreground rounded-md shadow-xl z-50 border border-white/10 overflow-hidden shadow-md">
                                 {SORT_OPTIONS.map((opt) => (
                                     <button
                                         key={opt.value}
@@ -399,7 +399,7 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
             )}
 
             {selectModeEnabled && (
-                <div className="flex flex-wrap items-center gap-2 mb-4 p-3 bg-foreground/80 rounded-md border border-white/10">
+                <div className="flex flex-wrap items-center gap-2 mb-4 p-3 bg-foreground/80 rounded-md border border-white/10 shadow-md">
                     <button type="button" onClick={selectAllVisible} className="px-3 py-1.5 rounded bg-background hover:bg-background/80 text-sm">Select all</button>
                     {selectedIds.size > 0 && (
                         <>
@@ -449,7 +449,7 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                                     handleRowClick(e as unknown as React.MouseEvent, chapter.id, index);
                                 }
                             } : undefined}
-                            className={`p-3 w-full rounded-md transition-colors flex gap-3 items-center ${selectModeEnabled ? "cursor-pointer select-none" : ""} ${selectModeEnabled && isSelected ? "bg-accent/50" : "bg-foreground hover:bg-foreground/50"} ${isFullyRead && !selectModeEnabled ? "opacity-50" : ""}`}
+                            className={`p-3 w-full rounded-md transition-colors flex gap-3 items-center shadow-md ${selectModeEnabled ? "cursor-pointer select-none" : ""} ${selectModeEnabled && isSelected ? "bg-accent/50" : "bg-foreground hover:bg-foreground/50"} ${isFullyRead && !selectModeEnabled ? "opacity-50" : ""}`}
                         >
                             <Link
                                 href={href}

@@ -201,7 +201,7 @@ function RequestForm({ importRequestsEnabled = true }: { importRequestsEnabled?:
 
   return (
     <div className="flex flex-col md:flex-row gap-8 mx-auto">
-      <div className="bg-foreground p-5 rounded-lg border border-borders w-full md:w-1/2">
+      <div className="bg-foreground p-5 rounded-lg border border-borders w-full md:w-1/2 shadow-md">
         <p className="text-sm text-muted mb-4">
           Tell us which manga you want imported. Include a source URL if you have one (MAL, AniList, etc.).
           Optionally link an existing page on this site by searching its title.
@@ -217,7 +217,7 @@ function RequestForm({ importRequestsEnabled = true }: { importRequestsEnabled?:
           <div className="rounded-lg bg-background/40 p-4 space-y-3">
 
             {linkedSeries ? (
-              <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-foreground border border-borders">
+              <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-foreground border border-borders shadow-md">
                 <div className="min-w-0">
                   <p className="font-medium text-primary truncate">{linkedSeries.title}</p>
                   <Link
@@ -307,7 +307,7 @@ function RequestForm({ importRequestsEnabled = true }: { importRequestsEnabled?:
         </form>
       </div>
 
-      <div className="bg-foreground p-5 rounded-lg border border-borders w-full md:w-1/2">
+      <div className="bg-foreground p-5 rounded-lg border border-borders w-full md:w-1/2 shadow-md">
         <h2 className="text-lg font-bold text-primary mb-3">Your requests</h2>
         {loadingRequests ? (
           <p className="text-sm text-muted">Loading…</p>

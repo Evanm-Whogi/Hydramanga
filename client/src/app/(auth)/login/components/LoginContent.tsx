@@ -172,7 +172,7 @@ export default function LoginContent({ oauthGoogleEnabled = true, oauthDiscordEn
                     Forgot password?
                   </button>
                 </div>
-                <button onClick={handleLogin} disabled={loading} className="p-3 mt-2 bg-foreground text-primary hover:bg-foreground/50 hover:cursor-pointer rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
+                <button onClick={handleLogin} disabled={loading} className="p-3 mt-2 bg-foreground shadow-md text-primary hover:bg-foreground/50 hover:cursor-pointer rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
                   {loading ? "Logging in..." : "Login"}
                 </button>
                 <OAuthButtons disabled={loading} oauthGoogleEnabled={oauthGoogleEnabled} oauthDiscordEnabled={oauthDiscordEnabled} />

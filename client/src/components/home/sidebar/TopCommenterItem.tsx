@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import UserAvatar from "@/components/UserAvatar";
 import { MessageCircle, TrendingDown, TrendingUp } from "lucide-react";
 import BadgeList from "@/components/badges/BadgeList";
 
@@ -42,13 +42,7 @@ export default function TopCommenterItem({ user, rank }: { user: any; rank: numb
       >
         {rank}
       </span>
-      <Image
-        src={user.image || "/media/pfp/default.jpg"}
-        alt=""
-        width={40}
-        height={40}
-        className="size-10 shrink-0 rounded-full object-cover"
-      />
+      <UserAvatar src={user.image} width={40} height={40} className="size-10 shrink-0 rounded-full object-cover" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className="truncate text-sm font-medium text-primary">{user.name}</p>

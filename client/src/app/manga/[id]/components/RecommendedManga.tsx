@@ -40,7 +40,7 @@ export default function RecommendedManga({ currentMangaId }: RecommendedMangaPro
 
     if (loading) {
         return (
-            <div className="bg-foreground rounded-md p-4 md:p-5 w-full">
+            <div className="bg-foreground rounded-md p-4 md:p-5 w-full shadow-md">
                 <h2 className="text-base md:text-lg font-bold mb-3">Recommended</h2>
                 <div className="flex flex-col gap-2">
                     <span className="text-muted text-sm">Loading recommendations...</span>
@@ -51,7 +51,7 @@ export default function RecommendedManga({ currentMangaId }: RecommendedMangaPro
 
     if (recommendations.length === 0) {
         return (
-            <div className="bg-foreground rounded-md p-4 md:p-5 w-full">
+            <div className="bg-foreground rounded-md p-4 md:p-5 w-full shadow-md">
                 <h2 className="text-base md:text-lg font-bold mb-3">Recommended</h2>
                 <div className="flex flex-col gap-2">
                     <span className="text-muted text-sm">No recommendations available.</span>
@@ -61,7 +61,7 @@ export default function RecommendedManga({ currentMangaId }: RecommendedMangaPro
     }
 
     return (
-        <div className="bg-foreground rounded-md p-4 md:p-5 w-full">
+        <div className="bg-foreground rounded-md p-4 md:p-5 w-full shadow-md">
             <div className="flex flex-col gap-3">
                 <h2 className="text-base md:text-lg font-bold">Recommended</h2>
                 <div className="flex flex-col gap-3">

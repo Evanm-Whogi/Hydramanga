@@ -21,7 +21,7 @@ export default function ProfileShareCard({ username }: { username: string }) {
   };
 
   return (
-    <div className="bg-foreground rounded-md p-5 w-full">
+    <div className="bg-foreground rounded-md p-5 w-full shadow-md">
       <h3 className="text-lg font-semibold text-primary mb-2">Share profile</h3>
       <p className="text-xs text-muted mb-3">Other members with this link can view your public profile.</p>
       <div className="flex gap-2">

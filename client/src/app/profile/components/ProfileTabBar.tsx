@@ -12,7 +12,7 @@ export default function ProfileTabBar({ tabs, activeTab, onTabChange }: { tabs: 
           key={tab.id}
           type="button"
           onClick={() => onTabChange(tab.id)}
-          className={`${activeTab === tab.id ? "bg-foreground text-primary border border-borders" : "bg-foreground text-muted"} hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-base lg:text-lg cursor-pointer transition-colors`}
+          className={`${activeTab === tab.id ? "bg-foreground text-primary border border-borders shadow-md" : "bg-foreground text-muted"} hover:bg-foreground/50 px-4 py-2 rounded-lg inline-flex items-center text-base lg:text-lg cursor-pointer transition-colors`}
         >
           {tab.icon ? <span className="mr-2">{tab.icon}</span> : null}
           {tab.label}

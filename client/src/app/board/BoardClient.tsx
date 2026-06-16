@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 import { getBoardPosts, getBoardPost, createBoardPost, createBoardReply, voteBoardPost, voteBoardReply, adminBoardPost, updateBoardPost, deleteBoardPost, updateBoardReply, deleteBoardReply } from "@/services/boardService";  
 import { useUser } from "@/providers/UserProvider";
 import ContentComposer from "@/components/content/ContentComposer";
+import CommentListHeader from "@/components/content/CommentListHeader";
 import SocialPostCard from "@/components/social/SocialPostCard";
 import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
 import { requireTrimmed } from "@/lib/requireContent";
@@ -15,9 +16,43 @@ import { requireAuth } from "@/lib/requireAuth";
 import { toastApiError } from "@/lib/rateLimit";
 import { CONTENT_LIMITS } from "@/lib/contentLimits";
 
+type BoardSort = "recent" | "oldest" | "top" | "worst";
+
+const SORT_OPTIONS: { value: BoardSort; label: string }[] = [
+  { value: "top", label: "Best" },
+  { value: "recent", label: "Newest" },
+  { value: "oldest", label: "Oldest" },
+  { value: "worst", label: "Worst" },
+];
+
+function postVoteScore(votes?: { type: string }[]): number {
+  if (!votes?.length) return 0;
+  return votes.reduce((sum, v) => sum + (v.type === "like" ? 1 : -1), 0);
+}
+
+function sortBoardPosts(posts: any[], sort: BoardSort): any[] {
+  const pinned = posts.filter((p) => p.isPinned);
+  const rest = [...posts.filter((p) => !p.isPinned)];
+  switch (sort) {
+    case "oldest":
+      rest.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      break;
+    case "top":
+      rest.sort((a, b) => postVoteScore(b.votes) - postVoteScore(a.votes));
+      break;
+    case "worst":
+      rest.sort((a, b) => postVoteScore(a.votes) - postVoteScore(b.votes));
+      break;
+    default:
+      rest.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+  return [...pinned, ...rest];
+}
+
 export default function BoardClient() {
   const { user } = useUser();
   const [posts, setPosts] = useState<any[]>([]);
+  const [sort, setSort] = useState<BoardSort>("recent");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [replyTextByKey, setReplyTextByKey] = useState<Record<string, string>>({});
@@ -85,6 +120,8 @@ export default function BoardClient() {
     }
   };
 
+  const sortedPosts = sortBoardPosts(posts, sort);
+
   return (
     <div className="container mx-auto px-4 xl:px-0 py-8 flex flex-col gap-6 w-full md:w-2/3">
       {user && (
@@ -99,27 +136,33 @@ export default function BoardClient() {
         maxLength={CONTENT_LIMITS.boardPost}
         onSubmit={handleCreate}
         submitLabel="Post"
-        layout="card"
+        layout="comment"
+        avatarUrl={user.image}
         rateLimited={isPostRateLimited}
         rateLimitHint={
           isPostRateLimited
             ? `Please wait ${postRateLimitSecondsLeft}s before posting again.`
             : undefined
         }
+        className="mb-5"
       />
       )}
 
+      <CommentListHeader
+        total={posts.length}
+        sort={sort}
+        options={SORT_OPTIONS}
+        onSortChange={setSort}
+        itemNoun="post"
+      />
+
       <div className="space-y-4 min-w-0 overflow-x-hidden">
         {loading ? (
-          <div className="bg-foreground rounded-lg p-4 border border-borders">
-            <p className="text-muted">Loading…</p>
-          </div>
+          <p className="text-muted text-sm">Loading…</p>
         ) : posts.length === 0 ? (
-          <div className="bg-foreground rounded-lg p-4 border border-borders">
-            <p className="text-muted">No posts yet. Be the first to post.</p>
-          </div>
+          <p className="text-muted text-sm">No posts yet. Be the first to post.</p>
         ) : (
-          posts.map((post) => (
+          sortedPosts.map((post) => (
             <BoardPostCard
               key={post.id}
               post={post}

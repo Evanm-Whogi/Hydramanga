@@ -84,7 +84,7 @@ export default function OAuthButtons({
               type="button"
               onClick={() => handleOAuth(id)}
               disabled={isDisabled}
-              className="flex items-center justify-center gap-3 p-3 hover:cursor-pointer rounded-lg border border-foreground/20 bg-foreground hover:bg-foreground/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center justify-center gap-3 p-3 hover:cursor-pointer rounded-lg border border-foreground/20 bg-foreground shadow-md hover:bg-foreground/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Image src={icon} alt="" width={20} height={20} aria-hidden />
               <span>{isLoading ? `Connecting to ${label}…` : `Continue with ${label}`}</span>

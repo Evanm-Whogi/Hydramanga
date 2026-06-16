@@ -38,16 +38,16 @@ export default function MangaActions({ manga, chapters, comments, commentPaginat
             </div>
 
             <div className="flex flex-col xl:flex-row justify-end gap-2 my-5 md:my-0">
-                <button onClick={() => setPage("chapters")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "chapters" ? "text-primary" : "text-muted"}`}>
+                <button onClick={() => setPage("chapters")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all shadow-md ${page === "chapters" ? "text-primary" : "text-muted"}`}>
                     <BookOpen className="size-6 mr-1 transition-colors" /> Chapters
                 </button>
-                <button onClick={() => setPage("comments")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "comments" ? "text-primary" : "text-muted"}`}>
+                <button onClick={() => setPage("comments")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all shadow-md ${page === "comments" ? "text-primary" : "text-muted"}`}>
                     <MessageCircleMore className="size-6 mr-1 transition-colors" /> Comments
                 </button>
-                <button onClick={() => setPage("reviews")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "reviews" ? "text-primary" : "text-muted"}`}>
+                <button onClick={() => setPage("reviews")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all shadow-md ${page === "reviews" ? "text-primary" : "text-muted"}`}>
                     <StarIcon className="size-6 mr-1 transition-colors" /> Reviews
                 </button>
-                <button onClick={() => setPage("gallery")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all ${page === "gallery" ? "text-primary" : "text-muted"}`}>
+                <button onClick={() => setPage("gallery")} className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none transition-all shadow-md ${page === "gallery" ? "text-primary" : "text-muted"}`}>
                     <ImagesIcon className="size-6 mr-1 transition-colors" /> Gallery
                 </button>
             </div>

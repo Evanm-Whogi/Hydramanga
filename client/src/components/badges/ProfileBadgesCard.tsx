@@ -11,7 +11,7 @@ export default function ProfileBadgesCard({ badges, userId, chaptersRead }: { ba
   const earnedChapterMilestoneId = earned.find((badge) => isChapterMilestoneBadge(badge.id))?.id ?? null;
 
   return (
-    <div className="bg-foreground rounded-md p-5 w-full mt-5">
+    <div className="bg-foreground rounded-md p-5 w-full mt-5 shadow-md">
       <h3 className="text-lg font-semibold text-primary mb-3">Badges</h3>
       {earned.length === 0 ? (
         <p className="text-sm text-muted">No badges earned yet.</p>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { createProfileWallPost, deleteProfileWallPost, getProfileWall, updateProfileWallPost, voteProfileWallPost, PROFILE_PAGE_SIZE, type ProfileWallPost, type ProfileWallSort, type ProfilePagination } from "@/services/profileService";
 import ContentComposer from "@/components/content/ContentComposer";
+import CommentListHeader from "@/components/content/CommentListHeader";
 import SocialPostCard from "@/components/social/SocialPostCard";
 import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
 import { useUser } from "@/providers/UserProvider";
@@ -15,9 +16,9 @@ import { useSubmitRateLimit } from "@/hooks/useSubmitRateLimit";
 import { CONTENT_LIMITS } from "@/lib/contentLimits";
 
 const SORT_OPTIONS: { value: ProfileWallSort; label: string }[] = [
-  { value: "recent", label: "Most recent" },
+  { value: "top", label: "Best" },
+  { value: "recent", label: "Newest" },
   { value: "oldest", label: "Oldest" },
-  { value: "top", label: "Top" },
   { value: "worst", label: "Worst" },
 ];
 
@@ -211,28 +212,40 @@ export default function ProfileWall({ identifier, wallOwnerId }: { identifier: s
   return (
     <div className="space-y-4">
       {user && (
-        <ContentComposer heading="Write on this wall" value={text} onChange={setText} placeholder="Say something…" rows={5} minHeight="min-h-[100px]" maxLength={CONTENT_LIMITS.comment} onSubmit={() => handleSubmit(text)} submitLabel="Post" submitting={isSubmitting} disabled={isSubmitting} rateLimited={isRateLimited} rateLimitHint={rateHint} layout="card" />
+        <ContentComposer
+          value={text}
+          onChange={setText}
+          placeholder="Say something…"
+          rows={5}
+          minHeight="min-h-[100px]"
+          maxLength={CONTENT_LIMITS.comment}
+          onSubmit={() => handleSubmit(text)}
+          submitLabel="Post"
+          submitting={isSubmitting}
+          disabled={isSubmitting}
+          rateLimited={isRateLimited}
+          rateLimitHint={rateHint}
+          layout="comment"
+          avatarUrl={user.image}
+          className="mb-5"
+        />
       )}
+
+      <CommentListHeader
+        total={pagination?.total ?? posts.length}
+        sort={sort}
+        options={SORT_OPTIONS}
+        onSortChange={setSort}
+        itemNoun="post"
+      />
 
       {loading && posts.length === 0 ? (
         <div className="bg-foreground rounded-lg p-6 animate-pulse h-40" />
       ) : (
         <>
-          {posts.length > 0 && (
-            <div className="flex items-center justify-between gap-3">
-              <label className="text-sm text-muted">
-                Sort by{" "}
-                <select value={sort} onChange={(e) => setSort(e.target.value as ProfileWallSort)} className="ml-1 px-2 py-1 bg-foreground border border-borders rounded text-primary text-sm">
-                  {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </label>
-            </div>
-          )}
           <div className="space-y-4">{posts.map((post) => renderPost(post))}</div>
           {!loading && posts.length === 0 && (
-            <div className="bg-foreground rounded-lg p-6">
-              <p className="text-muted text-center">No wall posts yet.</p>
-            </div>
+            <p className="text-muted text-sm">No wall posts yet.</p>
           )}
           {pagination?.hasMore && (
             <div className="flex justify-center mt-6">

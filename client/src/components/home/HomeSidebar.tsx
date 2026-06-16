@@ -21,7 +21,7 @@ function SidebarPanel({title, icon: Icon, href, children, emptyMessage, isEmpty}
   isEmpty: boolean;
 }) {
   return (
-    <section className="overflow-hidden rounded-lg border border-borders bg-foreground">
+    <section className="overflow-hidden rounded-lg border border-borders bg-foreground shadow-md">
       <div className="flex items-center justify-between gap-2 border-b border-borders px-4 py-3">
         <div className="flex items-center gap-2">
           <Icon className="size-4 text-white" />

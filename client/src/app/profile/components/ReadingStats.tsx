@@ -38,7 +38,7 @@ export default function ReadingStats({ identifier, initialStats }: { identifier?
 
   if (loading) {
     return (
-      <div className="bg-foreground rounded-lg p-6">
+      <div className="bg-foreground rounded-lg p-6 shadow-md">
         <div className="animate-pulse space-y-4">
           <div className="h-6 bg-background rounded w-1/3" />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -63,7 +63,7 @@ export default function ReadingStats({ identifier, initialStats }: { identifier?
   ];
 
   return (
-    <div className="bg-foreground rounded-lg p-6 w-full">
+    <div className="bg-foreground rounded-lg p-6 w-full shadow-md">
       <h3 className="text-xl font-bold text-primary mb-4">Reading Statistics</h3>
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-4 mb-6">
         {metrics.map((metric) => (

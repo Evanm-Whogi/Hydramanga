@@ -95,7 +95,7 @@ export default function AddToListDropdown({ seriesId, mangaTitle }: { seriesId: 
       <button
         onClick={() => { if (!requireAuth(user, `/manga/${seriesId}`)) return; setOpen((prev) => !prev); }}
         disabled={actionLoading}
-        className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none text-primary transition-all ${actionLoading ? "animate-manga-pulse" : ""}`}
+        className={`inline-flex items-center bg-foreground hover:bg-foreground/50 p-2 rounded-md cursor-pointer border-none text-primary transition-all shadow-md ${actionLoading ? "animate-manga-pulse" : ""}`}
       >
         <ListIcon className={`size-6 mr-2 transition-colors ${inListCount > 0 ? "text-accent" : ""}`} />
         <span>{inListCount > 0 ? `In ${inListCount} list${inListCount === 1 ? "" : "s"}` : "Add to List"}</span>

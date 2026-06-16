@@ -19,7 +19,7 @@ export default async function CollectionsPage() {
             <div className="container mx-auto text-primary flex flex-col py-10 min-h-[65vh] overflow-hidden">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {Object.entries(collections).map(([genreName, details]: [string, any]) => (
-                        <div key={genreName} className="p-4 rounded-md border border-borders bg-foreground">
+                        <div key={genreName} className="p-4 rounded-md border border-borders bg-foreground shadow-md">
                             <h1 className="text-xl font-bold">{genreName}</h1>
                             <p className="text-sm text-muted mt-2">{details.description}</p>
                             <div className="grid grid-cols-3 gap-2 place-content-between w-full mt-3">

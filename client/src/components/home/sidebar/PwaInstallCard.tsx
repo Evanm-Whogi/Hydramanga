@@ -6,7 +6,7 @@ import { Smartphone } from "lucide-react";
 export default function PwaInstallCard() {
   return (
     <Link href="/pwa">
-    <div className="rounded-lg border border-borders bg-foreground p-4 hover:bg-foreground/50 transition-colors">
+    <div className="rounded-lg border border-borders bg-foreground p-4 hover:bg-foreground/50 transition-colors shadow-md">
       <div className="flex gap-3 items-center">
         <div className="flex size-10 shrink-0 items-center justify-center bg-background rounded-full">
           <Smartphone className="size-5 text-white" />

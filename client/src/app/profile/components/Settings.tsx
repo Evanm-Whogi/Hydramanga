@@ -185,7 +185,7 @@ export default function Settings({ user }: { user: any }) {
     return (
         <div className="flex flex-col mb-12">
             <div className="flex flex-col md:flex-row w-full gap-6">
-                <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md">
+                <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md shadow-md">
                     <h1 className="text-xl font-bold">Basic Info</h1>
                     <p className="text-sm text-muted">Update your basic profile information such as username and email address.</p>
                     <div className="flex flex-col pt-5 grow">
@@ -202,7 +202,7 @@ export default function Settings({ user }: { user: any }) {
                         </button>
                     </div>
                 </div>
-                <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md">
+                <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md shadow-md">
                     <h1 className="text-xl font-bold">Change Password</h1>
                     <p className="text-sm text-muted">Update your account password to keep your account secure.</p>
                     <div className="flex flex-col pt-5 grow">
@@ -221,7 +221,7 @@ export default function Settings({ user }: { user: any }) {
             </div>
 
             <div className="flex flex-col md:flex-row gap-6 mt-5 w-full">
-                <div className="flex flex-col p-5 bg-foreground w-full rounded-md">
+                <div className="flex flex-col p-5 bg-foreground w-full rounded-md shadow-md">
                     <h1 className="text-xl font-bold">Content</h1>
                     <p className="text-sm text-muted mb-4">Control what content appears across the site (home, discover, etc.).</p>
                     <div className="flex items-center justify-between gap-4">
@@ -273,7 +273,7 @@ export default function Settings({ user }: { user: any }) {
                         </button>
                     </div>
                 </div>
-                <div className="flex flex-col p-5 bg-foreground w-full rounded-md">
+                <div className="flex flex-col p-5 bg-foreground w-full rounded-md shadow-md">
                     <h1 className="text-xl font-bold">Public profile sections</h1>
                     <p className="text-sm text-muted mb-4">Choose what visitors can see on your public profile page.</p>
                     <div className="space-y-4">
@@ -300,14 +300,14 @@ export default function Settings({ user }: { user: any }) {
             </div>
             <div className="flex flex-row gap-6 w-full mt-5">
                     <DataExportSection />
-                    <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md">
+                    <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md shadow-md">
                         <h1 className="text-xl font-bold">Danger Zone</h1>
                         <p className="text-sm text-muted">Be careful with these actions. They cannot be undone.</p>
                         <div className="flex flex-col gap-3 pt-5">
-                             <button onClick={handleResendVerification} className="bg-background hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-full">
+                             <button onClick={handleResendVerification} className="bg-background shadow-md hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-full">
                                 Resend Email Verification
                             </button>
-                            <button className="bg-background hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-full text-red-500">
+                            <button className="bg-background shadow-md hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-full text-red-500">
                                 Delete Account
                             </button>
                         </div>

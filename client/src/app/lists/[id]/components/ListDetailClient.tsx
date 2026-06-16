@@ -2,7 +2,7 @@
 
 import { useState, memo } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import UserAvatar from "@/components/UserAvatar";
 import { Eye, Bookmark, ThumbsUp, ThumbsDown, ShareIcon, Flag, Pencil, ListIcon, Lock, Globe, BookOpen, MessageCircleMore } from "lucide-react";
 import { toast } from "react-toastify";
 import { useUser } from "@/providers/UserProvider";
@@ -183,8 +183,8 @@ export default function ListDetailClient({ list: initialList, initialComments, i
           </main>
 
           <aside id="sidebar" className="flex flex-col w-full lg:w-79.75 lg:relative lg:-top-35 lg:z-25 gap-4">
-            <div className="w-full md:max-w-xs lg:max-w-none mx-auto lg:mx-0 overflow-hidden rounded-md border-4 border-background shadow-lg">
-              <div className="grid grid-cols-2 gap-px aspect-square bg-background">
+            <div className="w-full md:max-w-xs lg:max-w-none mx-auto lg:mx-0 overflow-hidden rounded-md border-4 border-background shadow-md">
+              <div className="grid grid-cols-2 gap-px aspect-square bg-background shadow-md">
                 {[0, 1, 2, 3].map((i) => (
                   <div key={i} className="bg-foreground min-h-0">
                     {list.previewCovers?.[i] ? <img src={list.previewCovers[i]} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-muted min-h-24"><ListIcon className="size-6" /></div>}
@@ -194,9 +194,9 @@ export default function ListDetailClient({ list: initialList, initialComments, i
             </div>
 
             {list.author && (
-              <div className="bg-foreground rounded-md p-4 md:p-5 w-full">
+              <div className="bg-foreground rounded-md p-4 md:p-5 w-full shadow-md">
                 <div className="flex items-center gap-3 mb-3">
-                  <Image src={list.author.image || "/media/pfp/default.jpg"} alt={authorName} width={48} height={48} className="rounded-full border border-borders object-cover size-12" />
+                  <UserAvatar src={list.author.image} alt={authorName} width={48} height={48} className="rounded-full border border-borders object-cover size-12" />
                   <div className="min-w-0">
                     <p className="text-xs text-muted mb-0.5">Created by</p>
                     <Link href={authorHref} className="text-lg font-semibold text-primary hover:text-accent truncate block">{authorName}</Link>

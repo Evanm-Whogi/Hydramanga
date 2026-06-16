@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import Image from "next/image";
+import UserAvatar from "@/components/UserAvatar";
 import MarkdownView from "@/components/markdown/MarkdownView";
 import AuthorByline, { type SocialAuthor } from "./AuthorByline";
 import SocialActionBar from "./SocialActionBar";
@@ -52,8 +52,8 @@ export default function SocialPostCard({
 }) {
   const isNested = variant === "nested";
   const shell = isNested
-    ? "bg-background rounded-lg p-3"
-    : "bg-foreground rounded-lg p-4 border border-borders";
+    ? "bg-foreground shadow-md rounded-lg p-3"
+    : "bg-foreground shadow-md rounded-lg p-4 border border-borders";
   const avatarSize = isNested ? 32 : 40;
   const topRight = overflowMenu || headerRight;
   const showTopRightAbsolute = topRight && !title;
@@ -89,9 +89,8 @@ export default function SocialPostCard({
       )}
 
       <div className="flex gap-3">
-        <Image
-          src={author?.image || "/media/pfp/default.jpg"}
-          alt=""
+        <UserAvatar
+          src={author?.image}
           width={avatarSize}
           height={avatarSize}
           className={`rounded-full object-cover shrink-0 ${isNested ? "size-8" : "size-10"}`}

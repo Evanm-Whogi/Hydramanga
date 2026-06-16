@@ -31,11 +31,11 @@ export default function ProfileComments({ identifier }: { identifier: string }) 
     loadComments(1);
   }, [loadComments]);
 
-  if (loading && comments.length === 0) return <div className="bg-foreground rounded-lg p-6 animate-pulse h-40" />;
+  if (loading && comments.length === 0) return <div className="bg-foreground rounded-lg p-6 animate-pulse h-40 shadow-md" />;
 
   if (!loading && comments.length === 0) {
     return (
-      <div className="bg-foreground rounded-lg p-6">
+      <div className="bg-foreground rounded-lg p-6 shadow-md">
         <p className="text-muted">No comments yet.</p>
       </div>
     );
@@ -45,10 +45,10 @@ export default function ProfileComments({ identifier }: { identifier: string }) 
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {loading ? (
-          <div className="bg-foreground rounded-lg p-6 animate-pulse h-40" />
+          <div className="bg-foreground rounded-lg p-6 animate-pulse h-40 shadow-md" />
         ) : (
           comments.map((comment) => (
-            <div key={comment.id} className="bg-foreground rounded-lg p-5">
+            <div key={comment.id} className="bg-foreground rounded-lg p-5 shadow-md">
               <div className="flex gap-4">
                 <Link href={mangaPath(comment.seriesId)} className="shrink-0 w-16 aspect-2/3 overflow-hidden rounded-md">
                   <img src={comment.series.cover || "/notFound.png"} alt={comment.series.title ?? "Manga"} className="w-full h-full object-cover" />

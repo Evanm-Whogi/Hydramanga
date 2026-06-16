@@ -12,7 +12,7 @@ function ListCard({ list }: { list: CuratedList }) {
   const authorName = list.author?.displayUsername || list.author?.username || list.author?.name || "Unknown";
 
   return (
-    <Link href={`/lists/${list.id}`} className="flex gap-4 p-4 rounded-xl border border-borders bg-foreground hover:bg-foreground/80 transition-colors group min-h-38">
+    <Link href={`/lists/${list.id}`} className="flex gap-4 p-4 rounded-xl border border-borders bg-foreground hover:bg-foreground/80 transition-colors group min-h-38 shadow-md">
       <div className="shrink-0 w-28 h-36 rounded-lg overflow-hidden bg-background grid grid-cols-2 grid-rows-2 gap-px">
         {[0, 1, 2, 3].map((i) => (
           <div key={i} className="relative overflow-hidden bg-foreground min-h-0 min-w-0">

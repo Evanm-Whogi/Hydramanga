@@ -6,6 +6,7 @@ import { postComment, voteComment, updateComment, deleteComment, fetchComments, 
 import { toast } from "react-toastify";
 import { useUser } from "@/providers/UserProvider";
 import ContentComposer from "@/components/content/ContentComposer";
+import CommentListHeader from "@/components/content/CommentListHeader";
 import SocialPostCard from "@/components/social/SocialPostCard";
 import ContentOverflowMenu from "@/components/social/ContentOverflowMenu";
 import { requireTrimmed } from "@/lib/requireContent";
@@ -16,9 +17,9 @@ import { requireAuth } from "@/lib/requireAuth";
 import { CONTENT_LIMITS } from "@/lib/contentLimits";
 
 const SORT_OPTIONS: { value: CommentSort; label: string }[] = [
-  { value: "recent", label: "Most recent" },
+  { value: "top", label: "Best" },
+  { value: "recent", label: "Newest" },
   { value: "oldest", label: "Oldest" },
-  { value: "top", label: "Top" },
   { value: "worst", label: "Worst" },
 ];
 
@@ -323,7 +324,6 @@ export default function Comments({
     <>
       {user && (
       <ContentComposer
-        heading="Leave a Comment"
         value={text}
         onChange={setText}
         placeholder="Write your comment…"
@@ -336,30 +336,18 @@ export default function Comments({
         disabled={isSubmitting}
         rateLimited={isCommentRateLimited}
         rateLimitHint={commentRateHint}
-        layout="card"
+        layout="comment"
+        avatarUrl={user.image}
         className="mb-5"
       />
       )}
 
-      {comments.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mb-4">
-          <label className="text-sm text-muted">
-            Sort by{" "}
-            <select
-              value={sort}
-              onChange={(e) => void handleSortChange(e.target.value as CommentSort)}
-              className="ml-1 rounded-md border border-borders bg-background px-2 py-1 text-sm text-primary"
-            >
-              {SORT_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </label>
-          {pagination && pagination.total > 0 && (
-            <span className="text-xs text-muted">{pagination.total} top-level comment{pagination.total === 1 ? "" : "s"}</span>
-          )}
-        </div>
-      )}
+      <CommentListHeader
+        total={pagination?.total ?? comments.length}
+        sort={sort}
+        options={SORT_OPTIONS}
+        onSortChange={(nextSort) => void handleSortChange(nextSort)}
+      />
 
       {!comments?.length ? (
         <p className="text-muted text-sm">No comments yet. Be the first!</p>
@@ -371,7 +359,7 @@ export default function Comments({
             type="button"
             onClick={() => void handleLoadMore()}
             disabled={loadingMore}
-            className="self-center rounded-lg border border-borders bg-foreground px-4 py-2 text-sm text-primary hover:bg-foreground/70 disabled:opacity-50 transition-colors"
+            className="self-center rounded-lg border border-borders bg-foreground shadow-md px-4 py-2 text-sm text-primary hover:bg-foreground/70 disabled:opacity-50 transition-colors"
           >
             {loadingMore ? "Loading…" : "Load more comments"}
           </button>

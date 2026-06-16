@@ -152,7 +152,7 @@ export default function ProfileFavorites({ identifier, isOwner }: { identifier: 
   const displayItems = editing ? draftItems : favorites;
 
   return (
-    <div className="bg-foreground rounded-lg p-6">
+    <div className="bg-foreground rounded-lg p-6 shadow-md">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-xl font-bold text-primary">Favorites</h3>
         {isOwner && (

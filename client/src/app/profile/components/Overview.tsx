@@ -49,7 +49,7 @@ export default function Overview({user, isOwner, identifier = "me", profileVisib
   return (
     <div className="flex flex-col w-full space-y-6">
       {showBio && (
-        <div className="bg-foreground rounded-lg p-6">
+        <div className="bg-foreground rounded-lg p-6 shadow-md">
           <h3 className="text-xl font-bold text-primary mb-3">About</h3>
           {isEditing ? (
             <div className="flex flex-col w-full gap-2">

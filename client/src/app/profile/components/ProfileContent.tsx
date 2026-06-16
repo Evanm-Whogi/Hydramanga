@@ -291,7 +291,7 @@ export default function ProfileContent() {
               </span>
             </button>
 
-            <div className="bg-foreground rounded-md p-5 w-full mt-5">
+            <div className="bg-foreground rounded-md p-5 w-full mt-5 shadow-md">
               <div className="flex flex-col">
                 <div className="flex text-primary capitalize">
                   Username: <span className="ml-2 text-muted">{user?.name}</span>
@@ -314,7 +314,7 @@ export default function ProfileContent() {
               </div>
             </div>
 
-            <div className="bg-foreground rounded-md p-5 w-full mt-5">
+            <div className="bg-foreground rounded-md p-5 w-full mt-5 shadow-md">
               <LevelCard />
             </div>
 

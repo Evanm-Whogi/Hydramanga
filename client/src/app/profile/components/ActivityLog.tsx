@@ -38,7 +38,7 @@ export default function ActivityLog(_props: { user?: unknown; isOwner?: boolean 
   }, [fetchActivity]);
 
   return (
-    <div className="bg-foreground rounded-lg p-6 space-y-4 w-full">
+    <div className="bg-foreground rounded-lg p-6 space-y-4 w-full shadow-md">
       <div className="flex items-start gap-3">
         <div>
           <h2 className="text-lg font-semibold text-primary">Account activity</h2>

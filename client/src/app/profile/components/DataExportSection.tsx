@@ -45,7 +45,7 @@ export default function DataExportSection() {
   };
 
   return (
-    <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md">
+    <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md shadow-md">
       <h1 className="text-xl font-bold">Data export & import</h1>
       <p className="text-sm text-muted">
         Export or restore your bookmarks, lists, saved lists, reading progress, recent reads, and view history as JSON.

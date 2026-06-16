@@ -13,9 +13,9 @@ export default function Gallery({ gallery, mangaTitle }: { gallery: any, mangaTi
         <>
         <div className="space-y-4 w-full">
             <div className="">
-                <button className={`px-4 py-2 rounded-md mr-2 cursor-pointer ${selectedLanguage === "all" ? "bg-foreground text-white border border-borders" : "bg-foreground text-muted"}`} onClick={() => setSelectedLanguage("all")}>All</button>
-                <button className={`px-4 py-2 rounded-md mr-2 cursor-pointer ${selectedLanguage === "en" ? "bg-foreground text-white border border-borders" : "bg-foreground text-muted"}`} onClick={() => setSelectedLanguage("en")}>EN</button>
-                <button className={`px-4 py-2 rounded-md mr-2 cursor-pointer ${selectedLanguage === "ja" ? "bg-foreground text-white border border-borders" : "bg-foreground text-muted"}`} onClick={() => setSelectedLanguage("ja")}>JP</button>
+                <button className={`px-4 py-2 rounded-md mr-2 cursor-pointer ${selectedLanguage === "all" ? "bg-foreground text-white border border-borders shadow-md" : "bg-foreground text-muted"}`} onClick={() => setSelectedLanguage("all")}>All</button>
+                <button className={`px-4 py-2 rounded-md mr-2 cursor-pointer ${selectedLanguage === "en" ? "bg-foreground text-white border border-borders shadow-md" : "bg-foreground text-muted"}`} onClick={() => setSelectedLanguage("en")}>EN</button>
+                <button className={`px-4 py-2 rounded-md mr-2 cursor-pointer ${selectedLanguage === "ja" ? "bg-foreground text-white border border-borders shadow-md" : "bg-foreground text-muted"}`} onClick={() => setSelectedLanguage("ja")}>JP</button>
             </div>
             <h1 className="text-muted font-semibold">{filteredGallery.length} Covers for {mangaTitle}</h1>
   

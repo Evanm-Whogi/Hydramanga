@@ -33,7 +33,7 @@ export default function Activity(_props: { user?: unknown; isOwner?: boolean }) 
     <div className="flex flex-col gap-5">
       <ActivityLog />
 
-      <div className="flex flex-col w-full bg-foreground p-5 rounded-md">
+      <div className="flex flex-col w-full bg-foreground p-5 rounded-md shadow-md">
         <h1 className="text-xl font-bold">Active Sessions</h1>
         <p className="text-sm text-muted mb-4">Manage and revoke your active sessions across different devices.</p>
 
@@ -42,7 +42,7 @@ export default function Activity(_props: { user?: unknown; isOwner?: boolean }) 
             <p className="text-sm text-muted py-4 text-center">No active sessions found.</p>
           ) : (
             sessions.map((session) => (
-              <div key={session.id} className="flex items-center justify-between bg-background/50 p-4 rounded-lg border border-white/5">
+              <div key={session.id} className="flex items-center justify-between bg-background/50 p-4 rounded-lg border border-white/5 shadow-md">
                 <div className="flex items-center gap-4">
                   <div className="p-2 bg-background rounded-full">
                     <span className="text-xs uppercase font-bold">{session.userAgent?.includes("Windows") ? "Win" : "Mob"}</span>

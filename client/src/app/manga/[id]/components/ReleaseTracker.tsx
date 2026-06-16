@@ -19,7 +19,7 @@ export default function ReleaseTracker({ schedule, isHiatus = false }: ReleaseTr
   const nextChapterLabel = getNextChapterLabel(schedule);
 
   return (
-    <div className="bg-foreground rounded-md p-4 w-full">
+    <div className="bg-foreground rounded-md p-4 w-full shadow-md">
       <div className="flex items-start gap-3">
         {}
         <ClockIcon className="size-5 text-accent shrink-0 mt-0.5" aria-hidden />

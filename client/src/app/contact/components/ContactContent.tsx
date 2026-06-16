@@ -60,7 +60,7 @@ export default function ContactContent() {
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-6 lg:grid-cols-2">
-        <div className="bg-foreground p-5 rounded-lg border border-borders flex flex-col">
+        <div className="bg-foreground p-5 rounded-lg border border-borders flex flex-col shadow-md">
           <div>
             <h2 className="text-xl font-bold text-primary">General Contact</h2>
             <p className="text-sm text-muted">Questions, feedback, or support requests? Send us a message.</p>
@@ -85,7 +85,7 @@ export default function ContactContent() {
           </form>
         </div>
 
-        <div className="bg-foreground p-5 rounded-lg border border-borders flex flex-col">
+        <div className="bg-foreground p-5 rounded-lg border border-borders flex flex-col shadow-md">
           <div>
             <h2 className="text-xl font-bold text-primary">DMCA Submission</h2>
             <p className="text-sm text-muted">Report copyright concerns with the details we need to investigate.</p>
