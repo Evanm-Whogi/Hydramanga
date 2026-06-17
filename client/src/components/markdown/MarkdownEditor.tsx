@@ -238,12 +238,25 @@ export default function MarkdownEditor({
   const syncTextareaHeight = useCallback(() => {
     const ta = textareaRef.current;
     if (!ta || !autoGrow) return;
+    if (ta.offsetWidth === 0) {
+      ta.style.height = "";
+      return;
+    }
     ta.style.height = "auto";
     const maxHeight = 320;
     const nextHeight = Math.min(ta.scrollHeight, maxHeight);
     ta.style.height = `${nextHeight}px`;
     ta.style.overflowY = ta.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [autoGrow, textareaRef]);
+
+  useLayoutEffect(() => {
+    if (!autoGrow) return;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const observer = new ResizeObserver(() => syncTextareaHeight());
+    observer.observe(ta);
+    return () => observer.disconnect();
+  }, [autoGrow, syncTextareaHeight, textareaRef]);
 
   useLayoutEffect(() => {
     syncTextareaHeight();

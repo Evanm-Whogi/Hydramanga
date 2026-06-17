@@ -263,7 +263,12 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         if (typeList.length > 0) conditions.push(inArray(schema.series.type, typeList));
 
         const statusList = parseParam(status);
-        if (statusList.length > 0) conditions.push(inArray(schema.series.status, statusList));
+        const wantsImported = statusList.includes('imported');
+        const publicationStatuses = statusList.filter((s) => s !== 'imported');
+        if (publicationStatuses.length > 0) conditions.push(inArray(schema.series.status, publicationStatuses));
+        if (wantsImported) {
+            conditions.push(sql`EXISTS (SELECT 1 FROM ${chapters} WHERE ${chapters.seriesId} = ${schema.series.id})`);
+        }
 
         // Year/Decade Logic
         const yearList = parseParam(years);

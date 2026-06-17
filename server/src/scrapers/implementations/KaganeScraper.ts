@@ -27,6 +27,7 @@ import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
 import { createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
+import { requestFlareSolverr, type FlareSolverrCookie, type FlareSolverrResult } from '@/lib/flareSolverrClient';
 
 const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const SITE_BASE = appConfig.scraper.kagane.baseUrl;
@@ -89,23 +90,6 @@ interface KaganeCfSession {
     cfClearance: string;
     userAgent: string;
     expiresAt: number;
-}
-
-interface FlareSolverrCookie {
-    name: string;
-    value: string;
-    expiry?: number;
-}
-
-interface FlareSolverrResult {
-    status?: string;
-    message?: string;
-    solution?: {
-        status?: number;
-        response?: string;
-        cookies?: FlareSolverrCookie[];
-        userAgent?: string;
-    };
 }
 
 interface ParsedChapterUrl {
@@ -218,6 +202,7 @@ export class KaganeScraper implements IChapterScraper {
         baseUrl: SITE_BASE,
         priority: appConfig.scraper.kagane.priority,
         enabled: appConfig.scraper.kagane.enabled,
+        searchTimeoutMs: 130_000,
     };
 
     private static readonly httpAgent = new http.Agent({
@@ -525,28 +510,11 @@ export class KaganeScraper implements IChapterScraper {
     }
 
     private async requestFlareSolverr(payload: Record<string, unknown>): Promise<FlareSolverrResult> {
-        const flareSolverrUrl = appConfig.scraper.kagane.flareSolverrUrl?.replace(/\/$/, '');
+        const flareSolverrUrl = appConfig.scraper.kagane.flareSolverrUrl;
         if (!flareSolverrUrl) {
             throw new Error('FlareSolverr URL is not configured');
         }
-
-        const response = await axios.post<FlareSolverrResult>(
-            `${flareSolverrUrl}/v1`,
-            payload,
-            {
-                timeout: 120000,
-                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-                validateStatus: () => true,
-            }
-        );
-
-        if (response.status < 200 || response.status >= 300) {
-            throw new Error(`FlareSolverr HTTP ${response.status}`);
-        }
-        if (response.data?.status !== 'ok') {
-            throw new Error(`FlareSolverr error: ${response.data?.message || 'unknown error'}`);
-        }
-        return response.data;
+        return requestFlareSolverr(flareSolverrUrl, payload);
     }
 
     private flareSessionFromSolution(solution: FlareSolverrResult['solution']): KaganeCfSession {

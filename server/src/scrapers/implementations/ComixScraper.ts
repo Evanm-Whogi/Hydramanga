@@ -49,6 +49,7 @@ import {
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
+import { requestFlareSolverr, type FlareSolverrCookie, type FlareSolverrResult } from '@/lib/flareSolverrClient';
 
 const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const SITE_BASE = appConfig.scraper.comix.baseUrl;
@@ -164,23 +165,6 @@ interface ComixCfSession {
     browserCookies: Array<{ name: string; value: string; domain: string; path: string }>;
 }
 
-interface FlareSolverrCookie {
-    name: string;
-    value: string;
-    expiry?: number;
-}
-
-interface FlareSolverrResult {
-    status?: string;
-    message?: string;
-    solution?: {
-        status?: number;
-        response?: string;
-        cookies?: FlareSolverrCookie[];
-        userAgent?: string;
-    };
-}
-
 const COMIX_CF_HELP =
     'Set FLARESOLVERR_URL for automatic Cloudflare bypass, or export COMIX_CF_CLEARANCE ' +
     '(+ COMIX_CF_USER_AGENT) captured from a real browser session on comix.to.';
@@ -256,6 +240,7 @@ export class ComixScraper implements IChapterScraper {
         baseUrl: SITE_BASE,
         priority: appConfig.scraper.comix.priority,
         enabled: appConfig.scraper.comix.enabled,
+        searchTimeoutMs: 130_000,
     };
 
     private static readonly httpAgent = new http.Agent({
@@ -373,20 +358,7 @@ export class ComixScraper implements IChapterScraper {
     private async requestFlareSolverr(payload: Record<string, unknown>): Promise<FlareSolverrResult> {
         const flareSolverrUrl = getFlareSolverrUrl();
         if (!flareSolverrUrl) throw new Error('FlareSolverr URL is not configured');
-
-        const response = await axios.post<FlareSolverrResult>(`${flareSolverrUrl}/v1`, payload, {
-            timeout: 120000,
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            validateStatus: () => true,
-        });
-
-        if (response.status < 200 || response.status >= 300) {
-            throw new Error(`FlareSolverr HTTP ${response.status}`);
-        }
-        if (response.data?.status !== 'ok') {
-            throw new Error(`FlareSolverr error: ${response.data?.message || 'unknown error'}`);
-        }
-        return response.data;
+        return requestFlareSolverr(flareSolverrUrl, payload);
     }
 
     private buildBrowserCookies(

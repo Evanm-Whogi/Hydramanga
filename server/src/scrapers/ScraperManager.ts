@@ -643,11 +643,15 @@ export class ScraperManager {
         }
     }
 
-    private withSourceSearchDeadline<T>(promise: Promise<T>): Promise<T> {
+    private getSourceSearchTimeoutMs(scraper: IChapterScraper): number {
+        return scraper.getMetadata().searchTimeoutMs ?? ScraperManager.SOURCE_SEARCH_TIMEOUT_MS;
+    }
+
+    private withSourceSearchDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
         return new Promise<T>((resolve, reject) => {
             const timer = setTimeout(() => {
-                reject(new Error(`search timed out after ${ScraperManager.SOURCE_SEARCH_TIMEOUT_MS}ms`));
-            }, ScraperManager.SOURCE_SEARCH_TIMEOUT_MS);
+                reject(new Error(`search timed out after ${timeoutMs}ms`));
+            }, timeoutMs);
             promise.then(
                 (value) => {
                     clearTimeout(timer);
@@ -702,7 +706,7 @@ export class ScraperManager {
                 return { scraperId, scraperName, priority: scraperPriority, results: [], summary: `Skipped "${mangaName}" (scraper cannot handle this title)` };
             }
 
-            const response = await this.withSourceSearchDeadline(scraper.search(mangaName, options, limitPerSource));
+            const response = await this.withSourceSearchDeadline(scraper.search(mangaName, options, limitPerSource), this.getSourceSearchTimeoutMs(scraper));
             const { results: normalized, summary: scraperSummary } = this.normalizeSearchResponse(response);
             return {
                 scraperId,

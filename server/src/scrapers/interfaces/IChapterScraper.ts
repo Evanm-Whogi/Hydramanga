@@ -88,6 +88,8 @@ export interface ScraperMetadata {
     priority: number;
     /** Whether this scraper is currently enabled */
     enabled: boolean;
+    /** Optional per-scraper admin search timeout (FlareSolverr-backed sources need more time) */
+    searchTimeoutMs?: number;
 }
 
 /**

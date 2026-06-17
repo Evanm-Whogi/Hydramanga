@@ -1234,7 +1234,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4">
-          {activeChapterId && id && (
+          {activeChapterId && id && commentsSidebarOpen && (
             <Comments key={activeChapterId} manga={{ id: Number(id) }} chapterId={activeChapterId} className="text-left" />
           )}
         </div>

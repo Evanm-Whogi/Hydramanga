@@ -24,7 +24,8 @@ export const FILTER_OPTIONS = {
     { label: "Complete", value: "completed" },
     { label: "Hiatus", value: "hiatus" },
     { label: "Canceled", value: "cancelled" },
-    { label: "Upcoming", value: "upcoming" }
+    { label: "Upcoming", value: "upcoming" },
+    { label: "Imported", value: "imported" }
   ] as const,
 
   years: [
