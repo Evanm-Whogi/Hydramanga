@@ -7,6 +7,7 @@ import { userProgressService } from '@/services/userProgressService';
 import { cacheService } from '@/services/cacheService';
 import { getUserSettings } from '@/services/userSettingsService';
 import { getCatalogFilterConditions } from '@/config/contentFilter';
+import { withResolvedDisplayTitle } from '@/lib/displayTitle';
 import { enrichNestedSeriesExtras, enrichSeriesListExtras, seriesCardColumns} from '@/lib/seriesQueries';
 import { badgeService } from '@/services/badgeService';
 import { getThreshold } from '@/lib/periodUtils';
@@ -354,7 +355,10 @@ export const getRecentComments = async (req: Request, res: Response) => {
                 with: { series: true, author: true },
             })
     );
-    res.json(data);
+    res.json(data.map((comment) => ({
+        ...comment,
+        series: comment.series ? withResolvedDisplayTitle(comment.series) : comment.series,
+    })));
 };
 
 // TOP COMMENTERS

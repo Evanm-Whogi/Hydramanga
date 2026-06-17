@@ -1,6 +1,7 @@
 import { sql, inArray, and, gte, getTableColumns } from 'drizzle-orm';
 import { db, schema } from '@/db/index';
 import { series } from '@/db/schema';
+import { withResolvedDisplayTitle, type SeriesTitleFields } from '@/lib/displayTitle';
 
 /** Card/list selects — omits search_text until DB migration (see sql/add_series_search_text.sql). */
 const { searchText: _searchText, ...seriesCardColumns } = getTableColumns(series);
@@ -30,7 +31,7 @@ export async function fetchSeriesChapterFlags(seriesIds: number[], newInterval =
   };
 }
 
-export async function enrichSeriesListExtras<T extends { id: number }>(items: T[], newInterval = '3 days'): Promise<(T & { isNew: boolean; hasImportedChapters: boolean })[]> {
+export async function enrichSeriesListExtras<T extends { id: number } & SeriesTitleFields>(items: T[], newInterval = '3 days'): Promise<(T & { isNew: boolean; hasImportedChapters: boolean })[]> {
   if (items.length === 0) return [];
 
   const { importedIds, newIds } = await fetchSeriesChapterFlags(
@@ -39,14 +40,14 @@ export async function enrichSeriesListExtras<T extends { id: number }>(items: T[
   );
 
   return items.map((item) => ({
-    ...item,
+    ...withResolvedDisplayTitle(item),
     isNew: newIds.has(item.id),
     hasImportedChapters: importedIds.has(item.id),
   }));
 }
 
 /** Attach isNew / hasImportedChapters to nested series objects (e.g. popular chapters). */
-export async function enrichNestedSeriesExtras<T extends { series: { id: number } }>(rows: T[], newInterval = '3 days'): Promise<T[]> {
+export async function enrichNestedSeriesExtras<T extends { series: { id: number } & SeriesTitleFields }>(rows: T[], newInterval = '3 days'): Promise<T[]> {
   if (rows.length === 0) return rows;
 
   const flags = await fetchSeriesChapterFlags(
@@ -57,7 +58,7 @@ export async function enrichNestedSeriesExtras<T extends { series: { id: number 
   return rows.map((row) => ({
     ...row,
     series: {
-      ...row.series,
+      ...withResolvedDisplayTitle(row.series),
       isNew: flags.newIds.has(row.series.id),
       hasImportedChapters: flags.importedIds.has(row.series.id),
     },

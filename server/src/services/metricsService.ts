@@ -3,6 +3,7 @@ import { eq, and, sql, gte, desc, inArray } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { cacheService } from '@/services/cacheService';
 import { shouldFilterManga, isNovelType, getExcludeNovelConditions } from '@/config/contentFilter';
+import { withResolvedDisplayTitle, resolveDisplayTitle } from '@/lib/displayTitle';
 import { fetchSeriesChapterFlags, seriesCardColumns } from '@/lib/seriesQueries';
 import { series } from '@/db/schema';
 
@@ -238,18 +239,21 @@ class MetricsService {
       const { importedIds } = await fetchSeriesChapterFlags(seriesIds);
 
       // Combine trending stats with series data
-      const results = trendingData.map((trend: any) => {
-        const row = seriesData.find((s) => s.id === trend.seriesId);
-        return {
-          ...row,
-          hasImportedChapters: importedIds.has(trend.seriesId),
-          trendingStats: {
-            viewCount: trend.viewCount || trend.totalViews,
-            uniqueViewCount: trend.uniqueViewCount || trend.uniqueViews,
-            periodDays: days,
-          },
-        };
-      })
+      const results = trendingData
+        .map((trend: any) => {
+          const row = seriesData.find((s) => s.id === trend.seriesId);
+          if (!row) return null;
+          return withResolvedDisplayTitle({
+            ...row,
+            hasImportedChapters: importedIds.has(trend.seriesId),
+            trendingStats: {
+              viewCount: trend.viewCount || trend.totalViews,
+              uniqueViewCount: trend.uniqueViewCount || trend.uniqueViews,
+              periodDays: days,
+            },
+          });
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null)
       .filter(item => !shouldFilterManga(item.genres as any) && !isNovelType(item.type as string | null)); // Filter out blocked content and novels
 
       // Cache the result
@@ -419,19 +423,36 @@ class MetricsService {
           seriesId: schema.series.id,
           viewedAt: sql<Date>`MAX(${schema.mangaViews.viewedAt})`.as('viewedAt'),
           seriesTitle: schema.series.title,
+          seriesNativeTitle: schema.series.nativeTitle,
+          seriesRomanizedTitle: schema.series.romanizedTitle,
+          seriesSecondaryTitles: schema.series.secondaryTitles,
           seriesCover: schema.series.cover,
           rating: schema.series.rating,
         })
         .from(schema.mangaViews)
         .innerJoin(schema.series, eq(schema.mangaViews.seriesId, schema.series.id))
         .where(and(eq(schema.mangaViews.userId, userId), ...getExcludeNovelConditions(schema.series)))
-        .groupBy(schema.series.id, schema.series.title, schema.series.cover, schema.series.rating)
+        .groupBy(
+          schema.series.id,
+          schema.series.title,
+          schema.series.nativeTitle,
+          schema.series.romanizedTitle,
+          schema.series.secondaryTitles,
+          schema.series.cover,
+          schema.series.rating,
+        )
         .orderBy(desc(sql`MAX(${schema.mangaViews.viewedAt})`))
         .limit(limit);
 
       // Map reading time into results
-      return viewHistory.map((item: any) => ({
+      return viewHistory.map(({ seriesNativeTitle, seriesRomanizedTitle, seriesSecondaryTitles, ...item }) => ({
         ...item,
+        seriesTitle: resolveDisplayTitle({
+          title: item.seriesTitle,
+          nativeTitle: seriesNativeTitle,
+          romanizedTitle: seriesRomanizedTitle,
+          secondaryTitles: seriesSecondaryTitles,
+        }),
         readingTimeSeconds: readingTimeMap.get(item.seriesId) || 0,
       }));
     } catch (error) {

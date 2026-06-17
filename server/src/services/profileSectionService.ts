@@ -4,6 +4,7 @@ import { getUserSettings } from '@/services/userSettingsService';
 import { canViewProfileSection } from '@/lib/profileVisibility';
 import { seriesCardColumns, enrichSeriesListExtras } from '@/lib/seriesQueries';
 import { resolveCoverUrl } from '@/lib/coverUtils';
+import { resolveDisplayTitle, withResolvedDisplayTitle } from '@/lib/displayTitle';
 import { getCatalogFilterConditions, getExcludeNovelConditions, isNovelType } from '@/config/contentFilter';
 import { BookmarkService, type BookmarkSort, type BookmarkStatus } from '@/services/bookmarkService';
 import { badgeService } from '@/services/badgeService';
@@ -102,6 +103,9 @@ class ProfileSectionService {
         seriesId: schema.comments.seriesId,
         createdAt: schema.comments.createdAt,
         seriesTitle: schema.series.title,
+        seriesNativeTitle: schema.series.nativeTitle,
+        seriesRomanizedTitle: schema.series.romanizedTitle,
+        seriesSecondaryTitles: schema.series.secondaryTitles,
         seriesCover: schema.series.cover,
       })
       .from(schema.comments)
@@ -119,7 +123,12 @@ class ProfileSectionService {
         createdAt: row.createdAt,
         series: {
           id: row.seriesId,
-          title: row.seriesTitle,
+          title: resolveDisplayTitle({
+            title: row.seriesTitle,
+            nativeTitle: row.seriesNativeTitle,
+            romanizedTitle: row.seriesRomanizedTitle,
+            secondaryTitles: row.seriesSecondaryTitles,
+          }),
           cover: resolveCoverUrl(row.seriesCover),
         },
       })),
@@ -151,6 +160,9 @@ class ProfileSectionService {
         percentageCompleted: schema.userReadingProgress.percentageCompleted,
         updatedAt: schema.userReadingProgress.updatedAt,
         title: schema.series.title,
+        nativeTitle: schema.series.nativeTitle,
+        romanizedTitle: schema.series.romanizedTitle,
+        secondaryTitles: schema.series.secondaryTitles,
         cover: schema.series.cover,
         type: schema.series.type,
       })
@@ -166,7 +178,7 @@ class ProfileSectionService {
     return {
       items: rows.map((row) => ({
         seriesId: row.seriesId,
-        title: row.title,
+        title: resolveDisplayTitle(row),
         cover: resolveCoverUrl(row.cover),
         type: row.type,
         percentageCompleted: row.percentageCompleted,

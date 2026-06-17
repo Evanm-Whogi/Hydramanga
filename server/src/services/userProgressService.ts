@@ -7,6 +7,7 @@ import { readingActivityService } from '@/services/readingActivityService';
 import { READING_TIME_DAY_THRESHOLD_SECONDS } from '@/config/karmaConfig';
 import { badgeService } from '@/services/badgeService';
 import { getExcludeNovelConditions } from '@/config/contentFilter';
+import { resolveDisplayTitle } from '@/lib/displayTitle';
 
 function normalizeSeriesType(raw: string | null | undefined): 'manga' | 'manhwa' | 'manhua' | 'other' {
   const value = (raw ?? '').toLowerCase().trim();
@@ -233,6 +234,9 @@ class UserProgressService {
           percentageCompleted: schema.userReadingProgress.percentageCompleted,
           updatedAt: schema.userReadingProgress.updatedAt,
           seriesTitle: schema.series.title,
+          seriesNativeTitle: schema.series.nativeTitle,
+          seriesRomanizedTitle: schema.series.romanizedTitle,
+          seriesSecondaryTitles: schema.series.secondaryTitles,
           seriesCover: schema.series.cover,
           chapterNumber: schema.chapters.chapterNumber,
           chapterTitle: schema.chapters.title,
@@ -258,6 +262,9 @@ class UserProgressService {
           schema.userReadingProgress.updatedAt,
           schema.series.id,
           schema.series.title,
+          schema.series.nativeTitle,
+          schema.series.romanizedTitle,
+          schema.series.secondaryTitles,
           schema.series.cover,
           schema.chapters.id,
           schema.chapters.chapterNumber,
@@ -266,10 +273,20 @@ class UserProgressService {
         .orderBy(sql`${schema.userReadingProgress.updatedAt} DESC`)
         .limit(limit);
 
-      // Cache the result
-      await cacheService.set(cacheKey, progressList, CACHE_TTL.USER_PROGRESS, ['user_progress']);
+      const resolvedProgressList = progressList.map(({ seriesNativeTitle, seriesRomanizedTitle, seriesSecondaryTitles, ...row }) => ({
+        ...row,
+        seriesTitle: resolveDisplayTitle({
+          title: row.seriesTitle,
+          nativeTitle: seriesNativeTitle,
+          romanizedTitle: seriesRomanizedTitle,
+          secondaryTitles: seriesSecondaryTitles,
+        }),
+      }));
 
-      return progressList;
+      // Cache the result
+      await cacheService.set(cacheKey, resolvedProgressList, CACHE_TTL.USER_PROGRESS, ['user_progress']);
+
+      return resolvedProgressList;
     } catch (error) {
       logger.error(`Failed to get user progress: ${error}`, { service: 'userProgressService' });
       throw error;

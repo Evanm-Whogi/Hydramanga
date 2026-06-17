@@ -3,6 +3,7 @@ import { eq, and, or, ilike, desc, asc, sql, inArray, count, max } from 'drizzle
 import { getCatalogFilterConditions, getExcludeNovelConditions, isNovelType } from '@/config/contentFilter';
 import { getUserSettings } from '@/services/userSettingsService';
 import { resolveCoverUrl } from '@/lib/coverUtils';
+import { withResolvedDisplayTitle } from '@/lib/displayTitle';
 import { seriesCardColumns, enrichSeriesListExtras } from '@/lib/seriesQueries';
 import { buildThreadTree } from '@/lib/buildThreadTree';
 import { enrichCommentsWithAuthorMeta } from '@/lib/enrichAuthors';
@@ -661,11 +662,21 @@ class CuratedListService {
     const term = query.trim();
     if (!term) return [];
     const rows = await db
-      .select({ id: schema.series.id, title: schema.series.title, cover: schema.series.cover })
+      .select({
+        id: schema.series.id,
+        title: schema.series.title,
+        nativeTitle: schema.series.nativeTitle,
+        romanizedTitle: schema.series.romanizedTitle,
+        secondaryTitles: schema.series.secondaryTitles,
+        cover: schema.series.cover,
+      })
       .from(schema.series)
       .where(and(ilike(schema.series.title, `%${term}%`), ...getExcludeNovelConditions(schema.series)))
       .limit(Math.min(limit, 20));
-    return rows.map((r) => ({ id: r.id, title: r.title, cover: resolveCoverUrl(r.cover) }));
+    return rows.map((r) => {
+      const resolved = withResolvedDisplayTitle(r);
+      return { id: resolved.id, title: resolved.title, cover: resolveCoverUrl(resolved.cover) };
+    });
   }
 }
 

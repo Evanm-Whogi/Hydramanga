@@ -3,6 +3,7 @@ import * as schema from '@/db/schema';
 import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { getCatalogFilterConditions, getExcludeNovelConditions, isNovelType } from '@/config/contentFilter';
+import { withResolvedDisplayTitle } from '@/lib/displayTitle';
 
 export const BOOKMARK_STATUSES = ['reading', 'rereading', 'planned', 'completed', 'paused', 'dropped'] as const;
 export type BookmarkStatus = typeof BOOKMARK_STATUSES[number];
@@ -81,6 +82,9 @@ export class BookmarkService {
         updatedAt: schema.seriesBookmarks.updatedAt,
         lastUpdatedAt: schema.series.lastUpdatedAt,
         title: schema.series.title,
+        nativeTitle: schema.series.nativeTitle,
+        romanizedTitle: schema.series.romanizedTitle,
+        secondaryTitles: schema.series.secondaryTitles,
         cover: schema.series.cover,
         type: schema.series.type,
         genres: schema.series.genres,
@@ -117,7 +121,7 @@ export class BookmarkService {
       .innerJoin(schema.series, eq(schema.seriesBookmarks.seriesId, schema.series.id))
       .where(whereClause);
 
-    return { items: rows, total: count };
+    return { items: rows.map(withResolvedDisplayTitle), total: count };
   }
 
   static async getUserIdsBySeriesAndStatus(seriesId: number, statuses: BookmarkStatus[]): Promise<string[]> {

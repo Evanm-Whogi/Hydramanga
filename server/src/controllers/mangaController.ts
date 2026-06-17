@@ -19,6 +19,7 @@ import { commentService } from '@/services/commentService';
 import { recordAuditFromRequest } from '@/audit/record';
 import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
 import { badgeService } from '@/services/badgeService';
+import { withResolvedDisplayTitle, resolveDisplayTitle } from '@/lib/displayTitle';
 
 // Normalize curly/smart quotes to ASCII so search matches titles regardless of apostrophe type
 function normalizeApostrophes(s: string): string {
@@ -43,6 +44,9 @@ function buildTextSearchCondition(normalizedSearch: string) {
 const discoverSeriesSelect = {
     id: schema.series.id,
     title: schema.series.title,
+    nativeTitle: schema.series.nativeTitle,
+    romanizedTitle: schema.series.romanizedTitle,
+    secondaryTitles: schema.series.secondaryTitles,
     cover: schema.series.cover,
     type: schema.series.type,
     status: schema.series.status,
@@ -204,7 +208,7 @@ async function enrichDiscoverSearchPayload(
         ...payload,
         items: payload.items.map((item: any) => {
             const fresh = statsMap.get(item.id);
-            return {
+            return withResolvedDisplayTitle({
                 ...item,
                 rating: fresh?.rating ?? item.rating,
                 weightedScore: fresh?.weightedScore ?? item.weightedScore,
@@ -214,7 +218,7 @@ async function enrichDiscoverSearchPayload(
                 isNew: chapterFlags.newIds.has(item.id),
                 latestChapter: chapterMap.get(item.id) || null,
                 hasImportedChapters: chapterFlags.importedIds.has(item.id),
-            };
+            });
         }),
     };
 }
@@ -513,6 +517,9 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
             const relatedSeries = await db.select({
                 id: schema.series.id,
                 name: schema.series.title,
+                nativeTitle: schema.series.nativeTitle,
+                romanizedTitle: schema.series.romanizedTitle,
+                secondaryTitles: schema.series.secondaryTitles,
                 image: schema.series.cover,
             })
             .from(schema.series)
@@ -523,7 +530,11 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
             Object.entries(manga.relationships).forEach(([category, ids]: [string, any]) => {
                 enrichedRelationships[category] = ids.map((id: number) => {
                     const relatedData = relatedSeries.find((s) => s.id === id);
-                    return relatedData || { id };
+                    if (!relatedData) return { id };
+                    return {
+                        ...relatedData,
+                        name: resolveDisplayTitle({ title: relatedData.name, nativeTitle: relatedData.nativeTitle, romanizedTitle: relatedData.romanizedTitle, secondaryTitles: relatedData.secondaryTitles }),
+                    };
                 });
             });
         }
@@ -535,7 +546,7 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
 
     return res.json({
         status: 200,
-        manga: enrichedRelationships ? { ...manga, relationships: enrichedRelationships } : manga,
+        manga: withResolvedDisplayTitle(enrichedRelationships ? { ...manga, relationships: enrichedRelationships } : manga),
         userStatus
     })
 }
@@ -886,6 +897,9 @@ export async function getRecommendedManga(req: Request, res: Response, next: Nex
                     .select({
                         id: schema.series.id,
                         title: schema.series.title,
+                        nativeTitle: schema.series.nativeTitle,
+                        romanizedTitle: schema.series.romanizedTitle,
+                        secondaryTitles: schema.series.secondaryTitles,
                         cover: schema.series.cover,
                         genres: schema.series.genres,
                         weightedScore: schema.series.weightedScore,
@@ -925,7 +939,7 @@ export async function getRecommendedManga(req: Request, res: Response, next: Nex
                         return (b.weightedScore || 0) - (a.weightedScore || 0);
                     })
                     .slice(0, limit)
-                    .map(({ matchCount, ...rest }) => rest);
+                    .map(({ matchCount, ...rest }) => withResolvedDisplayTitle(rest));
 
                 return scored.length > 0 ? scored : recommendations.filter(m => !shouldFilterManga(m.genres as any)).slice(0, limit);
             }
@@ -1006,6 +1020,9 @@ export async function randomManga(req: Request, res: Response, next: NextFunctio
             const randomManga = await db.select({
                 id: schema.series.id,
                 title: schema.series.title,
+                nativeTitle: schema.series.nativeTitle,
+                romanizedTitle: schema.series.romanizedTitle,
+                secondaryTitles: schema.series.secondaryTitles,
                 cover: schema.series.cover,
             })
             .from(schema.series)
@@ -1027,7 +1044,7 @@ export async function randomManga(req: Request, res: Response, next: NextFunctio
 
         if (!randomManga || randomManga.length === 0) return res.status(404).json({ error: "No manga found" });
         
-        return res.json(randomManga);
+        return res.json(randomManga.map(withResolvedDisplayTitle));
     } catch (error) {
         logger.error(`Random Manga Error: ${(error as Error).message}`, { service: 'mangaController' });
         return res.status(500).json({ error: "Failed to fetch random manga" });
