@@ -122,7 +122,7 @@ export default function NavbarClient() {
                             <NavItem href='/collections' icon={<LibraryBig className="size-4 inline" />} label='Collections' />
                             <NavItem href='/lists' icon={<ListIcon className="size-4 inline" />} label='Lists' />
                             <NavItem href='/leaderboard' icon={<TrophyIcon className="size-4 inline" />} label='Leaderboard' />
-                            <NavItem href='/board' icon={<MessagesSquareIcon className="size-4 inline" />} label='Board' />
+                            <NavItem href='/forum' icon={<MessagesSquareIcon className="size-4 inline" />} label='Forum' />
                             <NavItem href='/chat' icon={<MessageCircleIcon className="size-4 inline" />} label='Chat' />
                         </nav>
                     </div>
@@ -232,8 +232,8 @@ export default function NavbarClient() {
                                         <Link href="/leaderboard" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/leaderboard' ? 'text-primary' : 'text-muted'}`}>
                                             <TrophyIcon className="size-4" /> Leaderboard
                                         </Link>
-                                        <Link href="/board" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/board' ? 'text-primary' : 'text-muted'}`}>
-                                            <MessagesSquareIcon className="size-4" /> Board
+                                        <Link href="/forum" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/forum' || pathname.startsWith('/forum/') ? 'text-primary' : 'text-muted'}`}>
+                                            <MessagesSquareIcon className="size-4" /> Forum
                                         </Link>
                                         <Link href="/chat" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/chat' ? 'text-primary' : 'text-muted'}`}>
                                             <MessageCircleIcon className="size-4" /> Chat
@@ -277,8 +277,8 @@ export default function NavbarClient() {
                                         <Link href="/leaderboard" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/leaderboard' ? 'text-primary' : 'text-muted'}`}>
                                             <TrophyIcon className="size-4" /> Leaderboard
                                         </Link>
-                                        <Link href="/board" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/board' ? 'text-primary' : 'text-muted'}`}>
-                                            <MessagesSquareIcon className="size-4" /> Board
+                                        <Link href="/forum" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/forum' || pathname.startsWith('/forum/') ? 'text-primary' : 'text-muted'}`}>
+                                            <MessagesSquareIcon className="size-4" /> Forum
                                         </Link>
                                         <Link href="/chat" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/chat' ? 'text-primary' : 'text-muted'}`}>
                                             <MessageCircleIcon className="size-4" /> Chat

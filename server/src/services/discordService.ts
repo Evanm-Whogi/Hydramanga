@@ -163,8 +163,8 @@ export const discordService = {
 
         await sendEmbed('admin', buildEmbed({
                 title: 'New Board Thread',
-                description: `**${username}** posted [**${title}**](${PUBLIC_APP_URL}/board):\n> ${preview}`,
-                url: `${PUBLIC_APP_URL}/board`,
+                description: `**${username}** posted [**${title}**](${PUBLIC_APP_URL}/forum/${postId}):\n> ${preview}`,
+                url: `${PUBLIC_APP_URL}/forum/${postId}`,
                 color: COLORS.brand,
                 fields: [{ name: 'Post ID', value: String(postId), inline: true }],
             })

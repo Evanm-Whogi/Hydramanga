@@ -58,11 +58,11 @@ function eventHref(event: AuditLogEvent): string | null {
   if (!event.resourceType || !event.resourceId) return null;
   if (event.resourceType === "user") return `/users/${event.resourceId}`;
   if (event.resourceType === "series") return `/manga/${event.resourceId}`;
-  if (event.resourceType === "board_post") return `/board#post-${event.resourceId}`;
+  if (event.resourceType === "board_post") return `/forum/${event.resourceId}`;
   if (event.resourceType === "board_reply") {
     const postId = event.metadata?.postId;
-    if (postId != null) return `/board#post-${postId}`;
-    return "/board";
+    if (postId != null) return `/forum/${postId}`;
+    return "/forum";
   }
   if (event.resourceType === "comment" || event.resourceType === "review") {
     const seriesId = event.metadata?.seriesId;
@@ -129,7 +129,7 @@ function linkLabel(event: AuditLogEvent): string | null {
   if (href.startsWith("/admin/imports")) return "Import requests";
   if (href.startsWith("/admin")) return "Admin";
   if (href === "/chat") return "Chat";
-  if (href.startsWith("/board")) return "Board";
+  if (href.startsWith("/forum")) return "Forum";
   if (href.startsWith("/manga/")) {
     const id = href.split("/").pop();
     return id ? `Manga #${id}` : "Manga";

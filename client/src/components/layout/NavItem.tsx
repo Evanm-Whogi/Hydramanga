@@ -12,8 +12,9 @@ interface navItemProps {
 
 export default function navItem ({ href, icon, label, className, closeMenu}: navItemProps) {
     const pathname = usePathname();
+    const isActive = pathname === href || (href !== '/' && pathname.startsWith(`${href}/`));
     return (
-        <Link href={href} className={`flex shrink-0 items-center gap-1 whitespace-nowrap ${pathname === href ? 'text-primary' : 'text-muted hover:text-primary'} ${className ?? ''}`} onClick={closeMenu}>
+        <Link href={href} className={`flex shrink-0 items-center gap-1 whitespace-nowrap ${isActive ? 'text-primary' : 'text-muted hover:text-primary'} ${className ?? ''}`} onClick={closeMenu}>
             {icon}
             <span>{label}</span>
         </Link>

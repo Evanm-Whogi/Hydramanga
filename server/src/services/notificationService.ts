@@ -154,13 +154,13 @@ class NotificationService {
     });
   }
 
-  async notifyBoardReply(params: {recipientUserId: string; replierName: string; postTitle: string}): Promise<void> {
+  async notifyBoardReply(params: {recipientUserId: string; replierName: string; postTitle: string; postId: number}): Promise<void> {
     await this.create({
       userId: params.recipientUserId,
       type: 'board_reply',
       title: 'New board reply',
       message: `${params.replierName} replied on "${params.postTitle}".`,
-      linkUrl: '/board',
+      linkUrl: `/forum/${params.postId}`,
       imageUrl: null,
     });
   }

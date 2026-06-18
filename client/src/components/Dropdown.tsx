@@ -5,9 +5,10 @@ import DropdownContainer from "@/components/DropdownContainer";
 interface Option {
     label: string;
     value: string;
+    className?: string;
 }
 
-export default function SingleDropdown({ title, options, size, onChange, initialValue }: { title?: string; options?: Option[]; size?: string; onChange: (val: string) => void; initialValue?: string }) {
+export default function SingleDropdown({ title, options, size, onChange, initialValue, className, matchInputHeight }: { title?: string; options?: Option[]; size?: string; onChange: (val: string) => void; initialValue?: string; className?: string; matchInputHeight?: boolean }) {
     const [selectedLabel, setSelectedLabel] = useState(() => {
         if (initialValue) {
             const option = options?.find(opt => opt.value === initialValue);
@@ -26,7 +27,7 @@ export default function SingleDropdown({ title, options, size, onChange, initial
     };
 
     return (
-        <DropdownContainer title={title} size={size} selectedLabel={selectedLabel}>
+        <DropdownContainer title={title} size={size} selectedLabel={selectedLabel} className={className} matchInputHeight={matchInputHeight}>
             {(setIsOpen) => (
                 <>
                     {options?.map((option) => (

@@ -587,6 +587,7 @@ export const boardPosts = pgTable('board_posts', {
   userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   title: varchar('title', { length: 255 }).notNull(),
   content: text('content').notNull(),
+  category: varchar('category', { length: 32 }).notNull().default('general'),
   isPinned: boolean('is_pinned').notNull().default(false),
   isLocked: boolean('is_locked').notNull().default(false),
   isDeleted: boolean('is_deleted').notNull().default(false),
@@ -596,6 +597,7 @@ export const boardPosts = pgTable('board_posts', {
 }, (t) => ({
   createdAtIdx: index('idx_board_posts_created_at').on(t.createdAt.desc()),
   userIdIdx: index('idx_board_posts_user_id').on(t.userId),
+  categoryCreatedAtIdx: index('idx_board_posts_category').on(t.category, t.createdAt.desc()),
 }));
 
 export const boardReplies = pgTable('board_replies', {

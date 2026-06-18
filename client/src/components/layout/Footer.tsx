@@ -39,7 +39,7 @@ export default  function Footer() {
                     <div className="flex flex-col w-full md:w-1/6 space-y-4 text-muted">
                         <h1 className="text-2xl text-primary">Community</h1>
                         <Link href="/leaderboard" className="hover:text-primary">Leaderboard</Link>
-                        <Link href="/board" className="hover:text-primary">Board</Link>
+                        <Link href="/forum" className="hover:text-primary">Forum</Link>
                         <Link href="/chat" className="hover:text-primary">Chat</Link>
                         <a href={DISCORD_URL} className="hover:text-primary">Join our Discord</a>
                     </div>

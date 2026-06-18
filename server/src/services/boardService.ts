@@ -1,26 +1,73 @@
 import { db, schema } from '@/db/index';
-import { eq, and, desc, inArray, count } from 'drizzle-orm';
+import { eq, and, desc, asc, inArray, count, or, ilike, sql } from 'drizzle-orm';
 import { karmaService } from '@/services/karmaService';
 import { notificationService } from '@/services/notificationService';
 import { buildThreadTree } from '@/lib/buildThreadTree';
 import { enrichAuthors } from '@/lib/enrichAuthors';
 import { badgeService } from '@/services/badgeService';
+import { DEFAULT_FORUM_CATEGORY, type ForumCategory } from '@/lib/forumCategories';
+
+export type BoardListSort = 'latest' | 'top' | 'oldest';
+
+export type BoardListOptions = {
+  page?: number;
+  limit?: number;
+  q?: string;
+  category?: string;
+  sort?: BoardListSort;
+};
+
+const postVoteScoreSql = sql<number>`COALESCE((
+  SELECT SUM(CASE WHEN v.type = 'like' THEN 1 WHEN v.type = 'dislike' THEN -1 ELSE 0 END)
+  FROM board_post_votes v
+  WHERE v.post_id = ${schema.boardPosts.id}
+), 0)`;
 
 class BoardService {
-  async listPosts(page = 1, limit = 20) {
+  private buildListConditions(options: BoardListOptions) {
+    const conditions = [eq(schema.boardPosts.isDeleted, false)];
+    if (options.category && options.category !== 'all') {
+      conditions.push(eq(schema.boardPosts.category, options.category));
+    }
+    const query = options.q?.trim();
+    if (query) {
+      const term = `%${query}%`;
+      conditions.push(or(ilike(schema.boardPosts.title, term), ilike(schema.boardPosts.content, term))!);
+    }
+    return and(...conditions);
+  }
+
+  async listPosts(options: BoardListOptions = {}) {
+    const page = options.page ?? 1;
+    const limit = options.limit ?? 20;
     const offset = (page - 1) * limit;
+    const sort = options.sort ?? 'latest';
+    const whereClause = this.buildListConditions(options);
+
+    const [totalRow] = await db.select({ count: count() }).from(schema.boardPosts).where(whereClause);
+    const total = Number(totalRow?.count ?? 0);
+
+    const orderBy =
+      sort === 'oldest'
+        ? [desc(schema.boardPosts.isPinned), asc(schema.boardPosts.createdAt)]
+        : sort === 'top'
+          ? [desc(schema.boardPosts.isPinned), desc(postVoteScoreSql), desc(schema.boardPosts.createdAt)]
+          : [desc(schema.boardPosts.isPinned), desc(schema.boardPosts.createdAt)];
+
     const posts = await db.query.boardPosts.findMany({
-      where: eq(schema.boardPosts.isDeleted, false),
+      where: whereClause,
       with: {
         author: { columns: { id: true, name: true, image: true, role: true } },
         votes: true,
       },
-      orderBy: [desc(schema.boardPosts.isPinned), desc(schema.boardPosts.createdAt)],
+      orderBy,
       limit,
       offset,
     });
 
-    if (posts.length === 0) return [];
+    if (posts.length === 0) {
+      return { posts: [], total, hasMore: false };
+    }
 
     const postIds = posts.map((p) => p.id);
     const replyCounts = await db
@@ -44,7 +91,8 @@ class BoardService {
       replyCount: countMap.get(post.id) ?? 0,
     }));
 
-    return enrichAuthors(withCounts);
+    const enriched = await enrichAuthors(withCounts);
+    return { posts: enriched, total, hasMore: offset + posts.length < total };
   }
 
   async getPost(postId: number) {
@@ -83,10 +131,10 @@ class BoardService {
     );
   }
 
-  async createPost(userId: string, title: string, content: string) {
+  async createPost(userId: string, title: string, content: string, category: ForumCategory = DEFAULT_FORUM_CATEGORY) {
     const [post] = await db
       .insert(schema.boardPosts)
-      .values({ userId, title: title.trim(), content: content.trim() })
+      .values({ userId, title: title.trim(), content: content.trim(), category })
       .returning();
 
     await karmaService.award({
@@ -163,6 +211,7 @@ class BoardService {
           recipientUserId,
           replierName,
           postTitle: post.title,
+          postId: post.id,
         })
         .catch(() => undefined);
     }
@@ -256,7 +305,7 @@ class BoardService {
       .where(eq(schema.boardPosts.id, postId));
   }
 
-  async updatePost(userId: string, postId: number, data: { title?: string; content?: string }) {
+  async updatePost(userId: string, postId: number, data: { title?: string; content?: string; category?: ForumCategory }) {
     const post = await db.query.boardPosts.findFirst({
       where: and(eq(schema.boardPosts.id, postId), eq(schema.boardPosts.isDeleted, false)),
     });
@@ -268,6 +317,7 @@ class BoardService {
       .set({
         title: data.title?.trim() ?? post.title,
         content: data.content?.trim() ?? post.content,
+        category: data.category ?? post.category,
         updatedAt: new Date(),
       })
       .where(eq(schema.boardPosts.id, postId))

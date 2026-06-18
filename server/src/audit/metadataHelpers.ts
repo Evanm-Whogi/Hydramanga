@@ -14,7 +14,7 @@ export function mangaPageHref(seriesId: number | string): string {
 }
 
 export function boardPostHref(postId: number | string): string {
-  return `/board#post-${postId}`;
+  return `/forum/${postId}`;
 }
 
 export function chatPageHref(): string {

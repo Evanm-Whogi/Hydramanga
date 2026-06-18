@@ -19,7 +19,7 @@ import contactRoutes from '@/routes/contactRoutes';
 import userRoutes from '@/routes/userRoutes';
 import importRequestRoutes from '@/routes/importRequestRoutes';
 import leaderboardRoutes from '@/routes/leaderboardRoutes';
-import boardRoutes from '@/routes/boardRoutes';
+import forumRoutes from '@/routes/forumRoutes';
 import chatRoutes from '@/routes/chatRoutes';
 import notificationRoutes from '@/routes/notificationRoutes';
 import { getPublicSiteSettings } from '@/controllers/siteSettingsController';
@@ -59,7 +59,7 @@ module.exports = (app: Express) => {
     app.use('/import-requests', authMiddleware, importRequestRoutes);
 
     app.use('/leaderboard', optionalAuthMiddleware, leaderboardRoutes);
-    app.use('/board', optionalAuthMiddleware, boardRoutes);
+    app.use('/forum', optionalAuthMiddleware, forumRoutes);
     app.use('/chat', optionalAuthMiddleware, chatRoutes);
 
     app.use('/admin', authMiddleware, adminRoutes);

@@ -102,7 +102,7 @@ type ContentComposerProps = {
   rateLimitHint?: string;
 };
 
-function shellClass(layout: ContentComposerProps["layout"], className: string) {
+function shellClass(layout: ContentComposerProps["layout"], className: string, overflowVisible = false) {
   const base =
     layout === "card"
       ? "p-2 space-y-3 border border-borders bg-foreground rounded-md min-w-0 overflow-x-hidden shadow-md"
@@ -111,7 +111,7 @@ function shellClass(layout: ContentComposerProps["layout"], className: string) {
         : layout === "bar"
           ? "flex flex-wrap items-center gap-2"
           : layout === "comment"
-            ? "min-w-0 overflow-x-hidden bg-foreground rounded-lg p-4 border border-borders shadow-md"
+            ? `min-w-0 ${overflowVisible ? "overflow-visible" : "overflow-x-hidden"} bg-foreground rounded-lg p-4 border border-borders shadow-md`
             : "space-y-3";
   return className ? `${base} ${className}` : base;
 }
@@ -258,6 +258,18 @@ export default function ContentComposer({
     </div>
   );
 
+  const expandedMiddle = isComment && middle && !(hasTitle && middle) ? (
+    <div
+      className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
+        expanded ? "grid-rows-[1fr] opacity-100 overflow-visible" : "grid-rows-[0fr] opacity-0 overflow-hidden"
+      }`}
+    >
+      <div className={`min-h-0 ${expanded ? "overflow-visible" : "overflow-hidden"}`}>
+        <div className={expanded ? "pt-2" : ""}>{middle}</div>
+      </div>
+    </div>
+  ) : null;
+
   const expandedFooter = isComment ? (
     <div
       className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
@@ -293,17 +305,29 @@ export default function ContentComposer({
       <UserAvatar src={avatarUrl} width={40} height={40} className="rounded-full object-cover shrink-0 size-10" />
       <div className="min-w-0 flex-1">
         {hasTitle ? (
-          <input
-            id={titleId}
-            type="text"
-            value={title}
-            onChange={(e) => onTitleChange(e.target.value)}
-            onFocus={expandComposer}
-            placeholder={titlePlaceholder}
-            maxLength={titleMaxLength}
-            className={`${titleInputClass} min-h-[42px] focus:ring-0 focus-visible:ring-0 focus:border-borders`}
-          />
+          <div className={`${expanded && middle ? "flex flex-col sm:flex-row gap-2 items-stretch" : ""}`}>
+            <input
+              id={titleId}
+              type="text"
+              value={title}
+              onChange={(e) => onTitleChange(e.target.value)}
+              onFocus={expandComposer}
+              placeholder={titlePlaceholder}
+              maxLength={titleMaxLength}
+              className={`${titleInputClass} min-h-[42px] focus:ring-0 focus-visible:ring-0 focus:border-borders ${expanded && middle ? "flex-1 min-w-0" : "w-full"}`}
+            />
+            {middle ? (
+              <div
+                className={`shrink-0 grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
+                  expanded ? "w-full sm:w-52 grid-rows-[1fr] opacity-100 overflow-visible" : "w-0 min-w-0 grid-rows-[0fr] opacity-0 overflow-hidden pointer-events-none"
+                }`}
+              >
+                <div className={`min-h-0 h-full flex flex-col ${expanded ? "overflow-visible" : "overflow-hidden"}`}>{middle}</div>
+              </div>
+            ) : null}
+          </div>
         ) : null}
+        {expandedMiddle}
         {hasTitle ? expandedEditor : editor}
         {expandedFooter}
       </div>
@@ -334,7 +358,7 @@ export default function ContentComposer({
     </>
   );
 
-  const wrapperClass = shellClass(layout, className);
+  const wrapperClass = `${shellClass(layout, className, isComment && expanded)}${isComment && expanded ? " relative z-30" : ""}`;
 
   if (asForm) {
     return (

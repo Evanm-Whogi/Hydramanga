@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { db, schema } from '@/db/index';
 import { eq } from 'drizzle-orm';
-import { boardService } from '@/services/boardService';
+import { boardService, type BoardListSort } from '@/services/boardService';
 import { isAdminRole } from '@/lib/authHelpers';
 import { discordService } from '@/services/discordService';
 import { recordAuditFromRequest } from '@/audit/record';
@@ -9,12 +9,21 @@ import { boardPostHref, contentAuditMeta } from '@/audit/metadataHelpers';
 import { normalizeUserContent } from '@/lib/normalizeUserContent';
 import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
 import { validateContentImagesAsync } from '@/lib/externalImageValidation';
+import { DEFAULT_FORUM_CATEGORY, isForumCategory } from '@/lib/forumCategories';
+
+function parseBoardListSort(value: unknown): BoardListSort {
+  if (value === 'top' || value === 'oldest') return value;
+  return 'latest';
+}
 
 export async function listBoardPosts(req: Request, res: Response, next: NextFunction) {
   try {
     const page = parseInt(req.query.page as string, 10) || 1;
-    const posts = await boardService.listPosts(page);
-    return res.json({ posts });
+    const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+    const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+    const sort = parseBoardListSort(req.query.sort);
+    const result = await boardService.listPosts({ page, q, category, sort });
+    return res.json(result);
   } catch (error) {
     return next(error);
   }
@@ -33,11 +42,15 @@ export async function getBoardPost(req: Request, res: Response, next: NextFuncti
 
 export async function createBoardPost(req: Request, res: Response, next: NextFunction) {
   try {
-    const { title, content } = req.body;
+    const { title, content, category } = req.body;
     const normalizedTitle = typeof title === 'string' ? normalizeUserContent(title) : '';
     const normalizedContent = typeof content === 'string' ? normalizeUserContent(content) : '';
+    const normalizedCategory = typeof category === 'string' && isForumCategory(category) ? category : DEFAULT_FORUM_CATEGORY;
     if (!normalizedTitle || !normalizedContent) {
       return res.status(400).json({ message: 'Title and content are required' });
+    }
+    if (typeof category === 'string' && category && !isForumCategory(category)) {
+      return res.status(400).json({ message: 'Invalid category' });
     }
     if (exceedsLimit(normalizedTitle, CONTENT_LIMITS.boardTitle)) {
       return res.status(400).json({ message: `Title must be at most ${CONTENT_LIMITS.boardTitle} characters` });
@@ -47,7 +60,7 @@ export async function createBoardPost(req: Request, res: Response, next: NextFun
     }
     const imageError = await validateContentImagesAsync(normalizedContent);
     if (imageError) return res.status(400).json({ message: imageError });
-    const post = await boardService.createPost(req.user.id, normalizedTitle, normalizedContent);
+    const post = await boardService.createPost(req.user.id, normalizedTitle, normalizedContent, normalizedCategory);
 
     discordService
       .notifyBoardThread(req.user.name || 'Unknown', post.id, post.title, post.content)
@@ -183,7 +196,7 @@ export async function adminBoardPost(req: Request, res: Response, next: NextFunc
 export async function updateBoardPost(req: Request, res: Response, next: NextFunction) {
   try {
     const postId = parseInt(req.params.postId, 10);
-    const { title, content } = req.body;
+    const { title, content, category } = req.body;
     const normalizedTitle = typeof title === 'string' ? normalizeUserContent(title) : undefined;
     const normalizedContent = typeof content === 'string' ? normalizeUserContent(content) : undefined;
     if (normalizedTitle !== undefined && !normalizedTitle) {
@@ -191,6 +204,9 @@ export async function updateBoardPost(req: Request, res: Response, next: NextFun
     }
     if (normalizedContent !== undefined && !normalizedContent) {
       return res.status(400).json({ message: 'Content is required' });
+    }
+    if (category !== undefined && (typeof category !== 'string' || !isForumCategory(category))) {
+      return res.status(400).json({ message: 'Invalid category' });
     }
     if (normalizedTitle != null && exceedsLimit(normalizedTitle, CONTENT_LIMITS.boardTitle)) {
       return res.status(400).json({ message: `Title must be at most ${CONTENT_LIMITS.boardTitle} characters` });
@@ -202,7 +218,11 @@ export async function updateBoardPost(req: Request, res: Response, next: NextFun
       const imageError = await validateContentImagesAsync(normalizedContent);
       if (imageError) return res.status(400).json({ message: imageError });
     }
-    const post = await boardService.updatePost(req.user.id, postId, { title: normalizedTitle, content: normalizedContent });
+    const post = await boardService.updatePost(req.user.id, postId, {
+      title: normalizedTitle,
+      content: normalizedContent,
+      category: typeof category === 'string' && isForumCategory(category) ? category : undefined,
+    });
     recordAuditFromRequest(req, {
       action: 'board.post.update',
       category: 'community',
@@ -293,7 +313,7 @@ export async function deleteBoardReply(req: Request, res: Response, next: NextFu
       resourceType: 'board_reply',
       resourceId: String(replyId),
       metadata: contentAuditMeta({
-        href: existing ? boardPostHref(existing.postId) : '/board',
+        href: existing ? boardPostHref(existing.postId) : '/forum',
         summary: isAdminRole(req.user.role) ? 'Admin deleted a board reply' : 'Deleted a board reply',
         content: existing?.content,
         extra: { postId: existing?.postId },
