@@ -23,10 +23,9 @@
  */
 
 import { chromium } from 'playwright';
-import fs from 'fs';
-import path from 'path';
 import axios from 'axios';
 import sharp from 'sharp';
+import { objectStorageService } from '@/services/objectStorageService';
 import http from 'http';
 import https from 'https';
 import {
@@ -43,32 +42,8 @@ import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
 import { generateMangaFireVrf } from '@/scrapers/lib/mangaFireVrf';
 
-const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const SITE_BASE = appConfig.scraper.mangaFire.baseUrl;
 const DEFAULT_LANG = appConfig.scraper.mangaFire.language || 'en';
-
-const PLACEHOLDER_FILENAME = '_placeholder.webp';
-const PLACEHOLDER_PATH = path.join(STORAGE_ROOT, PLACEHOLDER_FILENAME);
-
-async function ensurePlaceholderExists(): Promise<void> {
-    if (fs.existsSync(PLACEHOLDER_PATH)) return;
-    try {
-        if (!fs.existsSync(STORAGE_ROOT)) fs.mkdirSync(STORAGE_ROOT, { recursive: true });
-        const buffer = await sharp({
-            create: { width: 400, height: 600, channels: 3, background: { r: 45, g: 45, b: 48 } },
-        })
-            .webp({ quality: 80, effort: 1 })
-            .toBuffer();
-        fs.writeFileSync(PLACEHOLDER_PATH, buffer);
-        logger.info('[MangaFire] Created shared placeholder image for missing pages', {
-            service: 'mangaFireScraper',
-        });
-    } catch (err: any) {
-        logger.warn(`[MangaFire] Could not create placeholder image: ${err?.message || err}`, {
-            service: 'mangaFireScraper',
-        });
-    }
-}
 
 function calculateTitleSimilarity(title1: string, title2: string): number {
     if (!title1 || !title2) return 0;
@@ -571,7 +546,6 @@ export class MangaFireScraper implements IChapterScraper {
         _mangaName: string,
         _folderName: string,
     ): Promise<DownloadedChapter> {
-        await ensurePlaceholderExists();
         const contextLabel = `series=${seriesId} ch=${chapterNumber}`;
 
         try {
@@ -912,17 +886,15 @@ export class MangaFireScraper implements IChapterScraper {
         contextLabel = 'download',
     ): Promise<string> {
         const storagePrefix = `${seriesId}/${chapterNumber}`;
-        const dir = path.join(STORAGE_ROOT, storagePrefix);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
         const byPage = new Map<number, MangaFirePageAsset>(assets.map(a => [a.page, a]));
         const batchSize = 10;
         const maxRetries = 3;
         const retryDelayMs = 1000;
 
-        const writePlaceholder = (filePath: string) => {
+        const writePlaceholder = async (pageNum: number) => {
             try {
-                if (fs.existsSync(PLACEHOLDER_PATH)) fs.copyFileSync(PLACEHOLDER_PATH, filePath);
+                await objectStorageService.uploadPlaceholderSlot(storagePrefix, pageNum - 1);
             } catch (err: any) {
                 logger.warn(`[MangaFire] [${contextLabel}] Failed to write placeholder: ${err?.message || err}`, {
                     service: 'mangaFireScraper',
@@ -931,13 +903,13 @@ export class MangaFireScraper implements IChapterScraper {
         };
 
         const downloadOne = async (pageNum: number) => {
-            const filePath = path.join(dir, `${pageNum.toString().padStart(2, '0')}.webp`);
+            const key = objectStorageService.keyFor(storagePrefix, pageNum - 1);
             const asset = byPage.get(pageNum);
             if (!asset) {
                 logger.warn(`[MangaFire] [${contextLabel}] Page ${pageNum} missing; placeholder`, {
                     service: 'mangaFireScraper',
                 });
-                writePlaceholder(filePath);
+                await writePlaceholder(pageNum);
                 return;
             }
 
@@ -947,7 +919,7 @@ export class MangaFireScraper implements IChapterScraper {
                     if (asset.dataUrl?.startsWith('data:image')) {
                         const raw = Buffer.from(asset.dataUrl.split(',')[1] || '', 'base64');
                         const out = await sharp(raw, { failOn: 'none' }).webp({ lossless: true, effort: 4 }).toBuffer();
-                        fs.writeFileSync(filePath, out);
+                        await objectStorageService.putObject(key, out);
                         return;
                     }
                     if (asset.imageUrl) {
@@ -976,10 +948,10 @@ export class MangaFireScraper implements IChapterScraper {
                             buffer.slice(0, 4).toString('ascii') === 'RIFF' &&
                             buffer.slice(8, 12).toString('ascii') === 'WEBP';
                         if (isWebp) {
-                            fs.writeFileSync(filePath, buffer);
+                            await objectStorageService.putObject(key, buffer);
                         } else {
                             const out = await sharp(buffer, { failOn: 'none' }).webp({ quality: 90, effort: 4 }).toBuffer();
-                            fs.writeFileSync(filePath, out);
+                            await objectStorageService.putObject(key, out);
                         }
                         logger.debug(
                             `[MangaFire] [${contextLabel}] Page ${pageNum}: saved ${MangaFireScraper.summarizeAssetUrl(asset.imageUrl)} (${width}x${height})`,
@@ -1003,7 +975,7 @@ export class MangaFireScraper implements IChapterScraper {
                 `[MangaFire] [${contextLabel}] Page ${pageNum} unrecoverable (${lastError?.message || lastError}); placeholder`,
                 { service: 'mangaFireScraper' },
             );
-            writePlaceholder(filePath);
+            await writePlaceholder(pageNum);
         };
 
         const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);

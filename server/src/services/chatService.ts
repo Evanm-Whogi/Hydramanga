@@ -2,6 +2,7 @@ import { db, schema } from '@/db/index';
 import { eq, desc, lt, and } from 'drizzle-orm';
 import Redis from 'ioredis';
 import { appConfig } from '@/config/appConfig';
+import { profilePictureStorageService } from '@/services/profilePictureStorageService';
 
 export const CHAT_CHANNEL = 'chat:global';
 export const CHAT_ROOM = 'chat:global';
@@ -99,7 +100,7 @@ class ChatService {
       author: author ?? {
         id: userId,
         name: 'Unknown',
-        image: '/media/pfp/default.jpg',
+        image: profilePictureStorageService.defaultAvatarUrl,
         role: 'user',
       },
     };
@@ -172,7 +173,7 @@ class ChatService {
       author: author ?? {
         id: userId,
         name: 'Unknown',
-        image: '/media/pfp/default.jpg',
+        image: profilePictureStorageService.defaultAvatarUrl,
         role: 'user',
       },
     };

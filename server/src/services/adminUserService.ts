@@ -3,6 +3,7 @@ import { eq, or, ilike, desc, asc, count, and, ne, SQL, gt, lt, isNull, isNotNul
 import { userProgressService } from '@/services/userProgressService';
 import { isUserBanned } from '@/lib/banHelpers';
 import { isAllowedProfileImageUrl } from '@/lib/profileImagePath';
+import { profilePictureStorageService } from '@/services/profilePictureStorageService';
 import { badgeService } from '@/services/badgeService';
 import { BADGE_BY_ID } from '@/config/badgeConfig';
 
@@ -334,7 +335,7 @@ class AdminUserService {
       if (image && !isAllowedProfileImageUrl(image, userId)) {
         return { error: 'invalid_image' as const };
       }
-      patch.image = image ?? '/media/pfp/default.jpg';
+      patch.image = image ?? profilePictureStorageService.defaultAvatarUrl;
     }
 
     if (!profileOnlyBadges) {

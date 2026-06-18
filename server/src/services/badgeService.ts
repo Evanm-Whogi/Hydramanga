@@ -5,6 +5,7 @@ import { isUserBanned } from '@/lib/banHelpers';
 import { isSeriesHiddenByUserNsfw } from '@/config/contentFilter';
 import { isBetaVersion } from '@/config/versionConfig';
 import { readingActivityService } from '@/services/readingActivityService';
+import { profilePictureStorageService } from '@/services/profilePictureStorageService';
 
 export type BadgeTrigger =
   | 'chat_message'
@@ -26,7 +27,8 @@ export type BadgeTrigger =
   | 'role_change'
   | 'admin_set';
 
-const DEFAULT_AVATAR = '/media/pfp/default.jpg';
+const DEFAULT_AVATAR = profilePictureStorageService.defaultAvatarUrl;
+const LEGACY_DEFAULT_AVATAR = '/media/pfp/default.jpg';
 
 class BadgeService {
   async getBadgesForUsers(userIds: string[]): Promise<Record<string, EarnedBadge[]>> {
@@ -530,7 +532,7 @@ class BadgeService {
       .limit(1);
     if (!userRow?.bio?.trim()) return;
     const image = userRow.image?.trim() || DEFAULT_AVATAR;
-    if (image === DEFAULT_AVATAR) return;
+    if (image === DEFAULT_AVATAR || image === LEGACY_DEFAULT_AVATAR) return;
 
     const [favRow] = await db
       .select({ total: count() })

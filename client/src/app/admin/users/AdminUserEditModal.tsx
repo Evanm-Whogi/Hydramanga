@@ -221,13 +221,13 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
           <>
             <div className="flex items-center gap-4 px-4 py-3 border-b border-borders shrink-0">
               <img
-                src={image || "/media/pfp/default.jpg"}
+                src={image || "https://profile-pictures.garage.chit.sh/default.jpg"}
                 alt=""
                 width={56}
                 height={56}
                 className="rounded-full border border-borders object-cover"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = "/media/pfp/default.jpg";
+                  (e.target as HTMLImageElement).src = "https://profile-pictures.garage.chit.sh/default.jpg";
                 }}
               />
               <div className="text-sm text-muted space-y-0.5 min-w-0">

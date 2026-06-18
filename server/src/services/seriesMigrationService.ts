@@ -17,7 +17,6 @@ import {
   mangaImportProgress,
 } from '@/db/schema';
 import { and, eq, inArray, count } from 'drizzle-orm';
-import { appConfig } from '@/config/appConfig';
 import { chapterStorageService } from '@/services/chapterStorageService';
 import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import { mangaProgressService } from '@/services/mangaProgressService';
@@ -162,26 +161,21 @@ class SeriesMigrationService {
     await mangaProgressService.cleanupProgress(targetSeriesId);
 
     const diskFailures: string[] = [];
-    const storageRoot = appConfig.scraper?.chapterStorageRoot;
-    if (storageRoot) {
-      if (job) await job.updateProgress(10);
-      for (let i = 0; i < migrateMoves.length; i++) {
-        const move = migrateMoves[i];
-        const failure = await chapterStorageService.moveChapterStorage(storageRoot, move.oldPrefix, move.newPrefix);
-        if (failure) diskFailures.push(failure);
-        if (job && migrateMoves.length > 0) {
-          await job.updateProgress(10 + Math.round(((i + 1) / migrateMoves.length) * 70));
-        }
+    if (job) await job.updateProgress(10);
+    for (let i = 0; i < migrateMoves.length; i++) {
+      const move = migrateMoves[i];
+      const failure = await chapterStorageService.moveChapterStorage(move.oldPrefix, move.newPrefix);
+      if (failure) diskFailures.push(failure);
+      if (job && migrateMoves.length > 0) {
+        await job.updateProgress(10 + Math.round(((i + 1) / migrateMoves.length) * 70));
       }
-
-      if (conflictPrefixes.length > 0) {
-        const cleanupFailed = await chapterStorageService.removeChapterStorage(storageRoot, sourceSeriesId, conflictPrefixes, false);
-        diskFailures.push(...cleanupFailed);
-      }
-
-      await chapterStorageService.removeEmptySeriesDir(storageRoot, sourceSeriesId);
-      if (job) await job.updateProgress(90);
     }
+
+    if (conflictPrefixes.length > 0) {
+      const cleanupFailed = await chapterStorageService.removeChapterStorage(sourceSeriesId, conflictPrefixes, false);
+      diskFailures.push(...cleanupFailed);
+    }
+    if (job) await job.updateProgress(90);
 
     await Promise.all([
       cacheService.invalidatePattern(`manga:${sourceSeriesId}:*`),

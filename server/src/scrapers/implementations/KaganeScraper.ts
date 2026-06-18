@@ -8,10 +8,8 @@
  */
 
 import { chromium } from 'playwright';
-import fs from 'fs';
-import path from 'path';
 import axios from 'axios';
-import sharp from 'sharp';
+import { objectStorageService } from '@/services/objectStorageService';
 import http from 'http';
 import https from 'https';
 import {
@@ -25,11 +23,8 @@ import {
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
-import { createWriteStream } from 'fs';
-import { pipeline } from 'stream/promises';
 import { requestFlareSolverr, type FlareSolverrCookie, type FlareSolverrResult } from '@/lib/flareSolverrClient';
 
-const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const SITE_BASE = appConfig.scraper.kagane.baseUrl;
 const API_BASE = appConfig.scraper.kagane.apiUrl;
 
@@ -785,18 +780,12 @@ export class KaganeScraper implements IChapterScraper {
 
     private async downloadImages(imageUrls: string[], seriesId: number, chapterNumber: string, referer: string, userAgent: string): Promise<string> {
         const storagePrefix = `${seriesId}/${chapterNumber}`;
-        const dir = path.join(STORAGE_ROOT, storagePrefix);
-
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
 
         const maxRetries = 3;
         const retryDelayMs = 1000;
         const batchSize = 8;
 
         const downloadImage = async (imageUrl: string, i: number) => {
-            const filePath = path.join(dir, `${(i + 1).toString().padStart(2, '0')}.webp`);
             let lastError: any;
 
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -814,17 +803,7 @@ export class KaganeScraper implements IChapterScraper {
                         },
                     });
 
-                    const transformer = sharp({ failOn: 'none' })
-                        .resize({
-                            width: 2500,
-                            height: 16383,
-                            fit: 'inside',
-                            withoutEnlargement: true,
-                            fastShrinkOnLoad: true,
-                        })
-                        .webp({ quality: 75, effort: 2, smartSubsample: true });
-
-                    await pipeline(response.data, transformer, createWriteStream(filePath));
+                    await objectStorageService.transformAndUploadPage(storagePrefix, i, response.data);
                     return;
                 } catch (err: any) {
                     lastError = err;
@@ -860,27 +839,11 @@ export class KaganeScraper implements IChapterScraper {
 
     private async saveDataUrlImages(dataUrls: string[], seriesId: number, chapterNumber: string): Promise<string> {
         const storagePrefix = `${seriesId}/${chapterNumber}`;
-        const dir = path.join(STORAGE_ROOT, storagePrefix);
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
 
         for (let i = 0; i < dataUrls.length; i++) {
-            const dataUrl = dataUrls[i];
-            const base64 = dataUrl.replace(/^data:image\/[^;]+;base64,/, '');
+            const base64 = dataUrls[i].replace(/^data:image\/[^;]+;base64,/, '');
             const buffer = Buffer.from(base64, 'base64');
-            const filePath = path.join(dir, `${(i + 1).toString().padStart(2, '0')}.webp`);
-            const webp = await sharp(buffer)
-                .resize({
-                    width: 2500,
-                    height: 16383,
-                    fit: 'inside',
-                    withoutEnlargement: true,
-                    fastShrinkOnLoad: true,
-                })
-                .webp({ quality: 75, effort: 2, smartSubsample: true })
-                .toBuffer();
-            fs.writeFileSync(filePath, webp);
+            await objectStorageService.transformAndUploadPage(storagePrefix, i, buffer);
         }
 
         return storagePrefix;

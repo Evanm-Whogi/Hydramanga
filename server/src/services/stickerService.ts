@@ -1,9 +1,9 @@
-import fs from 'fs/promises';
 import path from 'path';
 import { db, schema } from '@/db/index';
 import { asc, eq } from 'drizzle-orm';
 import { CONTENT_LIMITS } from '@/lib/securityLimits';
-import { buildStickerImageUrl, isAllowedStickerImageUrl, listStickerFilenamesFromDisk, resolveSafeStickerFilePath } from '@/lib/stickerImagePath';
+import { buildStickerImageUrl, isAllowedStickerImageUrl } from '@/lib/stickerImagePath';
+import { stickerStorageService } from '@/services/stickerStorageService';
 
 export const stickerService = {
   async listPublic() {
@@ -29,7 +29,7 @@ export const stickerService = {
   async create(data: { label?: string | null; imageUrl: string; sortOrder?: number; isActive?: boolean }) {
     const imageUrl = data.imageUrl.trim();
     if (!isAllowedStickerImageUrl(imageUrl)) {
-      throw new Error('Image URL must be a site path like /media/stickers/name.png');
+      throw new Error('Image URL must be a sticker URL (e.g. https://stickers.garage.chit.sh/name.webp)');
     }
     const [row] = await db
       .insert(schema.contentStickers)
@@ -51,7 +51,7 @@ export const stickerService = {
     if (data.imageUrl !== undefined) {
       const imageUrl = data.imageUrl.trim();
       if (!isAllowedStickerImageUrl(imageUrl)) {
-        throw new Error('Image URL must be a site path like /media/stickers/name.png');
+        throw new Error('Image URL must be a sticker URL (e.g. https://stickers.garage.chit.sh/name.webp)');
       }
       patch.imageUrl = imageUrl;
     }
@@ -68,7 +68,7 @@ export const stickerService = {
   },
 
   async scanAndImportFromDisk(): Promise<{ added: number; skipped: number; addedFiles: string[] }> {
-    const filenames = await listStickerFilenamesFromDisk();
+    const filenames = await stickerStorageService.listFilenames();
     const existing = await this.listAdmin();
     const existingUrls = new Set(existing.map((row) => row.imageUrl));
     let nextSort = existing.reduce((max, row) => Math.max(max, row.sortOrder), -1) + 1;
@@ -88,20 +88,8 @@ export const stickerService = {
         continue;
       }
 
-      const filePath = resolveSafeStickerFilePath(imageUrl);
-      if (!filePath) {
-        skipped++;
-        continue;
-      }
-
-      let stat;
-      try {
-        stat = await fs.stat(filePath);
-      } catch {
-        skipped++;
-        continue;
-      }
-      if (!stat.isFile() || stat.size > CONTENT_LIMITS.stickerMaxFileBytes) {
+      const { exists, size } = await stickerStorageService.statFilename(filename);
+      if (!exists || (size !== null && size > CONTENT_LIMITS.stickerMaxFileBytes)) {
         skipped++;
         continue;
       }

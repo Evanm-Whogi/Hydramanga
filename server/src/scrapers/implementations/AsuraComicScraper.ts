@@ -28,10 +28,8 @@
  */
 
 import { chromium } from 'playwright';
-import fs from 'fs';
-import path from 'path';
 import axios from 'axios';
-import sharp from 'sharp';
+import { downloadAndStoreChapter, isNetworkRetryableError } from '../lib/chapterImageDownloader';
 import http from 'http';
 import https from 'https';
 import {
@@ -45,10 +43,7 @@ import {
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
-import { createWriteStream } from 'fs';
-import { pipeline } from 'stream/promises';
 
-const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const SITE_BASE = appConfig.scraper.asuraComic.baseUrl;
 
 /**
@@ -627,110 +622,21 @@ export class AsuraComicScraper implements IChapterScraper {
         referer: string,
     ): Promise<string> {
         const storagePrefix = `${seriesId}/${chapterNumber}`;
-        const dir = path.join(STORAGE_ROOT, storagePrefix);
 
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-
-        const maxRetries = 3;
-        const retryDelayMs = 1000;
-        const batchSize = 10;
-
-        const downloadImage = async (imageUrl: string, i: number) => {
-            const filePath = path.join(
-                dir,
-                `${(i + 1).toString().padStart(2, '0')}.webp`,
-            );
-
-            let lastError: any;
-
-            for (let attempt = 1; attempt <= maxRetries; attempt++) {
-                try {
-                    const response = await AsuraComicScraper.axiosInstance.get(imageUrl, {
-                        responseType: 'stream',
-                        timeout: 15000,
-                        maxRedirects: 5,
-                        headers: {
-                            Referer: referer,
-                            'User-Agent': appConfig.scraper.asuraComic.userAgent,
-                        },
-                    });
-
-                    const transformer = sharp({ failOn: 'none' })
-                        .resize({
-                            width: 2500,
-                            height: 16383,
-                            fit: 'inside',
-                            withoutEnlargement: true,
-                            fastShrinkOnLoad: true,
-                        })
-                        .webp({
-                            quality: 75,
-                            effort: 2,
-                            smartSubsample: true,
-                        });
-
-                    await pipeline(
-                        response.data,
-                        transformer,
-                        createWriteStream(filePath),
-                    );
-
-                    logger.debug(
-                        `[AsuraComic] Downloaded image ${i + 1}/${images.length}`,
-                        { service: 'asuraComicScraper' },
-                    );
-
-                    return;
-                } catch (err: any) {
-                    lastError = err;
-                    const errorMsg = err.message || String(err);
-
-                    const isRetryable =
-                        errorMsg.includes('stream has been aborted') ||
-                        errorMsg.includes('ERR_HTTP2_STREAM_CANCEL') ||
-                        errorMsg.includes('ECONNRESET') ||
-                        errorMsg.includes('ECONNABORTED') ||
-                        errorMsg.includes('ETIMEDOUT') ||
-                        err.code === 'ERR_HTTP2_STREAM_CANCEL' ||
-                        err.code === 'ECONNRESET' ||
-                        err.code === 'ECONNABORTED' ||
-                        err.code === 'ETIMEDOUT';
-
-                    if (isRetryable && attempt < maxRetries) {
-                        const delayMs = retryDelayMs * Math.pow(2, attempt - 1);
-                        logger.warn(
-                            `[AsuraComic] Image ${i + 1} download failed (attempt ${attempt}/${maxRetries}): ${errorMsg}. Retrying in ${delayMs}ms...`,
-                            { service: 'asuraComicScraper' },
-                        );
-                        await new Promise(resolve => setTimeout(resolve, delayMs));
-                        continue;
-                    } else {
-                        logger.error(
-                            `[AsuraComic] Failed to download image ${i + 1} after ${attempt} attempt(s): ${errorMsg}`,
-                            { service: 'asuraComicScraper' },
-                        );
-                        throw lastError;
-                    }
-                }
-            }
-        };
-
-        const delayBetweenBatchesMs = 25;
-        for (let batchStart = 0; batchStart < images.length; batchStart += batchSize) {
-            const batchEnd = Math.min(batchStart + batchSize, images.length);
-            const batch = images.slice(batchStart, batchEnd);
-
-            await Promise.all(
-                batch.map((imageUrl, localIndex) =>
-                    downloadImage(imageUrl, batchStart + localIndex),
-                ),
-            );
-            if (batchEnd < images.length && delayBetweenBatchesMs > 0) {
-                await new Promise(r => setTimeout(r, delayBetweenBatchesMs));
-            }
-        }
+        await downloadAndStoreChapter({
+            storagePrefix,
+            images,
+            client: AsuraComicScraper.axiosInstance,
+            headers: {
+                Referer: referer,
+                'User-Agent': appConfig.scraper.asuraComic.userAgent,
+            },
+            maxRedirects: 5,
+            batchDelayMs: 25,
+            service: 'asuraComicScraper',
+            placeholderOnFailure: false,
+            isRetryable: isNetworkRetryableError,
+        });
 
         return storagePrefix;
     }

@@ -12,10 +12,6 @@
  */
 
 import { chromium } from 'playwright';
-import fs from 'fs';
-import path from 'path';
-import axios from 'axios';
-import sharp from 'sharp';
 import {
     IChapterScraper,
     ScrapedChapter,
@@ -29,36 +25,7 @@ import { WeebCentralSearcher } from '@/services/weebCentralSearcher';
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
-import { createWriteStream } from 'fs';
-import { pipeline } from 'stream/promises';
-
-const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
-const PLACEHOLDER_FILENAME = '_placeholder.webp';
-const PLACEHOLDER_PATH = path.join(STORAGE_ROOT, PLACEHOLDER_FILENAME);
-
-/** One-time creation of shared placeholder image (no duplication on disk). */
-async function ensurePlaceholderExists(): Promise<void> {
-    if (fs.existsSync(PLACEHOLDER_PATH)) return;
-    try {
-        if (!fs.existsSync(STORAGE_ROOT)) {
-            fs.mkdirSync(STORAGE_ROOT, { recursive: true });
-        }
-        const buffer = await sharp({
-            create: {
-                width: 400,
-                height: 600,
-                channels: 3,
-                background: { r: 45, g: 45, b: 48 },
-            },
-        })
-            .webp({ quality: 80, effort: 1 })
-            .toBuffer();
-        fs.writeFileSync(PLACEHOLDER_PATH, buffer);
-        logger.info('[WeebCentral] Created shared placeholder image for missing pages', { service: 'weebCentralScraper' });
-    } catch (err: any) {
-        logger.warn(`[WeebCentral] Could not create placeholder image: ${err.message}`, { service: 'weebCentralScraper' });
-    }
-}
+import { downloadAndStoreChapter } from '../lib/chapterImageDownloader';
 
 /**
  * Sanitize folder/file names
@@ -607,38 +574,12 @@ export class WeebCentralScraper implements IChapterScraper {
     }
 
     /**
-     * Write a symlink to the shared placeholder for a given page slot (avoids duplicating the image on disk).
-     * Removes any existing file at the path first (e.g. partial/corrupt file from a failed download attempt).
-     */
-    private async writePlaceholderSlot(dir: string, pageIndex: number): Promise<void> {
-        await ensurePlaceholderExists();
-        const filePath = path.join(dir, `${(pageIndex + 1).toString().padStart(2, '0')}.webp`);
-        if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-        }
-        if (!fs.existsSync(PLACEHOLDER_PATH)) {
-            logger.warn('[WeebCentral] Placeholder image missing; page slot will be empty', { service: 'weebCentralScraper' });
-            return;
-        }
-        const relativeTarget = path.relative(dir, PLACEHOLDER_PATH);
-        fs.symlinkSync(relativeTarget, filePath);
-        logger.debug(`[WeebCentral] Using placeholder for page ${pageIndex + 1}`, { service: 'weebCentralScraper' });
-    }
-
-    /**
-     * Download images to local filesystem (batched parallel, short delay between batches to avoid CDN rate limits).
-     * When the provider uses a broken/fallback image or download fails, a symlink to a shared placeholder is used instead of failing the chapter.
+     * Download images to object storage (batched parallel, short delay between batches to avoid CDN rate limits).
+     * When the provider uses a broken/fallback image or download fails, a shared placeholder is stored instead of failing the chapter.
      */
     private async downloadImages(
         images: string[], seriesId: number, chapterNumber: string, referer: string): Promise<string> {
         const storagePrefix = `${seriesId}/${chapterNumber}`;
-        const dir = path.join(STORAGE_ROOT, storagePrefix);
-
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-
-        const batchSize = 10;
         const headers = {
             Referer: referer,
             'User-Agent': appConfig.scraper.weebCentral.userAgent,
@@ -652,76 +593,13 @@ export class WeebCentralScraper implements IChapterScraper {
             'Sec-Fetch-Site': 'cross-site',
         };
 
-        const maxDownloadRetries = 3;
-        const retryDelayMs = 1000;
-
-        const downloadOne = async (imageUrl: string, i: number) => {
-            if (imageUrl.includes('broken_image')) {
-                await this.writePlaceholderSlot(dir, i);
-                return;
-            }
-
-            const filePath = path.join(dir, `${(i + 1).toString().padStart(2, '0')}.webp`);
-            let lastError: Error | undefined;
-
-            for (let attempt = 1; attempt <= maxDownloadRetries; attempt++) {
-                try {
-                    const response = await axios.get(imageUrl, {
-                        responseType: 'stream',
-                        timeout: 15000,
-                        headers,
-                    });
-
-                    const transformer = sharp({ failOn: 'none' })
-                        .resize({
-                            width: 2500,
-                            height: 16383,
-                            fit: 'inside',
-                            withoutEnlargement: true,
-                            fastShrinkOnLoad: true,
-                        })
-                        .webp({
-                            quality: 75,
-                            effort: 2,
-                            smartSubsample: true,
-                        });
-
-                    await pipeline(
-                        response.data,
-                        transformer,
-                        createWriteStream(filePath)
-                    );
-                    return; // success
-                } catch (err: any) {
-                    lastError = err;
-                    if (attempt < maxDownloadRetries) {
-                        const delay = retryDelayMs * Math.pow(2, attempt - 1);
-                        logger.warn(
-                            `[WeebCentral] Image ${i + 1} attempt ${attempt}/${maxDownloadRetries} failed: ${err.message}. Retrying in ${delay}ms…`,
-                            { service: 'weebCentralScraper' }
-                        );
-                        await new Promise((resolve) => setTimeout(resolve, delay));
-                    }
-                }
-            }
-
-            logger.warn(
-                `[WeebCentral] Failed to download image ${i + 1} after ${maxDownloadRetries} attempts, using placeholder: ${lastError?.message}`,
-                { service: 'weebCentralScraper' }
-            );
-            await this.writePlaceholderSlot(dir, i);
-        };
-
-        for (let batchStart = 0; batchStart < images.length; batchStart += batchSize) {
-            const batchEnd = Math.min(batchStart + batchSize, images.length);
-            const batch = images.slice(batchStart, batchEnd);
-            await Promise.all(
-                batch.map((imageUrl, j) => downloadOne(imageUrl, batchStart + j))
-            );
-            if (batchEnd < images.length) {
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-        }
+        await downloadAndStoreChapter({
+            storagePrefix,
+            images,
+            headers,
+            service: 'weebCentralScraper',
+            isPlaceholder: (url) => url.includes('broken_image'),
+        });
 
         return storagePrefix;
     }

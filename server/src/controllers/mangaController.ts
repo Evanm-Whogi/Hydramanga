@@ -11,6 +11,7 @@ import { shouldFilterManga, getBlockedGenres, getCatalogFilterConditions, isSeri
 import { getUserSettings } from '@/services/userSettingsService';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import { cacheService } from '@/services/cacheService';
+import { objectStorageService } from '@/services/objectStorageService';
 import { CATALOG_CACHE_TTL } from '@/lib/catalogCache';
 import axios from 'axios';
 import { getCollectionsList } from '@/services/collectionsService';
@@ -593,20 +594,12 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
             );
 
         // 3. Construct image URLs from storagePrefix
-        // Images are served by Nginx at /media/manga/{storagePrefix}/{pageNumber}.jpg
-        const baseUrl = process.env.MEDIA_BASE_URL || `${process.env.PUBLIC_APP_URL || "http://localhost:3000"}/media/manga`;
-        
-        // Generate image URLs based on pageCount
+        // Images are served from the public object-storage (Garage) endpoint.
         const pageCount = chapter.pageCount || 0;
         const images: string[] = [];
-        const formatPageNumber = (page: number) => {
-            return page.toString().padStart(2, '0');
-        };
-        
+
         for (let i = 1; i <= pageCount; i++) {
-            const pageNumber = formatPageNumber(i);
-            const imageUrl = `${baseUrl}/${chapter.storagePrefix}/${pageNumber}.webp`;
-            images.push(imageUrl);
+            images.push(objectStorageService.publicUrl(chapter.storagePrefix, i));
         }
 
         // Single-page series: every chapter has at most 1 page (1 or 0/legacy)
@@ -615,12 +608,10 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
 
         const mergedPages = isSinglePageSeries
             ? allChapters.map((ch) => {
-                const pageNumber = formatPageNumber(1);
-                const imageUrl = `${baseUrl}/${ch.storagePrefix}/${pageNumber}.webp`;
                 return {
                     chapterId: ch.id,
                     chapterNumber: ch.chapterNumber,
-                    src: imageUrl,
+                    src: objectStorageService.publicUrl(ch.storagePrefix, 1),
                 };
             })
             : null;

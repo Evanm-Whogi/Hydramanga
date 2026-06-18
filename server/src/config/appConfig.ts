@@ -202,6 +202,28 @@ export interface MetricsConfig {
 }
 
 /**
+ * Object Storage (S3 / Garage) Configuration
+ * Media (chapter images, profile pictures, stickers) is stored in S3-compatible
+ * Garage buckets and served directly from each bucket's public web endpoint.
+ * All buckets share one set of credentials/endpoint; only name + public URL differ.
+ */
+export interface S3BucketConfig {
+    bucket: string;
+    publicBaseUrl: string;   // Public read URL prefix, e.g. https://manga.garage.chit.sh
+}
+
+export interface StorageConfig {
+    endpoint: string;        // S3 API endpoint, e.g. http://s3.chit.sh:3900
+    region: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    forcePathStyle: boolean; // Garage typically needs path-style addressing
+    manga: S3BucketConfig;
+    profilePictures: S3BucketConfig;
+    stickers: S3BucketConfig;
+}
+
+/**
  * Main Application Configuration
  */
 export interface AppConfig {
@@ -211,6 +233,7 @@ export interface AppConfig {
     queues: QueueConfig;
     cache: CacheConfig;
     scraper: ScraperConfig;
+    storage: StorageConfig;
     logging: LoggingConfig;
     discord: DiscordConfig;
     timeouts: TimeoutConfig;
@@ -417,6 +440,28 @@ export class AppConfigService {
                 },
             },
 
+            // Object Storage Configuration (S3-compatible / Garage)
+            // Shared credentials/endpoint; one bucket per media type.
+            storage: {
+                endpoint: parseEnvString('S3_ENDPOINT_URL', 'http://s3.chit.sh:3900'),
+                region: parseEnvString('S3_REGION', 'garage'),
+                accessKeyId: parseEnvString('S3_ACCESS_KEY_ID', ''),
+                secretAccessKey: parseEnvString('S3_SECRET_ACCESS_KEY', ''),
+                forcePathStyle: parseEnvBoolean('S3_FORCE_PATH_STYLE', true),
+                manga: {
+                    bucket: parseEnvString('S3_BUCKET_NAME', 'manga'),
+                    publicBaseUrl: parseEnvString('S3_PUBLIC_BASE_URL', 'https://manga.garage.chit.sh'),
+                },
+                profilePictures: {
+                    bucket: parseEnvString('S3_PROFILE_BUCKET_NAME', 'profile-pictures'),
+                    publicBaseUrl: parseEnvString('S3_PROFILE_PUBLIC_BASE_URL', 'https://profile-pictures.garage.chit.sh'),
+                },
+                stickers: {
+                    bucket: parseEnvString('S3_STICKER_BUCKET_NAME', 'stickers'),
+                    publicBaseUrl: parseEnvString('S3_STICKER_PUBLIC_BASE_URL', 'https://stickers.garage.chit.sh'),
+                },
+            },
+
             // Logging Configuration
             logging: {
                 level: (parseEnvString('LOG_LEVEL', 'info') as any) || 'info',
@@ -485,9 +530,28 @@ export class AppConfigService {
             }
         }
 
-        // Validate storage path
-        if (!config.scraper.chapterStorageRoot) {
-            issues.push('Chapter storage root is not configured');
+        // Validate object storage (S3 / Garage) configuration
+        if (!config.storage.endpoint) {
+            issues.push('S3 endpoint (S3_ENDPOINT_URL) is not configured');
+        }
+        for (const [label, b] of [
+            ['manga', config.storage.manga],
+            ['profilePictures', config.storage.profilePictures],
+            ['stickers', config.storage.stickers],
+        ] as const) {
+            if (!b.bucket) issues.push(`S3 bucket name for ${label} is not configured`);
+            if (!b.publicBaseUrl) issues.push(`S3 public base URL for ${label} is not configured`);
+        }
+        if (!config.storage.accessKeyId || !config.storage.secretAccessKey) {
+            // Credentials are required to upload/delete objects; warn in dev, fail in prod
+            if (config.env === 'production') {
+                issues.push('S3 credentials (S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY) are not configured');
+            } else {
+                logger.warn(
+                    'S3 credentials (S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY) are not set; uploads/deletes will fail',
+                    { service: 'appConfig' }
+                );
+            }
         }
 
         // Warn about missing Discord webhook
@@ -536,7 +600,7 @@ Application Configuration Summary:
     - Chapter Scan: ${config.queues.mangaChapterImportQueue.concurrency}
     - Chapter Download (default): ${config.queues.chapterDownload.defaultConcurrency} per scraper queue
   Cache TTL: ${config.cache.trendingTTL}s
-  Chapter Storage: ${config.scraper.chapterStorageRoot}
+  Object Storage @ ${config.storage.endpoint} — manga: ${config.storage.manga.bucket}, profile: ${config.storage.profilePictures.bucket}, stickers: ${config.storage.stickers.bucket}
   Logging Level: ${config.logging.level}
   Discord: ${config.discord.enabled ? 'Enabled' : 'Disabled'}
         `.trim();

@@ -31,10 +31,9 @@
  */
 
 import { chromium } from 'playwright';
-import fs from 'fs';
-import path from 'path';
 import axios from 'axios';
 import sharp from 'sharp';
+import { objectStorageService } from '@/services/objectStorageService';
 import http from 'http';
 import https from 'https';
 import {
@@ -51,30 +50,7 @@ import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
 import { requestFlareSolverr, type FlareSolverrCookie, type FlareSolverrResult } from '@/lib/flareSolverrClient';
 
-const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const SITE_BASE = appConfig.scraper.comix.baseUrl;
-
-const PLACEHOLDER_FILENAME = '_placeholder.webp';
-const PLACEHOLDER_PATH = path.join(STORAGE_ROOT, PLACEHOLDER_FILENAME);
-
-/** One-time creation of a shared placeholder image for irrecoverable pages. */
-async function ensurePlaceholderExists(): Promise<void> {
-    if (fs.existsSync(PLACEHOLDER_PATH)) return;
-    try {
-        if (!fs.existsSync(STORAGE_ROOT)) {
-            fs.mkdirSync(STORAGE_ROOT, { recursive: true });
-        }
-        const buffer = await sharp({
-            create: { width: 400, height: 600, channels: 3, background: { r: 45, g: 45, b: 48 } },
-        })
-            .webp({ quality: 80, effort: 1 })
-            .toBuffer();
-        fs.writeFileSync(PLACEHOLDER_PATH, buffer);
-        logger.info('[Comix] Created shared placeholder image for missing pages', { service: 'comixScraper' });
-    } catch (err: any) {
-        logger.warn(`[Comix] Could not create placeholder image: ${err?.message || err}`, { service: 'comixScraper' });
-    }
-}
 
 function calculateTitleSimilarity(title1: string, title2: string): number {
     if (!title1 || !title2) return 0;
@@ -1195,7 +1171,6 @@ export class ComixScraper implements IChapterScraper {
         _mangaName: string,
         _folderName: string,
     ): Promise<DownloadedChapter> {
-        await ensurePlaceholderExists();
         const maxAttempts = 2;
         let lastError: any;
         const contextLabel = `series=${seriesId} ch=${chapterNumber}`;
@@ -1784,8 +1759,6 @@ export class ComixScraper implements IChapterScraper {
         contextLabel = 'download',
     ): Promise<string> {
         const storagePrefix = `${seriesId}/${chapterNumber}`;
-        const dir = path.join(STORAGE_ROOT, storagePrefix);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
         const byPage = new Map<number, ComixPageAsset>(assets.map(a => [a.page, a]));
         const totalPages = expectedPageCount > 0 ? expectedPageCount : assets.length;
@@ -1794,9 +1767,9 @@ export class ComixScraper implements IChapterScraper {
         const maxRetries = 3;
         const retryDelayMs = 1000;
 
-        const writePlaceholder = (filePath: string) => {
+        const writePlaceholder = async (pageNum: number) => {
             try {
-                if (fs.existsSync(PLACEHOLDER_PATH)) fs.copyFileSync(PLACEHOLDER_PATH, filePath);
+                await objectStorageService.uploadPlaceholderSlot(storagePrefix, pageNum - 1);
             } catch (err: any) {
                 logger.warn(`[Comix] [${contextLabel}] Failed to write placeholder: ${err?.message || err}`, {
                     service: 'comixScraper',
@@ -1805,13 +1778,13 @@ export class ComixScraper implements IChapterScraper {
         };
 
         const downloadOne = async (pageNum: number) => {
-            const filePath = path.join(dir, `${pageNum.toString().padStart(2, '0')}.webp`);
+            const key = objectStorageService.keyFor(storagePrefix, pageNum - 1);
             const asset = byPage.get(pageNum);
             if (!asset) {
                 logger.warn(`[Comix] [${contextLabel}] Page ${pageNum} missing; writing placeholder`, {
                     service: 'comixScraper',
                 });
-                writePlaceholder(filePath);
+                await writePlaceholder(pageNum);
                 return;
             }
 
@@ -1821,7 +1794,7 @@ export class ComixScraper implements IChapterScraper {
                     if (asset.dataUrl?.startsWith('data:image')) {
                         const raw = Buffer.from(asset.dataUrl.split(',')[1] || '', 'base64');
                         const out = await sharp(raw, { failOn: 'none' }).webp({ lossless: true, effort: 4 }).toBuffer();
-                        fs.writeFileSync(filePath, out);
+                        await objectStorageService.putObject(key, out);
                         return;
                     }
                     if (asset.imageUrl) {
@@ -1847,7 +1820,7 @@ export class ComixScraper implements IChapterScraper {
                             );
                         }
                         // CDN already serves webp; write through without a no-op transcode.
-                        fs.writeFileSync(filePath, buffer);
+                        await objectStorageService.putObject(key, buffer);
                         return;
                     }
                     throw new Error(`No imageUrl or dataUrl for page ${pageNum}`);
@@ -1866,7 +1839,7 @@ export class ComixScraper implements IChapterScraper {
                 `[Comix] [${contextLabel}] Page ${pageNum} unrecoverable (${lastError?.message || lastError}); placeholder`,
                 { service: 'comixScraper' },
             );
-            writePlaceholder(filePath);
+            await writePlaceholder(pageNum);
         };
 
         const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);

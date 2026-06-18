@@ -20,10 +20,8 @@
  */
 
 import { chromium } from 'playwright';
-import fs from 'fs';
-import path from 'path';
 import axios from 'axios';
-import sharp from 'sharp';
+import { downloadAndStoreChapter, isNetworkRetryableError } from '../lib/chapterImageDownloader';
 import http from 'http';
 import https from 'https';
 import {
@@ -37,10 +35,7 @@ import {
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
-import { createWriteStream } from 'fs';
-import { pipeline } from 'stream/promises';
 
-const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const API_BASE = appConfig.scraper.mangaTaro.apiUrl;
 const SITE_BASE = appConfig.scraper.mangaTaro.baseUrl;
 
@@ -574,133 +569,29 @@ export class MangaTaroScraper implements IChapterScraper {
         referer: string
     ): Promise<string> {
         const storagePrefix = `${seriesId}/${chapterNumber}`;
-        const dir = path.join(STORAGE_ROOT, storagePrefix);
 
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-
-        const maxRetries = 3;
-        const retryDelayMs = 1000; // Base delay for exponential backoff
-        const batchSize = 10;
-
-        // Download a single image with retry logic
-        const downloadImage = async (imageUrl: string, i: number) => {
-            const filePath = path.join(
-                dir,
-                `${(i + 1).toString().padStart(2, '0')}.webp`
-            );
-
-            let lastError: any;
-
-            // Retry loop for this image
-            for (let attempt = 1; attempt <= maxRetries; attempt++) {
-                try {
-                    const response = await MangaTaroScraper.axiosInstance.get(imageUrl, {
-                        responseType: 'stream',
-                        timeout: 15000, // Reduced from 30s to 15s
-                        maxRedirects: 5,
-                        headers: {
-                            Referer: referer,
-                            'User-Agent': appConfig.scraper.mangaTaro.userAgent,
-                            Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-                            'Accept-Language': 'en-US,en;q=0.9',
-                            'Cache-Control': 'no-cache',
-                            Connection: 'keep-alive',
-                            Pragma: 'no-cache',
-                            'Sec-Fetch-Dest': 'image',
-                            'Sec-Fetch-Mode': 'no-cors',
-                            'Sec-Fetch-Site': 'cross-site',
-                        },
-                    });
-
-                    // Validate response
-                    if (!response.data || response.data.length === 0) {
-                        throw new Error('Empty response from server');
-                    }
-
-                   const transformer = sharp({ failOn: 'none' })
-                        .resize({ 
-                            width: 2500,               // Cap width at a reasonable manga standard
-                            height: 16383,             // Allow for long-strip vertical webtoons
-                            fit: 'inside', 
-                            withoutEnlargement: true,
-                            fastShrinkOnLoad: true     // BIG WIN: Shrinks while reading, saves massive CPU
-                        })
-                        .webp({ 
-                            quality: 75,               // Slightly lower quality (80 to 75) saves ~20% size
-                            effort: 2,                 // BIG WIN: 2 is much faster than the default 4 or 6
-                            smartSubsample: true       // Keeps text sharp in manga
-                        });
-    
-                        await pipeline(
-                            response.data,
-                            transformer,
-                            createWriteStream(filePath)
-                        );
-
-                    logger.debug(
-                        `[MangaTaro] Downloaded image ${i + 1}/${images.length}`,
-                        { service: 'mangaTaroScraper' }
-                    );
-
-                    // Success - break out of retry loop
-                    return;
-                } catch (err: any) {
-                    lastError = err;
-                    const errorMsg = err.message || String(err);
-
-                    // Check if this is a retryable error
-                    const isRetryable = 
-                        errorMsg.includes('stream has been aborted') ||
-                        errorMsg.includes('ERR_HTTP2_STREAM_CANCEL') ||
-                        errorMsg.includes('ECONNRESET') ||
-                        errorMsg.includes('ECONNABORTED') ||
-                        errorMsg.includes('ETIMEDOUT') ||
-                        err.code === 'ERR_HTTP2_STREAM_CANCEL' ||
-                        err.code === 'ECONNRESET' ||
-                        err.code === 'ECONNABORTED' ||
-                        err.code === 'ETIMEDOUT';
-
-                    if (isRetryable && attempt < maxRetries) {
-                        // Calculate exponential backoff
-                        const delayMs = retryDelayMs * Math.pow(2, attempt - 1);
-                        
-                        logger.warn(
-                            `[MangaTaro] Image ${i + 1} download failed (attempt ${attempt}/${maxRetries}): ${errorMsg}. Retrying in ${delayMs}ms...`,
-                            { service: 'mangaTaroScraper' }
-                        );
-
-                        // Wait before retrying
-                        await new Promise(resolve => setTimeout(resolve, delayMs));
-                        continue;
-                    } else {
-                        // Non-retryable error or max retries exceeded
-                        logger.error(
-                            `[MangaTaro] Failed to download image ${i + 1} after ${attempt} attempt(s): ${errorMsg}`,
-                            { service: 'mangaTaroScraper' }
-                        );
-                        throw lastError;
-                    }
-                }
-            }
-        };
-
-        // Download images in batches to avoid connection pool exhaustion and CDN rate limits
-        const delayBetweenBatchesMs = 25;
-        for (let batchStart = 0; batchStart < images.length; batchStart += batchSize) {
-            const batchEnd = Math.min(batchStart + batchSize, images.length);
-            const batch = images.slice(batchStart, batchEnd);
-
-            await Promise.all(
-                batch.map((imageUrl, localIndex) =>
-                    downloadImage(imageUrl, batchStart + localIndex)
-                )
-            );
-            if (batchEnd < images.length && delayBetweenBatchesMs > 0) {
-                await new Promise((r) => setTimeout(r, delayBetweenBatchesMs));
-            }
-        }
+        await downloadAndStoreChapter({
+            storagePrefix,
+            images,
+            client: MangaTaroScraper.axiosInstance,
+            headers: {
+                Referer: referer,
+                'User-Agent': appConfig.scraper.mangaTaro.userAgent,
+                Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Cache-Control': 'no-cache',
+                Connection: 'keep-alive',
+                Pragma: 'no-cache',
+                'Sec-Fetch-Dest': 'image',
+                'Sec-Fetch-Mode': 'no-cors',
+                'Sec-Fetch-Site': 'cross-site',
+            },
+            maxRedirects: 5,
+            batchDelayMs: 25,
+            service: 'mangaTaroScraper',
+            placeholderOnFailure: false,
+            isRetryable: isNetworkRetryableError,
+        });
 
         return storagePrefix;
     }

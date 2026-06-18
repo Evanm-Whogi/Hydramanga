@@ -37,7 +37,7 @@ export default function StickersAdminClient() {
       return;
     }
     if (!isAllowedImageUrl(url)) {
-      toast.warning("URL must be a site path like /media/stickers/name.png");
+      toast.warning("URL must be a sticker URL like https://stickers.garage.chit.sh/name.webp");
       return;
     }
     setSaving(true);
@@ -111,9 +111,9 @@ export default function StickersAdminClient() {
           <div>
             <h2 className="text-lg font-semibold text-primary">Add sticker</h2>
             <p className="text-sm text-muted mt-1">
-              Stickers insert an image URL into user messages. Use site paths like{" "}
-              <code className="text-primary">/media/stickers/name.png</code> (served by nginx at{" "}
-              <code className="text-primary">/media/stickers/</code>).
+              Stickers insert an image URL into user messages. Use the bucket URL, e.g.{" "}
+              <code className="text-primary">https://stickers.garage.chit.sh/name.webp</code>, or upload files
+              to the stickers bucket and click Scan to import them.
             </p>
           </div>
           <button

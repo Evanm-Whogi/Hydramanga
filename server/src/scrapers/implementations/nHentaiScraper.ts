@@ -20,10 +20,8 @@
  */
 
 import { chromium } from 'playwright';
-import fs from 'fs';
-import path from 'path';
 import axios from 'axios';
-import sharp from 'sharp';
+import { objectStorageService } from '@/services/objectStorageService';
 import {
     IChapterScraper,
     ScrapedChapter,
@@ -35,7 +33,6 @@ import {
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
 
-const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 
 /**
  * Sanitize folder/file names
@@ -544,14 +541,9 @@ export class NHentaiScraper implements IChapterScraper {
         referer: string
     ): Promise<string> {
         const storagePrefix = `${seriesId}/${chapterNumber}`;
-        const dir = path.join(STORAGE_ROOT, storagePrefix);
-
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
 
         logger.info(
-            `[nHentai] Starting download for chapter ${chapterNumber}: ${images.length} images to ${dir}`,
+            `[nHentai] Starting download for chapter ${chapterNumber}: ${images.length} images`,
             { service: 'nHentaiScraper' }
         );
 
@@ -568,7 +560,6 @@ export class NHentaiScraper implements IChapterScraper {
         };
 
         const downloadOne = async (imageUrl: string, i: number) => {
-            const filePath = path.join(dir, `${(i + 1).toString().padStart(2, '0')}.webp`);
             let lastError: any;
             for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
                 try {
@@ -595,20 +586,7 @@ export class NHentaiScraper implements IChapterScraper {
                         throw new Error(`Invalid image format. Got: ${hex}`);
                     }
 
-                    await sharp(buffer, { failOn: 'none' })
-                        .resize({
-                            width: 2500,
-                            height: 16383,
-                            fit: 'inside',
-                            withoutEnlargement: true,
-                            fastShrinkOnLoad: true,
-                        })
-                        .webp({
-                            quality: 75,
-                            effort: 2,
-                            smartSubsample: true,
-                        })
-                        .toFile(filePath);
+                    await objectStorageService.transformAndUploadPage(storagePrefix, i, buffer);
                     return;
                 } catch (err: any) {
                     lastError = err;

@@ -2,50 +2,27 @@ import { Request, Response } from 'express';
 import sharp from 'sharp';
 import { db, schema } from '@/db/index';
 import { eq } from 'drizzle-orm';
-import fs from 'fs-extra';
-import path from 'path';
 import logger from '@/services/loggerService';
 import { recordAuditFromRequest } from '@/audit/record';
-import { resolveSafeProfileImagePath } from '@/lib/profileImagePath';
-import { fileMatchesAllowedImageSignature } from '@/lib/imageMagicBytes';
+import { bufferMatchesAllowedImageSignature } from '@/lib/imageMagicBytes';
+import { profilePictureStorageService } from '@/services/profilePictureStorageService';
 import { badgeService } from '@/services/badgeService';
 
 export const uploadProfilePicture = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    
+    if (!req.file?.buffer) return res.status(400).json({ error: 'No file uploaded' });
 
-    const originalPath = req.file.path;
-    if (!(await fileMatchesAllowedImageSignature(originalPath))) {
-      await fs.remove(originalPath).catch(() => {});
+    if (!bufferMatchesAllowedImageSignature(req.file.buffer.subarray(0, 12))) {
       return res.status(400).json({ error: 'Invalid image file' });
     }
 
-    // Convert uploaded image to webp
-    const userDir = path.dirname(originalPath);
-    const webpFilename = path.basename(req.file.filename, path.extname(req.file.filename)) + '.webp';
-    const webpPath = path.join(userDir, webpFilename);
-    const tempPath = path.join(userDir, `.temp_${webpFilename}`);
-    
-    try {
-      // Convert to webp using a temporary file to avoid input/output conflict
-      await sharp(originalPath)
-        .webp({ quality: 80 })
-        .toFile(tempPath);
-      // Remove the original uploaded file
-      await fs.remove(originalPath);
-      // Rename temp file to final webp path
-      await fs.move(tempPath, webpPath, { overwrite: true });
-    } catch (err) {
-      // Clean up temp file if conversion failed
-      await fs.remove(tempPath).catch(() => {});
-      throw err;
-    }
-    const relativePath = `/media/pfp/${userId}/${webpFilename}`;
+    // Transcode to webp in memory and upload to object storage.
+    const webpBuffer = await sharp(req.file.buffer).webp({ quality: 80 }).toBuffer();
+    const imageUrl = await profilePictureStorageService.uploadAvatar(userId, webpBuffer);
 
-    // Delete old profile picture if it exists and is not the default
+    // Delete the previous avatar (no-op for the default or external URLs).
     const userData = await db
       .select()
       .from(schema.user)
@@ -53,24 +30,20 @@ export const uploadProfilePicture = async (req: Request, res: Response) => {
       .limit(1);
 
     if (userData.length > 0 && userData[0].image) {
-      const oldImagePath = resolveSafeProfileImagePath(userData[0].image, userId);
-      if (oldImagePath) {
-        try {
-          await fs.remove(oldImagePath);
-          logger.info(`Deleted old profile picture: ${oldImagePath}`);
-        } catch (err) {
-          logger.warn(`Failed to delete old profile picture: ${err}`);
-        }
+      try {
+        await profilePictureStorageService.deleteByUrl(userData[0].image);
+      } catch (err) {
+        logger.warn(`Failed to delete old profile picture: ${err}`);
       }
     }
 
-    // Update user with new image path
+    // Update user with new image URL
     await db
       .update(schema.user)
-      .set({ image: relativePath, updatedAt: new Date() })
+      .set({ image: imageUrl, updatedAt: new Date() })
       .where(eq(schema.user.id, userId));
 
-    logger.info(`Profile picture uploaded for user ${userId}: ${relativePath}`);
+    logger.info(`Profile picture uploaded for user ${userId}: ${imageUrl}`);
 
     recordAuditFromRequest(req, {
       action: 'profile.avatar.upload',
@@ -83,7 +56,7 @@ export const uploadProfilePicture = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       message: 'Profile picture uploaded successfully',
-      image: relativePath,
+      image: imageUrl,
     });
   } catch (error: any) {
     logger.error(`Error uploading profile picture: ${error.message}`);
@@ -99,7 +72,6 @@ export const deleteProfilePicture = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    
 
     // Get user data
     const userData = await db
@@ -109,21 +81,16 @@ export const deleteProfilePicture = async (req: Request, res: Response) => {
       .limit(1);
 
     if (userData.length === 0) return res.status(404).json({ error: 'User not found' });
-    const currentImage = userData[0].image;
 
-    // Only delete if not the default image
-    const imagePath = resolveSafeProfileImagePath(currentImage, userId);
-    if (imagePath) {
-      try {
-        await fs.remove(imagePath);
-        logger.info(`Deleted profile picture: ${imagePath}`);
-      } catch (err) {
-        logger.warn(`Failed to delete profile picture: ${err}`);
-      }
+    // Delete current avatar (no-op for the default or external URLs).
+    try {
+      await profilePictureStorageService.deleteByUrl(userData[0].image);
+    } catch (err) {
+      logger.warn(`Failed to delete profile picture: ${err}`);
     }
 
     // Reset to default image
-    const defaultImage = '/media/pfp/default.jpg';
+    const defaultImage = profilePictureStorageService.defaultAvatarUrl;
     await db
       .update(schema.user)
       .set({ image: defaultImage, updatedAt: new Date() })

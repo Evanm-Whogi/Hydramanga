@@ -19,10 +19,8 @@
  */
 
 import { chromium } from 'playwright';
-import fs from 'fs';
-import path from 'path';
 import axios from 'axios';
-import sharp from 'sharp';
+import { downloadAndStoreChapter } from '../lib/chapterImageDownloader';
 import http from 'http';
 import https from 'https';
 import {
@@ -36,10 +34,7 @@ import {
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
-import { createWriteStream } from 'fs';
-import { pipeline } from 'stream/promises';
 
-const STORAGE_ROOT = appConfig.scraper.chapterStorageRoot;
 const SITE_BASE = 'https://toonily.com';
 
 /**
@@ -652,92 +647,19 @@ export class ToonilyScraper implements IChapterScraper {
         referer: string
     ): Promise<string> {
         const storagePrefix = `${seriesId}/${chapterNumber}`;
-        const dir = path.join(STORAGE_ROOT, storagePrefix);
 
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-
-        const maxRetries = 3;
-        const retryDelayMs = 1000;
-        const batchSize = 10; // Number of images to download in parallel per batch
-
-        const downloadImage = async (imageUrl: string, i: number) => {
-            const filePath = path.join(
-                dir,
-                `${(i + 1).toString().padStart(2, '0')}.webp`
-            );
-
-            let lastError: any;
-
-            for (let attempt = 1; attempt <= maxRetries; attempt++) {
-                try {
-                    const response = await ToonilyScraper.axiosInstance.get(imageUrl, {
-                        responseType: 'stream',
-                        headers: {
-                            Referer: referer,
-                            'User-Agent': appConfig.scraper.toonily.userAgent,
-                        },
-                    });
-
-                    if (response.status < 200 || response.status >= 300) {
-                        throw new Error(`HTTP ${response.status}`);
-                    }
-
-                    const transformer = sharp({ failOn: 'none' })
-                        .resize({ 
-                            width: 2500,               // Cap width at a reasonable manga standard
-                            height: 16383,             // Allow for long-strip vertical webtoons
-                            fit: 'inside', 
-                            withoutEnlargement: true,
-                            fastShrinkOnLoad: true     // BIG WIN: Shrinks while reading, saves massive CPU
-                        })
-                        .webp({ 
-                            quality: 75,               // Slightly lower quality (80 to 75) saves ~20% size
-                            effort: 2,                 // BIG WIN: 2 is much faster than the default 4 or 6
-                            smartSubsample: true       // Keeps text sharp in manga
-                        });
-
-                    await pipeline(
-                        response.data,
-                        transformer,
-                        createWriteStream(filePath)
-                    );
-
-                    logger.debug(
-                        `[Toonily] Downloaded image ${i + 1} (attempt ${attempt})`,
-                        { service: 'toonilyScraper' }
-                    );
-                    return; // success
-                } catch (err: any) {
-                    lastError = err;
-                    const delay = retryDelayMs * Math.pow(2, attempt - 1);
-                    logger.warn(
-                        `[Toonily] Image ${i + 1} attempt ${attempt}/${maxRetries} failed: ${err?.message}. Retrying in ${delay}ms…`,
-                        { service: 'toonilyScraper' }
-                    );
-                    if (attempt < maxRetries) {
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                    }
-                }
-            }
-
-            throw new Error(
-                `[Toonily] Failed to download image ${i + 1} after ${maxRetries} attempts: ${lastError?.message}`
-            );
-        };
-
-        // Download in batches to avoid connection pool exhaustion
-        for (let batchStart = 0; batchStart < images.length; batchStart += batchSize) {
-            const batchEnd = Math.min(batchStart + batchSize, images.length);
-            const batch = images.slice(batchStart, batchEnd);
-
-            await Promise.all(
-                batch.map((imageUrl, localIndex) =>
-                    downloadImage(imageUrl, batchStart + localIndex)
-                )
-            );
-        }
+        await downloadAndStoreChapter({
+            storagePrefix,
+            images,
+            client: ToonilyScraper.axiosInstance,
+            headers: {
+                Referer: referer,
+                'User-Agent': appConfig.scraper.toonily.userAgent,
+            },
+            batchDelayMs: 0, // no inter-batch delay
+            service: 'toonilyScraper',
+            placeholderOnFailure: false,
+        });
 
         return storagePrefix;
     }

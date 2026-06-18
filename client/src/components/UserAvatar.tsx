@@ -1,6 +1,6 @@
 "use client";
 
-const DEFAULT_AVATAR = "/media/pfp/default.jpg";
+const DEFAULT_AVATAR = "https://profile-pictures.garage.chit.sh/default.jpg";
 
 export default function UserAvatar({ src, alt = "", width = 40, height = 40, className = "", priority = false }: { src?: string | null; alt?: string; width?: number; height?: number; className?: string; priority?: boolean }) {
   return (
