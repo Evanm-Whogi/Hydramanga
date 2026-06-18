@@ -8,6 +8,7 @@ import {blockDiscoverUrlSync, replaceDiscoverUrl, unblockDiscoverUrlSync} from '
 import PageHeader from '@/components/PageHeader';
 import CatalogFilters from './CatalogFilters';
 import MangaList from './MangaList';
+import SeriesBookmarkModal from '@/components/SeriesBookmarkModal';
 import { getAllTags } from '@/services/mangaService';
 import { getSettings } from '@/services/userService';
 import { useUser } from '@/providers/UserProvider';
@@ -71,6 +72,7 @@ export default function CatalogContent({ initialFilters: _initialFilters }: Cata
   );
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [hideNsfw, setHideNsfw] = useState<boolean | null>(null);
+  const [saveTarget, setSaveTarget] = useState<{ seriesId: number; title: string } | null>(null);
 
   filtersRef.current = filters;
 
@@ -167,7 +169,10 @@ export default function CatalogContent({ initialFilters: _initialFilters }: Cata
         ) : undefined}
       />
       <CatalogFilters filters={filters} onFilterChange={updateFilters} params={filters} availableTags={availableTags} />
-      <MangaList filters={filters} onMangaNavigate={beginMangaNavigation} />
+      <MangaList filters={filters} onMangaNavigate={beginMangaNavigation} onSaveClick={(seriesId, title) => setSaveTarget({ seriesId, title })} />
+      {saveTarget ? (
+        <SeriesBookmarkModal isOpen onClose={() => setSaveTarget(null)} seriesId={saveTarget.seriesId} mangaTitle={saveTarget.title} />
+      ) : null}
     </>
   );
 }

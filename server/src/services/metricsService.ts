@@ -2,7 +2,7 @@ import { db, schema } from '@/db/index';
 import { eq, and, sql, gte, desc, inArray } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { cacheService } from '@/services/cacheService';
-import { shouldFilterManga, isNovelType, getExcludeNovelConditions } from '@/config/contentFilter';
+import { shouldFilterManga, isNovelType, getExcludeNovelConditions, getCatalogFilterConditions } from '@/config/contentFilter';
 import { withResolvedDisplayTitle, resolveDisplayTitle } from '@/lib/displayTitle';
 import { fetchSeriesChapterFlags, seriesCardColumns } from '@/lib/seriesQueries';
 import { series } from '@/db/schema';
@@ -13,7 +13,7 @@ const CACHE_TTL = {
 };
 
 const CACHE_KEYS = {
-  TRENDING: (days: number, limit: number) => `trending:${days}d:${limit}`,
+  TRENDING: (hideNsfw: boolean, days: number, limit: number) => `trending:v4:${hideNsfw}:${days}d:${limit}`,
   MANGA_STATS: (seriesId: number) => `manga:${seriesId}:stats`,
   CHAPTER_STATS: (chapterId: number) => `chapter:${chapterId}:stats`,
   SERIES_CHAPTER_STATS: (seriesId: number) => `series:${seriesId}:chapterstats`,
@@ -175,88 +175,67 @@ class MetricsService {
   }
 
   /**
-   * Get trending manga for a specific time period
-   * Uses pre-aggregated mangaViewStats for much faster queries
-   * @param days - Number of days to look back (7 for week, 30 for month, etc.)
-   * @param limit - Maximum number of results
+   * Get trending manga ranked by views within the given lookback window.
+   * Card `views` uses lifetime totals from mangaViewStats; period activity is in trendingStats.
    */
-  async getTrendingManga(days: number = 7, limit: number = 20) {
+  async getTrendingManga(days: number = 14, limit: number = 20, hideNsfw: boolean = false) {
     try {
-      const cacheKey = CACHE_KEYS.TRENDING(days, limit);
+      const cacheKey = CACHE_KEYS.TRENDING(hideNsfw, days, limit);
 
-      // Try cache first
       const cached = await cacheService.get(cacheKey);
       if (cached) {
         logger.debug(`Trending cache hit for ${days}d:${limit}`, { service: 'metricsService' });
         return cached;
       }
 
-      // Use pre-aggregated stats table instead of scanning mangaViews
-      // This is 100-1000x faster than the old GROUP BY query
-      const trendingStats = await db
-        .select()
-        .from(schema.mangaViewStats)
-        .orderBy(desc(schema.mangaViewStats.totalViews))
-        .limit(limit);
+      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      const trendingByPeriod = db
+        .select({
+          seriesId: schema.mangaViews.seriesId,
+          viewCount: sql<number>`count(*)`.mapWith(Number).as('period_views'),
+          uniqueViewCount: sql<number>`count(distinct (${schema.mangaViews.ipAddress} || ${schema.mangaViews.userAgent}))`.mapWith(Number).as('unique_view_count'),
+        })
+        .from(schema.mangaViews)
+        .innerJoin(series, eq(series.id, schema.mangaViews.seriesId))
+        .where(and(gte(schema.mangaViews.viewedAt, startDate), ...getCatalogFilterConditions(hideNsfw, series)))
+        .groupBy(schema.mangaViews.seriesId)
+        .having(sql`count(*) > 0`)
+        .orderBy(desc(sql`count(*)`))
+        .limit(limit)
+        .as('trending_by_period');
 
-      // If no stats yet, fall back to old logic (first run)
-      let trendingData: typeof trendingStats;
-      if (trendingStats.length === 0) {
-        logger.warn(`No trending stats found, falling back to mangaViews scan`, {
-          service: 'metricsService',
-        });
+      const rows = await db
+        .select({
+          ...seriesCardColumns,
+          views: schema.mangaViewStats.totalViews,
+          periodViewCount: trendingByPeriod.viewCount,
+          periodUniqueViewCount: trendingByPeriod.uniqueViewCount,
+        })
+        .from(trendingByPeriod)
+        .innerJoin(series, eq(series.id, trendingByPeriod.seriesId))
+        .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
+        .orderBy(desc(trendingByPeriod.viewCount));
 
-        const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-        const fallbackData = await db
-          .select({
-            seriesId: schema.mangaViews.seriesId,
-            viewCount: sql<number>`COUNT(*)`.as('view_count'),
-            uniqueViewCount: sql<number>`COUNT(DISTINCT (${schema.mangaViews.ipAddress} || ${schema.mangaViews.userAgent}))`.as('unique_view_count'),
-          })
-          .from(schema.mangaViews)
-          .where(gte(schema.mangaViews.viewedAt, startDate))
-          .groupBy(schema.mangaViews.seriesId)
-          .orderBy(desc(sql`view_count`))
-          .limit(limit);
-
-        trendingData = fallbackData as any;
-      } else {
-        trendingData = trendingStats;
-      }
-
-      // Fetch full series data for the trending manga
-      const seriesIds = trendingData.map((t: any) => t.seriesId);
-
+      const seriesIds = rows.map((row) => row.id);
       if (seriesIds.length === 0) {
         return [];
       }
 
-      const seriesData = await db
-        .select(seriesCardColumns)
-        .from(series)
-        .where(and(inArray(series.id, seriesIds), ...getExcludeNovelConditions(series)));
+      const { importedIds, newIds } = await fetchSeriesChapterFlags(seriesIds);
 
-      const { importedIds } = await fetchSeriesChapterFlags(seriesIds);
+      const results = rows
+        .map((row) => withResolvedDisplayTitle({
+          ...row,
+          isNew: newIds.has(row.id),
+          hasImportedChapters: importedIds.has(row.id),
+          trendingStats: {
+            viewCount: row.periodViewCount,
+            uniqueViewCount: row.periodUniqueViewCount,
+            periodDays: days,
+          },
+        }))
+        .filter((item) => !shouldFilterManga(item.genres as any) && !isNovelType(item.type as string | null));
 
-      // Combine trending stats with series data
-      const results = trendingData
-        .map((trend: any) => {
-          const row = seriesData.find((s) => s.id === trend.seriesId);
-          if (!row) return null;
-          return withResolvedDisplayTitle({
-            ...row,
-            hasImportedChapters: importedIds.has(trend.seriesId),
-            trendingStats: {
-              viewCount: trend.viewCount || trend.totalViews,
-              uniqueViewCount: trend.uniqueViewCount || trend.uniqueViews,
-              periodDays: days,
-            },
-          });
-        })
-        .filter((item): item is NonNullable<typeof item> => item !== null)
-      .filter(item => !shouldFilterManga(item.genres as any) && !isNovelType(item.type as string | null)); // Filter out blocked content and novels
-
-      // Cache the result
       await cacheService.set(cacheKey, results, CACHE_TTL.TRENDING, ['trending']);
 
       return results;

@@ -24,6 +24,7 @@ export async function getTrending(req: Request, res: Response, next: NextFunctio
     const periodToDays: { [key: string]: number } = {
       'day': 1,
       'week': 7,
+      '2weeks': 14,
       'month': 30,
       'quarter': 90,
       'year': 365,
@@ -31,8 +32,9 @@ export async function getTrending(req: Request, res: Response, next: NextFunctio
 
     const days = periodToDays[String(period)] || 7;
     const maxLimit = Math.min(Number(limit), 100);
+    const { hideNsfw } = await getUserSettings(req.user?.id);
 
-    const trending = await metricsService.getTrendingManga(days, maxLimit);
+    const trending = await metricsService.getTrendingManga(days, maxLimit, hideNsfw);
     const trendingList = Array.isArray(trending) ? trending : [];
 
     return res.json({
@@ -104,7 +106,8 @@ export async function getMyProgress(req: Request, res: Response, next: NextFunct
     const { limit = '20' } = req.query;
     const maxLimit = Math.min(Number(limit), 100);
 
-    const progress = await userProgressService.getUserProgress(userId, maxLimit);
+    const { hideNsfw } = await getUserSettings(userId);
+    const progress = await userProgressService.getUserProgress(userId, maxLimit, hideNsfw);
     const progressList = Array.isArray(progress) ? progress : [];
 
     return res.json({

@@ -101,7 +101,9 @@ body.lock-scroll {
   animation: float 6s ease-in-out infinite;
 }
 
-.animate-float-aggressive { animation: float-aggressive 6s ease-in-out infinite; }
+[data-carousel-dragging="true"] * {
+  transition-duration: 0s !important;
+}
 
 
 .animate-pulse-soft {
@@ -127,10 +129,6 @@ body.lock-scroll {
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
-}
-
-@keyframes float-aggressive { 
-  0%, 100% { transform: translateY(0) rotate(0deg) scale(1); } 50% { transform: translateY(-40px) rotate(5deg) scale(1.1); } 
 }
 
 @keyframes custom-pulse {

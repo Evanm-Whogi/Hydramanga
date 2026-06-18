@@ -2,8 +2,9 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { ArrowUp, Grid2X2, TextAlignJustify } from "lucide-react";
 import { useInfiniteScroll } from '@/lib/useIfiniteScroll';
-import MangaCard from "@/components/MangaCard";
+import SeriesGridCard from "@/components/SeriesGridCard";
 import MangaCardList from "@/app/discover/components/MangaCardList";
+import { mangaPath } from "@/lib/paths";
 
 interface MangaListProps {
   filters: {
@@ -16,9 +17,10 @@ interface MangaListProps {
     years: string[];
   };
   onMangaNavigate?: () => void;
+  onSaveClick?: (seriesId: number, title: string) => void;
 }
 
-export default function MangaList({ filters, onMangaNavigate }: MangaListProps) {
+export default function MangaList({ filters, onMangaNavigate, onSaveClick }: MangaListProps) {
     const { items, loading, hasMore, meta, fetchData } = useInfiniteScroll(filters);
     const observer = useRef<IntersectionObserver | null>(null);
     const [showButton, setShowButton] = useState(false);
@@ -67,7 +69,21 @@ export default function MangaList({ filters, onMangaNavigate }: MangaListProps) 
                         return (
                             <div key={item.id} ref={isLastElement ? lastElementRef : null}>
                                 {displayMode === 'grid' ? (
-                                    <MangaCard manga={item} onNavigate={onMangaNavigate} priority={index < 16} />
+                                    <SeriesGridCard
+                                      seriesId={item.id}
+                                      title={item.title}
+                                      cover={item.cover}
+                                      href={mangaPath(item.id)}
+                                      type={item.type}
+                                      status={item.status}
+                                      rating={item.rating}
+                                      views={item.views}
+                                      totalChapters={item.totalChapters}
+                                      isNew={item.isNew}
+                                      onNavigate={onMangaNavigate}
+                                      onSaveClick={onSaveClick}
+                                      priority={index < 16}
+                                    />
                                 ) : (
                                     <MangaCardList manga={item} onNavigate={onMangaNavigate} priority={index < 8} />
                                 )}

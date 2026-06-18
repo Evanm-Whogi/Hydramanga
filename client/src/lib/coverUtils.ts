@@ -24,3 +24,15 @@ export function getCardCoverUrl(cover: unknown): string {
 
     return c.raw?.url || '/notFound.png';
 }
+
+/** Hero background — persisted AniList banner under cover.banner.url */
+export function getBannerUrl(cover: unknown): string | null {
+    if (!cover || typeof cover !== 'object') return null;
+    const url = (cover as { banner?: { url?: string } }).banner?.url;
+    return typeof url === 'string' && url.length > 0 ? url : null;
+}
+
+/** Prefer hero banner, then card cover. */
+export function getHeroBackgroundUrl(cover: unknown): string {
+    return getBannerUrl(cover) || getCardCoverUrl(cover);
+}

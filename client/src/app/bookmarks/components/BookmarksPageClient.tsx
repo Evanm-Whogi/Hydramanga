@@ -6,7 +6,9 @@ import { toast } from 'react-toastify';
 import { fetchBookmarks, SeriesBookmark, BOOKMARK_STATUSES, getStatusLabel, removeBookmark, setBookmark, BookmarkStatus } from '@/services/bookmarkService';
 import { getProfileBookmarks } from '@/services/profileService';
 import { FILTER_OPTIONS } from '@/constants/filters';
-import MangaCard from '@/components/MangaCard';
+import SeriesGridCard from '@/components/SeriesGridCard';
+import SeriesBookmarkModal from '@/components/SeriesBookmarkModal';
+import { mangaPath } from '@/lib/paths';
 import BookmarksTable from '@/app/bookmarks/components/BookmarksTable';
 import MultiDropdown from '@/components/Checkbox';
 import SingleDropdown from '@/components/Dropdown';
@@ -20,20 +22,6 @@ const SORT_OPTIONS = [
   { label: 'Ranking', value: 'ranking' },
 ];
 
-function bookmarkToManga(bookmark: SeriesBookmark) {
-  return {
-    id: bookmark.seriesId,
-    title: bookmark.title,
-    cover: bookmark.cover,
-    type: bookmark.type,
-    status: bookmark.seriesStatus,
-    rating: bookmark.rating,
-    views: bookmark.views ?? 0,
-    totalChapters: bookmark.totalChapters,
-    year: bookmark.year,
-  };
-}
-
 export default function BookmarksPageClient({ identifier, readOnly = false }: { identifier?: string; readOnly?: boolean }) {
   const [bookmarks, setBookmarks] = useState<SeriesBookmark[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,6 +29,7 @@ export default function BookmarksPageClient({ identifier, readOnly = false }: { 
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [sort, setSort] = useState('bookmarked');
+  const [saveTarget, setSaveTarget] = useState<{ seriesId: number; title: string } | null>(null);
 
   const load = useCallback(async (withLoading = true) => {
     if (withLoading) setLoading(true);
@@ -150,11 +139,21 @@ export default function BookmarksPageClient({ identifier, readOnly = false }: { 
       ) : viewMode === 'grid' || readOnly ? (
         <div className="grid grid-cols-2 gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7">
           {bookmarks.map((bookmark, index) => (
-            <div key={bookmark.seriesId} className="relative">
-              <MangaCard manga={bookmarkToManga(bookmark)} priority={index < 16} />
-              <span className="absolute top-2 right-2 z-10 rounded-full bg-background/90 px-2 py-1 text-xs font-medium text-primary shadow-lg">
-                {getStatusLabel(bookmark.status)}
-              </span>
+            <div key={bookmark.seriesId} className="flex flex-col gap-1">
+              <SeriesGridCard
+                seriesId={bookmark.seriesId}
+                title={bookmark.title}
+                cover={bookmark.cover}
+                href={mangaPath(bookmark.seriesId)}
+                type={bookmark.type}
+                status={bookmark.seriesStatus}
+                rating={bookmark.rating}
+                views={bookmark.views}
+                totalChapters={bookmark.totalChapters}
+                onSaveClick={readOnly ? undefined : (seriesId, title) => setSaveTarget({ seriesId, title })}
+                priority={index < 16}
+              />
+              <span className="text-center text-xs font-medium text-muted">{getStatusLabel(bookmark.status)}</span>
             </div>
           ))}
         </div>
@@ -166,6 +165,9 @@ export default function BookmarksPageClient({ identifier, readOnly = false }: { 
           onBulkRemove={bulkRemoveBookmarks}
         />
       )}
+      {saveTarget ? (
+        <SeriesBookmarkModal isOpen onClose={() => setSaveTarget(null)} seriesId={saveTarget.seriesId} mangaTitle={saveTarget.title} />
+      ) : null}
     </div>
   );
 }

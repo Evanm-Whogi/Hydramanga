@@ -6,14 +6,30 @@ import { Plus, X, GripVertical } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, rectSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import MangaCard from "@/components/MangaCard";
+import SeriesGridCard from "@/components/SeriesGridCard";
+import { mangaPath } from "@/lib/paths";
 import { getProfileFavorites, setMyFavorites } from "@/services/profileService";
 import { searchMangaByTitle } from "@/services/mangaService";
 import { toastApiError } from "@/lib/rateLimit";
 
 const MAX_FAVORITES = 10;
 
-type FavoriteManga = { id: number; title?: string | null; cover?: unknown; [key: string]: unknown };
+type FavoriteManga = { id: number; title?: string | null; cover?: unknown; type?: string | null; status?: string | null; rating?: number | null; views?: number | null; totalChapters?: string | number | null; isNew?: boolean };
+
+function favoriteToCardProps(item: FavoriteManga) {
+  return {
+    seriesId: item.id,
+    title: item.title ?? "Untitled",
+    cover: item.cover,
+    href: mangaPath(item.id),
+    type: item.type,
+    status: item.status,
+    rating: item.rating,
+    views: item.views,
+    totalChapters: item.totalChapters,
+    isNew: item.isNew,
+  };
+}
 
 function SortableFavoriteCard({ item, onRemove }: { item: FavoriteManga; onRemove: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
@@ -35,7 +51,7 @@ function SortableFavoriteCard({ item, onRemove }: { item: FavoriteManga; onRemov
       >
         <GripVertical className="size-4" />
       </button>
-      <MangaCard manga={item} />
+      <SeriesGridCard {...favoriteToCardProps(item)} />
       <button
         type="button"
         onClick={onRemove}
@@ -214,7 +230,7 @@ export default function ProfileFavorites({ identifier, isOwner }: { identifier: 
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {displayItems.map((item) => (
-            <MangaCard key={item.id} manga={item} />
+            <SeriesGridCard key={item.id} {...favoriteToCardProps(item)} />
           ))}
         </div>
       )}

@@ -11,6 +11,7 @@ import { withResolvedDisplayTitle } from '@/lib/displayTitle';
 import { enrichNestedSeriesExtras, enrichSeriesListExtras, seriesCardColumns} from '@/lib/seriesQueries';
 import { badgeService } from '@/services/badgeService';
 import { getThreshold } from '@/lib/periodUtils';
+import { anilistBannerService } from '@/services/anilistBannerService';
 
 dotenv.config();
 
@@ -18,8 +19,8 @@ const newDaysInterval = '3 days';
 
 // Cache TTLs (seconds)
 const HOME_CACHE_TTL = {
-    userSpecific: 2 * 60,     // 2 min: Continue Reading, Recently Added, New chapters from list
-    global: 5 * 60,            // 5 min: Popular Chapters, Most Popular Manga, High Score, Most Followed, Collections, Comments
+    userSpecific: 2 * 60,     // 2 min: Continue Reading, New chapters from list
+    global: 5 * 60,            // 5 min: Most Popular Manga, High Score, Recently Updated, Comments
 };
 
 
@@ -29,10 +30,11 @@ export const getRecentlyRead = async (req: Request, res: Response) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
-    const limit = parseInt(req.query.limit as string) || 20;
-    const maxLimit = 20;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 36);
+    const maxLimit = limit;
+    const { hideNsfw } = await getUserSettings(userId);
 
-    const progress = await userProgressService.getUserProgress(userId, maxLimit);
+    const progress = await userProgressService.getUserProgress(userId, maxLimit, hideNsfw);
     const progressList = Array.isArray(progress) ? progress : [];
 
     res.json({
@@ -41,112 +43,49 @@ export const getRecentlyRead = async (req: Request, res: Response) => {
     });
 };
 
-// RECENTLY ADDED (Paginated)
-export const getRecentlyAdded = async (req: Request, res: Response) => {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const offset = (page - 1) * limit;
+// RECENTLY UPDATED (series with chapters, optional period on latest chapter)
+export const getRecentlyUpdated = async (req: Request, res: Response) => {
+    const period = (req.query.period as string) || 'all';
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 36);
+    const threshold = getThreshold(period);
     const userId = req.user?.id;
     const { hideNsfw } = await getUserSettings(userId);
 
-    const cacheKey = `home:recentlyAdded:${hideNsfw}:${page}:${limit}`;
+    const cacheKey = `home:recentlyUpdated:${hideNsfw}:${period}:${limit}`;
     const nsfwConditions = getCatalogFilterConditions(hideNsfw, series);
     const data = await cacheService.getOrSet(
-        { key: cacheKey, ttl: HOME_CACHE_TTL.userSpecific },
+        { key: cacheKey, ttl: HOME_CACHE_TTL.global },
         async () => {
+            const latestChapterDate = sql<string>`max(${chapters.createdAt})`;
             const base = db
                 .select({
                     ...seriesCardColumns,
-                    latestChapterDate: sql<string>`max(${chapters.createdAt})`,
+                    latestChapterDate,
                     views: sql<number>`max(${schema.mangaViewStats.totalViews})`.mapWith(Number),
                 })
                 .from(series)
                 .innerJoin(chapters, eq(series.id, chapters.seriesId))
                 .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId));
             const withWhere = nsfwConditions.length ? base.where(and(...nsfwConditions)) : base;
-            const rows = await withWhere
-                .groupBy(series.id)
-                .orderBy(desc(sql`max(${chapters.createdAt})`))
-                .limit(limit)
-                .offset(offset);
+            const grouped = withWhere.groupBy(series.id);
+            const filtered = threshold
+                ? grouped.having(gte(sql`max(${chapters.createdAt})`, threshold))
+                : grouped;
+            const rows = await filtered.orderBy(desc(latestChapterDate)).limit(limit);
             return enrichSeriesListExtras(rows, newDaysInterval);
         }
     );
     res.json(data);
 };
 
-// POPULAR CHAPTERS (Filtered by Period)
-export const getPopularChapters = async (req: Request, res: Response) => {
-    const period = (req.query.period as string) || 'week';
-    const threshold = getThreshold(period);
-    const limit = parseInt(req.query.limit as string) || 20;
-    const userId = req.user?.id;
-    const { hideNsfw } = await getUserSettings(userId);
-
-    const cacheKey = `home:popularChapters:${hideNsfw}:${period}:${limit}`;
-    const nsfwConditions = getCatalogFilterConditions(hideNsfw, series);
-    const results = await cacheService.getOrSet(
-        { key: cacheKey, ttl: HOME_CACHE_TTL.global },
-        async () => {
-            let subquery;
-            if (threshold) {
-                subquery = db.select({
-                    seriesId: schema.chapterViews.seriesId,
-                    chapterId: sql<number>`MAX(${schema.chapterViews.chapterId})`.as('chapter_id'),
-                    viewCount: sql<number>`count(*)`.mapWith(Number).as('view_count'),
-                })
-                    .from(schema.chapterViews)
-                    .where(gte(schema.chapterViews.viewedAt, threshold))
-                    .groupBy(schema.chapterViews.seriesId)
-                    .orderBy(desc(sql`count(*)`))
-                    .limit(limit)
-                    .as('popular_source');
-            } else {
-                subquery = db.select({
-                    seriesId: chapters.seriesId,
-                    chapterId: sql<number>`MAX(${chapters.id})`.as('chapter_id'),
-                    viewCount: sql<number>`SUM(${schema.chapterViewStats.totalViews})`.mapWith(Number).as('view_count'),
-                })
-                    .from(schema.chapterViewStats)
-                    .innerJoin(chapters, eq(chapters.id, schema.chapterViewStats.chapterId))
-                    .groupBy(chapters.seriesId)
-                    .orderBy(desc(sql`SUM(${schema.chapterViewStats.totalViews})`))
-                    .limit(limit)
-                    .as('popular_source');
-            }
-            const base = db.select({
-                chapter: {
-                    ...getTableColumns(chapters),
-                    viewCount: subquery.viewCount,
-                },
-                series: {
-                    ...seriesCardColumns,
-                    totalMangaViews: schema.mangaViewStats.totalViews,
-                },
-            })
-                .from(subquery)
-                .innerJoin(chapters, eq(chapters.id, subquery.chapterId))
-                .innerJoin(series, eq(series.id, subquery.seriesId))
-                .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId));
-            const withWhere = nsfwConditions.length ? base.where(and(...nsfwConditions)) : base;
-            const rows = await withWhere.orderBy(desc(subquery.viewCount));
-            return enrichNestedSeriesExtras(rows, newDaysInterval);
-        }
-    );
-    res.json(results);
-};
-
 // POPULAR MANGA (Filtered by Period)
-export const getPopularManga = async (req: Request, res: Response) => {
-    const period = (req.query.period as string) || 'week';
+async function loadPopularManga(period: string, limit: number, userId?: string) {
     const threshold = getThreshold(period);
-    const limit = parseInt(req.query.limit as string) || 14;
-    const userId = req.user?.id;
     const { hideNsfw } = await getUserSettings(userId);
 
-    const cacheKey = `home:popularManga:${hideNsfw}:${period}:${limit}`;
+    const cacheKey = `home:popularManga:v2:${hideNsfw}:${period}:${limit}`;
     const nsfwConditions = getCatalogFilterConditions(hideNsfw, series);
-    const results = await cacheService.getOrSet(
+    return cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.global },
         async () => {
             const baseConditions = nsfwConditions.length ? and(...nsfwConditions) : undefined;
@@ -173,10 +112,11 @@ export const getPopularManga = async (req: Request, res: Response) => {
                 const rows = await db
                     .select({
                         ...seriesCardColumns,
-                        views: popularByViews.views,
+                        views: schema.mangaViewStats.totalViews,
                     })
                     .from(popularByViews)
                     .innerJoin(series, eq(series.id, popularByViews.seriesId))
+                    .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
                     .orderBy(desc(popularByViews.views));
 
                 return enrichSeriesListExtras(rows, newDaysInterval);
@@ -196,7 +136,34 @@ export const getPopularManga = async (req: Request, res: Response) => {
             return enrichSeriesListExtras(rows, newDaysInterval);
         }
     );
+}
+
+export const getPopularManga = async (req: Request, res: Response) => {
+    const period = (req.query.period as string) || 'week';
+    const limit = parseInt(req.query.limit as string) || 14;
+    const results = await loadPopularManga(period, limit, req.user?.id);
     res.json(results);
+};
+
+export const getHeroManga = async (req: Request, res: Response) => {
+    const period = (req.query.period as string) || 'week';
+    const heroCount = Math.min(parseInt(req.query.heroCount as string) || 6, 12);
+    const fetchLimit = Math.max(parseInt(req.query.limit as string) || heroCount, heroCount);
+    const results = await loadPopularManga(period, fetchLimit, req.user?.id);
+    const list = Array.isArray(results) ? results : [];
+    const heroIds = list.slice(0, heroCount).map((manga: { id: number }) => manga.id).filter(Boolean);
+
+    if (heroIds.length === 0) {
+        return res.json(list);
+    }
+
+    await anilistBannerService.ensureBannersForSeries(heroIds);
+    const coverById = await anilistBannerService.getCoversBySeriesIds(heroIds);
+    const enriched = list.map((manga: { id: number; cover?: unknown }) => (
+        coverById.has(manga.id) ? { ...manga, cover: coverById.get(manga.id) } : manga
+    ));
+
+    return res.json(enriched);
 };
 
 // HIGH SCORE MANGA (Filtered by Type)
@@ -229,55 +196,11 @@ export const getHighScores = async (req: Request, res: Response) => {
     res.json(data);
 };
 
-// MOST FOLLOWED (Filtered by Period)
-export const getMostFollowed = async (req: Request, res: Response) => {
-    const period = (req.query.period as string) || 'all';
-    const threshold = getThreshold(period);
-    const limit = parseInt(req.query.limit as string) || 14;
-    const userId = req.user?.id;
-    const { hideNsfw } = await getUserSettings(userId);
-
-    const cacheKey = `home:mostFollowed:${hideNsfw}:${period}:${limit}`;
-    const nsfwConditions = getCatalogFilterConditions(hideNsfw, series);
-    const data = await cacheService.getOrSet(
-        { key: cacheKey, ttl: HOME_CACHE_TTL.global },
-        async () => {
-            const followerCounts = db
-                .select({
-                    seriesId: schema.seriesBookmarks.seriesId,
-                    count: sql<number>`count(*)`.as('follower_count'),
-                })
-                .from(schema.seriesBookmarks)
-                .where(threshold ? gte(schema.seriesBookmarks.updatedAt, threshold) : undefined)
-                .groupBy(schema.seriesBookmarks.seriesId)
-                .orderBy(desc(sql`count(*)`))
-                .limit(limit)
-                .as('fc');
-
-            const rows = await db
-                .select({
-                    ...seriesCardColumns,
-                    followerCount: followerCounts.count,
-                    views: schema.mangaViewStats.totalViews,
-                })
-                .from(series)
-                .innerJoin(followerCounts, eq(series.id, followerCounts.seriesId))
-                .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
-                .where(nsfwConditions.length ? and(...nsfwConditions) : undefined)
-                .orderBy(desc(followerCounts.count))
-                .limit(limit);
-
-            return enrichSeriesListExtras(rows, newDaysInterval);
-        }
-    );
-    res.json(data);
-};
-
 export const getRecentChaptersFromUserList = async (req: Request, res: Response) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 30);
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 36);
     const { hideNsfw } = await getUserSettings(userId);
 
     const cacheKey = `home:recentChaptersFromList:${userId}:${hideNsfw}:${limit}`;

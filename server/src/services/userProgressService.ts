@@ -6,7 +6,7 @@ import { karmaService } from '@/services/karmaService';
 import { readingActivityService } from '@/services/readingActivityService';
 import { READING_TIME_DAY_THRESHOLD_SECONDS } from '@/config/karmaConfig';
 import { badgeService } from '@/services/badgeService';
-import { getExcludeNovelConditions } from '@/config/contentFilter';
+import { getCatalogFilterConditions } from '@/config/contentFilter';
 import { resolveDisplayTitle } from '@/lib/displayTitle';
 
 function normalizeSeriesType(raw: string | null | undefined): 'manga' | 'manhwa' | 'manhua' | 'other' {
@@ -47,7 +47,7 @@ const CACHE_TTL = {
 };
 
 const CACHE_KEYS = {
-  USER_PROGRESS: (userId: string, limit: number) => `user:${userId}:progress:${limit}`,
+  USER_PROGRESS: (userId: string, hideNsfw: boolean, limit: number) => `user:${userId}:progress:v2:${hideNsfw}:${limit}`,
   MANGA_PROGRESS: (userId: string, seriesId: number) => `user:${userId}:series:${seriesId}:progress`,
   USER_STATS: (userId: string) => `user:${userId}:stats`,
 };
@@ -214,9 +214,9 @@ class UserProgressService {
    * @param userId - The user ID
    * @param limit - Maximum number of results
    */
-  async getUserProgress(userId: string, limit: number = 20) {
+  async getUserProgress(userId: string, limit: number = 20, hideNsfw: boolean = false) {
     try {
-      const cacheKey = CACHE_KEYS.USER_PROGRESS(userId, limit);
+      const cacheKey = CACHE_KEYS.USER_PROGRESS(userId, hideNsfw, limit);
 
       // Try cache first
       const cached = await cacheService.get(cacheKey);
@@ -252,7 +252,7 @@ class UserProgressService {
             eq(schema.userReadingTime.seriesId, schema.userReadingProgress.seriesId)
           )
         )
-        .where(and(eq(schema.userReadingProgress.userId, userId), ...getExcludeNovelConditions(schema.series)))
+        .where(and(eq(schema.userReadingProgress.userId, userId), ...getCatalogFilterConditions(hideNsfw, schema.series)))
         .groupBy(
           schema.userReadingProgress.userId,
           schema.userReadingProgress.seriesId,

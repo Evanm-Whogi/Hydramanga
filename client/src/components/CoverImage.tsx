@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useInCarousel } from '@/components/homepage/carousel/CarouselContext';
+import { resolveCoverImageUrl } from '@/lib/coverImageCache';
 import { getCardCoverUrl } from '@/lib/coverUtils';
 
 type CoverImageProps = {
@@ -11,38 +13,54 @@ type CoverImageProps = {
     priority?: boolean;
 };
 
+const PLACEHOLDER_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+const NOT_FOUND = '/notFound.png';
+
 export default function CoverImage({ cover, alt, className = '', priority = false }: CoverImageProps) {
-    const [loaded, setLoaded] = useState(false);
-    const [src, setSrc] = useState(() => getCardCoverUrl(cover));
+    const inCarousel = useInCarousel();
+    const coverUrl = getCardCoverUrl(cover);
+    const [carouselSrc, setCarouselSrc] = useState<string | null>(null);
     const imgRef = useRef<HTMLImageElement>(null);
 
-    const syncLoadedFromImage = useCallback((img: HTMLImageElement | null) => {
-        // Cached images can finish before onLoad is attached (e.g. disk cache on refresh).
-        if (img?.complete && img.naturalWidth > 0) {
-            setLoaded(true);
+    useEffect(() => {
+        if (!inCarousel) {
+            setCarouselSrc(null);
+            return;
         }
-    }, []);
+        if (coverUrl === NOT_FOUND) {
+            setCarouselSrc(NOT_FOUND);
+            return;
+        }
+        let cancelled = false;
+        void resolveCoverImageUrl(coverUrl).then((src) => {
+            if (!cancelled) setCarouselSrc(src);
+        });
+        return () => { cancelled = true; };
+    }, [inCarousel, coverUrl]);
 
     useEffect(() => {
-        setSrc(getCardCoverUrl(cover));
-        setLoaded(false);
-    }, [cover]);
+        if (inCarousel) return;
+        const img = imgRef.current;
+        if (!img) return;
+        img.classList.remove('opacity-100');
+        img.classList.add('opacity-0');
+        if (img.complete && img.naturalWidth > 0) {
+            img.classList.remove('opacity-0');
+            img.classList.add('opacity-100');
+        }
+    }, [coverUrl, inCarousel]);
 
-    useEffect(() => {
-        syncLoadedFromImage(imgRef.current);
-    }, [src, syncLoadedFromImage]);
+    const handleLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
+        if (inCarousel) return;
+        e.currentTarget.classList.remove('opacity-0');
+        e.currentTarget.classList.add('opacity-100');
+    }, [inCarousel]);
 
-    const handleRef = useCallback(
-        (img: HTMLImageElement | null) => {
-            imgRef.current = img;
-            syncLoadedFromImage(img);
-        },
-        [syncLoadedFromImage],
-    );
+    const src = inCarousel ? (carouselSrc ?? PLACEHOLDER_SRC) : coverUrl;
 
     return (
         <img
-            ref={handleRef}
+            ref={imgRef}
             src={src}
             alt={alt}
             width={350}
@@ -51,12 +69,13 @@ export default function CoverImage({ cover, alt, className = '', priority = fals
             decoding="async"
             fetchPriority={priority ? 'high' : 'auto'}
             draggable={false}
-            onLoad={() => setLoaded(true)}
-            onError={() => {
-                if (src !== '/notFound.png') setSrc('/notFound.png');
-                else setLoaded(true);
+            onLoad={handleLoad}
+            onError={(e) => {
+                const img = e.currentTarget;
+                if (!img.src.endsWith(NOT_FOUND)) img.src = NOT_FOUND;
+                else handleLoad(e);
             }}
-            className={`${className} transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+            className={`${className} ${inCarousel ? 'opacity-100' : 'opacity-0 transition-opacity duration-200'}`}
         />
     );
 }

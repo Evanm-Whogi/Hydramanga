@@ -18,3 +18,10 @@ export function resolveCoverUrl(cover: unknown): string | null {
     null
   );
 }
+
+/** Hero background — persisted AniList banner under cover.banner.url */
+export function resolveBannerUrl(cover: unknown): string | null {
+  if (!cover || typeof cover !== 'object') return null;
+  const url = (cover as { banner?: { url?: string } }).banner?.url;
+  return typeof url === 'string' && url.length > 0 ? url : null;
+}

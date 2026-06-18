@@ -40,7 +40,7 @@ module.exports = (app: Express) => {
     app.use('/bookmarks', authMiddleware, bookmarkRoutes);
     app.use('/lists', curatedListRoutes);
 
-    app.get('/analytics/trending', getTrending as RequestHandler);
+    app.get('/analytics/trending', optionalAuthMiddleware, getTrending as RequestHandler);
     app.get('/analytics/manga/:id', getMangaAnalytics as RequestHandler);
 
     app.use('/analytics', authMiddleware, analyticsRoutes);

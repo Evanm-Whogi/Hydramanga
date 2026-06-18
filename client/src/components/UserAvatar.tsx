@@ -2,13 +2,15 @@
 
 const DEFAULT_AVATAR = "/media/pfp/default.jpg";
 
-export default function UserAvatar({ src, alt = "", width = 40, height = 40, className = "" }: { src?: string | null; alt?: string; width?: number; height?: number; className?: string }) {
+export default function UserAvatar({ src, alt = "", width = 40, height = 40, className = "", priority = false }: { src?: string | null; alt?: string; width?: number; height?: number; className?: string; priority?: boolean }) {
   return (
     <img
       src={src || DEFAULT_AVATAR}
       alt={alt}
       width={width}
       height={height}
+      loading={priority ? "eager" : "lazy"}
+      decoding="async"
       className={className}
       onError={(e) => {
         const el = e.currentTarget;

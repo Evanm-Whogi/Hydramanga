@@ -11,7 +11,9 @@ import { formatCompactNumber } from "@/lib/utils";
 import { voteList, saveList, unsaveList, type CuratedListDetail } from "@/services/curatedListService";
 import { toastApiError } from "@/lib/rateLimit";
 import { requireAuth } from "@/lib/requireAuth";
-import MangaCard from "@/components/MangaCard";
+import SeriesGridCard from "@/components/SeriesGridCard";
+import SeriesBookmarkModal from "@/components/SeriesBookmarkModal";
+import { mangaPath } from "@/lib/paths";
 import ListComments from "./ListComments";
 import EditListModal from "../../components/EditListModal";
 import ReportListModal from "../../components/ReportListModal";
@@ -52,6 +54,7 @@ export default function ListDetailClient({ list: initialList, initialComments, i
   const [tab, setTab] = useState<ListTab>("manga");
   const [showEdit, setShowEdit] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [saveTarget, setSaveTarget] = useState<{ seriesId: number; title: string } | null>(null);
 
   useListViewTracking(list.id, true);
 
@@ -171,7 +174,21 @@ export default function ListDetailClient({ list: initialList, initialComments, i
               <>
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-8 gap-4 pt-2">
                   {list.items.map((item, i) => (
-                    <MangaCard key={item.id} manga={item} priority={i < 8} />
+                    <SeriesGridCard
+                      key={item.id}
+                      seriesId={item.id}
+                      title={item.title ?? "Untitled"}
+                      cover={item.cover}
+                      href={mangaPath(item.id)}
+                      type={item.type}
+                      status={item.status}
+                      rating={item.rating}
+                      views={item.views}
+                      totalChapters={item.totalChapters}
+                      isNew={item.isNew}
+                      onSaveClick={(seriesId, title) => setSaveTarget({ seriesId, title })}
+                      priority={i < 8}
+                    />
                   ))}
                 </div>
                 {!list.items.length && <p className="text-muted text-center py-8">This list has no manga yet.</p>}
@@ -225,6 +242,9 @@ export default function ListDetailClient({ list: initialList, initialComments, i
       </div>
       {showEdit && <EditListModal listId={list.id} initialList={list} onClose={() => setShowEdit(false)} onUpdated={(updated) => setList(updated)} />}
       {showReport && <ReportListModal listId={list.id} listTitle={list.title} onClose={() => setShowReport(false)} />}
+      {saveTarget ? (
+        <SeriesBookmarkModal isOpen onClose={() => setSaveTarget(null)} seriesId={saveTarget.seriesId} mangaTitle={saveTarget.title} />
+      ) : null}
     </>
   );
 }

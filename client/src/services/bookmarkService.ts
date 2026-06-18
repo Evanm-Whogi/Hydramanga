@@ -49,6 +49,12 @@ export const fetchBookmarks = async (params?: {status?: string[]; type?: string[
   return data;
 };
 
+export const fetchBookmarkStatus = async (seriesId: number): Promise<BookmarkStatus | null> => {
+  const data = await apiGet(`/bookmarks/${seriesId}`);
+  if (!data) return null;
+  return (data.status as BookmarkStatus) ?? null;
+};
+
 export const setBookmark = async (seriesId: number, status: BookmarkStatus) => {
   const data = await apiPut(`/bookmarks/${seriesId}`, { status });
   if (!data) throw new Error('Failed to set bookmark');

@@ -35,6 +35,20 @@ export async function getBookmarks(req: Request, res: Response, next: NextFuncti
   }
 }
 
+export async function getBookmarkStatus(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const userId = req.user!.id;
+    const seriesId = parseInt(req.params.seriesId, 10);
+    if (isNaN(seriesId)) {
+      return res.status(400).json({ success: false, message: 'Invalid series ID' });
+    }
+    const status = await BookmarkService.getBookmarkStatus(userId, seriesId);
+    return res.json({ success: true, status });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 export async function setBookmark(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
   try {
     const userId = req.user!.id;

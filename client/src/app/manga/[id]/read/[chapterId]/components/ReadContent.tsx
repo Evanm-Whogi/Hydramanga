@@ -1222,7 +1222,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
       {/* Desktop Comments Sidebar — anchored to viewport right edge */}
       <aside
-        className={`hidden md:flex md:flex-col md:fixed md:inset-y-0 md:left-auto md:top-0 md:bg-foreground md:border-l md:border-l-borders md:z-[110] md:transition-all md:duration-300 md:overflow-hidden ${
+        className={`hidden md:flex md:flex-col md:fixed md:inset-y-0 md:left-auto md:top-0 md:bg-foreground md:border-l md:border-l-borders md:z-110 md:transition-all md:duration-300 md:overflow-hidden ${
           commentsSidebarOpen ? '' : 'md:pointer-events-none'
         }`}
         style={{ right: 0, width: commentsSidebarOpen ? COMMENTS_SIDEBAR_WIDTH_PX : 0 }}
