@@ -1,10 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import HomepageMangaCarousel from "@/components/homepage/carousel/HomepageMangaCarousel";
-import HomepageCarouselSection from "@/components/homepage/carousel/HomepageCarouselSection";
-import HomepageCarouselItem from "@/components/homepage/carousel/HomepageCarouselItem";
-import SeriesGridCard from "@/components/SeriesGridCard";
+import HomepageUserCarousels from "@/components/homepage/HomepageUserCarousels";
 import DeferredMount from "@/components/DeferredMount";
 import HomepageCommunitySection from "@/components/homepage/community/HomepageCommunitySection";
 import HomepageCommunityCta from "@/components/homepage/community/HomepageCommunityCta";
@@ -13,81 +11,30 @@ import HomepageFilterButtons from "@/components/homepage/filters/HomepageFilterB
 import { HOMEPAGE_PERIOD_OPTIONS, HOMEPAGE_TYPE_OPTIONS } from "@/constants/homepage";
 import { useFilteredCarousel } from "@/hooks/useFilteredCarousel";
 import { useHomepageStaticLists } from "@/hooks/useHomepageStaticLists";
-import { useHomepageUserLists } from "@/hooks/useHomepageUserLists";
-import { scheduleCarouselPrefetch } from "@/lib/coverImageCache";
-import { getCardCoverUrl } from "@/lib/coverUtils";
-import { progressReadHref, seriesCardHref } from "@/lib/homepageUtils";
+import { seriesCardHref } from "@/lib/homepageUtils";
 import type { HomepageMangaType, HomepagePeriod, HomepageSaveTarget } from "@/types/homepage";
 import { useUser } from "@/providers/UserProvider";
 import * as homeService from "@/services/homeService";
-import { mangaReadPath } from "@/lib/paths";
 
 export default function HomepageClient() {
   const { user } = useUser();
   const userId = user?.id;
   const [saveTarget, setSaveTarget] = useState<HomepageSaveTarget | null>(null);
 
-  const { continueReading, recentChaptersFromList } = useHomepageUserLists(userId);
   const { trending, recentlyUpdated, loadingTrending, loadingUpdated } = useHomepageStaticLists();
 
   const fetchPopularManga = useCallback((period: string, limit: number) => homeService.getPopularManga(period, limit), []);
   const fetchTopRated = useCallback((type: string, limit: number) => homeService.getHighScores(type, limit), []);
 
-  const { data: popularManga, filter: popularPeriod, setFilter: setPopularPeriod, loading: loadingPopular } = useFilteredCarousel(fetchPopularManga, "month", userId);
-  const { data: topRated, filter: topRatedType, setFilter: setTopRatedType, loading: loadingTopRated } = useFilteredCarousel(fetchTopRated, "all", userId);
+  const { data: popularManga, filter: popularPeriod, setFilter: setPopularPeriod, loading: loadingPopular } = useFilteredCarousel(fetchPopularManga, "month");
+  const { data: topRated, filter: topRatedType, setFilter: setTopRatedType, loading: loadingTopRated } = useFilteredCarousel(fetchTopRated, "all");
 
   const openSaveModal = useCallback((seriesId: number, title: string) => setSaveTarget({ seriesId, title }), []);
-
-  useEffect(() => {
-    if (continueReading.length === 0) return;
-    scheduleCarouselPrefetch(continueReading.map((progress) => getCardCoverUrl(progress.seriesCover)));
-  }, [continueReading]);
-
-  useEffect(() => {
-    if (recentChaptersFromList.length === 0) return;
-    scheduleCarouselPrefetch(recentChaptersFromList.map((item) => getCardCoverUrl(item.series.cover)));
-  }, [recentChaptersFromList]);
 
   return (
     <section id="homepage-lists" className="pb-25">
       <div className="container mx-auto mt-10 space-y-16 text-primary md:mt-0">
-        {continueReading.length > 0 ? (
-          <HomepageCarouselSection title="Continue Reading">
-            {continueReading.map((progress) => (
-              <HomepageCarouselItem key={`continue-reading-${progress.seriesId}`}>
-                <SeriesGridCard
-                  seriesId={progress.seriesId}
-                  title={progress.seriesTitle}
-                  cover={progress.seriesCover}
-                  href={progressReadHref(progress)}
-                  onSaveClick={openSaveModal}
-                />
-              </HomepageCarouselItem>
-            ))}
-          </HomepageCarouselSection>
-        ) : null}
-
-        {userId && recentChaptersFromList.length > 0 ? (
-          <HomepageCarouselSection title="New Chapters from Your Bookmarks">
-            {recentChaptersFromList.map((item) => (
-              <HomepageCarouselItem key={`list-chapter-${item.series.id}-${item.chapter.id}`}>
-                <SeriesGridCard
-                  seriesId={item.series.id}
-                  title={item.series.title}
-                  cover={item.series.cover}
-                  href={mangaReadPath(item.series.id, item.chapter.id)}
-                  type={item.series.type}
-                  status={item.series.status}
-                  rating={item.series.rating}
-                  views={item.series.views}
-                  totalChapters={item.series.totalChapters}
-                  isNew={item.series.isNew}
-                  onSaveClick={openSaveModal}
-                />
-              </HomepageCarouselItem>
-            ))}
-          </HomepageCarouselSection>
-        ) : null}
+        {userId ? <HomepageUserCarousels userId={userId} onSaveClick={openSaveModal} /> : null}
 
         <HomepageMangaCarousel title="Trending Now" items={trending} loading={loadingTrending} onSaveClick={openSaveModal} getHref={seriesCardHref} />
         <HomepageMangaCarousel title="Recently Updated" items={recentlyUpdated} loading={loadingUpdated} onSaveClick={openSaveModal} getHref={seriesCardHref} />

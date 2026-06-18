@@ -5,7 +5,7 @@ import { limitHomepageItems } from "@/lib/homepageUtils";
 import { HOMEPAGE_CAROUSEL_LIMIT } from "@/constants/homepage";
 import type { HomepageSeriesCard } from "@/types/homepage";
 
-export function useFilteredCarousel<T extends HomepageSeriesCard>(fetchFn: (filter: string, limit: number) => Promise<T[]>, initialFilter: string, refreshKey?: string | null) {
+export function useFilteredCarousel<T extends HomepageSeriesCard>(fetchFn: (filter: string, limit: number) => Promise<T[]>, initialFilter: string) {
   const [data, setData] = useState<T[]>([]);
   const [filter, setFilter] = useState(initialFilter);
   const [loading, setLoading] = useState(false);
@@ -26,7 +26,7 @@ export function useFilteredCarousel<T extends HomepageSeriesCard>(fetchFn: (filt
     return () => {
       cancelled = true;
     };
-  }, [filter, fetchFn, refreshKey]);
+  }, [filter, fetchFn]);
 
   return { data, filter, setFilter, loading };
 }

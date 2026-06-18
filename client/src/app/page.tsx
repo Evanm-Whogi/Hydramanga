@@ -8,9 +8,9 @@ import { buildHomePageJsonLd, buildPageMetadata, getSiteConfig } from "@/lib/seo
 const site = getSiteConfig();
 
 export const metadata: Metadata = buildPageMetadata({
-  title: `${site.name} - Home`,
-  description: "Continue reading, discover trending manga, and see what the community is talking about.",
-  path: "/",
+  title: `${site.name} - ${site.slogan}`,
+  description: 'Explore trending manga, continue reading, and see what the HydraManga community is enjoying right now.',
+  path: '/',
   absoluteTitle: true,
 });
 

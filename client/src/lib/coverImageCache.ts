@@ -4,8 +4,30 @@ const resolvedUrls = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
 const imageWarmups = new Map<string, Promise<void>>();
 
+const MAX_CONCURRENT = 4;
+let activeFetches = 0;
+const fetchQueue: Array<() => void> = [];
+let prefetchDelayMs = 0;
+
 function isCarouselDragging(): boolean {
     return typeof document !== 'undefined' && document.querySelector('[data-carousel-dragging]') !== null;
+}
+
+function drainFetchQueue(): void {
+    while (activeFetches < MAX_CONCURRENT && fetchQueue.length > 0) {
+        activeFetches++;
+        fetchQueue.shift()!();
+    }
+}
+
+function enqueueFetch(task: () => Promise<void>): void {
+    fetchQueue.push(() => {
+        void task().finally(() => {
+            activeFetches--;
+            drainFetchQueue();
+        });
+    });
+    drainFetchQueue();
 }
 
 function warmupImage(url: string): Promise<void> {
@@ -30,36 +52,51 @@ async function fetchToBlobUrl(url: string): Promise<string> {
     return URL.createObjectURL(blob);
 }
 
+async function loadCoverUrl(url: string): Promise<string> {
+    try {
+        const blobUrl = await fetchToBlobUrl(url);
+        resolvedUrls.set(url, blobUrl);
+        return blobUrl;
+    } catch {
+        await warmupImage(url);
+        resolvedUrls.set(url, url);
+        return url;
+    }
+}
+
 export function isCoverCached(url: string): boolean {
     return resolvedUrls.has(url);
 }
 
-export async function resolveCoverImageUrl(url: string): Promise<string> {
-    if (!url || url === NOT_FOUND || url.startsWith('/') || url.startsWith('data:')) return url;
-    if (resolvedUrls.has(url)) return resolvedUrls.get(url)!;
+export function resolveCoverImageUrl(url: string): Promise<string> {
+    if (!url || url === NOT_FOUND || url.startsWith('/') || url.startsWith('data:')) return Promise.resolve(url);
+    if (resolvedUrls.has(url)) return Promise.resolve(resolvedUrls.get(url)!);
 
     const pending = inflight.get(url);
     if (pending) return pending;
 
-    const promise = (async () => {
-        try {
-            const blobUrl = await fetchToBlobUrl(url);
-            resolvedUrls.set(url, blobUrl);
-            return blobUrl;
-        } catch {
-            await warmupImage(url);
-            resolvedUrls.set(url, url);
-            return url;
-        } finally {
-            inflight.delete(url);
-        }
-    })();
+    const promise = new Promise<string>((resolve) => {
+        enqueueFetch(async () => {
+            try {
+                const src = await loadCoverUrl(url);
+                resolve(src);
+            } catch {
+                resolvedUrls.set(url, url);
+                resolve(url);
+            } finally {
+                inflight.delete(url);
+            }
+        });
+    });
 
     inflight.set(url, promise);
     return promise;
 }
 
-function schedulePrefetch(url: string, delayMs: number): void {
+function schedulePrefetch(url: string): void {
+    const delayMs = prefetchDelayMs;
+    prefetchDelayMs += 80;
+
     const start = () => {
         if (isCarouselDragging()) {
             setTimeout(start, 120);
@@ -73,8 +110,8 @@ function schedulePrefetch(url: string, delayMs: number): void {
 }
 
 export function prefetchCoverImages(urls: string[]): void {
-    const unique = [...new Set(urls)].filter((url) => url && url !== NOT_FOUND && !resolvedUrls.has(url));
-    unique.forEach((url, index) => schedulePrefetch(url, index * 60));
+    const unique = [...new Set(urls)].filter((url) => url && url !== NOT_FOUND && !resolvedUrls.has(url) && !inflight.has(url));
+    for (const url of unique) schedulePrefetch(url);
 }
 
 export function scheduleCarouselPrefetch(urls: string[]): void {
@@ -82,6 +119,6 @@ export function scheduleCarouselPrefetch(urls: string[]): void {
     if (unique.length === 0) return;
 
     const run = () => prefetchCoverImages(unique);
-    if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 2500 });
-    else setTimeout(run, 300);
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 3000 });
+    else setTimeout(run, 400);
 }
