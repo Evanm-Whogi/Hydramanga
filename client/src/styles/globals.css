@@ -45,22 +45,10 @@
   width: 100%;
   padding-inline: 1.5rem;
 
-  @variant sm {
-    max-width: 80rem;
-  }
-  @variant md {
-    max-width: 80rem;
-  }
-  @variant lg {
-    max-width: 80rem;
-  }
+  /* Desktop: keep ~8.75% side gutters until the 132rem cap (matches 1440p+ layout). */
   @variant xl {
-    max-width: 100rem;
+    max-width: min(132rem, 82.5vw);
     padding-inline: 2rem;
-  }
-  @variant 2xl {
-    max-width: 132rem;
-    padding-inline: 2.5rem;
   }
 }
 
