@@ -32,7 +32,8 @@ export class MangaChapterImportJobHandler implements IJobHandler {
             data.seriesId,
             data.romanizedTitle,
             data.isFirstScan,
-            job
+            job,
+            data.isRecovery
           );
         },
         {

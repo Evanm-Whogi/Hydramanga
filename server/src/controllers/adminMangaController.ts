@@ -8,6 +8,7 @@ import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import logger from '@/services/loggerService';
 import { queueService } from '@/services/queueService';
 import { cacheService } from '@/services/cacheService';
+import { invalidateCatalogCaches } from '@/lib/catalogCache';
 import { extractSecondaryTitleStrings } from '@/lib/secondaryTitles';
 import { seriesMigrationService } from '@/services/seriesMigrationService';
 
@@ -306,6 +307,10 @@ export async function adminDeleteChapters(req: Request, res: Response, next: Nex
 
         await cacheService.invalidatePattern(`manga:${id}:*`);
         await cacheService.invalidatePattern(`series:${id}:*`);
+        // The discover "Imported" filter membership is baked into the (never-expiring)
+        // catalog skeleton cache, so purging chapters must clear it — otherwise the series
+        // keeps showing as imported until the next metadata sync.
+        await invalidateCatalogCaches();
 
         logger.info(`Deleted ${deletedCount} chapters for series ${id}`, { service: 'adminMangaController' });
         return res.json({

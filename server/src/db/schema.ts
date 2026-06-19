@@ -318,11 +318,13 @@ export const chapters = pgTable("chapters", {
   storagePrefix: text("storage_prefix").notNull(), // Logical object key prefix (e.g., "6029/1" for seriesId/chapterId)
   pageCount: integer("page_count").default(0),
   scraperId: text("scraper_id"), // ID of the scraper that downloaded this chapter (e.g., 'mangadex', 'weebcentral', null if unknown)
+  notifiedAt: timestamp("notified_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   // Index for fetching a series' chapters quickly
   seriesIdIdx: index("idx_chapters_series_id").on(t.seriesId),
+  unnotifiedIdx: index("idx_chapters_unnotified").on(t.seriesId).where(sql`${t.notifiedAt} IS NULL`),
   // "Is new" check: chapter in last N days (search/catalog)
   seriesCreatedIdx: index("idx_chapters_series_created").on(t.seriesId, t.createdAt.desc()),
   // Unique constraint to prevent duplicate chapters per series

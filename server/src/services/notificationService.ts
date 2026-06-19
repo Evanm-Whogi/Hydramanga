@@ -1,7 +1,11 @@
 import { db, schema } from '@/db/index';
-import { eq, and, desc, ilike } from 'drizzle-orm';
+import { eq, and, desc, ilike, isNull, isNotNull, inArray, sql } from 'drizzle-orm';
 import type { ImportRequestStatus } from '@/services/importRequestService';
 import { resolveCoverUrl } from '@/lib/coverUtils';
+import { discordService } from '@/services/discordService';
+import { invalidateCatalogCaches } from '@/lib/catalogCache';
+import { ChapterNumberParser } from '@/utils/chapterNumberParser';
+import logger from '@/services/loggerService';
 
 export type NotificationType =
   | 'import_request_status'
@@ -174,6 +178,104 @@ class NotificationService {
       linkUrl: `/lists/${params.listId}`,
       imageUrl: null,
     });
+  }
+
+  /**
+   * Announce the chapters that have finished downloading for a series but haven't been
+   * announced yet, then mark them announced. Called when a series import completes, so
+   * notifications reflect chapters that actually downloaded rather than ones merely
+   * queued. Idempotent via `chapters.notifiedAt`: re-running (e.g. after a failed
+   * download is recovered) only announces chapters not already announced, so recovery
+   * cycles never re-spam users/Discord.
+   */
+  async announceNewlyDownloadedChapters(seriesId: number): Promise<void> {
+    try {
+      const pending = await db
+        .select({ id: schema.chapters.id, chapterNumber: schema.chapters.chapterNumber })
+        .from(schema.chapters)
+        .where(and(eq(schema.chapters.seriesId, seriesId), isNull(schema.chapters.notifiedAt)));
+
+      if (pending.length === 0) return;
+
+      // First announcement for this series (a brand-new import) vs. chapters added to an
+      // already-announced series. Determines the Discord embed style.
+      const [{ count: announcedCount } = { count: 0 }] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(schema.chapters)
+        .where(and(eq(schema.chapters.seriesId, seriesId), isNotNull(schema.chapters.notifiedAt)));
+      const isFirstImport = announcedCount === 0;
+
+      const [seriesRow] = await db
+        .select({ title: schema.series.title, cover: schema.series.cover })
+        .from(schema.series)
+        .where(eq(schema.series.id, seriesId))
+        .limit(1);
+
+      if (!seriesRow) {
+        logger.warn(`announceNewlyDownloadedChapters: series ${seriesId} not found`, { service: 'notificationService' });
+        return;
+      }
+
+      const mangaTitle = seriesRow.title ?? 'Unknown title';
+      const chapterCount = pending.length;
+      const chapterRange = ChapterNumberParser.formatRange(pending.map((c) => c.chapterNumber));
+      const coverUrl = resolveCoverUrl(seriesRow.cover) ?? undefined;
+
+      // Discord (public channel)
+      if (isFirstImport) {
+        await discordService.notifyMangaImported(mangaTitle, seriesId, chapterCount, chapterRange, coverUrl);
+      } else {
+        await discordService.notifyChaptersAdded(mangaTitle, seriesId, chapterCount, chapterRange, coverUrl);
+      }
+
+      // Site notifications to users with the series in their library
+      const libraryUsers = await db
+        .select({ userId: schema.seriesBookmarks.userId })
+        .from(schema.seriesBookmarks)
+        .where(and(
+          eq(schema.seriesBookmarks.seriesId, seriesId),
+          inArray(schema.seriesBookmarks.status, ['reading', 'rereading']),
+        ));
+      const userIds = [...new Set(libraryUsers.map((row) => row.userId))];
+
+      if (userIds.length > 0) {
+        await this.notifyNewChapters({
+          userIds,
+          seriesId,
+          mangaTitle,
+          chapterCount,
+          chapterRange,
+          imageUrl: coverUrl ?? null,
+        });
+      }
+
+      // Mark announced only after sending, so a transient send failure doesn't
+      // permanently suppress these chapters. The `isNull` guard keeps it idempotent if a
+      // later import completion re-runs this for the same series. Announce runs once per
+      // completion (the atomic increment elects a single completing chapter), so there is
+      // no concurrent second call to double-send before this mark lands.
+      const pendingIds = pending.map((c) => c.id);
+      await db
+        .update(schema.chapters)
+        .set({ notifiedAt: new Date() })
+        .where(and(inArray(schema.chapters.id, pendingIds), isNull(schema.chapters.notifiedAt)));
+
+      // When a series gains chapters for the first time (or again after a purge) it now
+      // belongs in the discover "Imported" filter, whose membership is held in the
+      // never-expiring catalog skeleton cache. Only the 0→N transition changes that
+      // membership, so gate on isFirstImport to avoid churning the whole catalog cache on
+      // every incremental rescan of an already-imported series.
+      if (isFirstImport) {
+        await invalidateCatalogCaches();
+      }
+
+      logger.info(
+        `Announced ${chapterCount} downloaded chapter(s) for series ${seriesId} (${isFirstImport ? 'first import' : 'chapters added'})`,
+        { service: 'notificationService' }
+      );
+    } catch (error) {
+      logger.error(`Failed to announce downloaded chapters for series ${seriesId}: ${error}`, { service: 'notificationService' });
+    }
   }
 
   async notifyNewChapters(params: {userIds: string[]; seriesId: number; mangaTitle: string; chapterCount: number; chapterRange: string; imageUrl?: string | null}): Promise<void> {

@@ -10,16 +10,14 @@
  */
 
 import type { Job } from 'bullmq';
-import { db, schema } from '@/db';
+import { db } from '@/db';
 import { chapters, series, mangaImportProgress } from '@/db/schema';
-import { notificationService } from '@/services/notificationService';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { scraperManager } from '@/scrapers';
 import { queueService } from '@/services/queueService';
 import { discordService } from '@/services/discordService';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import logger from '@/services/loggerService';
-import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import * as Sentry from "@sentry/node";
 import { withSpan, addBreadcrumb } from '@/utils/sentryHelper';
@@ -92,7 +90,12 @@ export class ChapterScannerService {
         seriesId: number,
         romanizedTitle?: string,
         isFirstScan = false,
-        job?: Job
+        job?: Job,
+        // Recovery rescans only re-download chapters that previously failed (and so
+        // aren't in the DB yet). They re-discover the same chapters every cycle, so
+        // emitting "new chapter" notifications/webhooks here would spam users on each
+        // 30-min reconcile. Genuine new-release detection is the monitored rescan's job.
+        isRecovery = false
     ): Promise<void> {
         const [typeRow] = await db.select({ type: series.type }).from(series).where(eq(series.id, seriesId)).limit(1);
         if (isNovelType(typeRow?.type)) {
@@ -103,7 +106,6 @@ export class ChapterScannerService {
 
         await setJobProgress(job, 5);
         let foundCount = 0;
-        const newChapters: string[] = [];
         let previewRemaining = isFirstScan ? appConfig.queues.chapterDownload.previewCount : 0;
 
         // Determine how many chapters already exist before this scan (important for rescans)
@@ -258,7 +260,6 @@ export class ChapterScannerService {
                     
                     // Only increment after successfully queuing the job
                     foundCount++;
-                    newChapters.push(chapter.number);
                     await setJobProgress(job, clampProgress(15 + Math.min(60, foundCount * 2)));
                 } catch (jobError) {
                     logger.error(
@@ -297,57 +298,11 @@ export class ChapterScannerService {
                     { op: 'db.write', tags: { series_id: String(seriesId) } }
                 );
 
-                const chapterRange = ChapterNumberParser.formatRange(newChapters);
-                await withSpan(
-                    'notify_chapters_discord',
-                    async () => {
-                        if (isFirstScan) {
-                            return discordService.notifyMangaImported(
-                                mangaTitle,
-                                seriesId,
-                                foundCount,
-                                chapterRange,
-                                coverUrl
-                            );
-                        }
-                        return discordService.notifyChaptersAdded(
-                            mangaTitle,
-                            seriesId,
-                            foundCount,
-                            chapterRange,
-                            coverUrl
-                        );
-                    },
-                    {
-                        op: 'notification',
-                        tags: { type: isFirstScan ? 'manga_imported' : 'chapters_added' },
-                    }
-                );
-
-                const libraryUsers = await db
-                    .select({ userId: schema.seriesBookmarks.userId })
-                    .from(schema.seriesBookmarks)
-                    .where(and(
-                        eq(schema.seriesBookmarks.seriesId, seriesId),
-                        inArray(schema.seriesBookmarks.status, ['reading', 'rereading']),
-                    ));
-
-                const userIds = [
-                    ...new Set(libraryUsers.map((row) => row.userId)),
-                ];
-
-                if (userIds.length > 0) {
-                    notificationService
-                        .notifyNewChapters({
-                            userIds,
-                            seriesId,
-                            mangaTitle,
-                            chapterCount: foundCount,
-                            chapterRange,
-                            imageUrl: coverUrl ?? null,
-                        })
-                        .catch(() => undefined);
-                }
+                // User-facing announcements (site notifications + public Discord) are NOT
+                // sent here. They fire from chapterDownloaderService once the chapters
+                // actually finish downloading (see notificationService
+                // .announceNewlyDownloadedChapters), so users aren't notified for chapters
+                // that were only queued and then failed — and recovery retries don't re-spam.
             } else {
                 // No NEW chapters found during this scan
                 if (isFirstScan) {
@@ -381,18 +336,20 @@ export class ChapterScannerService {
                 }
             }
 
-            await withSpan(
-                'notify_scan_completed',
-                async () =>
-                    discordService.notifyScanCompleted(
-                        mangaTitle,
-                        seriesId,
-                        foundCount,
-                        isFirstScan,
-                        coverUrl
-                    ),
-                { op: 'notification', tags: { type: 'scan_completed' } }
-            );
+            if (!isRecovery) {
+                await withSpan(
+                    'notify_scan_completed',
+                    async () =>
+                        discordService.notifyScanCompleted(
+                            mangaTitle,
+                            seriesId,
+                            foundCount,
+                            isFirstScan,
+                            coverUrl
+                        ),
+                    { op: 'notification', tags: { type: 'scan_completed' } }
+                );
+            }
             await setJobProgress(job, 100);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error during scan';

@@ -15,6 +15,13 @@
       "when": 1781851373860,
       "tag": "0001_chilly_texas_twister",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781908044672,
+      "tag": "0002_superb_rage",
+      "breakpoints": true
     }
   ]
 }

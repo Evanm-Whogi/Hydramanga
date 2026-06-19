@@ -12,7 +12,7 @@ import { getUserSettings } from '@/services/userSettingsService';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import { cacheService } from '@/services/cacheService';
 import { objectStorageService } from '@/services/objectStorageService';
-import { CATALOG_CACHE_TTL } from '@/lib/catalogCache';
+import { CATALOG_CACHE_TTL, DISCOVER_SEARCH_CACHE_PREFIX, DISCOVER_SEARCH_COUNT_CACHE_PREFIX } from '@/lib/catalogCache';
 import axios from 'axios';
 import { getCollectionsList } from '@/services/collectionsService';
 import { fetchSeriesChapterFlags } from '@/lib/seriesQueries';
@@ -235,8 +235,8 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         const { hideNsfw } = await getUserSettings(userId);
         const hasCursor = Boolean(cursor);
 
-        const cacheKey = `manga:search:v7:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query)}`;
-        const countCacheKey = `manga:search:count:v7:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query, true)}`;
+        const cacheKey = `${DISCOVER_SEARCH_CACHE_PREFIX}:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query)}`;
+        const countCacheKey = `${DISCOVER_SEARCH_COUNT_CACHE_PREFIX}:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query, true)}`;
 
         const conditions: any = [];
 

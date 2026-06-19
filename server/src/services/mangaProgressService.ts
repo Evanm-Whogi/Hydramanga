@@ -254,13 +254,15 @@ class MangaProgressService {
     }
   }
 
-  // Increment downloaded chapters count
-  async incrementDownloaded(seriesId: number, chapterInfo?: { id?: number; chapterNumber: string; title: string; pageCount: number; createdAt?: string; updatedAt?: string }): Promise<void> {
+  // Increment downloaded chapters count.
+  // Returns `justCompleted: true` only on the call that drives the series to a fully
+  // downloaded state, so the caller can fire the "import complete" announcement exactly once.
+  async incrementDownloaded(seriesId: number, chapterInfo?: { id?: number; chapterNumber: string; title: string; pageCount: number; createdAt?: string; updatedAt?: string }): Promise<{ justCompleted: boolean }> {
     try {
       const progress = await this.getProgress(seriesId);
       if (!progress) {
         logger.warn(`No progress found for series ${seriesId} when incrementing`, { service: 'mangaProgressService' });
-        return;
+        return { justCompleted: false };
       }
 
       // Validate state transition - should be in downloading state
@@ -269,7 +271,7 @@ class MangaProgressService {
           `Cannot increment progress for series ${seriesId}: current status is ${progress.status}, expected 'downloading'`,
           { service: 'mangaProgressService' }
         );
-        return;
+        return { justCompleted: false };
       }
 
       // Use atomic increment to prevent race conditions when multiple chapters complete simultaneously
@@ -290,7 +292,7 @@ class MangaProgressService {
 
       if (!updatedRecord) {
         logger.error(`Failed to fetch updated progress for series ${seriesId}`, { service: 'mangaProgressService' });
-        return;
+        return { justCompleted: false };
       }
 
       const newDownloaded = updatedRecord.downloadedChapters;
@@ -350,8 +352,11 @@ class MangaProgressService {
       if (isCompleted) {
         setTimeout(() => this.cleanupProgress(seriesId), 5 * 60 * 1000);
       }
+
+      return { justCompleted: isCompleted };
     } catch (error) {
       logger.error(`Failed to increment downloaded for series ${seriesId}: ${error}`, { service: 'mangaProgressService' });
+      return { justCompleted: false };
     }
   }
 

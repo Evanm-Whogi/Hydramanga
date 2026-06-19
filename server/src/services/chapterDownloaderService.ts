@@ -14,6 +14,7 @@ import { db } from '@/db';
 import { chapters } from '@/db/schema';
 import { scraperManager } from '@/scrapers';
 import { mangaProgressService } from '@/services/mangaProgressService';
+import { notificationService } from '@/services/notificationService';
 import logger from '@/services/loggerService';
 import { eq, and } from 'drizzle-orm';
 import * as Sentry from "@sentry/node";
@@ -153,8 +154,9 @@ export class ChapterDownloaderService {
             );
 
             // Increment downloaded count for progress tracking with complete chapter info
+            let incrementResult: { justCompleted: boolean };
             if (savedChapter) {
-                await withSpan(
+                incrementResult = await withSpan(
                     'update_progress_tracking',
                     async () => {
                         return mangaProgressService.incrementDownloaded(data.seriesId, {
@@ -176,7 +178,7 @@ export class ChapterDownloaderService {
                 );
             } else {
                 // Fallback if fetch fails
-                await withSpan(
+                incrementResult = await withSpan(
                     'update_progress_tracking_fallback',
                     async () => {
                         return mangaProgressService.incrementDownloaded(data.seriesId, {
@@ -192,6 +194,17 @@ export class ChapterDownloaderService {
                             chapter_number: chapterNumberStr,
                         },
                     }
+                );
+            }
+
+            // Announce only once the whole import has finished downloading, so users and
+            // Discord see chapters that actually landed — not ones merely queued (some of
+            // which may fail and only arrive later via the recovery job).
+            if (incrementResult.justCompleted) {
+                await withSpan(
+                    'announce_downloaded_chapters',
+                    async () => notificationService.announceNewlyDownloadedChapters(data.seriesId),
+                    { op: 'notification', tags: { series_id: String(data.seriesId) } }
                 );
             }
 

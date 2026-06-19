@@ -215,6 +215,9 @@ class MangaRecoveryService {
         seriesId,
         romanizedTitle: romanizedTitle || undefined,
         isFirstScan: isFirstScan,
+        // Recovery rescans re-download previously-failed chapters; suppress the
+        // "new chapter" notifications/webhooks so each 30-min reconcile doesn't spam.
+        isRecovery: true,
       },
       {
         jobId,
