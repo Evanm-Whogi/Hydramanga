@@ -7,6 +7,25 @@ import { withResolvedDisplayTitle, type SeriesTitleFields } from '@/lib/displayT
 const { searchText: _searchText, ...seriesCardColumns } = getTableColumns(series);
 export { seriesCardColumns };
 
+export async function fetchFirstChapterIdsBySeries(seriesIds: number[]): Promise<Map<number, number>> {
+  if (seriesIds.length === 0) return new Map();
+
+  const result = await db.execute(sql`
+    WITH ranked AS (
+      SELECT id, series_id,
+        row_number() OVER (PARTITION BY series_id ORDER BY chapter_number ASC) AS rn
+      FROM chapters
+      WHERE series_id = ANY(ARRAY[${sql.join(seriesIds.map((id) => sql`${id}`), sql`, `)}]::int[])
+    )
+    SELECT id AS chapter_id, series_id
+    FROM ranked
+    WHERE rn = 1
+  `);
+
+  const rows = (result.rows || result) as Array<{ chapter_id: number; series_id: number }>;
+  return new Map(rows.map((row) => [row.series_id, row.chapter_id]));
+}
+
 export async function fetchSeriesChapterFlags(seriesIds: number[], newInterval = '3 days'): Promise<{ importedIds: Set<number>; newIds: Set<number> }> {
   if (seriesIds.length === 0) {
     return { importedIds: new Set(), newIds: new Set() };

@@ -18,6 +18,7 @@ import ProfileRecentReads from "@/app/profile/components/ProfileRecentReads";
 import BookmarksPageClient from "@/app/bookmarks/components/BookmarksPageClient";
 import type { UserKarma } from "@/types/stats";
 import type { ProfileVisibility } from "@/types/profile";
+import UserAvatar from "@/components/UserAvatar";
 import { buildProfileTabs, DEFAULT_PROFILE_VISIBILITY, normalizeProfileTab, type ProfileTabId } from "@/app/profile/profileTabs";
 import { formatCompactNumber } from "@/lib/utils";
 
@@ -104,7 +105,7 @@ function PublicProfileView({ identifier }: { identifier: string }) {
   if (profile.isPrivate) {
     return (
       <div className="container mx-auto py-20 px-4 text-center ">
-        <img src={profile.image || "https://profile-pictures.garage.chit.sh/default.jpg"} alt="" className="w-24 h-24 rounded-full mx-auto mb-4 mt-24" />
+        <UserAvatar src={profile.image} alt="" width={96} className="mx-auto mb-4 mt-24" />
         <h1 className="text-2xl font-bold text-primary">{profile.name}</h1>
         <p className="text-muted mt-2">This profile is private.</p>
         {profile.isOwner && (

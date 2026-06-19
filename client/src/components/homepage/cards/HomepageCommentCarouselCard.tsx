@@ -4,10 +4,14 @@ import Link from "next/link";
 import { memo } from "react";
 import UserAvatar from "@/components/UserAvatar";
 import { formatTimeAgo } from "@/lib/utils";
+import { extractImageUrls, toContentImageDisplayUrl } from "@/lib/contentImages";
 import { markdownToPlainText } from "@/lib/markdownPreview";
 import { mangaPath } from "@/lib/paths";
 
 function HomepageCommentCarouselCard({ comment }: { comment: { id: number; content: string; createdAt: string; author?: { id: string; name?: string; image?: string | null }; series?: { id: number; title?: string } } }) {
+  const imageUrls = extractImageUrls(comment.content);
+  const previewText = markdownToPlainText(comment.content);
+
   return (
     <article className="flex h-full max-h-[155px] flex-col rounded-2xl border border-borders bg-foreground p-4 transition-colors hover:border-accent/30 hover:bg-foreground/60">
       <div className="flex items-start gap-3">
@@ -19,7 +23,17 @@ function HomepageCommentCarouselCard({ comment }: { comment: { id: number; conte
             </Link>
             <span className="text-xs text-muted">{formatTimeAgo(comment.createdAt)}</span>
           </div>
-          <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-muted">{markdownToPlainText(comment.content)}</p>
+          <div className="mt-2 min-w-0">
+            {imageUrls.length > 0 ? (
+              <div className={`flex flex-wrap items-center gap-1 ${previewText ? "mb-1.5" : ""}`}>
+                {imageUrls.map((url) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={url} src={toContentImageDisplayUrl(url)} alt="" className="size-10 object-contain" loading="lazy" />
+                ))}
+              </div>
+            ) : null}
+            {previewText ? <p className="line-clamp-3 text-sm leading-relaxed text-muted">{previewText}</p> : null}
+          </div>
         </div>
       </div>
       <Link href={comment.series?.id != null ? mangaPath(comment.series.id) : "#"} className="mt-auto pt-3 truncate text-xs font-medium text-accent transition-colors hover:underline">

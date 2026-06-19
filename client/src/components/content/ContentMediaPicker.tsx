@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "react-toastify";
 import { Sticker } from "lucide-react";
@@ -35,19 +35,25 @@ function computePanelLayout(anchor: DOMRect): { top: number; left: number; width
 
   const width = Math.min(PANEL_WIDTH, vw - margin * 2);
   let left = anchor.left;
-  let top = anchor.bottom + margin;
   if (left + width > vw - margin) left = Math.max(margin, vw - width - margin);
   if (left < margin) left = margin;
 
-  let maxHeight = Math.min(PANEL_MAX_HEIGHT, vh - top - margin);
-  if (top + maxHeight > vh - margin) {
-    top = Math.max(margin, anchor.top - maxHeight - margin);
-    maxHeight = Math.min(PANEL_MAX_HEIGHT, vh - top - margin);
+  const spaceBelow = Math.max(0, vh - anchor.bottom - margin);
+  const spaceAbove = Math.max(0, anchor.top - margin);
+  const openBelow = spaceBelow >= spaceAbove;
+  let maxHeight = Math.min(PANEL_MAX_HEIGHT, openBelow ? spaceBelow : spaceAbove);
+  let top = openBelow ? anchor.bottom + margin : anchor.top - maxHeight - margin;
+
+  if (maxHeight < Math.min(PANEL_MAX_HEIGHT, 160)) {
+    const alternateSpace = openBelow ? spaceAbove : spaceBelow;
+    if (alternateSpace > maxHeight) {
+      maxHeight = Math.min(PANEL_MAX_HEIGHT, alternateSpace);
+      top = openBelow ? anchor.top - maxHeight - margin : anchor.bottom + margin;
+    }
   }
-  if (maxHeight < 160) {
-    top = margin;
-    maxHeight = Math.min(PANEL_MAX_HEIGHT, vh - margin * 2);
-  }
+
+  top = Math.max(margin, Math.min(top, vh - margin - maxHeight));
+  maxHeight = Math.min(maxHeight, vh - top - margin);
 
   return { top, left, width, maxHeight };
 }
@@ -114,7 +120,7 @@ export default function ContentMediaPicker({
     };
   }, [stickersOpen]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!stickersOpen) return;
     updatePanelLayout();
     const onReposition = () => updatePanelLayout();

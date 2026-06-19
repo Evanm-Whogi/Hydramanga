@@ -1,4 +1,4 @@
-import { mangaPath } from "@/lib/paths";
+import { mangaPath, mangaReadPath } from "@/lib/paths";
 import { HOMEPAGE_CAROUSEL_LIMIT } from "@/constants/homepage";
 import type { HomepageReadingProgress, HomepageSeriesCard } from "@/types/homepage";
 
@@ -18,4 +18,8 @@ export function progressReadHref(progress: HomepageReadingProgress): string {
 
 export function seriesCardHref(series: HomepageSeriesCard): string {
   return mangaPath(series.id);
+}
+
+export function heroReadHref(series: HomepageSeriesCard): string {
+  return series.firstChapterId ? mangaReadPath(series.id, series.firstChapterId) : mangaPath(series.id);
 }

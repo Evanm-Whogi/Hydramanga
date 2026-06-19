@@ -11,6 +11,7 @@ export type HomepageSeriesCard = {
   views?: number | null;
   totalChapters?: string | number | null;
   isNew?: boolean;
+  firstChapterId?: number;
 };
 
 export type HomepageSaveTarget = { seriesId: number; title: string };

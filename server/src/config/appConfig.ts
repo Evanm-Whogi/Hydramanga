@@ -79,7 +79,6 @@ export interface CacheConfig {
  * Scraper Configuration
  */
 export interface ScraperConfig {
-    chapterStorageRoot: string;
     weebCentral: {
         apiUrl: string;
         userAgent: string;
@@ -355,11 +354,6 @@ export class AppConfigService {
 
             // Scraper Configuration
             scraper: {
-                // Where to store downloaded chapter images
-                chapterStorageRoot: parseEnvString(
-                    'CHAPTER_STORAGE_ROOT',
-                    './chapters'
-                ),
                 weebCentral: {
                     apiUrl: 'https://weebcentral.com/search/simple?location=main',
                     userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',

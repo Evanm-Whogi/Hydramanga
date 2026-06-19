@@ -8,7 +8,7 @@ import { cacheService } from '@/services/cacheService';
 import { getUserSettings } from '@/services/userSettingsService';
 import { getCatalogFilterConditions } from '@/config/contentFilter';
 import { withResolvedDisplayTitle } from '@/lib/displayTitle';
-import { enrichNestedSeriesExtras, enrichSeriesListExtras, seriesCardColumns} from '@/lib/seriesQueries';
+import { enrichNestedSeriesExtras, enrichSeriesListExtras, fetchFirstChapterIdsBySeries, seriesCardColumns} from '@/lib/seriesQueries';
 import { badgeService } from '@/services/badgeService';
 import { getThreshold } from '@/lib/periodUtils';
 import { anilistBannerService } from '@/services/anilistBannerService';
@@ -158,10 +158,15 @@ export const getHeroManga = async (req: Request, res: Response) => {
     }
 
     await anilistBannerService.ensureBannersForSeries(heroIds);
-    const coverById = await anilistBannerService.getCoversBySeriesIds(heroIds);
-    const enriched = list.map((manga: { id: number; cover?: unknown }) => (
-        coverById.has(manga.id) ? { ...manga, cover: coverById.get(manga.id) } : manga
-    ));
+    const [coverById, firstChapterBySeriesId] = await Promise.all([
+        anilistBannerService.getCoversBySeriesIds(heroIds),
+        fetchFirstChapterIdsBySeries(heroIds),
+    ]);
+    const enriched = list.map((manga: { id: number; cover?: unknown }) => {
+        const firstChapterId = firstChapterBySeriesId.get(manga.id);
+        const withCover = coverById.has(manga.id) ? { ...manga, cover: coverById.get(manga.id) } : manga;
+        return firstChapterId ? { ...withCover, firstChapterId } : withCover;
+    });
 
     return res.json(enriched);
 };
