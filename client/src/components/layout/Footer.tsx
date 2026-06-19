@@ -24,7 +24,6 @@ export default  function Footer() {
                         <Link href="/discover" className="hover:text-primary">Discover</Link>
                         <Link href="/users/me?tab=bookmarks" className="hover:text-primary">Bookmarks</Link>
                         <Link href="/users/me" className="hover:text-primary">My Profile</Link>
-                        <Link href="/announcements" className="hover:text-primary">Announcements</Link>
                     </div>
                     {/* Reading */}
                     <div className="flex flex-col w-full md:w-1/6 space-y-4 text-muted">

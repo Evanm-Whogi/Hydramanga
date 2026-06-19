@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { HouseIcon, BookOpenIcon, DicesIcon, LibraryBig, SearchIcon, BellIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, CirclePlusIcon, ShieldIcon, TrophyIcon, MessagesSquareIcon, MessageCircleIcon, MegaphoneIcon, Bookmark } from 'lucide-react';
+import { HouseIcon, BookOpenIcon, DicesIcon, LibraryBig, SearchIcon, BellIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, CirclePlusIcon, ShieldIcon, TrophyIcon, MessagesSquareIcon, MessageCircleIcon, Bookmark } from 'lucide-react';
 import NavItem from './NavItem';
 import { authClient } from '@/lib/auth';
 import { useRouter, usePathname } from 'next/navigation';
@@ -94,7 +94,6 @@ export default function NavbarClient() {
                 Discord
             </a>
             <Link href="/discover" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><SearchIcon className="size-4" /> Search</Link>
-            <Link href="/announcements" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><MegaphoneIcon className="size-4" /> Announcements</Link>
             <NotificationsMenu variant="dropdown" onOpen={closeDropdown} />
         </div>
     );
@@ -138,7 +137,6 @@ export default function NavbarClient() {
                                 <div onClick={toggleRandomManga} className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><DicesIcon className="size-4" />Random</div>
                                 <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer" className="size-11" ><img src="/oauthIcons/discord.webp" alt="discord" /></a>
                                 <Link href="/discover" className="bg-background hover:bg-background/50 p-3 rounded-full"><SearchIcon className="size-5 hover:cursor-pointer" /></Link>
-                                <Link href="/announcements" className="bg-background hover:bg-background/50 p-3 rounded-full" aria-label="Announcements"><MegaphoneIcon className="size-5 hover:cursor-pointer" /></Link>
                                 {user && <NotificationsMenu />}
                             </div>
 
@@ -239,9 +237,6 @@ export default function NavbarClient() {
                                         <Link href="/chat" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/chat' ? 'text-primary' : 'text-muted'}`}>
                                             <MessageCircleIcon className="size-4" /> Chat
                                         </Link>
-                                        <Link href="/announcements" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/announcements' ? 'text-primary' : 'text-muted'}`}>
-                                            <MegaphoneIcon className="size-4" /> Announcements
-                                        </Link>
                                         <NotificationsMenu variant="link" />
                                         <Link href="/users/me?tab=overview" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/users/me' ? 'text-primary' : 'text-muted'}`}>
                                             <UserIcon className="size-4" /> Profile
@@ -283,9 +278,6 @@ export default function NavbarClient() {
                                         </Link>
                                         <Link href="/chat" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/chat' ? 'text-primary' : 'text-muted'}`}>
                                             <MessageCircleIcon className="size-4" /> Chat
-                                        </Link>
-                                        <Link href="/announcements" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/announcements' ? 'text-primary' : 'text-muted'}`}>
-                                            <MegaphoneIcon className="size-4" /> Announcements
                                         </Link>
                                         <button onClick={openRandomManga} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 text-left">
                                             <DicesIcon className="size-4" /> Random

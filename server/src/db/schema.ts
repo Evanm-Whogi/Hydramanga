@@ -248,21 +248,6 @@ export const listViewStats = pgTable('list_view_stats', {
   totalViewsIdx: index('idx_list_view_stats_total').on(t.totalViews.desc()),
 }));
 
-// Announcements
-export const announcements = pgTable('announcements', {
-  id: serial('id').primaryKey(),
-  title: varchar('title', { length: 255 }).notNull(),
-  content: text('content').notNull(),
-  type: varchar("type", { length: 50 }).default("info"),
-  isPublished: boolean('is_published').default(false).notNull(),
-  publishedAt: timestamp('published_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-}, (t) => ({
-  // Performance index for published announcements queries
-  publishedIdx: index('idx_announcements_published_published_at').on(t.isPublished, t.publishedAt.desc()).where(sql`${t.isPublished} = true`),
-}));
-
 // Comments
 export const comments = pgTable("comments", {
   id: serial("id").primaryKey(),

@@ -124,7 +124,6 @@ function linkLabel(event: AuditLogEvent): string | null {
     return requestedTitle || `Import #${event.resourceId}`;
   }
   if (event.resourceType === "chat_message") return "Chat";
-  if (event.resourceType === "announcement") return "Announcement";
 
   if (href.startsWith("/admin/imports")) return "Import requests";
   if (href.startsWith("/admin")) return "Admin";

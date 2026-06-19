@@ -34,7 +34,6 @@ const ACTION_LABELS: Record<string, string> = {
   'chat.message.create': 'Sent a chat message',
   'chat.message.update': 'Edited a chat message',
   'chat.message.delete': 'Deleted a chat message',
-  'announcement.create': 'Published an announcement',
   'import_request.create': 'Submitted an import request',
   'manga.report': 'Reported a manga issue',
   'manga.view': 'Viewed manga',

@@ -10,7 +10,6 @@ import progressRoutes from '@/routes/progressRoutes';
 import analyticsRoutes from '@/routes/analyticsRoutes';
 import commentRoutes from '@/routes/commentRoutes';
 import reviewRoutes from '@/routes/reviewRoutes';
-import announcementRoutes from '@/routes/announcementRoutes';
 import adminRoutes from '@/routes/adminRoutes';
 import pageRoutes from '@/routes/pageRoutes';
 import bookmarkRoutes from '@/routes/bookmarkRoutes';
@@ -49,7 +48,6 @@ module.exports = (app: Express) => {
 
     app.use('/comments', optionalAuthMiddleware, commentRoutes);
     app.use('/reviews', optionalAuthMiddleware, reviewRoutes);
-    app.use('/announcements', optionalAuthMiddleware, announcementRoutes);
     app.use('/notifications', authMiddleware, notificationRoutes);
 
     app.use('/', contactRoutes);

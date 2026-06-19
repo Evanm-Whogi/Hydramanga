@@ -19,7 +19,6 @@ const STATIC_ROUTES: Array<{ path: string; changeFrequency: MetadataRoute.Sitema
   { path: '/collections', changeFrequency: 'daily', priority: 0.8 },
   { path: '/leaderboard', changeFrequency: 'daily', priority: 0.7 },
   { path: '/forum', changeFrequency: 'hourly', priority: 0.7 },
-  { path: '/announcements', changeFrequency: 'daily', priority: 0.6 },
   { path: '/contact', changeFrequency: 'monthly', priority: 0.4 },
   { path: '/community-guidelines', changeFrequency: 'monthly', priority: 0.3 },
   { path: '/privacy', changeFrequency: 'yearly', priority: 0.2 },
