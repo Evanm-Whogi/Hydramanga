@@ -418,8 +418,12 @@ export class WeebCentralScraper implements IChapterScraper {
                 await page.waitForTimeout(1500);
 
                 finalImages = await page.evaluate((base: string) => {
+                    // Keep broken_image entries: when a page's CDN image fails, WeebCentral's
+                    // onerror swaps src to a relative /static/images/broken_image.jpg. Resolving
+                    // and keeping it preserves the page slot so the downloader can store our own
+                    // placeholder there (isPlaceholder) instead of dropping the page entirely.
                     const resolve = (href: string) => {
-                        if (!href || href.includes('broken_image')) return '';
+                        if (!href) return '';
                         if (href.startsWith('http')) return href;
                         try {
                             return new URL(href, base).href;
@@ -510,7 +514,6 @@ export class WeebCentralScraper implements IChapterScraper {
                                 (src): src is string =>
                                     !!src &&
                                     src.startsWith('http') &&
-                                    !src.includes('broken_image') &&
                                     (src.includes('planeptune.us') ||
                                         src.includes('googleusercontent') ||
                                         src.includes('lh3.google') ||
@@ -529,8 +532,7 @@ export class WeebCentralScraper implements IChapterScraper {
                                 .filter(
                                     (src): src is string =>
                                         !!src &&
-                                        src.startsWith('http') &&
-                                        !src.includes('broken_image')
+                                        src.startsWith('http')
                                 );
                         })
                         .catch(() => []);
@@ -600,6 +602,9 @@ export class WeebCentralScraper implements IChapterScraper {
             headers,
             service: 'weebCentralScraper',
             isPlaceholder: (url) => url.includes('broken_image'),
+            // WeebCentral also serves its broken-image graphic from normal-looking
+            // CDN URLs (200, not 404), so match it by content too.
+            detectKnownBrokenImages: true,
         });
 
         return storagePrefix;

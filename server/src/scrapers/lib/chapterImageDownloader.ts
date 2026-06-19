@@ -17,6 +17,7 @@
 import axios, { type AxiosInstance } from 'axios';
 import { objectStorageService } from '@/services/objectStorageService';
 import logger from '@/services/loggerService';
+import { matchKnownBrokenImage } from './knownBrokenImages';
 
 /** Transient network errors that several scrapers consider worth retrying. */
 export function isNetworkRetryableError(err: any): boolean {
@@ -58,6 +59,15 @@ export interface DownloadAndStoreOptions {
     /** Predicate marking a URL as a known-broken source → store a placeholder, skip download. */
     isPlaceholder?: (url: string) => boolean;
     /**
+     * When `true`, each downloaded page is buffered and compared against the
+     * source's known broken-image fingerprints (`knownBrokenImages`). A match —
+     * the source returned its static "broken image" graphic in place of a real
+     * page — stores a placeholder slot instead. Only an exact byte match counts;
+     * download *errors* are never placeholdered. Off by default (keeps the
+     * streaming, no-buffer path for sources that don't do this).
+     */
+    detectKnownBrokenImages?: boolean;
+    /**
      * When all attempts fail: `false` (default) throws, failing the chapter so it
      * can be retried; `true` stores a placeholder in the page slot and continues
      * (treating the chapter as a success). Prefer the default — a placeholder hides
@@ -91,6 +101,7 @@ export async function downloadAndStoreChapter(
         batchDelayMs = 100,
         service = 'chapterImageDownloader',
         isPlaceholder,
+        detectKnownBrokenImages = false,
         placeholderOnFailure = false,
         isRetryable,
     } = opts;
@@ -107,11 +118,27 @@ export async function downloadAndStoreChapter(
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 const response = await client.get(imageUrl, {
-                    responseType: 'stream',
+                    // Content detection needs the whole image in hand to fingerprint it;
+                    // otherwise stream straight into the transform to avoid buffering.
+                    responseType: detectKnownBrokenImages ? 'arraybuffer' : 'stream',
                     timeout: timeoutMs,
                     ...(maxRedirects !== undefined ? { maxRedirects } : {}),
                     headers,
                 });
+                if (detectKnownBrokenImages) {
+                    const buffer = Buffer.from(response.data);
+                    const brokenSource = matchKnownBrokenImage(buffer);
+                    if (brokenSource) {
+                        logger.warn(
+                            `Image ${i + 1} is ${brokenSource}'s broken-image graphic; storing placeholder`,
+                            { service }
+                        );
+                        await objectStorageService.uploadPlaceholderSlot(storagePrefix, i);
+                        return;
+                    }
+                    await objectStorageService.transformAndUploadPage(storagePrefix, i, buffer);
+                    return; // success
+                }
                 await objectStorageService.transformAndUploadPage(storagePrefix, i, response.data);
                 return; // success
             } catch (err: any) {
