@@ -6,6 +6,7 @@ import { isUserBanned } from "@/lib/banHelpers";
 import { toast } from "react-toastify";
 import { listAdminUsers, type AdminUser, type ListAdminUsersParams} from "@/services/adminUserService";
 import AdminUserEditModal from "./AdminUserEditModal";
+import UserAvatar from "@/components/UserAvatar";
 
 const ROLE_FILTERS: { value: ListAdminUsersParams["role"]; label: string }[] = [
   { value: "all", label: "All" },
@@ -172,13 +173,7 @@ export default function UsersClient() {
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3 min-w-0">
-                        <img
-                          src={user.image || "https://profile-pictures.garage.chit.sh/default.jpg"}
-                          alt=""
-                          width={40}
-                          height={40}
-                          className="rounded-full shrink-0 border border-borders"
-                        />
+                        <UserAvatar src={user.image} alt="" width={40} className="border border-borders" />
                         <span className="font-medium text-primary truncate">{user.name}</span>
                       </div>
                     </td>

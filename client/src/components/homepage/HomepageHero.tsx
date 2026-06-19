@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { formatCompactNumber, formatTimeAgo } from "@/lib/utils";
 import { getHeroBackgroundUrl } from "@/lib/coverUtils";
-import { formatHeroStatus } from "@/lib/homepageUtils";
+import { formatHeroStatus, heroReadHref } from "@/lib/homepageUtils";
 import { mangaPath } from "@/lib/paths";
 import type { HomepageSeriesCard } from "@/types/homepage";
 
@@ -78,7 +78,7 @@ export default function HomepageHero({ mangaData }: { mangaData: (HomepageSeries
                   <HeroMetaRow manga={manga} />
                   <p className="line-clamp-2 text-sm text-muted md:text-base">{manga.description || "No description available."}</p>
                   <div className="flex flex-wrap items-center gap-3">
-                    <Link href={mangaPath(manga.id)} className="inline-flex items-center rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold transition hover:bg-foreground md:text-base">
+                    <Link href={heroReadHref(manga)} className="inline-flex items-center rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold transition hover:bg-foreground md:text-base">
                       <PlayIcon className="mr-2 size-4" />
                       Read Now
                     </Link>

@@ -40,7 +40,7 @@ function HomepageCommenterCarouselCard({ user, rank }: { user: { id: string; nam
     <Link href={`/users/${user.id}`} className="group relative flex h-full min-h-44 flex-col items-center rounded-2xl border border-borders bg-foreground px-4 py-5 text-center transition-colors hover:border-accent/30 hover:bg-foreground/60">
       <span className={`absolute top-3 left-3 flex size-7 items-center justify-center rounded-full text-xs font-bold ring-1 ${rankClass}`}>{rank}</span>
       <UserAvatar src={user.image} width={72} height={72} className="size-18 rounded-full object-cover ring-2 ring-borders transition-transform duration-300 group-hover:scale-105" />
-      <div className="mt-3 flex w-full min-w-0 items-center justify-center gap-1.5">
+      <div className="mt-3 flex flex-col w-full min-w-0 items-center justify-center gap-1.5">
         <p className="truncate text-sm font-medium text-primary">{user.name}</p>
         <BadgeList badges={user.badges} iconSize={12} />
       </div>

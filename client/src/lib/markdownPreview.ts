@@ -1,8 +1,18 @@
+import { extractImageUrls } from "@/lib/contentImages";
+
+function stripEmbeddedImageRefs(markdown: string): string {
+  let result = markdown;
+  for (const url of extractImageUrls(markdown)) {
+    result = result.split(url).join(" ");
+  }
+  return result;
+}
+
 /** Strip markdown to plain text for compact previews (line-clamp friendly). */
 export function markdownToPlainText(markdown: string): string {
   if (!markdown) return "";
 
-  return markdown
+  return stripEmbeddedImageRefs(markdown)
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`([^`\n]+)`/g, "$1")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")

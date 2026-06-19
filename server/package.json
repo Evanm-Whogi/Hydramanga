@@ -61,10 +61,7 @@
     "db:migrate": "drizzle-kit migrate",
     "badges:backfill": "npx ts-node -r tsconfig-paths/register scripts/backfill-badges.ts",
     "seed:leaderboard": "npx ts-node -r tsconfig-paths/register scripts/seed-leaderboard.ts",
-    "emails:test": "npx ts-node -r tsconfig-paths/register scripts/test-emails.ts",
-    "storage:migrate": "npx ts-node -r tsconfig-paths/register scripts/migrate-storage-to-garage.ts",
-    "media:migrate": "npx ts-node -r tsconfig-paths/register scripts/migrate-media-to-garage.ts",
-    "storage:smoke": "npx ts-node -r tsconfig-paths/register scripts/smoke-test-storage.ts"
+    "emails:test": "npx ts-node -r tsconfig-paths/register scripts/test-emails.ts"
   },
   "author": "",
   "license": "ISC",

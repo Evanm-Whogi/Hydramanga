@@ -168,7 +168,7 @@ class LeaderboardService {
     const periodKarma = db
       .select({
         userId: schema.karmaTransactions.userId,
-        sortValue: sql<number>`sum(${schema.karmaTransactions.amount})`.mapWith(Number),
+        sortValue: sql<number>`sum(${schema.karmaTransactions.amount})`.mapWith(Number).as('sort_value'),
       })
       .from(schema.karmaTransactions)
       .where(gte(schema.karmaTransactions.createdAt, threshold))

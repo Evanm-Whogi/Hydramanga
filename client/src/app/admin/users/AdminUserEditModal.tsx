@@ -17,6 +17,7 @@ import {
 import { authClient } from "@/lib/auth";
 import { useUser } from "@/providers/UserProvider";
 import { BAN_DURATION_OPTIONS, formatBanExpiry, isUserBanned } from "@/lib/banHelpers";
+import UserAvatar from "@/components/UserAvatar";
 
 type AdminUserEditTab = "profile" | "badges" | "moderation";
 
@@ -220,16 +221,7 @@ export default function AdminUserEditModal({ user, onClose, onSaved }: AdminUser
         ) : (
           <>
             <div className="flex items-center gap-4 px-4 py-3 border-b border-borders shrink-0">
-              <img
-                src={image || "https://profile-pictures.garage.chit.sh/default.jpg"}
-                alt=""
-                width={56}
-                height={56}
-                className="rounded-full border border-borders object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = "https://profile-pictures.garage.chit.sh/default.jpg";
-                }}
-              />
+              <UserAvatar src={image} alt="" width={56} className="border border-borders" />
               <div className="text-sm text-muted space-y-0.5 min-w-0">
                 <p className="text-primary text-lg truncate">{name}</p>
                 <p className="truncate">
