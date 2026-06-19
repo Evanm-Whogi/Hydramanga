@@ -150,7 +150,7 @@ export default function ForumClient() {
   };
 
   return (
-    <div className="container mx-auto px-4 xl:px-0 py-8 flex flex-col gap-6 w-full">
+    <div className="container mx-auto px-4 py-8 flex flex-col gap-6 w-full">
       <ForumFilters
         q={filters.q}
         category={filters.category}

@@ -56,6 +56,28 @@ const SPECIAL_CHAPTER_PATTERNS = [
  */
 const CHAPTER_NUMBER_PATTERN = /(\d+(?:\.\d+)?)/;
 
+/**
+ * Number that immediately follows a chapter keyword (Chapter / Chap / Ch / Episode / Ep).
+ * Preferred over the first bare number in the title so prefixes like "P1 - " or
+ * "Volume 5 " don't get mistaken for the chapter number.
+ */
+const KEYWORD_NUMBER_PATTERN = /\b(?:chapters?|chap|ch|episodes?|ep)\.?\s*#?\s*(\d+(?:\.\d+)?)/i;
+
+/**
+ * Leading "part" / "season" marker used by some sources (notably WeebCentral) for
+ * multi-part series whose chapter numbering restarts each part — e.g. "P1 - Chapter 1",
+ * "P2 - Chapter 155". The part number must be captured; otherwise every "P1 - Chapter N"
+ * collapses to the same number (the "1" in "P1") and only one chapter per part imports.
+ */
+const PART_PREFIX_PATTERN = /^\s*(?:p|part|s|season)\s*(\d+)\s*[-–—:]+\s*/i;
+
+/**
+ * Multiplier applied to the part number so each part occupies its own numeric range
+ * (P1 -> 1001.., P2 -> 2001..). Keeps chapter numbers unique across parts while
+ * preserving part-then-chapter sort order. Assumes a single part has < 1000 chapters.
+ */
+const PART_OFFSET = 1000;
+
 export class ChapterNumberParser {
     /**
      * Parse a chapter title and extract the chapter number
@@ -74,10 +96,18 @@ export class ChapterNumberParser {
         const opts = { ...DEFAULT_OPTIONS, ...options };
         const title = fullTitle.trim();
 
+        // Strip a leading part/season marker so its digit isn't mistaken for the chapter
+        // number. The captured part is folded back into the number via applyPart() so
+        // chapters stay unique and correctly ordered across parts. The display title keeps
+        // the original prefix.
+        const partMatch = title.match(PART_PREFIX_PATTERN);
+        const partNumber = partMatch ? parseInt(partMatch[1], 10) : null;
+        const body = partMatch ? title.slice(partMatch[0].length).trim() : title;
+
         // Check for special chapter types
         for (const { pattern, type, numberOffset } of SPECIAL_CHAPTER_PATTERNS) {
-            if (pattern.test(title)) {
-                const numberMatch = title.match(CHAPTER_NUMBER_PATTERN);
+            if (pattern.test(body)) {
+                const numberMatch = body.match(CHAPTER_NUMBER_PATTERN);
                 let chapterNumber = numberMatch ? numberMatch[0] : '0';
 
                 // Apply special chapter offsets if enabled
@@ -91,7 +121,7 @@ export class ChapterNumberParser {
                 }
 
                 return {
-                    number: chapterNumber,
+                    number: this.applyPart(chapterNumber, partNumber),
                     title: this.normalizeTitle(title),
                     isSpecial: true,
                     specialType: type,
@@ -99,9 +129,11 @@ export class ChapterNumberParser {
             }
         }
 
-        // Regular chapter parsing
-        const numberMatch = title.match(CHAPTER_NUMBER_PATTERN);
-        let chapterNumber = numberMatch ? numberMatch[0] : '0';
+        // Regular chapter parsing — prefer the number that follows a chapter keyword
+        // (e.g. "Chapter 155"), falling back to the first number only when there's no keyword.
+        const keywordMatch = body.match(KEYWORD_NUMBER_PATTERN);
+        const numberMatch = keywordMatch ?? body.match(CHAPTER_NUMBER_PATTERN);
+        let chapterNumber = numberMatch ? numberMatch[1] : '0';
 
         // If title is purely numeric, prefix with "Chapter"
         const normalizedTitle = !isNaN(Number(title))
@@ -109,10 +141,22 @@ export class ChapterNumberParser {
             : this.normalizeTitle(title);
 
         return {
-            number: chapterNumber,
+            number: this.applyPart(chapterNumber, partNumber),
             title: normalizedTitle,
             isSpecial: false,
         };
+    }
+
+    /**
+     * Fold a captured part number into the chapter number so each part occupies its own
+     * numeric range (P1 -> 1001.., P2 -> 2001..). Returns the base number unchanged when
+     * there is no part prefix.
+     */
+    private static applyPart(baseNumber: string, partNumber: number | null): string {
+        if (partNumber == null) return baseNumber;
+        const base = parseFloat(baseNumber);
+        if (isNaN(base)) return baseNumber;
+        return String(partNumber * PART_OFFSET + base);
     }
 
     /**
