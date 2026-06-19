@@ -249,17 +249,16 @@ class QueueService {
                         },
                     });
 
-                    try {
-                        const { mangaProgressService } = await import('@/services/mangaProgressService');
-                        if (jobData?.seriesId && jobData?.chapterNumber) {
-                            await mangaProgressService.markFailed(
-                                jobData.seriesId,
-                                `Chapter ${jobData.chapterNumber} failed after ${job.attemptsMade} attempts: ${errorMessage}`
-                            );
-                        }
-                    } catch (markFailedError) {
-                        logger.error(`Failed to mark import as failed: ${markFailedError}`, { service: 'queueService' });
-                    }
+                    // A single chapter failing must NOT fail the whole series — the other
+                    // chapters are still downloading and would otherwise hit "cannot
+                    // increment progress: status is failed". The chapter is left in the
+                    // failed set for retry (auto-retries are already exhausted here); the
+                    // series stays in 'downloading' and completes once its pages succeed.
+                    // (Whole-import failure is handled by the scan job branch above.)
+                    logger.warn(
+                        `Chapter ${jobData?.chapterNumber} for series ${jobData?.seriesId} failed after ${job?.attemptsMade} attempts; left for retry, series not failed: ${errorMessage}`,
+                        { service: 'queueService' }
+                    );
                 }
             }
         };

@@ -696,7 +696,6 @@ export class MangaDexScraper implements IChapterScraper {
             batchSize: 4,
             batchDelayMs: 1200, // ease at-home/CDN rate limits
             service: 'mangaDexScraper',
-            placeholderOnFailure: false,
         });
 
         logger.info(

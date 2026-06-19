@@ -634,7 +634,6 @@ export class AsuraComicScraper implements IChapterScraper {
             maxRedirects: 5,
             batchDelayMs: 25,
             service: 'asuraComicScraper',
-            placeholderOnFailure: false,
             isRetryable: isNetworkRetryableError,
         });
 

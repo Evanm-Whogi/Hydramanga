@@ -33,7 +33,7 @@ export default function HomepageClient() {
 
   return (
     <section id="homepage-lists" className="pb-25">
-      <div className="container mx-auto mt-10 space-y-16 text-primary md:mt-0">
+      <div className="container mx-auto mt-10 space-y-8 text-primary md:mt-0">
         {userId ? <HomepageUserCarousels userId={userId} onSaveClick={openSaveModal} /> : null}
 
         <HomepageMangaCarousel title="Trending Now" items={trending} loading={loadingTrending} onSaveClick={openSaveModal} getHref={seriesCardHref} />

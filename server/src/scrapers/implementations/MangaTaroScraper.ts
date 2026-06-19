@@ -589,7 +589,6 @@ export class MangaTaroScraper implements IChapterScraper {
             maxRedirects: 5,
             batchDelayMs: 25,
             service: 'mangaTaroScraper',
-            placeholderOnFailure: false,
             isRetryable: isNetworkRetryableError,
         });
 

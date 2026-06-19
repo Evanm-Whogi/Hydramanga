@@ -1767,25 +1767,13 @@ export class ComixScraper implements IChapterScraper {
         const maxRetries = 3;
         const retryDelayMs = 1000;
 
-        const writePlaceholder = async (pageNum: number) => {
-            try {
-                await objectStorageService.uploadPlaceholderSlot(storagePrefix, pageNum - 1);
-            } catch (err: any) {
-                logger.warn(`[Comix] [${contextLabel}] Failed to write placeholder: ${err?.message || err}`, {
-                    service: 'comixScraper',
-                });
-            }
-        };
-
         const downloadOne = async (pageNum: number) => {
             const key = objectStorageService.keyFor(storagePrefix, pageNum - 1);
             const asset = byPage.get(pageNum);
             if (!asset) {
-                logger.warn(`[Comix] [${contextLabel}] Page ${pageNum} missing; writing placeholder`, {
-                    service: 'comixScraper',
-                });
-                await writePlaceholder(pageNum);
-                return;
+                // Missing page → fail the chapter so it's retried, rather than storing a
+                // placeholder that masks an incomplete download.
+                throw new Error(`[Comix] [${contextLabel}] Page ${pageNum} missing from extracted assets`);
             }
 
             let lastError: any;
@@ -1835,11 +1823,13 @@ export class ComixScraper implements IChapterScraper {
                     }
                 }
             }
+            // Exhausted retries → fail the chapter so the queue retries it (and it
+            // stays in the failed set for manual retry) instead of silently placeholdering.
             logger.error(
-                `[Comix] [${contextLabel}] Page ${pageNum} unrecoverable (${lastError?.message || lastError}); placeholder`,
+                `[Comix] [${contextLabel}] Page ${pageNum} unrecoverable after ${maxRetries} attempts: ${lastError?.message || lastError}`,
                 { service: 'comixScraper' },
             );
-            await writePlaceholder(pageNum);
+            throw lastError ?? new Error(`[Comix] [${contextLabel}] Page ${pageNum} failed to download`);
         };
 
         const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);

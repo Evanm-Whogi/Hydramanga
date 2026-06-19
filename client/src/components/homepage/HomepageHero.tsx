@@ -58,8 +58,8 @@ export default function HomepageHero({ mangaData }: { mangaData: (HomepageSeries
 
   if (topManga.length === 0) return null;
 
-  return (
-    <section id="homepage-hero" className="relative overflow-hidden pt-25 h-[50vh] sm:h-[60vh] md:h-[70vh]">
+  return ( 
+    <section id="homepage-hero" className="relative overflow-hidden pt-25 h-[50vh]">
       <div className="absolute inset-0 -z-50 overflow-hidden">
         <img src={backgroundUrl} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover object-center" fetchPriority="high" decoding="async" />
         <div className="absolute inset-0 bg-linear-to-r from-background via-background/75 to-background/40" />

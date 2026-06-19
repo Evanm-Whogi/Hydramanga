@@ -17,19 +17,31 @@ import { isNovelType } from '@/config/contentFilter';
 
 class MangaRecoveryService {
   /**
-   * Recover incomplete manga downloads on server startup
-   * Checks for manga stuck in 'scanning' or 'downloading' states
+   * Recover incomplete manga downloads.
+   *
+   * On startup (no `staleMinutes`) every series stuck in 'scanning'/'downloading'
+   * is reconciled, since nothing is in-flight yet. When run periodically (cron),
+   * pass `staleMinutes` so only series whose progress hasn't advanced for that long
+   * are touched — otherwise an actively-downloading series (whose `updatedAt` is
+   * recent) would be re-scanned and have its progress reset mid-download.
    */
-  async recoverIncompleteDownloads(): Promise<void> {
+  async recoverIncompleteDownloads(options?: { staleMinutes?: number }): Promise<void> {
+    const staleMinutes = options?.staleMinutes;
     try {
-      logger.info('[RECOVERY] Starting recovery check for incomplete manga downloads...', { service: 'mangaRecoveryService' });
+      logger.info(
+        `[RECOVERY] Starting recovery check for incomplete manga downloads${staleMinutes ? ` (stale > ${staleMinutes}m)` : ''}...`,
+        { service: 'mangaRecoveryService' }
+      );
 
-      // Find all manga with active download/scan status
+      // Find all manga with active download/scan status. When reconciling on a
+      // schedule, restrict to ones that have actually stalled (no recent update).
       const incompleteProgress = await db
         .select()
         .from(mangaImportProgress)
         .where(
-          sql`${mangaImportProgress.status} IN ('scanning', 'downloading')`
+          staleMinutes
+            ? sql`${mangaImportProgress.status} IN ('scanning', 'downloading') AND ${mangaImportProgress.updatedAt} < now() - make_interval(mins => ${staleMinutes})`
+            : sql`${mangaImportProgress.status} IN ('scanning', 'downloading')`
         );
 
       if (incompleteProgress.length === 0) {
@@ -148,12 +160,22 @@ class MangaRecoveryService {
 
     // Case 3: Incomplete download - need to resume
     if (status === 'downloading' && totalChapters > 0 && actualCount < totalChapters) {
+      // Don't stack scans: if one is already queued/running for this series, let it finish.
+      const { scanStatus, isQueued } = await mangaOrchestratorService.getScanStatus(seriesId);
+      if (scanStatus === 'scanning' || scanStatus === 'queued' || isQueued) {
+        logger.info(
+          `[RECOVERY] Manga ${seriesId} incomplete but a scan is already ${scanStatus}; skipping re-queue`,
+          { service: 'mangaRecoveryService' }
+        );
+        return;
+      }
+
       const missing = totalChapters - actualCount;
       logger.info(
         `[RECOVERY] Manga ${seriesId} incomplete (${actualCount}/${totalChapters}), ${missing} chapters missing. Re-queuing scan to find missing chapters`,
         { service: 'mangaRecoveryService' }
       );
-      
+
       // Re-queue a scan to find and download missing chapters
       // The scanner will skip chapters that already exist
       await this.requeueScan(seriesId, manga.title, manga.romanizedTitle, false);

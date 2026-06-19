@@ -110,7 +110,7 @@ export class MangaFireScraper implements IChapterScraper {
     // Validation keys off a minimum width shared by both formats plus a small
     // minimum height, so short webtoon slices are kept while thumbnails, icons and
     // CDN error blobs are still rejected. A taller short-edge assumption would
-    // discard legitimate webtoon strips and replace them with placeholders.
+    // discard legitimate webtoon strips and needlessly fail their chapters.
     private static readonly MIN_CHAPTER_IMAGE_WIDTH = 320;
     private static readonly MIN_CHAPTER_IMAGE_HEIGHT = 96;
     private static readonly MIN_IMAGE_NATURAL_WIDTH = 320;
@@ -892,25 +892,13 @@ export class MangaFireScraper implements IChapterScraper {
         const maxRetries = 3;
         const retryDelayMs = 1000;
 
-        const writePlaceholder = async (pageNum: number) => {
-            try {
-                await objectStorageService.uploadPlaceholderSlot(storagePrefix, pageNum - 1);
-            } catch (err: any) {
-                logger.warn(`[MangaFire] [${contextLabel}] Failed to write placeholder: ${err?.message || err}`, {
-                    service: 'mangaFireScraper',
-                });
-            }
-        };
-
         const downloadOne = async (pageNum: number) => {
             const key = objectStorageService.keyFor(storagePrefix, pageNum - 1);
             const asset = byPage.get(pageNum);
             if (!asset) {
-                logger.warn(`[MangaFire] [${contextLabel}] Page ${pageNum} missing; placeholder`, {
-                    service: 'mangaFireScraper',
-                });
-                await writePlaceholder(pageNum);
-                return;
+                // Missing page → fail the chapter so it's retried, rather than storing a
+                // placeholder that masks an incomplete download.
+                throw new Error(`[MangaFire] [${contextLabel}] Page ${pageNum} missing from extracted assets`);
             }
 
             let lastError: any;
@@ -971,11 +959,13 @@ export class MangaFireScraper implements IChapterScraper {
                     }
                 }
             }
+            // Exhausted retries → fail the chapter so the queue retries it (and it
+            // stays in the failed set for manual retry) instead of silently placeholdering.
             logger.error(
-                `[MangaFire] [${contextLabel}] Page ${pageNum} unrecoverable (${lastError?.message || lastError}); placeholder`,
+                `[MangaFire] [${contextLabel}] Page ${pageNum} unrecoverable after ${maxRetries} attempts: ${lastError?.message || lastError}`,
                 { service: 'mangaFireScraper' },
             );
-            await writePlaceholder(pageNum);
+            throw lastError ?? new Error(`[MangaFire] [${contextLabel}] Page ${pageNum} failed to download`);
         };
 
         const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);

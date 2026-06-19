@@ -658,7 +658,6 @@ export class ToonilyScraper implements IChapterScraper {
             },
             batchDelayMs: 0, // no inter-batch delay
             service: 'toonilyScraper',
-            placeholderOnFailure: false,
         });
 
         return storagePrefix;

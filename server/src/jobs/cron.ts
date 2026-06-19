@@ -7,6 +7,7 @@ import { pipeline } from 'stream/promises';
 import { extract } from 'tar';
 import { queueService } from '@/services/queueService';
 import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
+import { mangaRecoveryService } from '@/services/mangaRecoveryService';
 import logger from '@/services/loggerService';
 import { auditLogService } from '@/services/auditLogService';
 import axios from 'axios';
@@ -107,6 +108,23 @@ export const initCronJobs = () => {
     }
   });
   cronTasks.push(auditRetentionTask);
+
+  // Reconcile stuck imports: re-queue missing chapters for series stuck in
+  // 'downloading'/'scanning' and finalize those whose chapters are all present.
+  // This is what self-heals a series left at e.g. 99% by a permanently-failed
+  // chapter — the chapters table is the source of truth, so no separate
+  // failed-chapter bookkeeping is needed. Default: every 30 minutes.
+  const reconcileSchedule = process.env.RECONCILE_SCAN_SCHEDULE || '*/30 * * * *';
+  const reconcileStaleMinutes = Number(process.env.RECONCILE_STALE_MINUTES) || 30;
+  const reconcileTask = cron.schedule(reconcileSchedule, async () => {
+    logger.info('[CRON] Reconciling stuck manga imports', { service: 'cronJobs' });
+    try {
+      await mangaRecoveryService.recoverIncompleteDownloads({ staleMinutes: reconcileStaleMinutes });
+    } catch (error) {
+      logger.error('[CRON] Reconcile of stuck imports failed', { service: 'cronJobs', error });
+    }
+  });
+  cronTasks.push(reconcileTask);
 };
 
 export const stopCronJobs = () => {

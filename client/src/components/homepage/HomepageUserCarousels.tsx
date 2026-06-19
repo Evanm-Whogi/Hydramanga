@@ -43,7 +43,7 @@ export default function HomepageUserCarousels({ userId, onSaveClick }: { userId:
       ) : null}
 
       {recentChaptersFromList.length > 0 ? (
-        <div className={continueReading.length > 0 ? "mt-16" : ""}>
+        <div className={continueReading.length > 0 ? "mt-8" : ""}>
           <HomepageCarouselSection title="New Chapters from Your Bookmarks">
             {recentChaptersFromList.map((item) => (
               <HomepageCarouselItem key={`list-chapter-${item.series.id}-${item.chapter.id}`}>

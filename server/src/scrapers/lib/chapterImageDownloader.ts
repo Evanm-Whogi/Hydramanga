@@ -7,6 +7,12 @@
  * That loop now lives here once; scrapers only build the image-URL list (the
  * scraper-specific part) and call `downloadAndStoreChapter`. Pages are uploaded to
  * object storage (Garage) via `objectStorageService` — no scraper touches disk.
+ *
+ * Failure policy: a page that exhausts its retries throws and fails the whole
+ * chapter, so the queue retries it (and it stays in the failed set for manual
+ * retry) rather than silently storing a placeholder that looks like success.
+ * The only placeholders written are for `isPlaceholder` URLs — sources that
+ * advertise a known-broken/fallback image, where retrying is pointless.
  */
 import axios, { type AxiosInstance } from 'axios';
 import { objectStorageService } from '@/services/objectStorageService';
@@ -52,8 +58,10 @@ export interface DownloadAndStoreOptions {
     /** Predicate marking a URL as a known-broken source → store a placeholder, skip download. */
     isPlaceholder?: (url: string) => boolean;
     /**
-     * When all attempts fail: `true` (default) stores a placeholder in the page
-     * slot and continues; `false` throws, failing the chapter.
+     * When all attempts fail: `false` (default) throws, failing the chapter so it
+     * can be retried; `true` stores a placeholder in the page slot and continues
+     * (treating the chapter as a success). Prefer the default — a placeholder hides
+     * the failure and there's no way to tell a chapter needs re-downloading.
      */
     placeholderOnFailure?: boolean;
     /** Whether a thrown error should be retried (default: always retry until maxRetries). */
@@ -61,9 +69,10 @@ export interface DownloadAndStoreOptions {
 }
 
 /**
- * Download every page and store it. Pages flagged by `isPlaceholder`, and pages
- * that exhaust their retries while `placeholderOnFailure` is set, are stored as a
- * shared placeholder image rather than failing the chapter.
+ * Download every page and store it. Pages flagged by `isPlaceholder` are stored as
+ * a shared placeholder image (known-broken source). A page that exhausts its
+ * retries throws and fails the chapter, unless `placeholderOnFailure` is set, in
+ * which case it too falls back to a placeholder.
  *
  * @returns the number of pages stored (always `images.length`).
  */
@@ -82,7 +91,7 @@ export async function downloadAndStoreChapter(
         batchDelayMs = 100,
         service = 'chapterImageDownloader',
         isPlaceholder,
-        placeholderOnFailure = true,
+        placeholderOnFailure = false,
         isRetryable,
     } = opts;
 

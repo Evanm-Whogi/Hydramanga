@@ -52,7 +52,7 @@ function SeriesGridCard({ seriesId, title, cover, href, type, status, rating, vi
 
   return (
     <Link href={href} prefetch={false} className="group flex h-full w-full flex-col" onPointerDown={handlePointerDown} onClick={handleClick}>
-      <div className="relative aspect-2/3 w-full overflow-hidden rounded-2xl bg-foreground">
+      <div className="relative aspect-2/3 w-full overflow-hidden rounded-md bg-foreground">
         <CoverImage cover={cover} alt={title} priority={priority} className="h-full w-full object-cover transition-transform duration-300 ease-in-out group-hover:scale-105" />
         <div className="pointer-events-none absolute inset-0 bg-black/20 transition-colors duration-300 ease-in-out group-hover:bg-black/0" />
         {isNew ? (

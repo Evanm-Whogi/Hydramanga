@@ -526,7 +526,6 @@ export class AtsuMoeScraper implements IChapterScraper {
             maxRedirects: 5,
             batchDelayMs: 25,
             service: 'atsuMoeScraper',
-            placeholderOnFailure: false,
             isRetryable: isNetworkRetryableError,
         });
 

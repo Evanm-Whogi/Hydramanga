@@ -575,7 +575,8 @@ export class WeebCentralScraper implements IChapterScraper {
 
     /**
      * Download images to object storage (batched parallel, short delay between batches to avoid CDN rate limits).
-     * When the provider uses a broken/fallback image or download fails, a shared placeholder is stored instead of failing the chapter.
+     * A page whose URL is the provider's known broken/fallback image is stored as a placeholder; any other
+     * download that exhausts its retries throws and fails the chapter so it can be retried.
      */
     private async downloadImages(
         images: string[], seriesId: number, chapterNumber: string, referer: string): Promise<string> {
