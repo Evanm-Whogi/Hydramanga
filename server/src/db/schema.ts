@@ -438,6 +438,7 @@ export const siteSettings = pgTable('site_settings', {
   maintenanceMode: boolean('maintenance_mode').notNull().default(false),
   maintenanceMessage: text('maintenance_message'),
   importRequestsEnabled: boolean('import_requests_enabled').notNull().default(true),
+  guestReadingEnabled: boolean('guest_reading_enabled').notNull().default(false),
   oauthGoogleEnabled: boolean('oauth_google_enabled').notNull().default(true),
   oauthDiscordEnabled: boolean('oauth_discord_enabled').notNull().default(true),
   welcomeModalEnabled: boolean('welcome_modal_enabled').notNull().default(true),

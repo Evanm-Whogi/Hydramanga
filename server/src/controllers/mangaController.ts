@@ -21,6 +21,7 @@ import { recordAuditFromRequest } from '@/audit/record';
 import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
 import { badgeService } from '@/services/badgeService';
 import { withResolvedDisplayTitle, resolveDisplayTitle } from '@/lib/displayTitle';
+import { siteSettingsService } from '@/services/siteSettingsService';
 
 // Normalize curly/smart quotes to ASCII so search matches titles regardless of apostrophe type
 function normalizeApostrophes(s: string): string {
@@ -559,7 +560,10 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
 
 export async function getPages(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     if (!req.user?.id) {
-        return res.status(401).json({ message: 'Unauthorized' });
+        const { guestReadingEnabled } = await siteSettingsService.getSettings();
+        if (!guestReadingEnabled) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
     }
 
     const { id, chapterId } = req.params;

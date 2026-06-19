@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { fetchOne } from '@/services/mangaService';
 import { useSession } from '@/lib/useUser';
+import { getSiteSettings } from '@/services/siteSettingsService';
 import ReadContent from './components/ReadContent';
 import { buildPageMetadata, getSiteConfig } from '@/lib/seo';
 
@@ -35,10 +36,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function ReadPage({ params }: Props) {
-  const session = await useSession();
+  const [session, siteSettings] = await Promise.all([useSession(), getSiteSettings()]);
   const { id, chapterId } = await params;
 
-  if (!session?.user) {
+  if (!session?.user && !siteSettings.guestReadingEnabled) {
     redirect(`/login?returnTo=${encodeURIComponent(`/manga/${id}/read/${chapterId}`)}`);
   }
 

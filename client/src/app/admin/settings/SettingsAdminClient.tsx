@@ -34,6 +34,7 @@ export default function SettingsAdminClient() {
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState('');
   const [importRequestsEnabled, setImportRequestsEnabled] = useState(true);
+  const [guestReadingEnabled, setGuestReadingEnabled] = useState(false);
   const [oauthGoogleEnabled, setOauthGoogleEnabled] = useState(true);
   const [oauthDiscordEnabled, setOauthDiscordEnabled] = useState(true);
   const [welcomeModalEnabled, setWelcomeModalEnabled] = useState(true);
@@ -47,6 +48,7 @@ export default function SettingsAdminClient() {
     setMaintenanceMode(settings.maintenanceMode);
     setMaintenanceMessage(settings.maintenanceMessage ?? '');
     setImportRequestsEnabled(settings.importRequestsEnabled);
+    setGuestReadingEnabled(settings.guestReadingEnabled);
     setOauthGoogleEnabled(settings.oauthGoogleEnabled);
     setOauthDiscordEnabled(settings.oauthDiscordEnabled);
     setWelcomeModalEnabled(settings.welcomeModalEnabled);
@@ -81,6 +83,7 @@ export default function SettingsAdminClient() {
         maintenanceMode,
         maintenanceMessage: maintenanceMessage.trim() || null,
         importRequestsEnabled,
+        guestReadingEnabled,
         oauthGoogleEnabled,
         oauthDiscordEnabled,
         welcomeModalEnabled,
@@ -104,6 +107,7 @@ export default function SettingsAdminClient() {
       maintenanceMode !== initial.maintenanceMode ||
       norm(maintenanceMessage) !== (initial.maintenanceMessage ?? '').trim() ||
       importRequestsEnabled !== initial.importRequestsEnabled ||
+      guestReadingEnabled !== initial.guestReadingEnabled ||
       oauthGoogleEnabled !== initial.oauthGoogleEnabled ||
       oauthDiscordEnabled !== initial.oauthDiscordEnabled ||
       welcomeModalEnabled !== initial.welcomeModalEnabled ||
@@ -187,16 +191,30 @@ export default function SettingsAdminClient() {
         </div>
       </div>
 
-      <div className={cardClass}>
-        <h2 className="text-lg font-semibold text-primary">Import requests</h2>
-        <p className="text-sm text-muted">Pause or resume user submissions on the request page.</p>
-        <SettingsToggle
-          label="Accept import requests"
-          description="When off, users cannot submit new import requests on /request. Past requests remain visible."
-          checked={importRequestsEnabled}
-          disabled={saving}
-          onChange={setImportRequestsEnabled}
-        />
+      <div className="flex flex-col md:flex-row gap-4">
+        <div className={`${cardClass} w-full md:w-1/2`}>
+          <h2 className="text-lg font-semibold text-primary">Import requests</h2>
+          <p className="text-sm text-muted">Pause or resume user submissions on the request page.</p>
+          <SettingsToggle
+            label="Accept import requests"
+            description="When off, users cannot submit new import requests on /request. Past requests remain visible."
+            checked={importRequestsEnabled}
+            disabled={saving}
+            onChange={setImportRequestsEnabled}
+          />
+        </div>
+
+        <div className={`${cardClass} w-full md:w-1/2`}>
+          <h2 className="text-lg font-semibold text-primary">Guest reading</h2>
+          <p className="text-sm text-muted">Let visitors read chapters without an account.</p>
+          <SettingsToggle
+            label="Allow reading without an account"
+            description="When on, anyone can open the chapter reader. When off, visitors must sign in to read a chapter."
+            checked={guestReadingEnabled}
+            disabled={saving}
+            onChange={setGuestReadingEnabled}
+          />
+        </div>
       </div>
 
       <div className={cardClass}>

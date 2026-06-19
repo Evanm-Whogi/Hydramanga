@@ -459,10 +459,10 @@ export default function Chapters({ manga, progress, maxHeight }: ChaptersProps) 
                                         e.preventDefault();
                                         return;
                                     }
-                                    if (!user) {
-                                        e.preventDefault();
-                                        requireAuth(user, href);
-                                    }
+                                    // Reading access is enforced server-side by the reader page,
+                                    // which redirects guests to login only when guest reading is
+                                    // disabled. Don't gate the click here, or guests can never reach
+                                    // the reader even when guest reading is enabled.
                                 }}
                             >
                             <div className="flex justify-between items-center">

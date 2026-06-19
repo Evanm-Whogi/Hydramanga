@@ -6,6 +6,7 @@ export type PublicSiteSettings = {
   maintenanceMode: boolean;
   maintenanceMessage: string | null;
   importRequestsEnabled: boolean;
+  guestReadingEnabled: boolean;
   oauthGoogleEnabled: boolean;
   oauthDiscordEnabled: boolean;
   welcomeModalEnabled: boolean;
@@ -23,6 +24,7 @@ const DEFAULT_PUBLIC_SETTINGS: PublicSiteSettings = {
   maintenanceMode: false,
   maintenanceMessage: null,
   importRequestsEnabled: true,
+  guestReadingEnabled: false,
   oauthGoogleEnabled: true,
   oauthDiscordEnabled: true,
   welcomeModalEnabled: true,
@@ -37,6 +39,7 @@ function normalizePublicSettings(settings?: Partial<PublicSiteSettings> | null):
     maintenanceMode: settings?.maintenanceMode ?? false,
     maintenanceMessage: settings?.maintenanceMessage ?? null,
     importRequestsEnabled: settings?.importRequestsEnabled ?? true,
+    guestReadingEnabled: settings?.guestReadingEnabled ?? false,
     oauthGoogleEnabled: settings?.oauthGoogleEnabled ?? true,
     oauthDiscordEnabled: settings?.oauthDiscordEnabled ?? true,
     welcomeModalEnabled: settings?.welcomeModalEnabled ?? true,

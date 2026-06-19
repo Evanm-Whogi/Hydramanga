@@ -9,6 +9,7 @@ export type SiteSettings = {
   maintenanceMode: boolean;
   maintenanceMessage: string | null;
   importRequestsEnabled: boolean;
+  guestReadingEnabled: boolean;
   oauthGoogleEnabled: boolean;
   oauthDiscordEnabled: boolean;
   welcomeModalEnabled: boolean;
@@ -25,6 +26,7 @@ export type SiteSettingsUpdate = {
   maintenanceMode?: boolean;
   maintenanceMessage?: string | null;
   importRequestsEnabled?: boolean;
+  guestReadingEnabled?: boolean;
   oauthGoogleEnabled?: boolean;
   oauthDiscordEnabled?: boolean;
   welcomeModalEnabled?: boolean;
@@ -47,6 +49,7 @@ function mapRow(row: typeof schema.siteSettings.$inferSelect): SiteSettings {
     maintenanceMode: row.maintenanceMode,
     maintenanceMessage: trimText(row.maintenanceMessage, 2000),
     importRequestsEnabled: row.importRequestsEnabled,
+    guestReadingEnabled: row.guestReadingEnabled,
     oauthGoogleEnabled: row.oauthGoogleEnabled,
     oauthDiscordEnabled: row.oauthDiscordEnabled,
     welcomeModalEnabled: row.welcomeModalEnabled,
@@ -97,6 +100,7 @@ class SiteSettingsService {
     if (typeof updates.maintenanceMode === 'boolean') patch.maintenanceMode = updates.maintenanceMode;
     if (updates.maintenanceMessage !== undefined) patch.maintenanceMessage = trimText(updates.maintenanceMessage, 2000);
     if (typeof updates.importRequestsEnabled === 'boolean') patch.importRequestsEnabled = updates.importRequestsEnabled;
+    if (typeof updates.guestReadingEnabled === 'boolean') patch.guestReadingEnabled = updates.guestReadingEnabled;
     if (typeof updates.oauthGoogleEnabled === 'boolean') patch.oauthGoogleEnabled = updates.oauthGoogleEnabled;
     if (typeof updates.oauthDiscordEnabled === 'boolean') patch.oauthDiscordEnabled = updates.oauthDiscordEnabled;
     if (typeof updates.welcomeModalEnabled === 'boolean') patch.welcomeModalEnabled = updates.welcomeModalEnabled;

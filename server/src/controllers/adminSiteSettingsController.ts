@@ -41,6 +41,7 @@ export async function patchAdminSiteSettings(req: Request, res: Response, next: 
       'registrationEnabled',
       'maintenanceMode',
       'importRequestsEnabled',
+      'guestReadingEnabled',
       'oauthGoogleEnabled',
       'oauthDiscordEnabled',
       'welcomeModalEnabled',

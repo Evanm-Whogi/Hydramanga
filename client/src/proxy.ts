@@ -32,18 +32,18 @@ function matchesPath(pathname: string, paths: readonly string[]): boolean {
     );
 }
 
-function isMangaReaderPath(pathname: string): boolean {
-    return /^\/manga\/[^/]+\/read(?:\/|$)/.test(pathname);
-}
-
 function isUsersMePath(pathname: string): boolean {
     return pathname === "/users/me" || pathname.startsWith("/users/me/");
 }
 
 export function requiresAuth(pathname: string): boolean {
     if (matchesPath(pathname, PROTECTED_PATHS)) return true;
-    if (isMangaReaderPath(pathname)) return true;
     if (isUsersMePath(pathname)) return true;
+    // The manga reader (/manga/:id/read/:chapter) is intentionally NOT gated here.
+    // Whether guests can read is controlled by the `guestReadingEnabled` site setting,
+    // which the middleware cannot read without a backend call. The reader page (a
+    // server component) enforces it: it redirects guests to /login when guest reading
+    // is disabled and renders for everyone when it is enabled.
     return false;
 }
 

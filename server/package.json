@@ -62,6 +62,7 @@
     "badges:backfill": "npx ts-node -r tsconfig-paths/register scripts/backfill-badges.ts",
     "seed:leaderboard": "npx ts-node -r tsconfig-paths/register scripts/seed-leaderboard.ts",
     "emails:test": "npx ts-node -r tsconfig-paths/register scripts/test-emails.ts",
+    "smoke:guest-reading": "npx ts-node -r tsconfig-paths/register scripts/smoke-guest-reading.ts",
     "placeholders:scan": "npx ts-node -r tsconfig-paths/register scripts/scan-placeholders.ts",
     "placeholders:redownload": "npx ts-node -r tsconfig-paths/register scripts/redownload-placeholders.ts"
   },

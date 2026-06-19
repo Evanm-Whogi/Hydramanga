@@ -174,10 +174,11 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
 
   // Track chapter view
   useChapterViewTracking(
-    id ? Number(id) : 0, 
-    chapterId ? Number(chapterId) : 0, 
-    mangaTitle, 
-    data?.chapterNumber
+    id ? Number(id) : 0,
+    chapterId ? Number(chapterId) : 0,
+    mangaTitle,
+    data?.chapterNumber,
+    Boolean(user) // guests can't hit the auth-only track-view endpoint; skip to avoid a 401 -> login redirect
   );
 
   // Track manga import progress
