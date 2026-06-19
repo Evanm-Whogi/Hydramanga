@@ -32,6 +32,7 @@ import {
 } from '../interfaces/IChapterScraper';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
+import { ScraperStageError, describeError } from '../lib/scraperError';
 
 
 /**
@@ -504,7 +505,13 @@ export class NHentaiScraper implements IChapterScraper {
             });
 
             if (!imageUrl) {
-                throw new Error(`No image found at ${url}`);
+                throw new ScraperStageError({
+                    stage: 'extract_images',
+                    scraperId: this.metadata.id,
+                    scraperName: this.metadata.name,
+                    url,
+                    message: 'Page returned no image (layout change or removed gallery?)',
+                });
             }
 
             logger.info(
@@ -600,11 +607,23 @@ export class NHentaiScraper implements IChapterScraper {
                     }
                 }
             }
-            logger.error(
-                `[nHentai] Failed to download image ${i + 1} after ${MAX_RETRIES} attempts: ${lastError?.message}`,
-                { service: 'nHentaiScraper' }
-            );
-            throw lastError || new Error(`Failed to download image ${i + 1}`);
+            const described = describeError(lastError);
+            const stageError = new ScraperStageError({
+                stage: 'download_image',
+                message: described.message,
+                scraperId: this.metadata.id,
+                scraperName: this.metadata.name,
+                url: referer,
+                pageNumber: i + 1,
+                pageCount: images.length,
+                imageUrl,
+                attempts: MAX_RETRIES,
+                httpStatus: described.httpStatus,
+                code: described.code,
+                cause: lastError,
+            });
+            logger.error(stageError.message, { service: 'nHentaiScraper', ...stageError.toLogDetail() });
+            throw stageError;
         };
 
         for (let batchStart = 0; batchStart < images.length; batchStart += batchSize) {

@@ -510,6 +510,9 @@ export class AtsuMoeScraper implements IChapterScraper {
         await downloadAndStoreChapter({
             storagePrefix,
             images,
+            scraperId: this.metadata.id,
+            scraperName: this.metadata.name,
+            chapterUrl: referer,
             client: AtsuMoeScraper.axiosInstance,
             headers: {
                 Referer: referer,

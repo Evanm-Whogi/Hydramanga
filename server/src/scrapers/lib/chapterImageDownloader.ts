@@ -18,6 +18,7 @@ import axios, { type AxiosInstance } from 'axios';
 import { objectStorageService } from '@/services/objectStorageService';
 import logger from '@/services/loggerService';
 import { matchKnownBrokenImage } from './knownBrokenImages';
+import { ScraperStageError, describeError } from './scraperError';
 
 /** Transient network errors that several scrapers consider worth retrying. */
 export function isNetworkRetryableError(err: any): boolean {
@@ -56,6 +57,11 @@ export interface DownloadAndStoreOptions {
     batchDelayMs?: number;
     /** Log-tag service name, e.g. `weebCentralScraper`. */
     service?: string;
+    /** Scraper id/name for error attribution (surfaced in the queue failure reason). */
+    scraperId?: string;
+    scraperName?: string;
+    /** Chapter URL these images came from (surfaced in the failure reason). */
+    chapterUrl?: string;
     /** Predicate marking a URL as a known-broken source → store a placeholder, skip download. */
     isPlaceholder?: (url: string) => boolean;
     /**
@@ -100,6 +106,9 @@ export async function downloadAndStoreChapter(
         maxRedirects,
         batchDelayMs = 100,
         service = 'chapterImageDownloader',
+        scraperId,
+        scraperName,
+        chapterUrl,
         isPlaceholder,
         detectKnownBrokenImages = false,
         placeholderOnFailure = false,
@@ -158,11 +167,23 @@ export async function downloadAndStoreChapter(
         }
 
         if (!placeholderOnFailure) {
-            logger.error(
-                `Failed to download image ${i + 1} after ${maxRetries} attempt(s): ${lastError?.message}`,
-                { service }
-            );
-            throw lastError ?? new Error(`Failed to download image ${i + 1}`);
+            const described = describeError(lastError);
+            const stageError = new ScraperStageError({
+                stage: 'download_image',
+                message: described.message,
+                scraperId,
+                scraperName,
+                url: chapterUrl,
+                pageNumber: i + 1,
+                pageCount: images.length,
+                imageUrl,
+                attempts: maxRetries,
+                httpStatus: described.httpStatus,
+                code: described.code,
+                cause: lastError,
+            });
+            logger.error(stageError.message, { service, ...stageError.toLogDetail() });
+            throw stageError;
         }
 
         logger.warn(

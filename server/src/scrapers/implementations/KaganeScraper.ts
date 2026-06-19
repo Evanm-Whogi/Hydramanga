@@ -24,6 +24,7 @@ import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
 import { requestFlareSolverr, type FlareSolverrCookie, type FlareSolverrResult } from '@/lib/flareSolverrClient';
+import { ScraperStageError, describeError } from '../lib/scraperError';
 
 const SITE_BASE = appConfig.scraper.kagane.baseUrl;
 const API_BASE = appConfig.scraper.kagane.apiUrl;
@@ -820,7 +821,23 @@ export class KaganeScraper implements IChapterScraper {
                         await new Promise(resolve => setTimeout(resolve, retryDelayMs * attempt));
                         continue;
                     }
-                    throw lastError;
+                    const described = describeError(lastError);
+                    const stageError = new ScraperStageError({
+                        stage: 'download_image',
+                        message: described.message,
+                        scraperId: this.metadata.id,
+                        scraperName: this.metadata.name,
+                        url: referer,
+                        pageNumber: i + 1,
+                        pageCount: imageUrls.length,
+                        imageUrl,
+                        attempts: attempt,
+                        httpStatus: described.httpStatus,
+                        code: described.code,
+                        cause: lastError,
+                    });
+                    logger.error(stageError.message, { service: 'kaganeScraper', ...stageError.toLogDetail() });
+                    throw stageError;
                 }
             }
         };
@@ -915,7 +932,13 @@ export class KaganeScraper implements IChapterScraper {
             }, expectedPageCount);
 
             if (dataUrls.length === 0) {
-                throw new Error(`No reader images extracted from ${url}`);
+                throw new ScraperStageError({
+                    stage: 'extract_images',
+                    scraperId: this.metadata.id,
+                    scraperName: this.metadata.name,
+                    url,
+                    message: 'Reader DOM produced no page images (Cloudflare block or layout change?)',
+                });
             }
 
             const storagePrefix = await this.saveDataUrlImages(dataUrls, seriesId, chapterNumber);

@@ -49,6 +49,7 @@ import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
 import { requestFlareSolverr, type FlareSolverrCookie, type FlareSolverrResult } from '@/lib/flareSolverrClient';
+import { ScraperStageError, describeError } from '../lib/scraperError';
 
 const SITE_BASE = appConfig.scraper.comix.baseUrl;
 
@@ -1202,7 +1203,13 @@ export class ComixScraper implements IChapterScraper {
                 });
 
                 let assets = await this.collectPageAssetsFromReader(page, expectedPageCount, attemptLabel);
-                if (!assets.length) throw new Error(`[Comix] No images found for chapter ${url}`);
+                if (!assets.length) throw new ScraperStageError({
+                    stage: 'extract_images',
+                    scraperId: this.metadata.id,
+                    scraperName: this.metadata.name,
+                    url,
+                    message: 'Reader returned no page images (Cloudflare block or layout change?)',
+                });
 
                 if (expectedPageCount > 0 && assets.length < expectedPageCount) {
                     logger.warn(
@@ -1773,7 +1780,15 @@ export class ComixScraper implements IChapterScraper {
             if (!asset) {
                 // Missing page → fail the chapter so it's retried, rather than storing a
                 // placeholder that masks an incomplete download.
-                throw new Error(`[Comix] [${contextLabel}] Page ${pageNum} missing from extracted assets`);
+                throw new ScraperStageError({
+                    stage: 'extract_images',
+                    scraperId: this.metadata.id,
+                    scraperName: this.metadata.name,
+                    url: referer,
+                    pageNumber: pageNum,
+                    pageCount: totalPages,
+                    message: 'Page missing from extracted assets (incomplete capture)',
+                });
             }
 
             let lastError: any;
@@ -1825,11 +1840,23 @@ export class ComixScraper implements IChapterScraper {
             }
             // Exhausted retries → fail the chapter so the queue retries it (and it
             // stays in the failed set for manual retry) instead of silently placeholdering.
-            logger.error(
-                `[Comix] [${contextLabel}] Page ${pageNum} unrecoverable after ${maxRetries} attempts: ${lastError?.message || lastError}`,
-                { service: 'comixScraper' },
-            );
-            throw lastError ?? new Error(`[Comix] [${contextLabel}] Page ${pageNum} failed to download`);
+            const described = describeError(lastError);
+            const stageError = new ScraperStageError({
+                stage: 'download_image',
+                message: described.message,
+                scraperId: this.metadata.id,
+                scraperName: this.metadata.name,
+                url: referer,
+                pageNumber: pageNum,
+                pageCount: totalPages,
+                imageUrl: byPage.get(pageNum)?.imageUrl,
+                attempts: maxRetries,
+                httpStatus: described.httpStatus,
+                code: described.code,
+                cause: lastError,
+            });
+            logger.error(stageError.message, { service: 'comixScraper', ...stageError.toLogDetail() });
+            throw stageError;
         };
 
         const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);

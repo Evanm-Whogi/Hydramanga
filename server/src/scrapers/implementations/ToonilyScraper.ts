@@ -651,6 +651,9 @@ export class ToonilyScraper implements IChapterScraper {
         await downloadAndStoreChapter({
             storagePrefix,
             images,
+            scraperId: this.metadata.id,
+            scraperName: this.metadata.name,
+            chapterUrl: referer,
             client: ToonilyScraper.axiosInstance,
             headers: {
                 Referer: referer,

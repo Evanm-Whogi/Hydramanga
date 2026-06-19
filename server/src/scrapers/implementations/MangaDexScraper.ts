@@ -685,6 +685,9 @@ export class MangaDexScraper implements IChapterScraper {
         await downloadAndStoreChapter({
             storagePrefix,
             images,
+            scraperId: this.metadata.id,
+            scraperName: this.metadata.name,
+            chapterUrl: referer,
             headers: {
                 Referer: referer,
                 'User-Agent': appConfig.scraper.mangaDex.userAgent,

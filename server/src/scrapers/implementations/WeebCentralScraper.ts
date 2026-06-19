@@ -26,6 +26,7 @@ import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
 import { downloadAndStoreChapter } from '../lib/chapterImageDownloader';
+import { ScraperStageError } from '../lib/scraperError';
 
 /**
  * Sanitize folder/file names
@@ -398,9 +399,15 @@ export class WeebCentralScraper implements IChapterScraper {
             }
 
             if (lastError && lastError.message.includes('ERR_ABORTED')) {
-                throw new Error(
-                    `Failed to load chapter page after 3 attempts: ${lastError.message}`
-                );
+                throw new ScraperStageError({
+                    stage: 'navigate',
+                    scraperId: this.metadata.id,
+                    scraperName: this.metadata.name,
+                    url,
+                    attempts: 3,
+                    message: lastError.message.split('\n')[0],
+                    cause: lastError,
+                });
             }
 
             // Prefer dedicated /images endpoint (same as other WeebCentral tools) — more reliable than reader DOM
@@ -553,7 +560,14 @@ export class WeebCentralScraper implements IChapterScraper {
             );
 
             if (finalImages.length === 0) {
-                throw new Error(`No images found at ${url} after ${maxExtractAttempts} attempts`);
+                throw new ScraperStageError({
+                    stage: 'extract_images',
+                    scraperId: this.metadata.id,
+                    scraperName: this.metadata.name,
+                    url,
+                    attempts: maxExtractAttempts,
+                    message: 'Chapter page returned no page images (layout change or empty/removed chapter?)',
+                });
             }
 
             // Download images
@@ -601,6 +615,9 @@ export class WeebCentralScraper implements IChapterScraper {
             images,
             headers,
             service: 'weebCentralScraper',
+            scraperId: this.metadata.id,
+            scraperName: this.metadata.name,
+            chapterUrl: referer,
             isPlaceholder: (url) => url.includes('broken_image'),
             // WeebCentral also serves its broken-image graphic from normal-looking
             // CDN URLs (200, not 404), so match it by content too.

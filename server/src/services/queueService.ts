@@ -22,6 +22,7 @@ import { discordService } from '@/services/discordService';
 import {chapterDownloadQueueName, getAllChapterDownloadQueueNames, isChapterDownloadJobQueue, isChapterDownloadQueue, resolveChapterDownloadQueueConfig, scraperIdFromChapterDownloadQueue} from '@/lib/chapterDownloadQueues';
 import { formatDbError, getPgErrorDetails } from '@/utils/dbError';
 import { captureJobErrorIfFinal } from '@/utils/sentryHelper';
+import { ScraperStageError } from '@/scrapers/lib/scraperError';
 
 class QueueService {
     private queues: { [key: string]: Queue } = {};
@@ -160,16 +161,20 @@ class QueueService {
         const onFailed = async (job: any, err: any) => {
             const errorMessage = formatDbError(err);
             const errorStack = err?.stack || '';
-            
+            // When the failure is a scraper stage error, surface exactly what broke
+            // (stage, page, image URL, HTTP status) in logs and Sentry.
+            const stageDetail = err instanceof ScraperStageError ? err.toLogDetail() : undefined;
+
             // Log detailed error information for debugging
             logger.error(
                 `Job: ${job?.id} in Queue: ${queueName} failed with error: ${errorMessage}`,
-                { 
+                {
                     service: 'queueService',
                     jobName: job?.name,
                     attempts: job?.attemptsMade,
                     maxAttempts: job?.opts?.attempts,
                     pg_error: getPgErrorDetails(err),
+                    ...(stageDetail ? { scraper_stage: stageDetail } : {}),
                     errorStack: errorStack.split('\n').slice(0, 5).join(' | ') // First 5 lines of stack
                 }
             );
@@ -186,6 +191,7 @@ class QueueService {
                         tags: {
                             job_type: 'chapter_scan',
                             series_id: String(jobData?.seriesId ?? 'unknown'),
+                            ...(stageDetail ? { scraper_stage: String(stageDetail.stage) } : {}),
                         },
                         data: {
                             manga_title: jobData?.mangaTitle,
@@ -198,6 +204,7 @@ class QueueService {
                             job_name: job?.name,
                             error_message: errorMessage,
                             error_stack: errorStack,
+                            ...(stageDetail ? { scraper_stage: stageDetail } : {}),
                         },
                     });
 
@@ -233,6 +240,7 @@ class QueueService {
                             series_id: String(jobData?.seriesId ?? 'unknown'),
                             chapter_number: String(jobData?.chapterNumber ?? 'unknown'),
                             scraper_id: String(jobData?.scraperId ?? 'unknown'),
+                            ...(stageDetail ? { scraper_stage: String(stageDetail.stage) } : {}),
                         },
                         data: {
                             manga_title: jobData?.mangaTitle,
@@ -246,6 +254,7 @@ class QueueService {
                             job_name: job?.name,
                             error_message: errorMessage,
                             error_stack: errorStack,
+                            ...(stageDetail ? { scraper_stage: stageDetail } : {}),
                         },
                     });
 

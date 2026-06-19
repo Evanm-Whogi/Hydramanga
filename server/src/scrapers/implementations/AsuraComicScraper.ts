@@ -626,6 +626,9 @@ export class AsuraComicScraper implements IChapterScraper {
         await downloadAndStoreChapter({
             storagePrefix,
             images,
+            scraperId: this.metadata.id,
+            scraperName: this.metadata.name,
+            chapterUrl: referer,
             client: AsuraComicScraper.axiosInstance,
             headers: {
                 Referer: referer,

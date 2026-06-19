@@ -30,6 +30,7 @@ import logger from '@/services/loggerService';
 import { titleSearchSemaphore } from '@/services/titleSearchSemaphore';
 import { cacheService } from '@/services/cacheService';
 import { mangaProgressService } from '@/services/mangaProgressService';
+import { ScraperStageError, describeError } from './lib/scraperError';
 
 /**
  * Scraper attempt result (for logging and debugging)
@@ -400,7 +401,10 @@ export class ScraperManager {
                 });
 
                 if (!bestMatchResult) {
-                    throw new Error(`Failed to find "${mangaName}" using any available scraper`);
+                    throw new ScraperStageError({
+                        stage: 'match',
+                        message: `No enabled scraper found a match for "${mangaName}" (searched ${this.getEnabledScrapers().length} source(s))`,
+                    });
                 }
 
                 const { scraper: matchedScraper, result } = bestMatchResult;
@@ -462,11 +466,18 @@ export class ScraperManager {
 
                 this.recordAttempt(mangaName, metadata.id, metadata.name, metadata.priority, true);
             } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                logger.error(
-                    `Scraper ${metadata.name} failed during chapter scraping: ${errorMessage}`,
-                    { service: 'scraperManager' }
-                );
+                // Preserve a match-stage failure as-is; otherwise this is a
+                // chapter-list scan failure for the chosen scraper.
+                const stageError = ScraperStageError.from(error, {
+                    stage: 'scan',
+                    scraperId: metadata.id,
+                    scraperName: metadata.name,
+                    url: pageUrl,
+                });
+                logger.error(stageError.message, {
+                    service: 'scraperManager',
+                    ...stageError.toLogDetail(),
+                });
 
                 this.recordAttempt(
                     mangaName,
@@ -474,10 +485,10 @@ export class ScraperManager {
                     metadata.name,
                     metadata.priority,
                     false,
-                    errorMessage
+                    stageError.message
                 );
 
-                throw error;
+                throw stageError;
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -520,20 +531,34 @@ export class ScraperManager {
             { service: 'scraperManager' }
         );
 
+        // Track which scrapers we actually attempted and why each failed, so the
+        // final error explains the real cause (shown as the queue failedReason)
+        // instead of a generic "failed using any available scraper".
+        const triedScrapers: string[] = [];
+        const failures: ScraperStageError[] = [];
+
         // Try each scraper in priority order
         for (const scraper of enabledScrapers) {
             const metadata = scraper.getMetadata();
 
+            // Check if this URL belongs to this scraper's domain
+            let matchesDomain = false;
             try {
-                // Check if this URL belongs to this scraper's domain
-                if (!url.includes(new URL(metadata.baseUrl).hostname)) {
-                    logger.debug(
-                        `URL ${url} doesn't match ${metadata.name} domain, skipping`,
-                        { service: 'scraperManager' }
-                    );
-                    continue;
-                }
+                matchesDomain = url.includes(new URL(metadata.baseUrl).hostname);
+            } catch {
+                matchesDomain = false;
+            }
+            if (!matchesDomain) {
+                logger.debug(
+                    `URL ${url} doesn't match ${metadata.name} domain, skipping`,
+                    { service: 'scraperManager' }
+                );
+                continue;
+            }
 
+            triedScrapers.push(metadata.name);
+
+            try {
                 logger.info(
                     `Attempting download with ${metadata.name}`,
                     { service: 'scraperManager' }
@@ -550,11 +575,20 @@ export class ScraperManager {
 
                 return result;
             } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                logger.error(
-                    `Scraper ${metadata.name} failed during download: ${errorMessage}`,
-                    { service: 'scraperManager' }
-                );
+                // Preserve the precise stage/cause (which page, HTTP status, …) and
+                // attach this scraper's identity as it bubbles up.
+                const stageError = ScraperStageError.from(error, {
+                    stage: 'download_image',
+                    scraperId: metadata.id,
+                    scraperName: metadata.name,
+                    url,
+                });
+                failures.push(stageError);
+
+                logger.error(stageError.message, {
+                    service: 'scraperManager',
+                    ...stageError.toLogDetail(),
+                });
 
                 this.recordAttempt(
                     `download:${url}`,
@@ -562,7 +596,7 @@ export class ScraperManager {
                     metadata.name,
                     metadata.priority,
                     false,
-                    errorMessage
+                    stageError.message
                 );
 
                 // Continue to next scraper (fallback behavior)
@@ -570,8 +604,39 @@ export class ScraperManager {
             }
         }
 
-        // All scrapers failed
-        throw new Error(`Failed to download chapter from ${url} using any available scraper`);
+        // No scraper's domain matched the URL — a routing/config problem, distinct
+        // from a scraper trying and failing.
+        if (triedScrapers.length === 0) {
+            let host = url;
+            try {
+                host = new URL(url).hostname;
+            } catch { /* keep raw url */ }
+            throw new ScraperStageError({
+                stage: 'routing',
+                url,
+                message: `No enabled scraper handles host "${host}" (enabled: ${enabledScrapers.map((s) => s.getMetadata().name).join(', ') || 'none'})`,
+            });
+        }
+
+        // All matching scrapers failed — surface the most informative failure as
+        // the primary reason, noting the others that were also tried.
+        const primary = failures[0];
+        const others = triedScrapers.slice(1);
+        const suffix = others.length ? ` (also tried: ${others.join(', ')})` : '';
+        throw new ScraperStageError({
+            stage: primary?.stage ?? 'download_image',
+            scraperId: primary?.scraperId,
+            scraperName: primary?.scraperName,
+            url,
+            pageNumber: primary?.pageNumber,
+            pageCount: primary?.pageCount,
+            imageUrl: primary?.imageUrl,
+            attempts: primary?.attempts,
+            httpStatus: primary?.httpStatus,
+            code: primary?.code,
+            message: `${primary ? primary.detailMessage : `Failed to download chapter from ${url}`}${suffix}`,
+            cause: primary,
+        });
     }
 
     /**

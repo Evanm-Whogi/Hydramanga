@@ -41,6 +41,7 @@ import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
 import { generateMangaFireVrf } from '@/scrapers/lib/mangaFireVrf';
+import { ScraperStageError, describeError } from '@/scrapers/lib/scraperError';
 
 const SITE_BASE = appConfig.scraper.mangaFire.baseUrl;
 const DEFAULT_LANG = appConfig.scraper.mangaFire.language || 'en';
@@ -623,7 +624,13 @@ export class MangaFireScraper implements IChapterScraper {
                 });
 
                 let assets = await this.collectPageAssetsFromReader(page, expectedPageCount, attemptLabel);
-                if (!assets.length) throw new Error(`[MangaFire] No images found for chapter ${url}`);
+                if (!assets.length) throw new ScraperStageError({
+                    stage: 'extract_images',
+                    scraperId: this.metadata.id,
+                    scraperName: this.metadata.name,
+                    url,
+                    message: 'Reader returned no page images (layout change or empty chapter?)',
+                });
 
                 if (expectedPageCount > 0 && assets.length < expectedPageCount) {
                     const retry = await this.collectPageAssetsFromReader(
@@ -898,7 +905,15 @@ export class MangaFireScraper implements IChapterScraper {
             if (!asset) {
                 // Missing page → fail the chapter so it's retried, rather than storing a
                 // placeholder that masks an incomplete download.
-                throw new Error(`[MangaFire] [${contextLabel}] Page ${pageNum} missing from extracted assets`);
+                throw new ScraperStageError({
+                    stage: 'extract_images',
+                    scraperId: this.metadata.id,
+                    scraperName: this.metadata.name,
+                    url: referer,
+                    pageNumber: pageNum,
+                    pageCount: totalPages,
+                    message: 'Page missing from extracted assets (incomplete capture)',
+                });
             }
 
             let lastError: any;
@@ -961,11 +976,23 @@ export class MangaFireScraper implements IChapterScraper {
             }
             // Exhausted retries → fail the chapter so the queue retries it (and it
             // stays in the failed set for manual retry) instead of silently placeholdering.
-            logger.error(
-                `[MangaFire] [${contextLabel}] Page ${pageNum} unrecoverable after ${maxRetries} attempts: ${lastError?.message || lastError}`,
-                { service: 'mangaFireScraper' },
-            );
-            throw lastError ?? new Error(`[MangaFire] [${contextLabel}] Page ${pageNum} failed to download`);
+            const described = describeError(lastError);
+            const stageError = new ScraperStageError({
+                stage: 'download_image',
+                message: described.message,
+                scraperId: this.metadata.id,
+                scraperName: this.metadata.name,
+                url: referer,
+                pageNumber: pageNum,
+                pageCount: totalPages,
+                imageUrl: byPage.get(pageNum)?.imageUrl,
+                attempts: maxRetries,
+                httpStatus: described.httpStatus,
+                code: described.code,
+                cause: lastError,
+            });
+            logger.error(stageError.message, { service: 'mangaFireScraper', ...stageError.toLogDetail() });
+            throw stageError;
         };
 
         const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);

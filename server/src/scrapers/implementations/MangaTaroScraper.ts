@@ -573,6 +573,9 @@ export class MangaTaroScraper implements IChapterScraper {
         await downloadAndStoreChapter({
             storagePrefix,
             images,
+            scraperId: this.metadata.id,
+            scraperName: this.metadata.name,
+            chapterUrl: referer,
             client: MangaTaroScraper.axiosInstance,
             headers: {
                 Referer: referer,
