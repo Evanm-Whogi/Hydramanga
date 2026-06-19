@@ -3,7 +3,7 @@ import { fromNodeHeaders } from 'better-auth/node';
 import { auth } from '@/utils/auth';
 import { siteSettingsService } from '@/services/siteSettingsService';
 
-const MAINTENANCE_EXEMPT_PATHS = new Set(['/site-settings', '/admin/heartbeat']);
+const MAINTENANCE_EXEMPT_PATHS = new Set(['/heartbeat', '/site-settings', '/admin/heartbeat']);
 
 export async function isMaintenance(req: Request, res: Response, next: NextFunction): Promise<void> {
   const settings = await siteSettingsService.getSettings();

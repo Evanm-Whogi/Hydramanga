@@ -136,7 +136,7 @@ export default function StickersAdminClient() {
         <input
           value={imageUrl}
           onChange={(e) => setImageUrl(e.target.value)}
-          placeholder="/media/stickers/name.png"
+          placeholder="https://stickers.garage.chit.sh/name.webp"
           className="w-full rounded-lg border border-borders bg-background px-3 py-2 text-primary"
         />
         <input
