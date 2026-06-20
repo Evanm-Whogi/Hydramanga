@@ -4,7 +4,7 @@ import { optionalAuthMiddleware } from '@/middlewares/optionalAuth';
 import { listWriteRateLimit, listVoteRateLimit, listCommentCreateRateLimit, commentMutationRateLimit, listViewTrackRateLimit } from '@/middlewares/userActionRateLimit';
 import { publicFormRateLimiter } from '@/middlewares/rateLimit';
 import {
-  discoverLists, getMyLists, getSavedLists, createList, getListDetail, updateList, deleteList,
+  discoverLists, getMyLists, getSavedLists, getListsForSeries, createList, getListDetail, updateList, deleteList,
   addListItem, removeListItem, voteList, saveList, unsaveList, trackListView,
   getListComments, createListComment, deleteListComment, voteListComment, searchMangaForList, reportList,
 } from '@/controllers/curatedListController';
@@ -15,6 +15,7 @@ router.get('/', optionalAuthMiddleware, discoverLists as RequestHandler);
 router.get('/mine', authMiddleware, getMyLists as RequestHandler);
 router.get('/saved', authMiddleware, getSavedLists as RequestHandler);
 router.get('/search-manga', authMiddleware, searchMangaForList as RequestHandler);
+router.get('/for-series/:seriesId', optionalAuthMiddleware, getListsForSeries as RequestHandler);
 router.post('/', authMiddleware, listWriteRateLimit, createList as RequestHandler);
 
 router.get('/:id', optionalAuthMiddleware, getListDetail as RequestHandler);

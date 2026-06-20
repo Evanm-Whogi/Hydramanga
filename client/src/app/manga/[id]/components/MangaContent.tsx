@@ -6,6 +6,7 @@ import { formatToRating, formatTimeAgo, formatCompactNumber as formatNumber } fr
 import Link from 'next/link';
 import MangaActions from './MangaActions';
 import RecommendedManga from './RecommendedManga';
+import FeaturedInLists from './FeaturedInLists';
 import { Eye, Bookmark, UserCheck, TriangleAlert, Star, Pencil, ShareIcon, StickyNote } from 'lucide-react';
 import { useMangaViewTracking } from '@/hooks/useViewTracking';
 import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
@@ -572,6 +573,9 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
                 )}
               </div>
             </div>
+
+            {/* Featured In Lists */}
+            <FeaturedInLists seriesId={mangaId} />
 
             {/* Recommended Manga */}
             <RecommendedManga currentMangaId={mangaId} />

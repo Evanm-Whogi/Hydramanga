@@ -263,6 +263,28 @@ class CuratedListService {
     return { lists: withAuthors, total: Number(totalRow[0]?.count ?? 0), limit, offset };
   }
 
+  async getForSeries(seriesId: number, options: { limit?: number; userId?: string | null; hideNsfw?: boolean }) {
+    const limit = Math.min(20, Math.max(1, options.limit ?? 12));
+    const whereClause = and(
+      eq(schema.curatedLists.visibility, 'public'),
+      sql`EXISTS (SELECT 1 FROM ${schema.curatedListItems} cli WHERE cli.list_id = ${schema.curatedLists.id} AND cli.series_id = ${seriesId})`
+    );
+
+    const [rows, totalRow] = await Promise.all([
+      db.query.curatedLists.findMany({
+        where: whereClause,
+        with: { author: { columns: AUTHOR_COLUMNS } },
+        orderBy: listSortOrder('popular'),
+        limit,
+      }),
+      db.select({ count: count() }).from(schema.curatedLists).where(whereClause),
+    ]);
+
+    const enriched = await attachListMetadata(rows, options.userId, options.hideNsfw ?? false);
+    const withAuthors = await enrichAuthors(enriched);
+    return { lists: withAuthors, total: Number(totalRow[0]?.count ?? 0), limit };
+  }
+
   async getMine(userId: string, options: { sort?: ListSort; limit?: number; offset?: number; seriesId?: number }) {
     const limit = Math.min(100, Math.max(1, options.limit ?? 50));
     const offset = Math.max(0, options.offset ?? 0);

@@ -50,6 +50,22 @@ export async function discoverLists(req: Request, res: Response, next: NextFunct
   }
 }
 
+export async function getListsForSeries(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+  try {
+    const seriesId = parseInt(String(req.params.seriesId), 10);
+    if (isNaN(seriesId)) return res.status(400).json({ success: false, error: 'Invalid series id' });
+    const limit = Math.min(20, parseInt(String(req.query.limit || '12'), 10) || 12);
+    const result = await curatedListService.getForSeries(seriesId, {
+      limit,
+      userId: getUserId(req),
+      hideNsfw: await resolveHideNsfw(req),
+    });
+    return res.json({ success: true, ...result });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 export async function getMyLists(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
   try {
     const sort = LIST_SORTS.includes(req.query.sort as ListSort) ? (req.query.sort as ListSort) : 'newest';

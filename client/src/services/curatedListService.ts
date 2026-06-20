@@ -113,6 +113,12 @@ export const fetchMyLists = async (params?: { sort?: ListSort; limit?: number; o
   return data as { success: boolean; lists: CuratedList[]; total: number };
 };
 
+export const fetchListsForSeries = async (seriesId: number | string, params?: { limit?: number }) => {
+  const data = await apiGet(`/lists/for-series/${seriesId}${buildQuery(params ?? {})}`);
+  if (!data) throw new Error('Failed to fetch featured lists');
+  return data as { success: boolean; lists: CuratedList[]; total: number };
+};
+
 export const fetchSavedLists = async (params?: { sort?: ListSort; limit?: number; offset?: number }) => {
   const data = await apiGet(`/lists/saved${buildQuery(params ?? {})}`);
   if (!data) throw new Error('Failed to fetch saved lists');
