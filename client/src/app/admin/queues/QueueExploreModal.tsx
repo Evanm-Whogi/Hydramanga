@@ -325,7 +325,9 @@ export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: Qu
                           <td className="px-4 py-2 align-top text-primary max-w-xs">
                             <p className="line-clamp-2">{job.summary}</p>
                             {job.failedReason && (
-                              <p className="text-xs text-red-400 mt-1 line-clamp-2">{job.failedReason}</p>
+                              <p className="text-xs text-red-400 mt-1 line-clamp-2" title="Expand row to read full error">
+                                {job.failedReason}
+                              </p>
                             )}
                             {seriesId && (
                               <Link
@@ -419,10 +421,23 @@ export default function QueueExploreModal({ queue, onClose, onQueueUpdated }: Qu
                         </tr>
                         {expanded && (
                           <tr className="border-b border-borders/50 bg-foreground/40">
-                            <td colSpan={6} className="px-4 py-3">
-                              <pre className="text-xs text-muted overflow-x-auto max-h-48 whitespace-pre-wrap break-all font-mono">
-                                {JSON.stringify(job.data, null, 2)}
-                              </pre>
+                            <td colSpan={6} className="px-4 py-3 space-y-3">
+                              {job.failedReason && (
+                                <div>
+                                  <p className="text-xs font-semibold text-red-400 mb-1">Error</p>
+                                  <pre className="text-xs text-red-400 overflow-x-auto max-h-64 whitespace-pre-wrap break-words font-mono">
+                                    {job.failedReason}
+                                  </pre>
+                                </div>
+                              )}
+                              <div>
+                                {job.failedReason && (
+                                  <p className="text-xs font-semibold text-muted mb-1">Data</p>
+                                )}
+                                <pre className="text-xs text-muted overflow-x-auto max-h-48 whitespace-pre-wrap break-all font-mono">
+                                  {JSON.stringify(job.data, null, 2)}
+                                </pre>
+                              </div>
                             </td>
                           </tr>
                         )}
