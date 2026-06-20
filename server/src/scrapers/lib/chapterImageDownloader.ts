@@ -11,14 +11,37 @@
  * Failure policy: a page that exhausts its retries throws and fails the whole
  * chapter, so the queue retries it (and it stays in the failed set for manual
  * retry) rather than silently storing a placeholder that looks like success.
- * The only placeholders written are for `isPlaceholder` URLs — sources that
- * advertise a known-broken/fallback image, where retrying is pointless.
+ * Placeholders are only written where retrying is pointless: `isPlaceholder`
+ * URLs (sources that advertise a known-broken/fallback image), and — when
+ * `detectKnownBrokenImages` is on — pages whose downloaded bytes are the
+ * source's known broken-image graphic or simply aren't a decodable image
+ * (a corrupt/zero-filled 200 standing in for a missing page).
  */
 import axios, { type AxiosInstance } from 'axios';
 import { objectStorageService } from '@/services/objectStorageService';
 import logger from '@/services/loggerService';
 import { matchKnownBrokenImage } from './knownBrokenImages';
 import { ScraperStageError, describeError } from './scraperError';
+
+/**
+ * True when sharp rejected the downloaded bytes because they aren't a decodable
+ * image — e.g. a CDN returned HTTP 200 with a corrupt/zero-filled body in place
+ * of a missing page. These are deterministic: retrying just re-fetches the same
+ * un-decodable bytes, so sources that do this should store a placeholder instead.
+ *
+ * Deliberately excludes truncation errors ("premature end …"): a short download
+ * is usually transient, so it's left to the normal retry loop rather than being
+ * placeholdered on the first attempt.
+ */
+export function isUndecodableImageError(err: any): boolean {
+    const msg: string = (err?.message || String(err)).toLowerCase();
+    return (
+        msg.includes('unsupported image format') ||
+        msg.includes('corrupt header') ||
+        msg.includes('buffer is empty') ||
+        msg.includes('not in a known format')
+    );
+}
 
 /** Transient network errors that several scrapers consider worth retrying. */
 export function isNetworkRetryableError(err: any): boolean {
@@ -145,7 +168,22 @@ export async function downloadAndStoreChapter(
                         await objectStorageService.uploadPlaceholderSlot(storagePrefix, i);
                         return;
                     }
-                    await objectStorageService.transformAndUploadPage(storagePrefix, i, buffer);
+                    try {
+                        await objectStorageService.transformAndUploadPage(storagePrefix, i, buffer);
+                    } catch (transformErr: any) {
+                        // The source returned a 200 with bytes that aren't a decodable
+                        // image (corrupt/zero-filled stand-in for a missing page).
+                        // Retrying re-fetches the same garbage, so store a placeholder.
+                        if (isUndecodableImageError(transformErr)) {
+                            logger.warn(
+                                `Image ${i + 1} downloaded but is not a decodable image (${transformErr.message}); storing placeholder`,
+                                { service }
+                            );
+                            await objectStorageService.uploadPlaceholderSlot(storagePrefix, i);
+                            return;
+                        }
+                        throw transformErr;
+                    }
                     return; // success
                 }
                 await objectStorageService.transformAndUploadPage(storagePrefix, i, response.data);
