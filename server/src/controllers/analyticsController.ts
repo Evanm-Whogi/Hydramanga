@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { metricsService } from '@/services/metricsService';
 import { userProgressService } from '@/services/userProgressService';
-import { getUserSettings, incrementIncognitoChaptersRead } from '@/services/userSettingsService';
+import { getUserSettings, resolveHideNsfw, incrementIncognitoChaptersRead } from '@/services/userSettingsService';
 import { badgeService } from '@/services/badgeService';
 import logger from '@/services/loggerService';
 import { db, schema } from '@/db/index';
@@ -32,7 +32,7 @@ export async function getTrending(req: Request, res: Response, next: NextFunctio
 
     const days = periodToDays[String(period)] || 7;
     const maxLimit = Math.min(Number(limit), 100);
-    const { hideNsfw } = await getUserSettings(req.user?.id);
+    const hideNsfw = await resolveHideNsfw(req);
 
     const trending = await metricsService.getTrendingManga(days, maxLimit, hideNsfw);
     const trendingList = Array.isArray(trending) ? trending : [];

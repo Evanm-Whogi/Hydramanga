@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { profileSectionService, ProfileAccessError } from '@/services/profileSectionService';
 import { profileWallService } from '@/services/profileWallService';
 import { userProgressService } from '@/services/userProgressService';
-import { getUserSettings } from '@/services/userSettingsService';
+import { getUserSettings, resolveHideNsfw } from '@/services/userSettingsService';
 import { canViewProfileSection } from '@/lib/profileVisibility';
 import { BOOKMARK_STATUSES, type BookmarkSort, type BookmarkStatus } from '@/services/bookmarkService';
 import { db, schema } from '@/db/index';
@@ -50,7 +50,7 @@ export async function getProfileStats(req: Request, res: Response, next: NextFun
 
 export async function getProfileFavorites(req: Request, res: Response, next: NextFunction) {
   try {
-    const favorites = await profileSectionService.getFavorites(req.params.identifier, req.user?.id ?? null);
+    const favorites = await profileSectionService.getFavorites(req.params.identifier, req.user?.id ?? null, await resolveHideNsfw(req));
     return res.json({ favorites });
   } catch (error) {
     return handleProfileError(error, res, next);
@@ -147,7 +147,7 @@ export async function getProfileRecentReads(req: Request, res: Response, next: N
   try {
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 20;
-    const data = await profileSectionService.getRecentReads(req.params.identifier, req.user?.id ?? null, page, limit);
+    const data = await profileSectionService.getRecentReads(req.params.identifier, req.user?.id ?? null, page, limit, await resolveHideNsfw(req));
     return res.json(data);
   } catch (error) {
     return handleProfileError(error, res, next);
@@ -166,7 +166,7 @@ export async function getProfileBookmarks(req: Request, res: Response, next: Nex
     const sort: BookmarkSort = ['updated', 'lastRead', 'bookmarked', 'title', 'ranking'].includes(sortRaw) ? sortRaw as BookmarkSort : 'bookmarked';
     const limit = Math.min(parseInt(String(req.query.limit || '500'), 10) || 500, 500);
     const offset = parseInt(String(req.query.offset || '0'), 10) || 0;
-    const data = await profileSectionService.getProfileBookmarks(req.params.identifier, req.user?.id ?? null, { sort, status, types, limit, offset });
+    const data = await profileSectionService.getProfileBookmarks(req.params.identifier, req.user?.id ?? null, { sort, status, types, limit, offset }, await resolveHideNsfw(req));
     return res.json({ success: true, bookmarks: data.bookmarks, total: data.total });
   } catch (error) {
     return handleProfileError(error, res, next);

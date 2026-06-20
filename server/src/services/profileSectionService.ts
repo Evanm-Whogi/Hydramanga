@@ -43,9 +43,8 @@ export async function assertProfileAccess(identifier: string, viewerUserId: stri
 }
 
 class ProfileSectionService {
-  async getFavorites(identifier: string, viewerUserId: string | null) {
+  async getFavorites(identifier: string, viewerUserId: string | null, hideNsfw = false) {
     const { userId } = await assertProfileAccess(identifier, viewerUserId, 'favorites');
-    const { hideNsfw } = await getUserSettings(viewerUserId ?? undefined);
     const nsfwConditions = getCatalogFilterConditions(hideNsfw, schema.series);
 
     const rows = await db
@@ -141,9 +140,8 @@ class ProfileSectionService {
     };
   }
 
-  async getRecentReads(identifier: string, viewerUserId: string | null, page = 1, limit = 20) {
+  async getRecentReads(identifier: string, viewerUserId: string | null, page = 1, limit = 20, hideNsfw = false) {
     const { userId } = await assertProfileAccess(identifier, viewerUserId, 'recentReads');
-    const { hideNsfw } = await getUserSettings(viewerUserId ?? undefined);
     const nsfwConditions = getCatalogFilterConditions(hideNsfw, schema.series);
     const safeLimit = Math.min(50, Math.max(1, limit));
     const offset = (Math.max(1, page) - 1) * safeLimit;
@@ -193,9 +191,8 @@ class ProfileSectionService {
     };
   }
 
-  async getProfileBookmarks(identifier: string, viewerUserId: string | null, options: { sort?: BookmarkSort; status?: BookmarkStatus[]; types?: string[]; limit?: number; offset?: number } = {}) {
+  async getProfileBookmarks(identifier: string, viewerUserId: string | null, options: { sort?: BookmarkSort; status?: BookmarkStatus[]; types?: string[]; limit?: number; offset?: number } = {}, hideNsfw = false) {
     const { userId } = await assertProfileAccess(identifier, viewerUserId, 'bookmarks');
-    const { hideNsfw } = await getUserSettings(viewerUserId ?? undefined);
     const limit = Math.min(500, Math.max(1, options.limit ?? 500));
     const offset = Math.max(0, options.offset ?? 0);
     const result = await BookmarkService.getUserBookmarks(userId, { sort: options.sort ?? 'bookmarked', limit, offset, hideNsfw, status: options.status, types: options.types });

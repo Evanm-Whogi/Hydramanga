@@ -11,7 +11,7 @@ export interface UserSettings {
 export async function getSettings(): Promise<UserSettings> {
   const data = await apiGet('/users/settings');
   return {
-    hideNsfw: data?.hideNsfw ?? false,
+    hideNsfw: data?.hideNsfw ?? true,
     isProfilePublic: data?.isProfilePublic ?? true,
     incognitoMode: data?.incognitoMode ?? false,
     profileVisibility: data?.profileVisibility ?? {
@@ -30,7 +30,7 @@ export async function getSettings(): Promise<UserSettings> {
 export async function updateSettings(updates: Partial<UserSettings>): Promise<UserSettings> {
   const data = await apiPatch('/users/settings', updates);
   return {
-    hideNsfw: data?.hideNsfw ?? false,
+    hideNsfw: data?.hideNsfw ?? true,
     isProfilePublic: data?.isProfilePublic ?? true,
     incognitoMode: data?.incognitoMode ?? false,
     profileVisibility: data?.profileVisibility ?? {

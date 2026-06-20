@@ -8,7 +8,7 @@ import logger from '@/services/loggerService';
 import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import { metricsService } from '@/services/metricsService';
 import { shouldFilterManga, getBlockedGenres, getCatalogFilterConditions, isSeriesHiddenByUserNsfw, isNovelType, getExcludeNovelConditions } from '@/config/contentFilter';
-import { getUserSettings } from '@/services/userSettingsService';
+import { getUserSettings, resolveHideNsfw } from '@/services/userSettingsService';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import { cacheService } from '@/services/cacheService';
 import { objectStorageService } from '@/services/objectStorageService';
@@ -232,7 +232,7 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         const pageSize = Math.min(Number(limit) || DISCOVER_PAGE_SIZE, DISCOVER_PAGE_SIZE);
         const isAsc = String(order).toLowerCase() === 'asc';
         const userId = req.user?.id;
-        const { hideNsfw } = await getUserSettings(userId);
+        const hideNsfw = await resolveHideNsfw(req);
         const hasCursor = Boolean(cursor);
 
         const cacheKey = `${DISCOVER_SEARCH_CACHE_PREFIX}:${hideNsfw}:${normalizeDiscoverQueryForCache(req.query)}`;
@@ -474,7 +474,7 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
         });
     if (!mangaData) return res.status(404).json({ status: 404, message: "Not found" });
 
-    const { hideNsfw } = await getUserSettings(userId);
+    const hideNsfw = await resolveHideNsfw(req);
     const mangaGenres = Array.isArray(mangaData.genres) ? mangaData.genres as string[] : null;
     if (shouldFilterManga(mangaGenres) || isSeriesHiddenByUserNsfw({ contentRating: mangaData.contentRating as string | null, genres: mangaGenres }, hideNsfw) || isNovelType(mangaData.type)) {
         return res.status(404).json({ status: 404, message: "Not found" });
@@ -1002,8 +1002,7 @@ export async function getGallery(req: Request, res: Response, next: NextFunction
 
 export async function getCollections(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
     try {
-        const userId = req.user?.id;
-        const { hideNsfw } = await getUserSettings(userId);
+        const hideNsfw = await resolveHideNsfw(req);
         const collections = await getCollectionsList(hideNsfw);
         return res.json(collections);
     } catch (error) {

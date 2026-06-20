@@ -83,11 +83,10 @@ function sortTopLevelComments<T extends { createdAt: Date; votes: { type: string
   return sorted;
 }
 
-async function fetchPreviewCovers(listIds: number[], userId?: string | null): Promise<Map<number, string[]>> {
+async function fetchPreviewCovers(listIds: number[], hideNsfw: boolean): Promise<Map<number, string[]>> {
   const map = new Map<number, string[]>();
   if (listIds.length === 0) return map;
 
-  const { hideNsfw } = await getUserSettings(userId ?? undefined);
   const nsfwConditions = getCatalogFilterConditions(hideNsfw, schema.series);
 
   const rows = await db
@@ -113,11 +112,11 @@ async function fetchPreviewCovers(listIds: number[], userId?: string | null): Pr
   return map;
 }
 
-async function attachListMetadata<T extends { id: number }>(lists: T[], userId?: string | null) {
+async function attachListMetadata<T extends { id: number }>(lists: T[], userId: string | null | undefined, hideNsfw: boolean) {
   if (lists.length === 0) return [];
 
   const listIds = lists.map((l) => l.id);
-  const previewMap = await fetchPreviewCovers(listIds, userId);
+  const previewMap = await fetchPreviewCovers(listIds, hideNsfw);
 
   let voteMap = new Map<number, string>();
   let savedSet = new Set<number>();
@@ -215,7 +214,7 @@ class CuratedListService {
     }).catch(() => undefined);
   }
 
-  async getDiscover(options: { search?: string; genres?: string[]; sort?: ListSort; limit?: number; offset?: number; userId?: string | null }) {
+  async getDiscover(options: { search?: string; genres?: string[]; sort?: ListSort; limit?: number; offset?: number; userId?: string | null; hideNsfw?: boolean }) {
     const limit = Math.min(40, Math.max(1, options.limit ?? 20));
     const offset = Math.max(0, options.offset ?? 0);
     const sort = options.sort ?? 'popular';
@@ -258,7 +257,7 @@ class CuratedListService {
       db.select({ count: count() }).from(schema.curatedLists).where(whereClause),
     ]);
 
-    const enriched = await attachListMetadata(rows, options.userId);
+    const enriched = await attachListMetadata(rows, options.userId, options.hideNsfw ?? false);
     const withAuthors = await enrichAuthors(enriched);
 
     return { lists: withAuthors, total: Number(totalRow[0]?.count ?? 0), limit, offset };
@@ -289,7 +288,8 @@ class CuratedListService {
       containingSet = new Set(containing.map((r) => r.listId));
     }
 
-    const enriched = await attachListMetadata(rows, userId);
+    const { hideNsfw } = await getUserSettings(userId);
+    const enriched = await attachListMetadata(rows, userId, hideNsfw);
     const withAuthors = await enrichAuthors(enriched);
     const lists = withAuthors.map((list) => ({
       ...list,
@@ -327,7 +327,8 @@ class CuratedListService {
       db.select({ count: count() }).from(schema.curatedLists).where(whereClause),
     ]);
 
-    const enriched = await attachListMetadata(rows, userId);
+    const { hideNsfw } = await getUserSettings(userId);
+    const enriched = await attachListMetadata(rows, userId, hideNsfw);
     const withAuthors = await enrichAuthors(enriched);
     return { lists: withAuthors, total: Number(totalRow[0]?.count ?? 0), limit, offset };
   }
@@ -337,14 +338,13 @@ class CuratedListService {
     return Boolean(list && canViewList(list, userId));
   }
 
-  async getListDetail(listId: number, userId?: string | null) {
+  async getListDetail(listId: number, userId?: string | null, hideNsfw = false) {
     const list = await db.query.curatedLists.findFirst({
       where: eq(schema.curatedLists.id, listId),
       with: { author: { columns: AUTHOR_COLUMNS } },
     });
     if (!list || !canViewList(list, userId)) return null;
 
-    const { hideNsfw } = await getUserSettings(userId ?? undefined);
     const nsfwConditions = getCatalogFilterConditions(hideNsfw, schema.series);
 
     const itemConditions = [eq(schema.curatedListItems.listId, listId), ...nsfwConditions];

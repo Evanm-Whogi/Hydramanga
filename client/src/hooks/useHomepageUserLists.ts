@@ -5,8 +5,10 @@ import * as homeService from "@/services/homeService";
 import { limitHomepageItems } from "@/lib/homepageUtils";
 import { HOMEPAGE_CAROUSEL_LIMIT } from "@/constants/homepage";
 import type { HomepageListChapterItem, HomepageReadingProgress } from "@/types/homepage";
+import { useNsfw } from "@/providers/NsfwProvider";
 
 export function useHomepageUserLists(userId: string | undefined) {
+  const { revision } = useNsfw();
   const [continueReading, setContinueReading] = useState<HomepageReadingProgress[]>([]);
   const [recentChaptersFromList, setRecentChaptersFromList] = useState<HomepageListChapterItem[]>([]);
 
@@ -22,7 +24,7 @@ export function useHomepageUserLists(userId: string | undefined) {
     homeService.getRecentChaptersFromUserList(HOMEPAGE_CAROUSEL_LIMIT)
       .then((data) => setRecentChaptersFromList(limitHomepageItems(data ?? [])))
       .catch(() => setRecentChaptersFromList([]));
-  }, [userId]);
+  }, [userId, revision]);
 
   return { continueReading, recentChaptersFromList };
 }

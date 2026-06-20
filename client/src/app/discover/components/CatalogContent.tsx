@@ -10,8 +10,7 @@ import CatalogFilters from './CatalogFilters';
 import MangaList from './MangaList';
 import SeriesBookmarkModal from '@/components/SeriesBookmarkModal';
 import { getAllTags } from '@/services/mangaService';
-import { getSettings } from '@/services/userService';
-import { useUser } from '@/providers/UserProvider';
+import { useNsfw } from '@/providers/NsfwProvider';
 import { Shield } from 'lucide-react';
 
 interface Filters {
@@ -54,7 +53,6 @@ function filtersFromSearchParams(searchParams: URLSearchParams): Filters {
 
 export default function CatalogContent({ initialFilters: _initialFilters }: CatalogContentProps) {
   const searchParams = useSearchParams()!;
-  const { user } = useUser();
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const pendingFiltersRef = useRef<Partial<Filters>>({});
   const filtersRef = useRef<Filters>({
@@ -71,7 +69,7 @@ export default function CatalogContent({ initialFilters: _initialFilters }: Cata
     filtersFromSearchParams(searchParams)
   );
   const [availableTags, setAvailableTags] = useState<string[]>([]);
-  const [hideNsfw, setHideNsfw] = useState<boolean | null>(null);
+  const { hideNsfw } = useNsfw();
   const [saveTarget, setSaveTarget] = useState<{ seriesId: number; title: string } | null>(null);
 
   filtersRef.current = filters;
@@ -144,14 +142,6 @@ export default function CatalogContent({ initialFilters: _initialFilters }: Cata
       isMounted = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (!user) {
-      setHideNsfw(false);
-      return;
-    }
-    getSettings().then((s) => setHideNsfw(s.hideNsfw)).catch(() => setHideNsfw(false));
-  }, [user]);
 
   return (
     <>

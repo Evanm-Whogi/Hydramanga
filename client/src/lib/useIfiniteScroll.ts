@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { isRateLimited, parseRateLimitedResponse } from '@/lib/rateLimit';
+import { useNsfw } from '@/providers/NsfwProvider';
 
 export function useInfiniteScroll(filters: any) {
+  // Re-fetch when the NSFW preference changes so results update live (the server
+  // applies the filter, so the same query yields different items).
+  const { revision: nsfwRevision } = useNsfw();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -111,8 +115,9 @@ export function useInfiniteScroll(filters: any) {
     filters.tags?.sort().join(','),
     filters.type, 
     filters.status, 
-    filters.years?.sort().join(','), 
+    filters.years?.sort().join(','),
     filters.sort,
+    nsfwRevision,
   ]);
 
   return { items, loading, hasMore, meta, fetchData };

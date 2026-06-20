@@ -3,7 +3,7 @@ import { schema } from '@/db/index';
 import { eq, sql } from 'drizzle-orm';
 import { DEFAULT_PROFILE_VISIBILITY, normalizeProfileVisibility, type ProfileVisibility } from '@/lib/profileVisibility';
 
-const DEFAULT_HIDE_NSFW = false;
+const DEFAULT_HIDE_NSFW = true;
 const DEFAULT_PROFILE_PUBLIC = true;
 const DEFAULT_INCOGNITO_MODE = false;
 const SETTINGS_CACHE_TTL_MS = 60_000; // 1 minute
@@ -19,6 +19,38 @@ export interface UserSettings {
   isProfilePublic: boolean;
   incognitoMode: boolean;
   profileVisibility: ProfileVisibility;
+}
+
+/** Cookie used to persist the NSFW preference for logged-out (guest) visitors. */
+export const GUEST_HIDE_NSFW_COOKIE = 'guest_hide_nsfw';
+
+/** Read the guest NSFW preference from a request's cookie header. Defaults to showing NSFW. */
+export function getGuestHideNsfw(req: { headers?: { cookie?: string } }): boolean {
+  const raw = req.headers?.cookie;
+  if (!raw) return DEFAULT_HIDE_NSFW;
+  for (const part of raw.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    const name = part.slice(0, eq).trim();
+    if (name !== GUEST_HIDE_NSFW_COOKIE) continue;
+    const value = decodeURIComponent(part.slice(eq + 1).trim());
+    return value === '1' || value === 'true';
+  }
+  return DEFAULT_HIDE_NSFW;
+}
+
+/**
+ * Resolve the effective "hide NSFW" preference for a request.
+ * Logged-in users are governed by their saved profile setting; guests fall back to
+ * the {@link GUEST_HIDE_NSFW_COOKIE} cookie. This means a guest preference is ignored
+ * the moment they authenticate (their account setting takes over).
+ */
+export async function resolveHideNsfw(
+  req: { headers?: { cookie?: string }; user?: { id?: string } | null },
+): Promise<boolean> {
+  const userId = req.user?.id;
+  if (userId) return (await getUserSettings(userId)).hideNsfw;
+  return getGuestHideNsfw(req);
 }
 
 export async function getUserSettings(userId: string | null | undefined): Promise<UserSettings> {

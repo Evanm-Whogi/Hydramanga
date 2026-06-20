@@ -3,6 +3,7 @@ import "@/styles/globals.css";
 import JsonLd from '@/components/JsonLd';
 import { buildRootMetadata, buildWebsiteJsonLd } from '@/lib/seo';
 import { UserProvider } from '@/providers/UserProvider';
+import { NsfwProvider } from '@/providers/NsfwProvider';
 import { NotificationsProvider } from '@/providers/NotificationsProvider';
 import { useSession } from '@/lib/useUser';
 import { cookies } from 'next/headers';
@@ -36,9 +37,11 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <JsonLd data={buildWebsiteJsonLd()} />
         <link rel="preconnect" href="https://cdn.mangabaka.dev" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://images.mangabaka.dev" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://s4.anilist.co/" crossOrigin="anonymous" />
       </head>
       <body className="bg-background text-primary min-h-screen flex flex-col" suppressHydrationWarning={true}>
         <UserProvider initialSession={session}>
+          <NsfwProvider>
           <NotificationsProvider>
             <ImpersonationBanner />
             <BannedSessionGuard />
@@ -50,6 +53,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
               <WelcomeModalGate siteSettings={siteSettings} />
             </MaintenanceGate>
           </NotificationsProvider>
+          </NsfwProvider>
         </UserProvider>
         <ToastContainer
           position="bottom-right"

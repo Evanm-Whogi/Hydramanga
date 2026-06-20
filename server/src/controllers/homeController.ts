@@ -5,7 +5,7 @@ import { chapters, series } from '@/db/schema';
 import dotenv from 'dotenv';
 import { userProgressService } from '@/services/userProgressService';
 import { cacheService } from '@/services/cacheService';
-import { getUserSettings } from '@/services/userSettingsService';
+import { getUserSettings, resolveHideNsfw } from '@/services/userSettingsService';
 import { getCatalogFilterConditions } from '@/config/contentFilter';
 import { withResolvedDisplayTitle } from '@/lib/displayTitle';
 import { enrichNestedSeriesExtras, enrichSeriesListExtras, fetchFirstChapterIdsBySeries, seriesCardColumns} from '@/lib/seriesQueries';
@@ -48,8 +48,7 @@ export const getRecentlyUpdated = async (req: Request, res: Response) => {
     const period = (req.query.period as string) || 'all';
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 36);
     const threshold = getThreshold(period);
-    const userId = req.user?.id;
-    const { hideNsfw } = await getUserSettings(userId);
+    const hideNsfw = await resolveHideNsfw(req);
 
     const cacheKey = `home:recentlyUpdated:${hideNsfw}:${period}:${limit}`;
     const nsfwConditions = getCatalogFilterConditions(hideNsfw, series);
@@ -79,9 +78,8 @@ export const getRecentlyUpdated = async (req: Request, res: Response) => {
 };
 
 // POPULAR MANGA (Filtered by Period)
-async function loadPopularManga(period: string, limit: number, userId?: string) {
+async function loadPopularManga(period: string, limit: number, hideNsfw = false) {
     const threshold = getThreshold(period);
-    const { hideNsfw } = await getUserSettings(userId);
 
     const cacheKey = `home:popularManga:v2:${hideNsfw}:${period}:${limit}`;
     const nsfwConditions = getCatalogFilterConditions(hideNsfw, series);
@@ -141,7 +139,7 @@ async function loadPopularManga(period: string, limit: number, userId?: string) 
 export const getPopularManga = async (req: Request, res: Response) => {
     const period = (req.query.period as string) || 'week';
     const limit = parseInt(req.query.limit as string) || 14;
-    const results = await loadPopularManga(period, limit, req.user?.id);
+    const results = await loadPopularManga(period, limit, await resolveHideNsfw(req));
     res.json(results);
 };
 
@@ -149,7 +147,7 @@ export const getHeroManga = async (req: Request, res: Response) => {
     const period = (req.query.period as string) || 'week';
     const heroCount = Math.min(parseInt(req.query.heroCount as string) || 6, 12);
     const fetchLimit = Math.max(parseInt(req.query.limit as string) || heroCount, heroCount);
-    const results = await loadPopularManga(period, fetchLimit, req.user?.id);
+    const results = await loadPopularManga(period, fetchLimit, await resolveHideNsfw(req));
     const list = Array.isArray(results) ? results : [];
     const heroIds = list.slice(0, heroCount).map((manga: { id: number }) => manga.id).filter(Boolean);
 
@@ -175,8 +173,7 @@ export const getHeroManga = async (req: Request, res: Response) => {
 export const getHighScores = async (req: Request, res: Response) => {
     const type = (req.query.type as string)?.toLowerCase() || 'all';
     const limit = parseInt(req.query.limit as string) || 14;
-    const userId = req.user?.id;
-    const { hideNsfw } = await getUserSettings(userId);
+    const hideNsfw = await resolveHideNsfw(req);
 
     const cacheKey = `home:highScores:${hideNsfw}:${type}:${limit}`;
     const nsfwConditions = getCatalogFilterConditions(hideNsfw, series);

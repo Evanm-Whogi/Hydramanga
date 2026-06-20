@@ -15,7 +15,7 @@ export default function Settings({ user }: { user: any }) {
   const [email, setEmail] = useState(user.email ?? "");
     const [oldPassword, setOldPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
-    const [hideNsfw, setHideNsfw] = useState(false);
+    const [hideNsfw, setHideNsfw] = useState(true);
     const [isProfilePublic, setIsProfilePublic] = useState(true);
     const [incognitoMode, setIncognitoMode] = useState(false);
     const [profileVisibility, setProfileVisibility] = useState({
@@ -38,7 +38,7 @@ export default function Settings({ user }: { user: any }) {
       setIncognitoMode(s.incognitoMode ?? false);
       setProfileVisibility(s.profileVisibility);
     } catch {
-      setHideNsfw(false);
+      setHideNsfw(true);
       setIsProfilePublic(true);
       setIncognitoMode(false);
     }

@@ -11,6 +11,7 @@ import { useUser } from "@/providers/UserProvider";
 import { RandomModal } from '@/components/RandomModal';
 import { ThemeModal, restoreThemeFromCookies } from '@/components/ThemeModal';
 import NotificationsMenu from '@/components/layout/NotificationsMenu';
+import NsfwToggle from '@/components/layout/NsfwToggle';
 import UserAvatar from '@/components/UserAvatar';
 
 type ThemeMode = 'theme-dark' | 'theme-light' | 'theme-night';
@@ -135,11 +136,12 @@ export default function NavbarClient() {
                                     <Link href="/request" className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><CirclePlusIcon className="size-4" /> Request</Link>
                                 )}
                                 <div onClick={toggleRandomManga} className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><DicesIcon className="size-4" />Random</div>
+                                <NsfwToggle />
                                 <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer" className="size-11" ><img src="/oauthIcons/discord.webp" alt="discord" /></a>
                                 <Link href="/discover" className="bg-background hover:bg-background/50 p-3 rounded-full"><SearchIcon className="size-5 hover:cursor-pointer" /></Link>
                                 {user && <NotificationsMenu />}
                             </div>
-
+                            
                             {user ? (
                                 <>
                                     <div className="relative" ref={profileRef}>
@@ -250,6 +252,7 @@ export default function NavbarClient() {
                                         <button onClick={openThemeModal} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 text-left">
                                             <PaletteIcon className="size-4" /> Theme
                                         </button>
+                                        <NsfwToggle variant="mobile" />
                                         {user?.role === "admin" && (
                                             <Link href="/admin" className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/admin' ? 'text-primary' : 'text-muted'}"><ShieldIcon className="size-4" /> Admin</Link>
                                         )}
@@ -285,6 +288,7 @@ export default function NavbarClient() {
                                         <button onClick={openThemeModal} className="flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 text-left">
                                             <PaletteIcon className="size-4" /> Theme
                                         </button>
+                                        <NsfwToggle variant="mobile" />
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <Link href="/login" onClick={() => setIsOpen(false)} className="w-full text-center rounded-lg bg-background px-4 py-2 text-sm font-medium hover:bg-foreground/80">Login</Link>

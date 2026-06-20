@@ -9,7 +9,7 @@ import { isAdminRole } from '@/lib/authHelpers';
 import { normalizeUserContent } from '@/lib/normalizeUserContent';
 import { CONTENT_LIMITS, exceedsLimit } from '@/lib/securityLimits';
 import { validateContentImagesAsync } from '@/lib/externalImageValidation';
-import { getUserSettings } from '@/services/userSettingsService';
+import { getUserSettings, resolveHideNsfw } from '@/services/userSettingsService';
 
 const LIST_SORTS: ListSort[] = ['popular', 'views', 'newest', 'title', 'itemCount'];
 const COMMENT_SORTS: ListCommentSort[] = ['recent', 'oldest', 'top', 'worst'];
@@ -42,6 +42,7 @@ export async function discoverLists(req: Request, res: Response, next: NextFunct
       limit,
       offset,
       userId: getUserId(req),
+      hideNsfw: await resolveHideNsfw(req),
     });
     return res.json({ success: true, ...result });
   } catch (error) {
@@ -101,7 +102,7 @@ export async function getListDetail(req: Request, res: Response, next: NextFunct
   try {
     const listId = parseInt(req.params.id, 10);
     if (isNaN(listId)) return res.status(400).json({ message: 'Invalid list ID' });
-    const list = await curatedListService.getListDetail(listId, getUserId(req));
+    const list = await curatedListService.getListDetail(listId, getUserId(req), await resolveHideNsfw(req));
     if (!list) return res.status(404).json({ message: 'List not found' });
     return res.json({ success: true, list });
   } catch (error) {
