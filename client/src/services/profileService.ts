@@ -1,4 +1,5 @@
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api';
+import { getClientApiBase } from '@/lib/env';
 import type { UserStats } from '@/types/stats';
 import type { EarnedBadge } from '@/lib/badgeConfig';
 import type { ProfileVisibility } from '@/types/profile';
@@ -152,10 +153,46 @@ export async function getProfileLists(identifier: string): Promise<{ lists: Prof
   return apiGet(`/users/${encodeURIComponent(identifier)}/lists`);
 }
 
+export type ImportMode = "merge" | "replace";
+export type SyncSummary = { total: number; matched: number; unmatched: number };
+
 export async function exportMyData() {
   return apiGet('/users/me/export');
 }
 
-export async function importMyData(payload: unknown) {
-  return apiPost('/users/me/import', payload);
+/** Fetch a text export (CSV/XML) directly so the browser can download it. */
+async function fetchExportText(format: "csv" | "xml"): Promise<string> {
+  const res = await fetch(`${getClientApiBase()}/users/me/export?format=${format}`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error("Export failed");
+  return res.text();
+}
+
+export async function exportMyDataCsv(): Promise<string> {
+  return fetchExportText("csv");
+}
+
+export async function exportMyDataXml(): Promise<string> {
+  return fetchExportText("xml");
+}
+
+export async function importMyData(payload: unknown, mode: ImportMode = "merge") {
+  return apiPost('/users/me/import', { ...(payload as object), mode });
+}
+
+export async function importExternalEntries(
+  provider: "anilist" | "my_anime_list",
+  entries: { externalId: string; status: string }[],
+  mode: ImportMode = "merge",
+): Promise<SyncSummary> {
+  return apiPost('/users/me/import/external', { provider, entries, mode });
+}
+
+export async function syncTracker(
+  provider: "anilist" | "myanimelist",
+  username: string,
+  mode: ImportMode = "merge",
+): Promise<SyncSummary> {
+  return apiPost('/users/me/sync', { provider, username, mode });
 }

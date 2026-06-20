@@ -5,7 +5,7 @@ import { uploadProfilePicture, deleteProfilePicture } from '@/controllers/userCo
 import { getSettings, patchSettings } from '@/controllers/userSettingsController';
 import { getPublicProfile } from '@/controllers/profileController';
 import { listMyAuthAuditLogs } from '@/controllers/userAuditController';
-import { exportMyData, importMyData } from '@/controllers/profileExtensionController';
+import { exportMyData, importMyData, importExternalData, syncFromTracker } from '@/controllers/profileExtensionController';
 import { getProfileStats, getProfileFavorites, setMyFavorites, getProfileWall, createProfileWallPost, updateProfileWallPost, voteProfileWallPost, deleteProfileWallPost, getProfileComments, getProfileRecentReads, getProfileBookmarks, getProfileLists } from '@/controllers/profileSectionController';
 import { followUser, unfollowUser } from '@/controllers/userFollowController';
 import { claimEasterEggBadge } from '@/controllers/userBadgeController';
@@ -19,6 +19,8 @@ router.post('/me/badges/easter-egg', authMiddleware, claimEasterEggBadge as Requ
 router.get('/me/audit', authMiddleware, listMyAuthAuditLogs as RequestHandler);
 router.get('/me/export', authMiddleware, dataExportRateLimit, exportMyData as RequestHandler);
 router.post('/me/import', authMiddleware, dataImportRateLimit, importMyData as RequestHandler);
+router.post('/me/import/external', authMiddleware, dataImportRateLimit, importExternalData as RequestHandler);
+router.post('/me/sync', authMiddleware, dataImportRateLimit, syncFromTracker as RequestHandler);
 router.put('/me/favorites', authMiddleware, setMyFavorites as RequestHandler);
 
 router.get('/settings', authMiddleware, getSettings as RequestHandler);

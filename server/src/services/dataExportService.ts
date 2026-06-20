@@ -95,7 +95,142 @@ async function resolveSavedListId(entry: ExportSavedList, userId: string): Promi
   return bySlug.id;
 }
 
+/** MAL XML <my_status> labels keyed by our bookmark status. */
+const MAL_STATUS_LABELS: Record<string, string> = {
+  reading: 'Reading',
+  rereading: 'Reading',
+  completed: 'Completed',
+  paused: 'On-Hold',
+  dropped: 'Dropped',
+  planned: 'Plan to Read',
+};
+
+function csvCell(value: unknown): string {
+  const s = value == null ? '' : String(value);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function xmlEscape(value: string): string {
+  return value.replace(/]]>/g, ']]]]><![CDATA[>');
+}
+
 class DataExportService {
+  /** For `replace` imports: wipe the user's existing rows only in the categories present in the payload. */
+  private async clearUserDataForReplace(userId: string, payload: ImportPayload): Promise<void> {
+    if (payload.seriesBookmarks) {
+      await db.delete(schema.seriesBookmarks).where(eq(schema.seriesBookmarks.userId, userId));
+    }
+    if (payload.readingProgress) {
+      await db.delete(schema.userReadingProgress).where(eq(schema.userReadingProgress.userId, userId));
+    }
+    if (payload.viewHistory) {
+      await db.delete(schema.mangaViews).where(eq(schema.mangaViews.userId, userId));
+    }
+    if (payload.savedLists) {
+      const saves = await db
+        .select({ listId: schema.curatedListSaves.listId })
+        .from(schema.curatedListSaves)
+        .where(eq(schema.curatedListSaves.userId, userId));
+      const listIds = saves.map((s) => s.listId);
+      if (listIds.length > 0) {
+        await db
+          .update(schema.curatedLists)
+          .set({ saveCount: sql`GREATEST(${schema.curatedLists.saveCount} - 1, 0)`, updatedAt: new Date() })
+          .where(inArray(schema.curatedLists.id, listIds));
+      }
+      await db.delete(schema.curatedListSaves).where(eq(schema.curatedListSaves.userId, userId));
+    }
+    if (payload.myLists) {
+      // Cascades to curated_list_items and saves of these lists.
+      await db.delete(schema.curatedLists).where(eq(schema.curatedLists.userId, userId));
+    }
+  }
+
+  /** CSV of the user's bookmarks (re-importable: includes seriesId). */
+  async exportUserDataCsv(userId: string): Promise<string> {
+    const rows = await db
+      .select({
+        seriesId: schema.seriesBookmarks.seriesId,
+        status: schema.seriesBookmarks.status,
+        updatedAt: schema.seriesBookmarks.updatedAt,
+        title: schema.series.title,
+        anilistId: sql<string | null>`${schema.series.source}->'anilist'->>'id'`,
+        malId: sql<string | null>`${schema.series.source}->'my_anime_list'->>'id'`,
+        percentageCompleted: schema.userReadingProgress.percentageCompleted,
+      })
+      .from(schema.seriesBookmarks)
+      .innerJoin(schema.series, eq(schema.seriesBookmarks.seriesId, schema.series.id))
+      .leftJoin(
+        schema.userReadingProgress,
+        and(
+          eq(schema.userReadingProgress.userId, userId),
+          eq(schema.userReadingProgress.seriesId, schema.seriesBookmarks.seriesId),
+        ),
+      )
+      .where(eq(schema.seriesBookmarks.userId, userId));
+
+    const header = ['seriesId', 'title', 'status', 'anilistId', 'malId', 'percentageCompleted', 'updatedAt'];
+    const lines = [header.join(',')];
+    for (const r of rows) {
+      lines.push(
+        [
+          r.seriesId,
+          r.title ?? '',
+          r.status,
+          r.anilistId ?? '',
+          r.malId ?? '',
+          r.percentageCompleted ?? 0,
+          r.updatedAt?.toISOString() ?? '',
+        ]
+          .map(csvCell)
+          .join(','),
+      );
+    }
+    return lines.join('\n');
+  }
+
+  /** MyAnimeList-format XML of the user's bookmarks that have a MAL id. */
+  async exportUserDataXml(userId: string, username: string): Promise<string> {
+    const rows = await db
+      .select({
+        status: schema.seriesBookmarks.status,
+        title: schema.series.title,
+        malId: sql<string | null>`${schema.series.source}->'my_anime_list'->>'id'`,
+      })
+      .from(schema.seriesBookmarks)
+      .innerJoin(schema.series, eq(schema.seriesBookmarks.seriesId, schema.series.id))
+      .where(
+        and(
+          eq(schema.seriesBookmarks.userId, userId),
+          sql`${schema.series.source}->'my_anime_list'->>'id' IS NOT NULL`,
+        ),
+      );
+
+    const items = rows
+      .map(
+        (r) =>
+          `  <manga>\n` +
+          `    <manga_mangadb_id>${r.malId}</manga_mangadb_id>\n` +
+          `    <manga_title><![CDATA[${xmlEscape(r.title ?? '')}]]></manga_title>\n` +
+          `    <my_status>${MAL_STATUS_LABELS[r.status] ?? 'Reading'}</my_status>\n` +
+          `    <update_on_import>1</update_on_import>\n` +
+          `  </manga>`,
+      )
+      .join('\n');
+
+    return (
+      `<?xml version="1.0" encoding="UTF-8" ?>\n` +
+      `<myanimelist>\n` +
+      `  <myinfo>\n` +
+      `    <user_name><![CDATA[${xmlEscape(username)}]]></user_name>\n` +
+      `    <user_export_type>2</user_export_type>\n` +
+      `    <user_total_manga>${rows.length}</user_total_manga>\n` +
+      `  </myinfo>\n` +
+      `${items}${items ? '\n' : ''}` +
+      `</myanimelist>\n`
+    );
+  }
+
   async exportUserData(userId: string) {
     const [seriesBookmarks, progress, viewHistoryRows, myListRows, savedListRows] = await Promise.all([
       db
@@ -226,7 +361,7 @@ class DataExportService {
     };
   }
 
-  async importUserData(userId: string, payload: ImportPayload) {
+  async importUserData(userId: string, payload: ImportPayload, mode: 'merge' | 'replace' = 'merge') {
     if ((payload.seriesBookmarks?.length ?? 0) > CONTENT_LIMITS.importMaxBookmarks) {
       throw new Error('Too many bookmarks in import');
     }
@@ -247,6 +382,10 @@ class DataExportService {
       if ((list.items?.length ?? 0) > CONTENT_LIMITS.importMaxListItemsPerList) {
         throw new Error('Too many items in a list');
       }
+    }
+
+    if (mode === 'replace') {
+      await this.clearUserDataForReplace(userId, payload);
     }
 
     if (payload.seriesBookmarks?.length) {

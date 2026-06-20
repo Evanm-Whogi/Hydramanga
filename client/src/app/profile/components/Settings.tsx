@@ -276,9 +276,9 @@ export default function Settings({ user }: { user: any }) {
                 <div className="flex flex-col p-5 bg-foreground w-full rounded-md shadow-md">
                     <h1 className="text-xl font-bold">Public profile sections</h1>
                     <p className="text-sm text-muted mb-4">Choose what visitors can see on your public profile page.</p>
-                    <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
                       {visibilityOptions.map((option) => (
-                        <div key={option.key} className="flex items-center justify-between gap-4 pt-4 first:pt-0 border-t first:border-t-0 border-borders">
+                        <div key={option.key} className="flex items-center justify-between gap-4 border-borders border-b pb-4">
                           <div>
                             <p className="font-medium text-primary">{option.label}</p>
                             <p className="text-sm text-muted">{option.description}</p>
@@ -299,20 +299,20 @@ export default function Settings({ user }: { user: any }) {
                 </div>
             </div>
             <div className="flex flex-row gap-6 w-full mt-5">
-                    <DataExportSection />
-                    <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md shadow-md">
-                        <h1 className="text-xl font-bold">Danger Zone</h1>
-                        <p className="text-sm text-muted">Be careful with these actions. They cannot be undone.</p>
-                        <div className="flex flex-col gap-3 pt-5">
-                             <button onClick={handleResendVerification} className="bg-background shadow-md hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-full">
-                                Resend Email Verification
-                            </button>
-                            <button className="bg-background shadow-md hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-full text-red-500">
-                                Delete Account
-                            </button>
-                        </div>
+                <DataExportSection />
+                <div className="flex flex-col p-5 bg-foreground w-full md:w-1/2 rounded-md shadow-md">
+                    <h1 className="text-xl font-bold">Danger Zone</h1>
+                    <p className="text-sm text-muted">Be careful with these actions. They cannot be undone.</p>
+                    <div className="flex flex-col gap-3 pt-5">
+                            <button onClick={handleResendVerification} className="bg-background shadow-md hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-full">
+                            Resend Email Verification
+                        </button>
+                        <button className="bg-background shadow-md hover:bg-background/50 px-2 py-2 rounded-lg inline-flex place-content-center items-center text-lg hover:cursor-pointer w-full text-red-500">
+                            Delete Account
+                        </button>
                     </div>
                 </div>
+            </div>
         </div>
     );
 }
