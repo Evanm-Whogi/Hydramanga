@@ -7,6 +7,7 @@ import { queueService } from '@/services/queueService';
 import { getAllChapterDownloadQueueNames } from '@/lib/chapterDownloadQueues';
 import { mangaProgressService, isSourceOnlyProgress } from '@/services/mangaProgressService';
 import { autoSelectScraperSource } from '@/services/scraperSourceService';
+import { acquisitionRouterService } from '@/services/acquisitionRouterService';
 import { getExcludeNovelConditions, isNovelType } from '@/config/contentFilter';
 
 // Constants
@@ -30,6 +31,12 @@ export type RankedChapterScanOptions = {
   skipWithChapters?: boolean;
   type?: string;
   autoSelectSource?: boolean;
+  /**
+   * Route each title through the archive (torrent) backfill first; the router picks
+   * archive-vs-scrape per series, and scraping is the gap-fill/fallback. Defaults on.
+   * Ignored when the archive pipeline is disabled. (`trending` cron stays pure scrape.)
+   */
+  useArchive?: boolean;
   /** BullMQ job id prefix; use `trending` for cron top-N, `ranked` for admin incremental batches. */
   jobIdPrefix?: 'ranked' | 'trending';
 };
@@ -45,6 +52,7 @@ export type RankedChapterScanResult = {
   sourcesAlreadySet: number;
   sourcesNotFound: number;
   sourcesLowScore: number;
+  archived: number;
 };
 
 class MangaOrchestratorService {
@@ -91,6 +99,7 @@ class MangaOrchestratorService {
     const limit = end - start + 1;
     const skipWithChapters = options.skipWithChapters === true;
     const autoSelectSource = options.autoSelectSource !== false;
+    const useArchive = options.useArchive !== false && acquisitionRouterService.enabled;
     const jobIdPrefix = options.jobIdPrefix === 'trending' ? 'trending' : 'ranked';
     const typeFilter = options.type?.trim().toLowerCase();
 
@@ -129,6 +138,7 @@ class MangaOrchestratorService {
     let sourcesAlreadySet = 0;
     let sourcesNotFound = 0;
     let sourcesLowScore = 0;
+    let archived = 0;
     for (const row of rows) {
       if (!row.title || isIgnored(row.title)) {
         skippedIgnored++;
@@ -158,6 +168,23 @@ class MangaOrchestratorService {
           sourcesNotFound++;
         }
       }
+      // Archive backfill: let the router decide archive-vs-scrape per series. When it
+      // archives (completed/large back-catalog), scraping is the gap-fill/fallback the
+      // pipeline enqueues itself, so we skip the scrape job here. Otherwise fall through.
+      if (useArchive) {
+        try {
+          const strategy = await acquisitionRouterService.routeImport(row.id, 'initial-import', { scrapeFallback: false });
+          if (strategy !== 'scrape') {
+            archived++;
+            continue;
+          }
+        } catch (err) {
+          logger.warn(
+            `Archive routing failed for series ${row.id}; falling back to scrape: ${(err as Error).message}`,
+            { service: 'mangaOrchestratorService' }
+          );
+        }
+      }
       const coverUrl = row.cover ? (row.cover as any)?.x350?.x1 || (row.cover as any)?.x250?.x1 || (row.cover as any)?.raw?.url || undefined : undefined;
       await queueService.addJob(
         'mangaChapterImportQueue',
@@ -179,9 +206,10 @@ class MangaOrchestratorService {
       sourcesAlreadySet,
       sourcesNotFound,
       sourcesLowScore,
+      archived,
     };
     logger.info(
-      `Queued ranked chapter scans ranks ${start}-${end}: ${queued} queued, ${sourcesSelected} sources auto-selected, ${sourcesAlreadySet} already had source, ${sourcesNotFound} no match, ${sourcesLowScore} low score, ${skippedWithChapters} skipped (has chapters), ${skippedIgnored} ignored titles`,
+      `Queued ranked chapter scans ranks ${start}-${end}: ${queued} scrape-queued, ${archived} archive-routed, ${sourcesSelected} sources auto-selected, ${sourcesAlreadySet} already had source, ${sourcesNotFound} no match, ${sourcesLowScore} low score, ${skippedWithChapters} skipped (has chapters), ${skippedIgnored} ignored titles`,
       { service: 'mangaOrchestratorService' }
     );
     return result;
@@ -194,6 +222,8 @@ class MangaOrchestratorService {
       start: 1,
       end: limit,
       autoSelectSource: options?.autoSelectSource ?? false,
+      // Trending = leading edge of popular (often ongoing) series → pure scrape; archives lag.
+      useArchive: false,
       jobIdPrefix: 'trending',
     });
     logger.info(`Queued trending scans for ${result.queued} series`, { service: 'mangaOrchestratorService' });
@@ -235,7 +265,22 @@ class MangaOrchestratorService {
     // Initialize progress to 'scanning' state for a first scan (no existing chapters yet)
     // This ensures WebSocket clients see the scanning state before the job is processed
     await mangaProgressService.initializeProgress(seriesId, 0, 0);
-    
+
+    // Archive routing: for a large/completed back-catalog, acquire a whole-series
+    // torrent archive instead of scraping page-by-page; scraping stays the fallback
+    // and the leading-edge gap-fill. Small/new catalogs fall through to scrape.
+    if (acquisitionRouterService.enabled) {
+      try {
+        const strategy = await acquisitionRouterService.routeImport(seriesId, 'initial-import', { scrapeFallback: false });
+        if (strategy !== 'scrape') {
+          logger.info(`Routed on-demand import for ${mangaTitle} (${seriesId}) to archive (${strategy})`, { service: 'mangaOrchestratorService' });
+          return;
+        }
+      } catch (err) {
+        logger.warn(`Archive routing failed for ${mangaTitle} (${seriesId}); falling back to scrape: ${(err as Error).message}`, { service: 'mangaOrchestratorService' });
+      }
+    }
+
     // Fetch romanizedTitle and cover from database
     const [manga] = await db.select({ romanizedTitle: series.romanizedTitle, cover: series.cover }).from(series).where(eq(series.id, seriesId));
     const romanizedTitle = manga?.romanizedTitle || undefined;

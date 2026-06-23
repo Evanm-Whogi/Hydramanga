@@ -5,6 +5,7 @@ export type TriggerRankedScanParams = {
   end: number;
   skipWithChapters?: boolean;
   autoSelectSource?: boolean;
+  useArchive?: boolean;
   type?: string;
 };
 
@@ -15,6 +16,7 @@ export type TriggerRankedScanResponse = {
   end: number;
   skipWithChapters: boolean;
   autoSelectSource: boolean;
+  useArchive: boolean;
   type: string;
 };
 
@@ -25,6 +27,7 @@ export async function triggerRankedScan(params: TriggerRankedScanParams): Promis
   });
   if (params.skipWithChapters) search.set('skipWithChapters', 'true');
   if (params.autoSelectSource === false) search.set('autoSelectSource', 'false');
+  if (params.useArchive === false) search.set('useArchive', 'false');
   if (params.type && params.type !== 'all') search.set('type', params.type);
   return apiPost(`/admin/manga/scan-ranked?${search.toString()}`, {}) as Promise<TriggerRankedScanResponse>;
 }

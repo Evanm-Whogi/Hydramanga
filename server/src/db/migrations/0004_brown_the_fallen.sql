@@ -1,0 +1,1 @@
+ALTER TABLE "acquisition_jobs" ADD COLUMN "scrape_after_ingest" boolean DEFAULT false NOT NULL;

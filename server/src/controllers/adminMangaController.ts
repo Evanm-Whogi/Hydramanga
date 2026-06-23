@@ -1,10 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { db } from '@/db';
-import { series, chapters, mangaImportProgress } from '@/db/schema';
-import { eq, inArray, and, count } from 'drizzle-orm';
+import { series, chapters, mangaImportProgress, acquisitionJobs } from '@/db/schema';
+import { eq, inArray, and, count, desc } from 'drizzle-orm';
+import { ARCHIVE_INGEST_QUEUE } from '@/jobs/handlers/archiveQueueNames';
 import { scraperManager } from '@/scrapers';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
+import { acquisitionRouterService } from '@/services/acquisitionRouterService';
 import logger from '@/services/loggerService';
 import { queueService } from '@/services/queueService';
 import { cacheService } from '@/services/cacheService';
@@ -137,6 +139,68 @@ export async function adminTriggerRescan(req: Request, res: Response, next: Next
         return res.json({ success: true, seriesId: id, queued: true, message: 'Rescan queued' });
     } catch (error) {
         logger.error(`Admin trigger rescan failed: ${(error as Error).message}`, { service: 'adminMangaController' });
+        return next(error);
+    }
+}
+
+/**
+ * Admin: trigger an archive (torrent) import/backfill for a series — the
+ * manual-backfill trigger (plan §3.5). Routes through the AcquisitionRouter, which
+ * acquires a whole-series archive and falls back to scrape on any archive failure.
+ */
+export async function adminTriggerArchiveImport(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id) || id <= 0) return res.status(400).json({ error: 'Invalid manga ID' });
+
+        if (!acquisitionRouterService.enabled) {
+            return res.status(409).json({ success: false, seriesId: id, message: 'Archive ingestion is disabled (ARCHIVE_INGEST_ENABLED=false)' });
+        }
+
+        const strategy = await acquisitionRouterService.routeImport(id, 'manual-backfill');
+        // A manual backfill always sets scrapeAfterIngest, so a scraper gap-fill follows
+        // the download regardless of the archive strategy (incl. archive_only/completed).
+        const message =
+            strategy === 'scrape'
+                ? 'No archive candidate path; scraping instead.'
+                : 'Archive download queued; a scraper gap-fill runs after it ingests.';
+        return res.json({ success: true, seriesId: id, strategy, message });
+    } catch (error) {
+        logger.error(`Admin trigger archive import failed: ${(error as Error).message}`, { service: 'adminMangaController' });
+        return next(error);
+    }
+}
+
+/**
+ * Admin: re-run ingest on the latest already-downloaded archive for a series,
+ * reusing the files on disk (no re-download). Used to re-process a `needs_review`
+ * archive after a segmentation improvement — the v2 review workflow.
+ */
+export async function adminReingestArchive(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id) || id <= 0) return res.status(400).json({ error: 'Invalid manga ID' });
+
+        const [row] = await db
+            .select({ id: acquisitionJobs.id, localPath: acquisitionJobs.localPath, status: acquisitionJobs.status })
+            .from(acquisitionJobs)
+            .where(eq(acquisitionJobs.seriesId, id))
+            .orderBy(desc(acquisitionJobs.id))
+            .limit(1);
+
+        if (!row?.localPath) {
+            return res.status(409).json({ success: false, seriesId: id, message: 'No downloaded archive on disk to re-ingest for this series' });
+        }
+
+        await queueService.addJob(
+            ARCHIVE_INGEST_QUEUE,
+            `Re-ingest series ${id}`,
+            { jobId: row.id },
+            { jobId: `reingest-${row.id}-${Date.now()}`, attempts: 1 }
+        );
+        return res.json({ success: true, seriesId: id, jobId: row.id, message: 'Re-ingest queued' });
+    } catch (error) {
+        logger.error(`Admin re-ingest archive failed: ${(error as Error).message}`, { service: 'adminMangaController' });
         return next(error);
     }
 }

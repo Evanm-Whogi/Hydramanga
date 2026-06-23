@@ -10,16 +10,12 @@
  */
 
 import type { Job } from 'bullmq';
-import { db } from '@/db';
-import { chapters } from '@/db/schema';
 import { scraperManager } from '@/scrapers';
-import { mangaProgressService } from '@/services/mangaProgressService';
-import { notificationService } from '@/services/notificationService';
+import { chapterPersistenceService } from '@/services/chapterPersistenceService';
 import logger from '@/services/loggerService';
-import { eq, and } from 'drizzle-orm';
 import * as Sentry from "@sentry/node";
-import { withSpan, addBreadcrumb } from '@/utils/sentryHelper';
-import { formatDbError, getPgErrorDetails, withDbRetry } from '@/utils/dbError';
+import { withSpan } from '@/utils/sentryHelper';
+import { formatDbError, getPgErrorDetails } from '@/utils/dbError';
 import { setJobProgress } from '@/utils/jobProgress';
 
 export interface ChapterDownloadData {
@@ -87,39 +83,19 @@ export class ChapterDownloaderService {
                 data: { storagePrefix, page_count: pageCount },
             });
 
-            // Upsert chapter in database
+            // Persist the chapter, drive progress, and announce on completion. Shared
+            // with the archive/torrent path so both produce identical rows + notifications.
             await withSpan(
-                'upsert_chapter_metadata',
-                async () => {
-                    return withDbRetry(
-                        () =>
-                            db
-                                .insert(chapters)
-                                .values({
-                                    seriesId: data.seriesId,
-                                    chapterNumber: chapterNumberStr,
-                                    storagePrefix,
-                                    pageCount,
-                                    title: data.chapterTitle,
-                                    scraperId: data.scraperId || null,
-                                    updatedAt: new Date(),
-                                })
-                                .onConflictDoUpdate({
-                                    target: [chapters.seriesId, chapters.chapterNumber],
-                                    set: {
-                                        storagePrefix,
-                                        pageCount,
-                                        title: data.chapterTitle,
-                                        scraperId: data.scraperId || null,
-                                        updatedAt: new Date(),
-                                    },
-                                }),
-                        {
-                            label: `upsert_chapter_metadata series=${data.seriesId} chapter=${chapterNumberStr}`,
-                            maxAttempts: 3,
-                        }
-                    );
-                },
+                'persist_downloaded_chapter',
+                async () =>
+                    chapterPersistenceService.persistDownloadedChapter({
+                        seriesId: data.seriesId,
+                        chapterNumber: chapterNumberStr,
+                        title: data.chapterTitle,
+                        storagePrefix,
+                        pageCount,
+                        scraperId: data.scraperId || null,
+                    }),
                 {
                     op: 'db.upsert',
                     tags: {
@@ -128,85 +104,6 @@ export class ChapterDownloaderService {
                     },
                 }
             );
-
-            logger.info(
-                `[DOWNLOADER] Successfully saved chapter ${data.chapterNumber} for series ${data.seriesId} with prefix ${storagePrefix}`,
-                { service: 'chapterDownloaderService' }
-            );
-
-            // Fetch the complete chapter object from database
-            const [savedChapter] = await withSpan(
-                'fetch_saved_chapter',
-                async () => {
-                    return db
-                        .select()
-                        .from(chapters)
-                        .where(and(eq(chapters.chapterNumber, chapterNumberStr), eq(chapters.seriesId, data.seriesId)))
-                        .limit(1);
-                },
-                {
-                    op: 'db.read',
-                    tags: {
-                        series_id: String(data.seriesId),
-                        chapter_number: chapterNumberStr,
-                    },
-                }
-            );
-
-            // Increment downloaded count for progress tracking with complete chapter info
-            let incrementResult: { justCompleted: boolean };
-            if (savedChapter) {
-                incrementResult = await withSpan(
-                    'update_progress_tracking',
-                    async () => {
-                        return mangaProgressService.incrementDownloaded(data.seriesId, {
-                            id: savedChapter.id,
-                            chapterNumber: savedChapter.chapterNumber,
-                            title: savedChapter.title || data.chapterTitle,
-                            pageCount: savedChapter.pageCount || pageCount,
-                            createdAt: savedChapter.createdAt?.toISOString(),
-                            updatedAt: savedChapter.updatedAt?.toISOString(),
-                        });
-                    },
-                    {
-                        op: 'db.write',
-                        tags: {
-                            series_id: String(data.seriesId),
-                            chapter_number: chapterNumberStr,
-                        },
-                    }
-                );
-            } else {
-                // Fallback if fetch fails
-                incrementResult = await withSpan(
-                    'update_progress_tracking_fallback',
-                    async () => {
-                        return mangaProgressService.incrementDownloaded(data.seriesId, {
-                            chapterNumber: chapterNumberStr,
-                            title: data.chapterTitle,
-                            pageCount,
-                        });
-                    },
-                    {
-                        op: 'db.write',
-                        tags: {
-                            series_id: String(data.seriesId),
-                            chapter_number: chapterNumberStr,
-                        },
-                    }
-                );
-            }
-
-            // Announce only once the whole import has finished downloading, so users and
-            // Discord see chapters that actually landed — not ones merely queued (some of
-            // which may fail and only arrive later via the recovery job).
-            if (incrementResult.justCompleted) {
-                await withSpan(
-                    'announce_downloaded_chapters',
-                    async () => notificationService.announceNewlyDownloadedChapters(data.seriesId),
-                    { op: 'notification', tags: { series_id: String(data.seriesId) } }
-                );
-            }
 
             await setJobProgress(job, 100);
             Sentry.addBreadcrumb({

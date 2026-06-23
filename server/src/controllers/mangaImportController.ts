@@ -172,7 +172,7 @@ export const triggerTrendingRescan = async (req: Request, res: Response, next: N
     }
 }
 
-function parseRankedScanQuery(req: Request): { start: number; end: number; skipWithChapters: boolean; autoSelectSource: boolean; type?: string } | { error: string } {
+function parseRankedScanQuery(req: Request): { start: number; end: number; skipWithChapters: boolean; autoSelectSource: boolean; useArchive: boolean; type?: string } | { error: string } {
     const start = Number(req.query.start);
     const end = Number(req.query.end);
     if (!Number.isFinite(start) || !Number.isFinite(end) || start < 1 || end < start) {
@@ -180,8 +180,9 @@ function parseRankedScanQuery(req: Request): { start: number; end: number; skipW
     }
     const skipWithChapters = req.query.skipWithChapters === 'true' || req.query.skipWithChapters === '1';
     const autoSelectSource = req.query.autoSelectSource !== 'false' && req.query.autoSelectSource !== '0';
+    const useArchive = req.query.useArchive !== 'false' && req.query.useArchive !== '0';
     const type = typeof req.query.type === 'string' && req.query.type.trim() ? req.query.type.trim() : undefined;
-    return { start: Math.floor(start), end: Math.floor(end), skipWithChapters, autoSelectSource, type };
+    return { start: Math.floor(start), end: Math.floor(end), skipWithChapters, autoSelectSource, useArchive, type };
 }
 
 export const triggerRankedScan = async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
@@ -191,17 +192,17 @@ export const triggerRankedScan = async (req: Request, res: Response, next: NextF
             return res.status(400).json({ error: parsed.error });
         }
 
-        const { start, end, skipWithChapters, autoSelectSource, type } = parsed;
+        const { start, end, skipWithChapters, autoSelectSource, useArchive, type } = parsed;
         if (end - start + 1 > 500) {
             return res.status(400).json({ error: 'Maximum 500 ranks per batch (end - start + 1 <= 500)' });
         }
 
         logger.info(
-            `Ranked chapter scan triggered via admin API (ranks ${start}-${end}, skipWithChapters=${skipWithChapters}, autoSelectSource=${autoSelectSource}${type ? `, type=${type}` : ''})`,
+            `Ranked chapter scan triggered via admin API (ranks ${start}-${end}, skipWithChapters=${skipWithChapters}, autoSelectSource=${autoSelectSource}, useArchive=${useArchive}${type ? `, type=${type}` : ''})`,
             { service: 'mangaImportController' }
         );
 
-        mangaOrchestratorService.enqueueRankedChapterScans({ start, end, skipWithChapters, autoSelectSource, type }).then((result) => {
+        mangaOrchestratorService.enqueueRankedChapterScans({ start, end, skipWithChapters, autoSelectSource, useArchive, type }).then((result) => {
             logger.info(
                 `Ranked scan batch ${start}-${end} finished: ${result.queued} queued, ${result.sourcesSelected} sources selected`,
                 { service: 'mangaImportController' }
@@ -217,6 +218,7 @@ export const triggerRankedScan = async (req: Request, res: Response, next: NextF
             end,
             skipWithChapters,
             autoSelectSource,
+            useArchive,
             type: type ?? 'all',
         });
     } catch (error: any) {

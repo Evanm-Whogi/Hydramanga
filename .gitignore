@@ -7,5 +7,7 @@ nginx/nginx-dev.conf
 8ec597a9-f14c-440a-a59b-4f3935ba3e84.json
 docker-compose.yml
 docker-compose.*
+.env
+.env.*
 .cursor
 .vscode

@@ -64,7 +64,8 @@
     "emails:test": "npx ts-node -r tsconfig-paths/register scripts/test-emails.ts",
     "smoke:guest-reading": "npx ts-node -r tsconfig-paths/register scripts/smoke-guest-reading.ts",
     "placeholders:scan": "npx ts-node -r tsconfig-paths/register scripts/scan-placeholders.ts",
-    "placeholders:redownload": "npx ts-node -r tsconfig-paths/register scripts/redownload-placeholders.ts"
+    "placeholders:redownload": "npx ts-node -r tsconfig-paths/register scripts/redownload-placeholders.ts",
+    "scan:status": "LOG_LEVEL=error npx ts-node -r tsconfig-paths/register scripts/scan-status.ts"
   },
   "author": "",
   "license": "ISC",

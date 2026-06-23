@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, varchar, integer, uniqueIndex, boolean, jsonb, real, pgEnum, primaryKey, index} from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, varchar, integer, uniqueIndex, boolean, jsonb, real, pgEnum, primaryKey, index, bigint} from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 
 export const user = pgTable("user", {
@@ -679,6 +679,57 @@ export const importRequests = pgTable('import_requests', {
   statusIdx: index('idx_import_requests_status').on(t.status),
   userIdIdx: index('idx_import_requests_user_id').on(t.userId),
   createdAtIdx: index('idx_import_requests_created_at').on(t.createdAt.desc()),
+}));
+
+// Archive ingestion (torrent) acquisition jobs — one row per series-level archive
+// acquisition attempt. Tracks the long-running torrent lifecycle outside BullMQ
+// (a job submits + persists a handle and returns; a poller advances the state).
+// See docs/archive-ingestion-plan.md §7.
+export const acquisitionJobStatusEnum = pgEnum('acquisition_job_status', [
+  'searching',
+  'downloading',
+  'downloaded',
+  'ingesting',
+  'done',
+  'failed',
+  'needs_review',
+]);
+
+export const acquisitionJobProtocolEnum = pgEnum('acquisition_job_protocol', ['torrent']);
+
+export const acquisitionJobs = pgTable('acquisition_jobs', {
+  id: serial('id').primaryKey(),
+  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }),
+  protocol: acquisitionJobProtocolEnum('protocol').notNull().default('torrent'),
+  indexer: text('indexer'),
+  candidateTitle: text('candidate_title'),
+  // Stable hash of the chosen candidate (e.g. magnet/infohash) — dedupes re-attempts
+  // for the same series (plan §11.2: one acquisition per series in v1).
+  candidateHash: text('candidate_hash'),
+  downloadUri: text('download_uri'),
+  // External download-client handle (qBittorrent infohash) the poller queries.
+  clientHandle: text('client_handle'),
+  status: acquisitionJobStatusEnum('status').notNull().default('searching'),
+  localPath: text('local_path'),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }),
+  chaptersIngested: integer('chapters_ingested').notNull().default(0),
+  // Whether to run a scraper gap-fill AFTER a successful ingest, regardless of
+  // series status. Set for manual-backfill (operator wants "archive + scrape")
+  // and for archive_then_scrape strategies; completed-series initial-imports leave
+  // it false (the whole catalog comes from the archive). Read by the ingest handler.
+  scrapeAfterIngest: boolean('scrape_after_ingest').notNull().default(false),
+  // Parser's best-guess layout for needs_review rows (the v2 dataset).
+  layoutGuess: jsonb('layout_guess'),
+  error: text('error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  seriesIdIdx: index('idx_acquisition_jobs_series_id').on(t.seriesId),
+  statusIdx: index('idx_acquisition_jobs_status').on(t.status),
+  // Dedupe key: at most one acquisition per (series, candidate).
+  seriesCandidateUniq: uniqueIndex('idx_acquisition_jobs_series_candidate')
+    .on(t.seriesId, t.candidateHash)
+    .where(sql`${t.candidateHash} IS NOT NULL`),
 }));
 
 export const userNotifications = pgTable('user_notifications', {

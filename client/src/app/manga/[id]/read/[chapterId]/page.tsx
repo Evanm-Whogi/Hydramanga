@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { redirect, notFound } from "next/navigation";
 import { fetchOne } from '@/services/mangaService';
 import { useSession } from '@/lib/useUser';
 import { getSiteSettings } from '@/services/siteSettingsService';
@@ -52,6 +52,15 @@ export default async function ReadPage({ params }: Props) {
         <p className="text-muted">Content unavailable</p>
       </div>
     );
+  }
+
+  // The requested chapter may have been deleted (or never existed) while the
+  // series still exists. Render a proper 404 instead of an empty reader.
+  const chapterExists = manga.chapters.some(
+    (chapter: { id: number }) => chapter.id === Number(chapterId)
+  );
+  if (!chapterExists) {
+    notFound();
   }
 
   return <ReadContent mangaTitle={manga.title} />;

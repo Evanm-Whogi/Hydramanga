@@ -15,19 +15,33 @@ import sharp from 'sharp';
 import { appConfig } from '@/config/appConfig';
 import { S3Bucket } from '@/lib/s3Bucket';
 
+/**
+ * Per-page transform tuning. Defaults suit already-degraded scraped web images
+ * (small files). Pristine sources (archive/torrent scans full of screentones)
+ * should pass a higher `quality`/`effort` — q75 visibly blocks on B&W gradients.
+ */
+export interface PageTransformOptions {
+    /** Max output width in px (default 2500). */
+    width?: number;
+    /** WebP quality 1–100 (default 75). */
+    quality?: number;
+    /** WebP effort 0–6 (default 2). */
+    effort?: number;
+}
+
 /** Apply the shared page transform (resize + WebP) to a sharp instance. */
-function applyPageTransform(image: sharp.Sharp): sharp.Sharp {
+function applyPageTransform(image: sharp.Sharp, opts: PageTransformOptions = {}): sharp.Sharp {
     return image
         .resize({
-            width: 2500,
+            width: opts.width ?? 2500,
             height: 16383,
             fit: 'inside',
             withoutEnlargement: true,
             fastShrinkOnLoad: true,
         })
         .webp({
-            quality: 75,
-            effort: 2,
+            quality: opts.quality ?? 75,
+            effort: opts.effort ?? 2,
             smartSubsample: true,
         });
 }
@@ -68,13 +82,14 @@ class ObjectStorageService {
     async transformAndUploadPage(
         storagePrefix: string,
         pageIndex: number,
-        source: Readable | Buffer
+        source: Readable | Buffer,
+        opts?: PageTransformOptions
     ): Promise<void> {
         let buffer: Buffer;
         if (Buffer.isBuffer(source)) {
-            buffer = await applyPageTransform(sharp(source, { failOn: 'none' })).toBuffer();
+            buffer = await applyPageTransform(sharp(source, { failOn: 'none' }), opts).toBuffer();
         } else {
-            const transformer = applyPageTransform(sharp({ failOn: 'none' }));
+            const transformer = applyPageTransform(sharp({ failOn: 'none' }), opts);
             // Propagate source errors into the sharp pipeline so toBuffer() rejects.
             source.on('error', (err) => transformer.destroy(err));
             buffer = await source.pipe(transformer).toBuffer();

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { X, Search, RefreshCw, Check, Loader2, Trash2, StopCircle, AlertCircle, Eraser, Edit3, ArrowRightLeft } from "lucide-react";
+import { X, Search, RefreshCw, Check, Loader2, Trash2, StopCircle, AlertCircle, Eraser, ArrowRightLeft, HardDriveDownload, RotateCcw } from "lucide-react";
 import { adminScraperSearch, adminSetSource, adminTriggerRescan, adminAddSecondaryTitle, adminGetSource, adminClearSource, adminCancelScan, adminDeleteChapters, adminUpdateSeries, adminMigrateSeries, type ScraperSourceResult, type ScraperSearchResult } from "@/services/adminMangaService";
+import { getSeriesArchiveStatus, triggerArchiveImport, reingestArchive, type ArchiveJob } from "@/services/adminArchiveService";
 import { fetchMangaById } from "@/services/mangaService";
 import { toast } from "react-toastify";
 
@@ -91,7 +92,12 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
     note: manga?.note ?? "",
   });
   const [savingMetadata, setSavingMetadata] = useState(false);
-  const [modalPage, setModalPage] = useState<"source" | "chapters" | "migrate">("source");
+  const [modalPage, setModalPage] = useState<"source" | "chapters" | "archive" | "migrate">("source");
+  const [archiveEnabled, setArchiveEnabled] = useState(true);
+  const [archiveJob, setArchiveJob] = useState<ArchiveJob | null>(null);
+  const [archiveLoading, setArchiveLoading] = useState(true);
+  const [archiveImporting, setArchiveImporting] = useState(false);
+  const [archiveReingesting, setArchiveReingesting] = useState(false);
   const [migrateTargetId, setMigrateTargetId] = useState("");
   const [migrateTargetTitle, setMigrateTargetTitle] = useState<string | null>(null);
   const [migrateTargetLoading, setMigrateTargetLoading] = useState(false);
@@ -116,6 +122,49 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
   useEffect(() => {
     fetchSource();
   }, [fetchSource]);
+
+  const fetchArchiveStatus = useCallback(async () => {
+    setArchiveLoading(true);
+    try {
+      const res = await getSeriesArchiveStatus(mangaId);
+      setArchiveEnabled(res.enabled);
+      setArchiveJob(res.job);
+    } catch {
+      setArchiveJob(null);
+    } finally {
+      setArchiveLoading(false);
+    }
+  }, [mangaId]);
+
+  useEffect(() => {
+    fetchArchiveStatus();
+  }, [fetchArchiveStatus]);
+
+  const handleArchiveImport = async () => {
+    setArchiveImporting(true);
+    try {
+      const res = await triggerArchiveImport(mangaId);
+      toast.success(res.message || "Archive import queued");
+      await fetchArchiveStatus();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to queue archive import");
+    } finally {
+      setArchiveImporting(false);
+    }
+  };
+
+  const handleArchiveReingest = async () => {
+    setArchiveReingesting(true);
+    try {
+      const res = await reingestArchive(mangaId);
+      toast.success(res.message || "Re-ingest queued");
+      await fetchArchiveStatus();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to queue re-ingest");
+    } finally {
+      setArchiveReingesting(false);
+    }
+  };
 
   // Sync local variants if the parent ever provides updated secondaryTitles
   useEffect(() => {
@@ -389,6 +438,13 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
             </button>
             <button
               type="button"
+              onClick={() => setModalPage("archive")}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${modalPage === "archive" ? "bg-accent text-white" : "bg-foreground hover:bg-foreground/80 text-muted"}`}
+            >
+              Archive
+            </button>
+            <button
+              type="button"
               onClick={() => setModalPage("migrate")}
               className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${modalPage === "migrate" ? "bg-accent text-white" : "bg-foreground hover:bg-foreground/80 text-muted"}`}
             >
@@ -586,9 +642,21 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
           <section>
             <h3 className="text-sm font-medium text-muted my-2">Rescan</h3>
             <p className="text-sm text-muted mb-2">
-              Manually trigger a chapter scan for this manga. The scan will use the current source if set.
+              Manually trigger a chapter scan for this manga. <strong>Archive + scrape backfill</strong> downloads
+              the whole series from a torrent archive first, then scrapes whatever the archive missed.
+              <strong> Trigger rescan</strong> is scrape-only and uses the current source if set.
             </p>
             <div className="flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleArchiveImport}
+                disabled={archiveImporting || !archiveEnabled}
+                title={archiveEnabled ? "Download a torrent archive, then scrape any gaps" : "Archive ingestion is disabled on the server"}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-md hover:bg-accent/80 disabled:opacity-50"
+              >
+                {archiveImporting ? <Loader2 className="size-4 animate-spin" /> : <HardDriveDownload className="size-4" />}
+                Archive + scrape backfill
+              </button>
               <button
                 type="button"
                 onClick={handleRescan}
@@ -812,6 +880,85 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
               )}
             </section>
           )}
+          </>
+          )}
+
+          {modalPage === "archive" && (
+          <>
+          <section>
+            <h3 className="text-sm font-medium text-muted mb-2 flex items-center gap-1">
+              <HardDriveDownload className="size-4" />
+              Archive ingestion (torrent)
+            </h3>
+            <p className="text-sm text-muted mb-4">
+              Acquire this whole series from a torrent archive (nyaa via Prowlarr → qBittorrent → unpack → storage),
+              then scrape whatever the archive missed. Archive ingest is gap-fill only: existing chapters are never
+              overwritten. On any failure it falls back to scraping.
+            </p>
+
+            {!archiveEnabled && (
+              <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5 text-sm text-amber-400 mb-4">
+                <AlertCircle className="size-4 mt-0.5 shrink-0" />
+                <span>Archive ingestion is disabled (<code>ARCHIVE_INGEST_ENABLED=false</code>). Enable it on the server to import.</span>
+              </div>
+            )}
+
+            {/* Latest acquisition status */}
+            <div className="bg-foreground/30 rounded-md p-3 mb-4">
+              <h4 className="text-xs font-medium text-muted mb-1">Latest acquisition</h4>
+              {archiveLoading ? (
+                <p className="text-sm text-muted">Loading…</p>
+              ) : archiveJob ? (
+                <div className="space-y-1 text-sm">
+                  <p>
+                    <span className="text-muted">Status: </span>
+                    <span className={
+                      archiveJob.status === "done" ? "text-green-400" :
+                      archiveJob.status === "failed" ? "text-red-400" :
+                      archiveJob.status === "needs_review" ? "text-amber-400" :
+                      "text-teal-400"
+                    }>
+                      {archiveJob.status.replace("_", " ")}
+                    </span>
+                    {" · "}
+                    <span className="text-muted">{archiveJob.chaptersIngested} chapter(s) ingested</span>
+                  </p>
+                  {archiveJob.candidateTitle && (
+                    <p className="text-xs text-muted wrap-break-words">{archiveJob.candidateTitle}</p>
+                  )}
+                  {archiveJob.error && (
+                    <p className="text-xs text-red-400/90 bg-red-500/10 rounded p-1.5 wrap-break-words">{archiveJob.error}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted">No archive acquisition has been attempted for this series.</p>
+              )}
+            </div>
+
+            <div className="flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleArchiveImport}
+                disabled={archiveImporting || !archiveEnabled}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-md hover:bg-accent/80 disabled:opacity-50"
+              >
+                {archiveImporting ? <Loader2 className="size-4 animate-spin" /> : <HardDriveDownload className="size-4" />}
+                Archive + scrape backfill
+              </button>
+              {archiveJob?.hasLocalArchive && (
+                <button
+                  type="button"
+                  onClick={handleArchiveReingest}
+                  disabled={archiveReingesting || !archiveEnabled}
+                  title="Re-run ingest on the already-downloaded files (no re-download)"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-foreground hover:bg-foreground/80 rounded-md disabled:opacity-50"
+                >
+                  {archiveReingesting ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
+                  Re-ingest last download
+                </button>
+              )}
+            </div>
+          </section>
           </>
           )}
 

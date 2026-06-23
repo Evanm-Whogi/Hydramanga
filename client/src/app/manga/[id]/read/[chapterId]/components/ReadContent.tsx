@@ -22,6 +22,48 @@ import {
 const SIDEBAR_WIDTH_PX = 260;
 const COMMENTS_SIDEBAR_WIDTH_PX = 525;
 const EAGER_COUNT = 5;
+const MAX_IMG_RETRIES = 3;
+
+/**
+ * Auto-recover from a truncated image load (e.g. ERR_CONTENT_LENGTH_MISMATCH).
+ *
+ * Pages are served straight from Garage via Cloudflare; when a response is
+ * delivered short the browser caches the partial body, so every reload replays
+ * the broken entry and the only "fix" is a manual cache clear. On `error` we
+ * re-request with a cache-busting query param — a fresh cache key that bypasses
+ * the poisoned entry — with a short backoff and a hard retry cap so a genuinely
+ * missing image doesn't loop forever. Returns the src to render and the handler.
+ */
+function useImageRetry(src: string) {
+  const [retry, setRetry] = useState(0);
+  const attemptsRef = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Reset when the underlying page changes (shared component, swapped src).
+  useEffect(() => {
+    attemptsRef.current = 0;
+    setRetry(0);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [src]);
+
+  const onError = useCallback(() => {
+    if (attemptsRef.current >= MAX_IMG_RETRIES) return;
+    const next = attemptsRef.current + 1;
+    attemptsRef.current = next;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    // Back off a touch (growing per attempt) so a transiently-truncating origin
+    // can recover before we swap in the cache-busted src and re-fetch.
+    timerRef.current = setTimeout(() => setRetry(next), 400 * next);
+  }, []);
+
+  const resolvedSrc = retry > 0
+    ? `${src}${src.includes('?') ? '&' : '?'}cb=${retry}`
+    : src;
+
+  return { resolvedSrc, onError };
+}
 const SIDEBAR_BTN = "p-2.5 bg-background hover:bg-background/50 border-0 text-primary cursor-pointer rounded flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-30";
 const SIDEBAR_BTN_HALF = `${SIDEBAR_BTN} w-1/2 shadow-md`;
 const SIDEBAR_BTN_FULL = `${SIDEBAR_BTN} w-full shadow-md`;
@@ -40,18 +82,19 @@ const LazyMangaPage = React.memo(function LazyMangaPage({
   style: React.CSSProperties;
 }) {
   const eager = index < EAGER_COUNT;
-  const [activeSrc, setActiveSrc] = useState(eager ? src : '');
+  const [shouldLoad, setShouldLoad] = useState(eager);
   const [loaded, setLoaded] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const { resolvedSrc, onError } = useImageRetry(src);
 
   useEffect(() => {
-    if (eager) return;
+    if (eager || shouldLoad) return;
     const el = wrapperRef.current;
     if (!el) return;
     const io = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setActiveSrc(src);
+          setShouldLoad(true);
           io.disconnect();
         }
       },
@@ -60,7 +103,9 @@ const LazyMangaPage = React.memo(function LazyMangaPage({
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [eager, src]);
+  }, [eager, shouldLoad]);
+
+  const activeSrc = shouldLoad ? resolvedSrc : '';
 
   return (
     // The wrapper is always in the DOM so querySelectorAll('img') navigation
@@ -83,6 +128,7 @@ const LazyMangaPage = React.memo(function LazyMangaPage({
           position: loaded ? 'static' : 'absolute',
         }}
         onLoad={() => setLoaded(true)}
+        onError={onError}
         referrerPolicy="strict-origin-when-cross-origin"
         fetchPriority={eager ? 'high' : 'low'}
         decoding={eager ? 'sync' : 'async'}
@@ -291,6 +337,12 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   }, [isMergedMode, data, chapterId]);
 
   const totalPages = imageItems.length;
+
+  // Horizontal mode renders a single page at a time; give it the same
+  // truncated-load auto-retry the vertical pages get via LazyMangaPage.
+  const { resolvedSrc: horizontalSrc, onError: onHorizontalError } = useImageRetry(
+    imageItems[currentPage - 1]?.src ?? ''
+  );
 
   const activeChapterId = useMemo(() => {
     if (isMergedMode) {
@@ -1166,10 +1218,11 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           <div className="horizontal-reader w-full min-h-[calc(100vh-8rem)] flex items-center justify-center z-5 px-4">
             {imageItems[currentPage - 1] && (
               <img
-                src={imageItems[currentPage - 1].src}
+                src={horizontalSrc}
                 alt={`Page ${currentPage}`}
                 className="max-h-[calc(100vh-10rem)] max-w-full object-contain manga-page"
                 style={getImageStyle}
+                onError={onHorizontalError}
                 referrerPolicy="strict-origin-when-cross-origin"
               />
             )}

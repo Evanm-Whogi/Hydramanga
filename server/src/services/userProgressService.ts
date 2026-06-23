@@ -717,6 +717,20 @@ class UserProgressService {
       );
       badgeService.evaluateBadgesAsync(userId, 'reading_time');
     } catch (error) {
+      // The chapter or series may have been deleted while the reader was still
+      // open and pinging reading time. The stale chapterId/seriesId then trips
+      // the foreign-key constraint (Postgres code 23503). Treat as a no-op.
+      const pgCode =
+        (error as { code?: string })?.code ??
+        (error as { cause?: { code?: string } })?.cause?.code;
+      if (pgCode === '23503') {
+        logger.warn(
+          `Skipped reading time for deleted chapter/series: userId=${userId}, seriesId=${seriesId}, chapterId=${chapterId}`,
+          { service: 'userProgressService' }
+        );
+        return;
+      }
+
       logger.error(
         `Failed to record reading time for userId=${userId}, seriesId=${seriesId}: ${error}`,
         { service: 'userProgressService' }

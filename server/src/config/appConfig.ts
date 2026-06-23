@@ -65,6 +65,21 @@ export interface QueueConfig {
         timeout: number;
         retries: number;
     };
+    archiveAcquireQueue: {
+        concurrency: number;
+        timeout: number;
+        retries: number;
+    };
+    archiveIngestQueue: {
+        concurrency: number;
+        timeout: number;
+        retries: number;
+    };
+    archivePollQueue: {
+        concurrency: number;
+        timeout: number;
+        retries: number;
+    };
 }
 
 /**
@@ -223,6 +238,91 @@ export interface StorageConfig {
 }
 
 /**
+ * Archive Ingestion (Torrent) Configuration
+ *
+ * Drives the parallel acquisition pipeline that backfills completed/large
+ * back-catalogs from whole-series torrent archives (nyaa via Prowlarr →
+ * qBittorrent → unpack/segment → Garage), with scraping demoted to fallback.
+ * See docs/archive-ingestion-plan.md.
+ */
+export interface ArchiveConfig {
+    /** Master switch for the whole archive pipeline (router, queues, poller, admin trigger). */
+    enabled: boolean;
+
+    /** Prowlarr aggregator (Torznab indexers, incl. nyaa). */
+    prowlarr: {
+        url: string;
+        apiKey: string;
+        /** Comma-separated Prowlarr indexer ids to query (empty = all configured). */
+        indexerIds: number[];
+        timeout: number; // ms
+    };
+
+    /** qBittorrent download client (reached through the VPN container in dev). */
+    qbittorrent: {
+        url: string;
+        username: string;
+        password: string;
+        /** Category applied to submitted torrents (isolates our downloads). */
+        category: string;
+        timeout: number; // ms
+    };
+
+    /**
+     * VPN pre-flight guard. In dev all torrent traffic must egress through Mullvad
+     * (gluetun, with killswitch); the guard verifies that before any submit. In
+     * production (DMCA-ignored host) the VPN is not used and the guard is disabled.
+     */
+    vpn: {
+        /** When true, refuse to submit torrents unless the VPN guard passes. */
+        required: boolean;
+        /** gluetun control-server base URL (publicip/status endpoints). */
+        gluetunControlUrl: string;
+        /** Expected VPN provider name reported by gluetun (sanity check). */
+        expectedProvider: string;
+        timeout: number; // ms
+    };
+
+    /** Candidate gates + scoring thresholds (see plan §2). */
+    candidate: {
+        languageFilter: string;       // 'en'
+        minSeeders: number;
+        minBytesPerChapter: number;   // size-sanity lower bound, per expected chapter
+        maxArchiveBytes: number;      // hard per-archive size cap
+        /** Min normalized title-match score (0–100) to trust a candidate. */
+        minTitleScore: number;
+    };
+
+    /** Source-selection resolver thresholds (see plan §2). */
+    router: {
+        /** Known backlog at/above which a non-completed series still earns an archive attempt. */
+        backfillGapThreshold: number;
+    };
+
+    /** Download poller + ingest pipeline. */
+    pipeline: {
+        /** How often the download poller checks qBittorrent for finished torrents (ms). */
+        pollIntervalMs: number;
+        /** Give up on a torrent that hasn't completed within this window (ms). */
+        downloadStallTimeoutMs: number;
+        /** Scratch dir for in-progress downloads + unpack (host-mounted, freed after ingest). */
+        scratchDir: string;
+        /** Bounded concurrency for the CPU/IO-heavy ingest queue. */
+        ingestConcurrency: number;
+        /** Acquire-queue rate limit (don't hammer the indexer / saturate disk). */
+        acquireLimiter: { max: number; duration: number };
+        /** Minimum segmentation confidence (0–1) to auto-ingest; below → needs_review. */
+        segmentationConfidenceThreshold: number;
+        /** Path to the `djxl` binary for the out-of-process JXL→PNG fallback. */
+        djxlPath: string;
+        /** WebP quality for archive page transcode (higher than scrape — pristine scans). */
+        webpQuality: number;
+        /** WebP effort (0–6) for archive page transcode. */
+        webpEffort: number;
+    };
+}
+
+/**
  * Main Application Configuration
  */
 export interface AppConfig {
@@ -233,6 +333,7 @@ export interface AppConfig {
     cache: CacheConfig;
     scraper: ScraperConfig;
     storage: StorageConfig;
+    archive: ArchiveConfig;
     logging: LoggingConfig;
     discord: DiscordConfig;
     timeouts: TimeoutConfig;
@@ -267,6 +368,18 @@ function parseEnvBoolean(key: string, defaultValue: boolean = false): boolean {
     const value = process.env[key];
     if (!value) return defaultValue;
     return value.toLowerCase() === 'true' || value === '1';
+}
+
+/**
+ * Parse a comma-separated list of integers (e.g. "1,2,5"), ignoring blanks/NaN.
+ */
+function parseEnvNumberList(key: string): number[] {
+    const value = process.env[key];
+    if (!value) return [];
+    return value
+        .split(',')
+        .map((v) => Number(v.trim()))
+        .filter((n) => Number.isFinite(n));
 }
 
 /**
@@ -341,6 +454,24 @@ export class AppConfigService {
                     concurrency: parseEnvNumber('SERIES_MIGRATION_CONCURRENCY', 1),
                     timeout: parseEnvNumber('SERIES_MIGRATION_TIMEOUT', 60 * 60 * 1000),
                     retries: parseEnvNumber('SERIES_MIGRATION_RETRIES', 1),
+                },
+                // Archive acquire: rate-limited (don't hammer the indexer); submits + returns fast.
+                archiveAcquireQueue: {
+                    concurrency: parseEnvNumber('ARCHIVE_ACQUIRE_CONCURRENCY', 1),
+                    timeout: parseEnvNumber('ARCHIVE_ACQUIRE_TIMEOUT', 5 * 60 * 1000),
+                    retries: parseEnvNumber('ARCHIVE_ACQUIRE_RETRIES', 1),
+                },
+                // Archive ingest: CPU/IO heavy (unpack + transcode); low concurrency, long timeout.
+                archiveIngestQueue: {
+                    concurrency: parseEnvNumber('ARCHIVE_INGEST_CONCURRENCY', 1),
+                    timeout: parseEnvNumber('ARCHIVE_INGEST_TIMEOUT', 6 * 60 * 60 * 1000), // 6h
+                    retries: parseEnvNumber('ARCHIVE_INGEST_RETRIES', 1),
+                },
+                // Archive download poller: lightweight status sweep on a repeatable schedule.
+                archivePollQueue: {
+                    concurrency: parseEnvNumber('ARCHIVE_POLL_CONCURRENCY', 1),
+                    timeout: parseEnvNumber('ARCHIVE_POLL_TIMEOUT', 5 * 60 * 1000),
+                    retries: parseEnvNumber('ARCHIVE_POLL_RETRIES', 0),
                 },
             },
 
@@ -453,6 +584,55 @@ export class AppConfigService {
                 stickers: {
                     bucket: parseEnvString('S3_STICKER_BUCKET_NAME', 'stickers'),
                     publicBaseUrl: parseEnvString('S3_STICKER_PUBLIC_BASE_URL', 'https://stickers.garage.chit.sh'),
+                },
+            },
+
+            // Archive Ingestion (Torrent) Configuration
+            archive: {
+                enabled: parseEnvBoolean('ARCHIVE_INGEST_ENABLED', false),
+                prowlarr: {
+                    url: parseEnvString('PROWLARR_URL', 'http://prowlarr:9696'),
+                    apiKey: parseEnvString('PROWLARR_API_KEY', ''),
+                    indexerIds: parseEnvNumberList('PROWLARR_INDEXER_IDS'),
+                    timeout: parseEnvNumber('PROWLARR_TIMEOUT', 30000),
+                },
+                qbittorrent: {
+                    url: parseEnvString('QBITTORRENT_URL', 'http://gluetun:8080'),
+                    username: parseEnvString('QBITTORRENT_USERNAME', 'admin'),
+                    password: parseEnvString('QBITTORRENT_PASSWORD', ''),
+                    category: parseEnvString('QBITTORRENT_CATEGORY', 'manga-archive'),
+                    timeout: parseEnvNumber('QBITTORRENT_TIMEOUT', 30000),
+                },
+                vpn: {
+                    // Default ON unless explicitly in production (DMCA-ignored host needs no VPN).
+                    required: parseEnvBoolean('ARCHIVE_VPN_REQUIRED', env !== 'production'),
+                    gluetunControlUrl: parseEnvString('GLUETUN_CONTROL_URL', 'http://gluetun:8000'),
+                    expectedProvider: parseEnvString('ARCHIVE_VPN_PROVIDER', 'mullvad'),
+                    timeout: parseEnvNumber('GLUETUN_CONTROL_TIMEOUT', 10000),
+                },
+                candidate: {
+                    languageFilter: parseEnvString('ARCHIVE_LANGUAGE_FILTER', 'en'),
+                    minSeeders: parseEnvNumber('ARCHIVE_MIN_SEEDERS', 2),
+                    minBytesPerChapter: parseEnvNumber('ARCHIVE_MIN_BYTES_PER_CHAPTER', 200 * 1024), // 200 KiB
+                    maxArchiveBytes: parseEnvNumber('ARCHIVE_MAX_BYTES', 50 * 1024 * 1024 * 1024), // 50 GiB
+                    minTitleScore: parseEnvNumber('ARCHIVE_MIN_TITLE_SCORE', 80),
+                },
+                router: {
+                    backfillGapThreshold: parseEnvNumber('BACKFILL_GAP_THRESHOLD', 50),
+                },
+                pipeline: {
+                    pollIntervalMs: parseEnvNumber('ARCHIVE_POLL_INTERVAL_MS', 60 * 1000),
+                    downloadStallTimeoutMs: parseEnvNumber('ARCHIVE_DOWNLOAD_STALL_TIMEOUT_MS', 6 * 60 * 60 * 1000), // 6h
+                    scratchDir: parseEnvString('ARCHIVE_SCRATCH_DIR', '/data/archive-scratch'),
+                    ingestConcurrency: parseEnvNumber('ARCHIVE_INGEST_CONCURRENCY', 1),
+                    acquireLimiter: {
+                        max: parseEnvNumber('ARCHIVE_ACQUIRE_RATE_MAX', 1),
+                        duration: parseEnvNumber('ARCHIVE_ACQUIRE_RATE_DURATION', 10000),
+                    },
+                    segmentationConfidenceThreshold: parseEnvNumber('ARCHIVE_SEGMENTATION_CONFIDENCE', 0.8),
+                    djxlPath: parseEnvString('DJXL_PATH', 'djxl'),
+                    webpQuality: parseEnvNumber('ARCHIVE_WEBP_QUALITY', 90),
+                    webpEffort: parseEnvNumber('ARCHIVE_WEBP_EFFORT', 4),
                 },
             },
 

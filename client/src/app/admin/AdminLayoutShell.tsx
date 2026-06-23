@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, BookOpen, Inbox, ListOrdered, ScrollText, Settings, Sticker, Terminal } from "lucide-react";
+import { LayoutDashboard, Users, BookOpen, Inbox, ListOrdered, ScrollText, Settings, Sticker, Terminal, HardDriveDownload } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 
 const NAV_ITEMS = [
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
     { href: "/admin/users", label: "Users", icon: Users },
     { href: "/admin/manga", label: "Manga", icon: BookOpen },
     { href: "/admin/imports", label: "Imports", icon: Inbox },
+    { href: "/admin/archive", label: "Archive", icon: HardDriveDownload },
     { href: "/admin/queues", label: "Queues", icon: ListOrdered },
     { href: "/admin/logs", label: "Logs", icon: Terminal },
     { href: "/admin/audit", label: "Audit", icon: ScrollText },
@@ -33,6 +34,10 @@ const PAGE_HEADERS: Record<string, { title: string; description: string }> = {
     "/admin/imports": {
         title: "Import Requests",
         description: "Review and process user import requests",
+    },
+    "/admin/archive": {
+        title: "Archive Ingestion",
+        description: "Torrent acquisition jobs and the needs-review backlog",
     },
     "/admin/queues": {
         title: "Queues",

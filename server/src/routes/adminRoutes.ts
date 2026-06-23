@@ -2,7 +2,7 @@ import { Router, RequestHandler } from 'express';
 import { auditAdminMiddleware } from '@/middlewares/auditAdminMiddleware';
 import { listAdminAuditLogs } from '@/controllers/adminAuditController';
 import { triggerMangaSync, triggerMonitoredRescan, triggerTrendingRescan, triggerRankedScan } from '@/controllers/mangaImportController';
-import { adminScraperSearch, adminSetSource, adminAddSecondaryTitle, adminTriggerRescan, adminGetSource, adminClearSource, adminCancelScan, adminDeleteChapters, adminUpdateSeries, adminMigrateSeries } from '@/controllers/adminMangaController';
+import { adminScraperSearch, adminSetSource, adminAddSecondaryTitle, adminTriggerRescan, adminTriggerArchiveImport, adminReingestArchive, adminGetSource, adminClearSource, adminCancelScan, adminDeleteChapters, adminUpdateSeries, adminMigrateSeries } from '@/controllers/adminMangaController';
 import { listAdminManga, listAdminMangaScraperFilters, listAdminMangaTypeFilters } from '@/controllers/adminMangaListController';
 import { getAdminOverviewStats, getAdminTimeseries } from '@/controllers/adminStatsController';
 import { listAdminUsers, getAdminUser, patchAdminUser } from '@/controllers/adminUserController';
@@ -15,6 +15,7 @@ import { requireRole } from '@/middlewares/requireRole';
 import { listAdminStickers, createAdminSticker, updateAdminSticker, deleteAdminSticker, scanAdminStickers } from '@/controllers/adminStickerController';
 import { listAdminLogContainers, getAdminContainerLogs } from '@/controllers/adminDockerLogController';
 import { listAdminBadges } from '@/controllers/adminBadgeController';
+import { listAdminArchiveJobs, getAdminSeriesArchiveStatus } from '@/controllers/adminArchiveController';
 
 const router = Router();
 
@@ -68,6 +69,9 @@ router.post('/queues/:name/jobs/:jobId/retry', requireRole('admin'), retryAdminQ
 router.post('/queues/:name/jobs/:jobId/promote', requireRole('admin'), promoteAdminQueueJob as RequestHandler);
 router.delete('/queues/:name/jobs/:jobId', requireRole('admin'), removeAdminQueueJob as RequestHandler);
 
+// Archive (torrent) acquisition
+router.get('/archive/jobs', requireRole('admin'), listAdminArchiveJobs as RequestHandler);
+
 // Docker container logs
 router.get('/logs/containers', requireRole('admin'), listAdminLogContainers as RequestHandler);
 router.get('/logs/containers/:id', requireRole('admin'), getAdminContainerLogs as RequestHandler);
@@ -84,6 +88,9 @@ router.patch('/manga/:id/source', requireRole('admin'), adminSetSource as Reques
 router.patch('/manga/:id', requireRole('admin'), adminUpdateSeries as RequestHandler);
 router.patch('/manga/:id/secondary-titles', requireRole('admin'), adminAddSecondaryTitle as RequestHandler);
 router.post('/manga/:id/rescan', requireRole('admin'), adminTriggerRescan as RequestHandler);
+router.get('/manga/:id/archive-status', requireRole('admin'), getAdminSeriesArchiveStatus as RequestHandler);
+router.post('/manga/:id/archive-import', requireRole('admin'), adminTriggerArchiveImport as RequestHandler);
+router.post('/manga/:id/archive-reingest', requireRole('admin'), adminReingestArchive as RequestHandler);
 router.post('/manga/:id/cancel-scan', requireRole('admin'), adminCancelScan as RequestHandler);
 router.delete('/manga/:id/chapters', requireRole('admin'), adminDeleteChapters as RequestHandler);
 router.post('/manga/:id/migrate', requireRole('admin'), adminMigrateSeries as RequestHandler);

@@ -19,6 +19,7 @@ export default function IncrementalScanPanel() {
   const [end, setEnd] = useState("100");
   const [skipWithChapters, setSkipWithChapters] = useState(true);
   const [autoSelectSource, setAutoSelectSource] = useState(true);
+  const [useArchive, setUseArchive] = useState(true);
   const [type, setType] = useState("all");
   const [submitting, setSubmitting] = useState(false);
 
@@ -42,6 +43,7 @@ export default function IncrementalScanPanel() {
         end: endNum,
         skipWithChapters,
         autoSelectSource,
+        useArchive,
         type: type === "all" ? undefined : type,
       });
       toast.success(result.message);
@@ -60,7 +62,7 @@ export default function IncrementalScanPanel() {
       <div>
         <h2 className="text-sm font-semibold text-primary">Incremental ranked scan</h2>
         <p className="text-xs text-muted mt-1 max-w-3xl">
-          Queue chapter scans by global popularity rank (weighted score). Run batches like 1–100, then 101–200. With auto-select on, each title gets a scraper source using the same cross-scraper title match scoring (and scraper priority) as manual source search, then the scan job is queued.
+          Queue chapter scans by global popularity rank (weighted score). Run batches like 1–100, then 101–200. With auto-select on, each title gets a scraper source using the same cross-scraper title match scoring (and scraper priority) as manual source search, then the scan job is queued. With archive backfill on, completed / large back-catalog titles are acquired from a torrent archive first (when the pipeline is enabled), and scraping becomes the gap-fill — everything else is scraped as before.
         </p>
       </div>
       <form onSubmit={handleSubmit} className="flex flex-col lg:flex-row lg:flex-wrap gap-3 lg:items-end items-center">
@@ -99,6 +101,15 @@ export default function IncrementalScanPanel() {
           </select>
         </label>
         <div className="flex flex-col gap-1">
+          <label className="flex items-center gap-2 text-sm text-muted cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useArchive}
+              onChange={(e) => setUseArchive(e.target.checked)}
+              className="rounded border-borders"
+            />
+            Use torrent archive backfill (router picks archive vs scrape per title)
+          </label>
           <label className="flex items-center gap-2 text-sm text-muted cursor-pointer">
             <input
               type="checkbox"

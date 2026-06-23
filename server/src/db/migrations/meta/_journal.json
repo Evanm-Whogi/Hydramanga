@@ -22,6 +22,20 @@
       "when": 1781908044672,
       "tag": "0002_superb_rage",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781991321605,
+      "tag": "0003_foamy_gunslinger",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1782242864682,
+      "tag": "0004_brown_the_fallen",
+      "breakpoints": true
     }
   ]
 }
