@@ -97,10 +97,16 @@ export class ChapterScannerService {
         // 30-min reconcile. Genuine new-release detection is the monitored rescan's job.
         isRecovery = false
     ): Promise<void> {
-        const [typeRow] = await db.select({ type: series.type }).from(series).where(eq(series.id, seriesId)).limit(1);
+        const [typeRow] = await db.select({ type: series.type, volumeSourced: series.volumeSourced }).from(series).where(eq(series.id, seriesId)).limit(1);
         if (isNovelType(typeRow?.type)) {
             logger.info(`Skipping chapter scan for novel ${mangaTitle} (${seriesId})`, { service: 'chapterScannerService' });
             await mangaProgressService.markFailed(seriesId, 'Novels are not supported for chapter import');
+            return;
+        }
+        // Volume-organised series (archive volume-pack ingest): the scraper's real chapter
+        // numbers would collide with the volume numbering, so never scrape it.
+        if (typeRow?.volumeSourced) {
+            logger.info(`Skipping chapter scan for volume-sourced series ${mangaTitle} (${seriesId})`, { service: 'chapterScannerService' });
             return;
         }
 

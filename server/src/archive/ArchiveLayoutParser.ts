@@ -2,24 +2,48 @@
  * Archive Layout Parser — the #1 technical risk (plan §5.1).
  *
  * Given the image files unpacked from an archive (plus the torrent-title parse as a
- * prior), segment them into chapters: `{ chapterNumber, volume?, pages[], confidence }`.
- * Release layouts vary wildly (`Ch.001/`, `c001/`, `Chapter 1/`, `0001-012.jpg`,
- * `v01/` volume-only packs, nested group folders), so this emits a CONFIDENCE score
- * and the caller auto-ingests only high-confidence chapter-structured archives —
- * everything else routes to `needs_review` (skip-and-log), never auto-guessed.
+ * prior), segment them into ingestable units. Release layouts vary wildly, so the
+ * parser evaluates THREE interpretations and emits the most confident one:
  *
- * Chapter numbers are normalized the same way the scrape path stores them (bare
- * numeric string, decimals preserved) so the `(seriesId, chapterNumber)` unique key
- * lines up and skip-if-present works (plan §11.4).
+ *   - `chapter` mode — explicit chapter structure (`Ch.001/`, `c001/`, `Chapter 1/`,
+ *     `0001-012.jpg`, loose `<Title> 117/` folders). Each chapter → one reader chapter.
+ *   - `volume`  mode — volume-only packs (one `.cbz` per volume, bare-numbered pages,
+ *     no chapter boundaries). Each VOLUME becomes one reader chapter, numbered by its
+ *     volume number (with `volumeNumber` set + a "Volume N" title). This is the common
+ *     digital-publisher layout (Yen Press, Seven Seas …) that used to dead-end in
+ *     needs_review.
+ *   - single-book — one container of sequential pages with no markers → one unit.
+ *
+ * The caller (`archiveIngestService`) auto-ingests when `overallConfidence` clears the
+ * threshold and routes everything else to `needs_review` (skip-and-log), never silently
+ * guessing. Chapter numbers are normalized the same way the scrape path stores them
+ * (bare numeric string, decimals preserved) so the `(seriesId, chapterNumber)` unique
+ * key lines up and skip-if-present works (plan §11.4). Volume mode numbers are kept
+ * numeric so they sort correctly under the reader's integer-cast ordering.
  */
 import path from 'path';
 import { naturalCompare } from './lib/archiveUnpack';
 import type { ParsedArchiveTitle } from './interfaces/types';
 import logger from '@/services/loggerService';
 
+/** How an archive was segmented. `none` = nothing usable detected. */
+export type ArchiveLayoutMode = 'chapter' | 'volume' | 'single' | 'none';
+
+/**
+ * Volume-like modes ingest by whole-volume/whole-book unit (chapterNumber = volume
+ * number). Their numbering collides with a scraper's real chapter numbers on the
+ * `(seriesId, chapterNumber)` key, so they may only auto-ingest for archive-only series
+ * (no scrape will run). `chapter` mode is scrape-compatible and always safe.
+ */
+export function isVolumeLikeMode(mode: ArchiveLayoutMode): boolean {
+    return mode === 'volume' || mode === 'single';
+}
+
 export interface ParsedChapterLayout {
     chapterNumber: string;
     volume?: string;
+    /** Display title override (e.g. "Volume 3"); when absent the caller defaults to "Chapter N". */
+    title?: string;
     pages: string[];
     confidence: number;
 }
@@ -27,7 +51,9 @@ export interface ParsedChapterLayout {
 export interface ArchiveLayout {
     chapters: ParsedChapterLayout[];
     overallConfidence: number;
-    /** True when only volumes (no chapter boundaries) could be identified. */
+    /** Which interpretation produced `chapters`. */
+    mode: ArchiveLayoutMode;
+    /** True when the chosen interpretation is volume-based (one chapter per volume). */
     volumeOnly: boolean;
     totalImages: number;
     assignedImages: number;
@@ -55,8 +81,22 @@ const BARE_NUMBER_SEG = /^0*(\d+(?:\.\d+)?)$/;
 /** Two-number filename like `001-012.jpg` / `001_012` (chapter-page). */
 const CHAPTER_PAGE_NAME = /^0*(\d+)[\s._-]+0*(\d+)$/;
 
+/**
+ * A single-container archive with no chapter/volume markers is ingested as ONE unit
+ * (single chapter/volume) only when it's plausibly one book. Above this page count a
+ * flat, marker-less pile is more likely a whole un-split catalog, so it drops in
+ * confidence and routes to needs_review instead of becoming one giant "chapter".
+ */
+const SINGLE_BOOK_MAX_PAGES = 120;
+
 function normalizeChapterNumber(raw: string): string {
     const n = parseFloat(raw);
+    return Number.isFinite(n) ? String(n) : raw;
+}
+
+/** Normalize a volume token ("03" → "3") to a bare numeric string. */
+function normalizeVolumeNumber(raw: string): string {
+    const n = parseInt(raw, 10);
     return Number.isFinite(n) ? String(n) : raw;
 }
 
@@ -108,19 +148,32 @@ interface ImageAnalysis {
     file: string;
     chapter: string | null;
     page: number | null;
-    sawVolume: boolean;
+    volume: string | null;
+    /** Top-level path segment below the common root (the "book" this page belongs to). */
+    container: string;
 }
 
-/** Inspect one image's path segments + filename for a chapter key + page number. */
+/** First volume marker found in the filename, then dir segments deepest-first. */
+function volumeFromPath(base: string, dirSegments: string[]): string | null {
+    const inBase = base.match(VOLUME_MARKER);
+    if (inBase) return normalizeVolumeNumber(inBase[1]);
+    for (let i = dirSegments.length - 1; i >= 0; i--) {
+        const m = dirSegments[i].match(VOLUME_MARKER);
+        if (m) return normalizeVolumeNumber(m[1]);
+    }
+    return null;
+}
+
+/** Inspect one image's path segments + filename for chapter/page/volume signals. */
 function analyzeImage(file: string, rootSegmentsCount: number, titles: string[]): ImageAnalysis {
     const segments = file.split(path.sep);
     // Only consider segments below the common root (the archive's own structure).
     const relSegments = segments.slice(rootSegmentsCount);
     const dirSegments = relSegments.slice(0, -1);
     const base = path.basename(file, path.extname(file));
+    const container = dirSegments.length > 0 ? dirSegments[0] : '';
 
-    const sawVolume =
-        VOLUME_MARKER.test(base) || dirSegments.some((seg) => VOLUME_MARKER.test(seg));
+    const volume = volumeFromPath(base, dirSegments);
 
     // 1) Chapter marker in the page filename (e.g. "… - c001 (v01) - p009 …").
     let chapter: string | null = chapterKeyFromMarker(base.match(CHAPTER_MARKER));
@@ -149,7 +202,10 @@ function analyzeImage(file: string, rootSegmentsCount: number, titles: string[])
     //    `079-012.jpg` / `079_012`. Applied per-image (not as a global switch) so a
     //    block of bare-numbered chapters mixed into an otherwise marker-named
     //    compilation gets rescued instead of silently dropped (see §5.1).
-    if (!chapter) {
+    //    Skipped when this page carries a volume marker: there a `NNN-NNN.jpg` name is
+    //    a double-page SPREAD (pages 151–152), not a chapter-page, and reading it as a
+    //    chapter manufactures bogus chapters out of every spread in a volume-only pack.
+    if (!chapter && volume === null) {
         const cp = base.match(CHAPTER_PAGE_NAME);
         if (cp) {
             chapter = cp[1];
@@ -157,7 +213,38 @@ function analyzeImage(file: string, rootSegmentsCount: number, titles: string[])
         }
     }
 
-    return { file, chapter, page, sawVolume };
+    return { file, chapter, page, volume, container };
+}
+
+/** Order a group's pages by page number, then natural path order as a tie-break. */
+function orderPages(items: ImageAnalysis[]): string[] {
+    return items
+        .slice()
+        .sort((x, y) => {
+            if (x.page != null && y.page != null && x.page !== y.page) return x.page - y.page;
+            return naturalCompare(x.file, y.file);
+        })
+        .map((it) => it.file);
+}
+
+/**
+ * Contiguity of a detected numeric sequence: how densely the run [min..max] is filled.
+ * A clean c001..c125 (or v01..v17) with few gaps scores ~1; a sparse, scattered set of
+ * numbers (the symptom of false-positive matches) scores low.
+ */
+function sequenceContiguity(nums: number[]): number {
+    const finite = nums.filter(Number.isFinite);
+    if (finite.length <= 1) return 1;
+    const span = Math.max(...finite) - Math.min(...finite) + 1;
+    return Math.min(1, finite.length / span);
+}
+
+interface Interpretation {
+    mode: ArchiveLayoutMode;
+    chapters: ParsedChapterLayout[];
+    confidence: number;
+    assigned: number;
+    reason: string;
 }
 
 export class ArchiveLayoutParser {
@@ -168,7 +255,7 @@ export class ArchiveLayoutParser {
     parseLayout(images: string[], titlePrior?: ParsedArchiveTitle): ArchiveLayout {
         const total = images.length;
         if (total === 0) {
-            return { chapters: [], overallConfidence: 0, volumeOnly: false, totalImages: 0, assignedImages: 0, reason: 'no images found in archive', samplePaths: [] };
+            return { chapters: [], overallConfidence: 0, mode: 'none', volumeOnly: false, totalImages: 0, assignedImages: 0, reason: 'no images found in archive', samplePaths: [] };
         }
 
         const rootSegmentsCount = commonRootSegmentCount(images);
@@ -179,43 +266,75 @@ export class ArchiveLayoutParser {
         for (let i = 0; i < total && samplePaths.length < 12; i += step) {
             samplePaths.push(images[i].split(path.sep).slice(rootSegmentsCount).join('/'));
         }
+
         const titles = titlePrior?.titles ?? [];
         const analyses = images.map((f) => analyzeImage(f, rootSegmentsCount, titles));
-        const assigned = analyses.filter((a) => a.chapter !== null);
-        const anyVolume = analyses.some((a) => a.sawVolume);
 
-        const assignedFraction = assigned.length / total;
+        const chapterInterp = this.buildChapterInterpretation(analyses, total);
+        const volumeInterp = this.buildVolumeInterpretation(analyses, total);
 
-        // Surface dropped pages: an unassigned block (e.g. a chapter range whose
-        // filenames don't match the rest of the archive's convention) would otherwise
-        // vanish into a "done" job. Log a sample so it's diagnosable, not silent.
-        if (assigned.length < total) {
-            const dropped = analyses
-                .filter((a) => a.chapter === null)
-                .map((a) => a.file.split(path.sep).slice(rootSegmentsCount).join('/'));
-            logger.warn(
-                `[LAYOUT] ${total - assigned.length}/${total} page(s) unassigned (no chapter detected); sample:\n  ` +
-                    dropped.slice(0, 8).join('\n  '),
-                { service: 'archiveLayoutParser' }
-            );
+        // Pick the most confident interpretation. Chapter mode wins ties (it's the more
+        // granular, more useful reading unit) so a `v01/c001` release that detects both
+        // volumes and chapters ingests by chapter, not by volume.
+        let chosen: Interpretation | null = null;
+        for (const cand of [chapterInterp, volumeInterp]) {
+            if (!cand) continue;
+            if (!chosen || cand.confidence > chosen.confidence) chosen = cand;
+        }
+        if (chapterInterp && volumeInterp && chapterInterp.confidence >= volumeInterp.confidence) {
+            chosen = chapterInterp;
         }
 
-        // Volume-only / unsegmentable → low confidence, route to needs_review.
-        if (assigned.length === 0) {
+        // Surface dropped pages relative to the CHOSEN interpretation so a missing block
+        // (a chapter range whose filenames don't match the rest of the archive's
+        // convention) is diagnosable instead of silently vanishing into a "done" job.
+        if (chosen && chosen.assigned < total) {
+            const assignedFiles = new Set(chosen.chapters.flatMap((c) => c.pages));
+            const dropped = analyses
+                .filter((a) => !assignedFiles.has(a.file))
+                .map((a) => a.file.split(path.sep).slice(rootSegmentsCount).join('/'));
+            if (dropped.length > 0) {
+                logger.warn(
+                    `[LAYOUT] ${dropped.length}/${total} page(s) unassigned in ${chosen.mode} mode; sample:\n  ` +
+                        dropped.slice(0, 8).join('\n  '),
+                    { service: 'archiveLayoutParser' }
+                );
+            }
+        }
+
+        if (!chosen) {
+            const anyVolume = analyses.some((a) => a.volume !== null);
             return {
                 chapters: [],
                 overallConfidence: 0,
+                mode: 'none',
                 volumeOnly: anyVolume,
                 totalImages: total,
                 assignedImages: 0,
                 reason: anyVolume
-                    ? 'volume-only pack: no chapter boundaries detected'
-                    : 'could not detect chapter structure',
+                    ? 'volume markers present but volumes were not cleanly separable'
+                    : 'could not detect chapter or volume structure',
                 samplePaths,
             };
         }
 
-        // Group pages by chapter, natural-sorted within each chapter.
+        return {
+            chapters: chosen.chapters,
+            overallConfidence: chosen.confidence,
+            mode: chosen.mode,
+            volumeOnly: chosen.mode === 'volume',
+            totalImages: total,
+            assignedImages: chosen.assigned,
+            reason: chosen.reason,
+            samplePaths,
+        };
+    }
+
+    /** Group chapter-assigned pages into chapters; confidence from coverage × contiguity. */
+    private buildChapterInterpretation(analyses: ImageAnalysis[], total: number): Interpretation | null {
+        const assigned = analyses.filter((a) => a.chapter !== null);
+        if (assigned.length === 0) return null;
+
         const byChapter = new Map<string, ImageAnalysis[]>();
         for (const a of assigned) {
             const key = normalizeChapterNumber(a.chapter!);
@@ -224,45 +343,71 @@ export class ArchiveLayoutParser {
         }
 
         const chapters: ParsedChapterLayout[] = [...byChapter.entries()]
-            .map(([chapterNumber, items]) => {
-                const pages = items
-                    .slice()
-                    .sort((x, y) => {
-                        if (x.page != null && y.page != null && x.page !== y.page) return x.page - y.page;
-                        return naturalCompare(x.file, y.file);
-                    })
-                    .map((it) => it.file);
-                return { chapterNumber, pages, confidence: 1 };
-            })
+            .map(([chapterNumber, items]) => ({ chapterNumber, pages: orderPages(items), confidence: 1 }))
             .sort((a, b) => parseFloat(a.chapterNumber) - parseFloat(b.chapterNumber));
 
-        // Confidence = how many pages got a chapter × how contiguous the detected
-        // chapter sequence is. A clean run (e.g. c001..c125 with few gaps) scores high
-        // regardless of the torrent title's range (which, for compound titles like
-        // "v01-13 + 117-125.1", only describes part of the catalog).
         const nums = chapters.map((c) => parseFloat(c.chapterNumber)).filter(Number.isFinite);
-        const minc = Math.min(...nums);
-        const maxc = Math.max(...nums);
-        const span = maxc - minc + 1;
-        const contiguity = nums.length <= 1 ? 1 : Math.min(1, nums.length / span);
-        const overallConfidence = clamp01(assignedFraction * (0.5 + 0.5 * contiguity));
-
+        const assignedFraction = assigned.length / total;
+        const contiguity = sequenceContiguity(nums);
+        const confidence = clamp01(assignedFraction * (0.5 + 0.5 * contiguity));
         const reason =
-            `${assigned.length}/${total} pages → ${chapters.length} chapter(s) ` +
-            `[${normalizeChapterNumber(String(minc))}–${normalizeChapterNumber(String(maxc))}], ` +
+            `chapter mode: ${assigned.length}/${total} pages → ${chapters.length} chapter(s) ` +
+            `[${normalizeChapterNumber(String(Math.min(...nums)))}–${normalizeChapterNumber(String(Math.max(...nums)))}], ` +
             `assignedFrac=${assignedFraction.toFixed(2)}, contiguity=${contiguity.toFixed(2)}`;
 
-        return {
-            chapters,
-            overallConfidence,
-            volumeOnly: false,
-            totalImages: total,
-            assignedImages: assigned.length,
-            reason,
-            samplePaths,
-        };
+        return { mode: 'chapter', chapters, confidence, assigned: assigned.length, reason };
     }
 
+    /**
+     * Group pages by volume (one chapter per volume), or — when there are no volume
+     * markers but the archive is a single container of sequential pages — emit it as a
+     * single unit. Each volume's chapterNumber is its volume number (kept numeric so the
+     * reader's integer-cast ordering still works) with `volumeNumber` + a "Volume N" title.
+     */
+    private buildVolumeInterpretation(analyses: ImageAnalysis[], total: number): Interpretation | null {
+        const withVol = analyses.filter((a) => a.volume !== null);
+        const volFraction = withVol.length / total;
+
+        // Volume-only pack: an explicit volume marker on (nearly) every page.
+        if (withVol.length > 0 && volFraction >= 0.9) {
+            const byVolume = new Map<string, ImageAnalysis[]>();
+            for (const a of withVol) {
+                if (!byVolume.has(a.volume!)) byVolume.set(a.volume!, []);
+                byVolume.get(a.volume!)!.push(a);
+            }
+            const chapters: ParsedChapterLayout[] = [...byVolume.entries()]
+                .map(([vol, items]) => ({ chapterNumber: vol, volume: vol, title: `Volume ${vol}`, pages: orderPages(items), confidence: 1 }))
+                .sort((a, b) => parseFloat(a.chapterNumber) - parseFloat(b.chapterNumber));
+            const nums = chapters.map((c) => parseFloat(c.chapterNumber)).filter(Number.isFinite);
+            const contiguity = sequenceContiguity(nums);
+            const confidence = clamp01(volFraction * (0.5 + 0.5 * contiguity));
+            const reason =
+                `volume mode: ${chapters.length} volume(s) ` +
+                `[${normalizeVolumeNumber(String(Math.min(...nums)))}–${normalizeVolumeNumber(String(Math.max(...nums)))}] → ` +
+                `${chapters.length} chapter(s), volFrac=${volFraction.toFixed(2)}, contiguity=${contiguity.toFixed(2)}`;
+            return { mode: 'volume', chapters, confidence, assigned: withVol.length, reason };
+        }
+
+        // Single-book fallback: one container, no chapter/volume markers, sequential
+        // pages. Ingest as a single chapter "1" when it's plausibly one book.
+        const containers = new Set(analyses.map((a) => a.container));
+        if (containers.size === 1) {
+            const pages = orderPages(analyses);
+            const confidence = total <= SINGLE_BOOK_MAX_PAGES ? 0.9 : 0.4;
+            const reason =
+                `single-book mode: 1 container, ${total} page(s), no chapter/volume markers ` +
+                `(confidence ${total <= SINGLE_BOOK_MAX_PAGES ? 'ok' : 'low — pile too large to assume one chapter'})`;
+            return {
+                mode: 'single',
+                chapters: [{ chapterNumber: '1', volume: '1', title: 'Volume 1', pages, confidence }],
+                confidence,
+                assigned: total,
+                reason,
+            };
+        }
+
+        return null;
+    }
 }
 
 function commonRootSegmentCount(paths: string[]): number {

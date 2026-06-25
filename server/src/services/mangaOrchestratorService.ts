@@ -437,6 +437,9 @@ class MangaOrchestratorService {
       
       // Find all series with at least one chapter that aren't in top trending; skip completed manga
       const notCompleted = or(isNull(series.status), ne(series.status, 'completed'));
+      // Volume-sourced (archive volume-pack) series must never be scraped — real chapter
+      // numbers would collide with the volume numbering.
+      const notVolumeSourced = ne(series.volumeSourced, true);
       const novelFilter = getExcludeNovelConditions(series);
       let results: Array<{ id: number; title: string | null; cover: unknown }>;
       
@@ -445,13 +448,13 @@ class MangaOrchestratorService {
           .selectDistinct({ id: series.id, title: series.title, cover: series.cover })
           .from(series)
           .innerJoin(chapters, eq(chapters.seriesId, series.id))
-          .where(and(sql`NOT ${inArray(series.id, trendingIds)}`, notCompleted, ...novelFilter));
+          .where(and(sql`NOT ${inArray(series.id, trendingIds)}`, notCompleted, notVolumeSourced, ...novelFilter));
       } else {
         results = await db
           .selectDistinct({ id: series.id, title: series.title, cover: series.cover })
           .from(series)
           .innerJoin(chapters, eq(chapters.seriesId, series.id))
-          .where(and(notCompleted, ...novelFilter));
+          .where(and(notCompleted, notVolumeSourced, ...novelFilter));
       }
 
       // Filter out results with null titles

@@ -17,7 +17,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { db } from '@/db';
-import { chapters, acquisitionJobs } from '@/db/schema';
+import { chapters, acquisitionJobs, series } from '@/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
@@ -25,7 +25,7 @@ import { objectStorageService } from '@/services/objectStorageService';
 import { chapterPersistenceService } from '@/services/chapterPersistenceService';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import { isUndecodableImageError } from '@/scrapers/lib/chapterImageDownloader';
-import { archiveLayoutParser, type ParsedChapterLayout } from '@/archive/ArchiveLayoutParser';
+import { archiveLayoutParser, isVolumeLikeMode, type ArchiveLayoutMode, type ParsedChapterLayout } from '@/archive/ArchiveLayoutParser';
 import { parseArchiveTitle } from '@/archive/lib/archiveTitleParser';
 import {
     unpack,
@@ -46,6 +46,13 @@ export interface ArchiveIngestInput {
     localPath: string;
     /** Candidate torrent title (segmentation/range prior). */
     candidateTitle: string | null;
+    /**
+     * Whether a scraper gap-fill will run for this series after ingest (from
+     * `acquisition_jobs.scrapeAfterIngest`). When true the series is scrape-tracked, so a
+     * volume-like layout (whose volume numbering would collide with the scraper's real
+     * chapter numbers) is routed to needs_review instead of auto-ingested.
+     */
+    scrapeAfterIngest: boolean;
 }
 
 export type ArchiveIngestStatus = 'done' | 'needs_review' | 'failed';
@@ -62,7 +69,7 @@ class ArchiveIngestService {
     }
 
     async ingest(input: ArchiveIngestInput): Promise<ArchiveIngestResult> {
-        const { jobId, seriesId, localPath, candidateTitle } = input;
+        const { jobId, seriesId, localPath, candidateTitle, scrapeAfterIngest } = input;
         const workDir = path.join(this.pipeline.scratchDir, `ingest-${jobId}`);
 
         await this.setJobStatus(jobId, 'ingesting');
@@ -85,10 +92,12 @@ class ArchiveIngestService {
                 return await this.needsReview(jobId, layout, 'archive contains JPEG-XL pages but djxl is unavailable');
             }
 
-            // Confidence gate (auto-or-skip).
+            // Confidence gate (auto-or-skip). Both chapter- and volume-mode layouts
+            // auto-ingest once they clear the threshold; a volume-only pack is now a
+            // first-class success (each volume → one chapter) rather than an automatic
+            // needs_review. Anything below the bar still routes to review (skip-and-log).
             if (
                 layout.chapters.length === 0 ||
-                layout.volumeOnly ||
                 layout.overallConfidence < this.pipeline.segmentationConfidenceThreshold
             ) {
                 return await this.needsReview(
@@ -98,7 +107,20 @@ class ArchiveIngestService {
                 );
             }
 
-            return await this.ingestChapters(input, layout.chapters);
+            // Volume/single-mode numbers chapters by VOLUME, which collides with a
+            // scraper's real chapter numbers. Only auto-ingest such a layout for
+            // archive-only series (no scrape will follow); a scrape-tracked series keeps
+            // the scraper authoritative and routes the pack to review (plan: mutual
+            // exclusivity per series).
+            if (isVolumeLikeMode(layout.mode) && scrapeAfterIngest) {
+                return await this.needsReview(
+                    jobId,
+                    layout,
+                    `${layout.mode}-mode pack on a scrape-tracked series; the scraper owns real-numbered chapters (review manually): ${layout.reason}`
+                );
+            }
+
+            return await this.ingestChapters(input, layout.chapters, layout.mode);
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             logger.error(`[INGEST] Failed for series ${seriesId} (job ${jobId}): ${message}`, {
@@ -113,7 +135,8 @@ class ArchiveIngestService {
     /** Upload + persist the auto-ingestable chapters (skip-if-present), drive progress. */
     private async ingestChapters(
         input: ArchiveIngestInput,
-        layoutChapters: ParsedChapterLayout[]
+        layoutChapters: ParsedChapterLayout[],
+        mode: ArchiveLayoutMode
     ): Promise<ArchiveIngestResult> {
         const { jobId, seriesId } = input;
 
@@ -155,7 +178,8 @@ class ArchiveIngestService {
             await chapterPersistenceService.persistDownloadedChapter({
                 seriesId,
                 chapterNumber: ch.chapterNumber,
-                title: `Chapter ${ch.chapterNumber}`,
+                volumeNumber: ch.volume ?? null,
+                title: ch.title ?? `Chapter ${ch.chapterNumber}`,
                 storagePrefix,
                 pageCount,
                 scraperId: ARCHIVE_SCRAPER_ID,
@@ -167,6 +191,13 @@ class ArchiveIngestService {
         if (totalPages === 0) {
             await mangaProgressService.markFailed(seriesId, 'Archive ingest produced no pages');
             return await this.fail(jobId, 'no pages uploaded despite passing the confidence gate');
+        }
+
+        // Lock a volume-organised series so a later scrape (status flip, manual rescan,
+        // reconciliation) can never collide with the volume numbering. The scanner +
+        // monitored-rescan both honour this flag (plan §2).
+        if (isVolumeLikeMode(mode)) {
+            await db.update(series).set({ volumeSourced: true }).where(eq(series.id, seriesId));
         }
 
         logger.info(`[INGEST] Series ${seriesId}: ingested ${ingested} chapter(s), ${totalPages} page(s) from archive`, {

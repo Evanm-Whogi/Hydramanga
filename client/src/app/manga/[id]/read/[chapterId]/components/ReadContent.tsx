@@ -155,6 +155,12 @@ interface Chapter {
   }[] | null;
 }
 
+/** "Volume N" for archive volume-pack rows (volumeNumber set), else "Chapter N". */
+function unitLabel(ch?: { chapterNumber?: string | null; volumeNumber?: string | null } | null, fallbackNumber?: string | number | null): string {
+  if (ch?.volumeNumber) return `Volume ${ch.volumeNumber}`;
+  return `Chapter ${ch?.chapterNumber ?? fallbackNumber ?? ''}`.trim();
+}
+
 interface ImageItem {
   src: string;
   chapterId: number;
@@ -373,6 +379,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
   );
   const prevChapter = useMemo(() => allChapters[currentIndex - 1], [allChapters, currentIndex]);
   const nextChapter = useMemo(() => allChapters[currentIndex + 1], [allChapters, currentIndex]);
+  const activeChapter = useMemo(() => allChapters.find((ch) => ch.id === activeChapterId), [allChapters, activeChapterId]);
 
   // Send reading time to backend
   const sendReadingTime = useCallback(async (seconds: number) => {
@@ -1124,7 +1131,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
         sidebarCollapsed ? 'md:w-0 md:overflow-hidden' : 'md:w-65'
       }`}>
         <div className="sidebar-header px-4 py-4 border-b border-borders">
-          <h2 className="text-[1.25rem] font-bold mb-4 text-white">Chapter {activeChapterNumber}</h2>
+          <h2 className="text-[1.25rem] font-bold mb-4 text-white">{unitLabel(activeChapter, activeChapterNumber)}</h2>
           {renderSidebarControls()}
         </div>
 
@@ -1135,7 +1142,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
               <button key={ch.id} id={`chapter-${ch.id}`} onClick={() => navigateToChapter(ch)} disabled={isNavigating} className={`p-[10px_2px] text-[0.75rem] border cursor-pointer rounded-sm text-primary disabled:cursor-not-allowed disabled:opacity-50 ${
                 ch.id === activeChapterId ? 'font-bold bg-accent border-accent' : 'font-normal bg-background hover:bg-background/50 border-background'
               }`}>
-                {ch.chapterNumber}
+                {ch.volumeNumber ? `V${ch.volumeNumber}` : ch.chapterNumber}
               </button>
             ))}
           </div>
@@ -1149,7 +1156,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
           <aside className="sidebar fixed top-0 left-0 h-screen w-72 bg-foreground border-r border-r-borders shadow-md flex flex-col z-50 md:hidden">
             <div className="sidebar-header px-4 py-4 border-b border-borders flex flex-col gap-4">
               <div className="flex justify-between items-center">
-                <h2 className="text-[1.25rem] font-bold text-white">Chapter {activeChapterNumber}</h2>
+                <h2 className="text-[1.25rem] font-bold text-white">{unitLabel(activeChapter, activeChapterNumber)}</h2>
                 <button onClick={() => setSidebarOpen(false)} className="text-primary hover:text-accent">
                   <X className="size-6" />
                 </button>
@@ -1165,7 +1172,7 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
                   }} disabled={isNavigating} className={`p-2 text-sm border cursor-pointer rounded text-primary disabled:cursor-not-allowed disabled:opacity-50 ${
                     ch.id === activeChapterId ? 'font-bold bg-accent border-accent' : 'font-normal bg-background hover:bg-background/50 border-background'
                   }`}>
-                    Chapter {ch.chapterNumber}
+                    {unitLabel(ch)}
                   </button>
                 ))}
               </div>
@@ -1249,14 +1256,14 @@ export default function ReadContent({ mangaTitle }: { mangaTitle: string }) {
             <div className="flex flex-wrap items-center justify-center gap-4">
               {prevChapter ? (
                 <button onClick={() => navigateToChapter(prevChapter)} disabled={isNavigating} className="px-8 py-4 bg-foreground hover:bg-foreground/80 text-primary border border-borders rounded-md text-[1.1rem] font-bold cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors">
-                  ← Chapter {prevChapter.chapterNumber}
+                  ← {unitLabel(prevChapter)}
                 </button>
               ) : (
                 <div className="w-45 hidden sm:block" aria-hidden />
               )}
               {nextChapter ? (
                 <button onClick={() => navigateToChapter(nextChapter)} disabled={isNavigating} className="px-12 py-4 bg-accent hover:bg-accent/80 text-white border-none rounded-md text-[1.1rem] font-bold cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors">
-                  Read Chapter {nextChapter.chapterNumber} →
+                  Read {unitLabel(nextChapter)} →
                 </button>
               ) : (
                 <div className="flex flex-col py-2">

@@ -25,6 +25,8 @@ import { withDbRetry } from '@/utils/dbError';
 export interface PersistDownloadedChapterInput {
     seriesId: number;
     chapterNumber: number | string;
+    /** Volume this chapter belongs to (e.g. archive volume packs); null when unknown. */
+    volumeNumber?: number | string | null;
     /** Chapter display title. */
     title: string;
     /** Object-key prefix where the pages were stored (e.g. `${seriesId}/${chapterNumber}`). */
@@ -56,6 +58,7 @@ class ChapterPersistenceService {
     ): Promise<PersistDownloadedChapterResult> {
         const { seriesId, title, storagePrefix, pageCount } = input;
         const chapterNumberStr = String(input.chapterNumber);
+        const volumeNumberStr = input.volumeNumber != null ? String(input.volumeNumber) : null;
         const scraperId = input.scraperId ?? null;
 
         // Upsert chapter metadata (insert, or update if the (series, number) already exists).
@@ -66,6 +69,7 @@ class ChapterPersistenceService {
                     .values({
                         seriesId,
                         chapterNumber: chapterNumberStr,
+                        volumeNumber: volumeNumberStr,
                         storagePrefix,
                         pageCount,
                         title,
@@ -75,6 +79,9 @@ class ChapterPersistenceService {
                     .onConflictDoUpdate({
                         target: [chapters.seriesId, chapters.chapterNumber],
                         set: {
+                            // Don't clobber an existing volumeNumber with null when a later
+                            // scrape (which doesn't know volumes) re-persists the same chapter.
+                            ...(volumeNumberStr != null ? { volumeNumber: volumeNumberStr } : {}),
                             storagePrefix,
                             pageCount,
                             title,

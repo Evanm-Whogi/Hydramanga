@@ -1,0 +1,1 @@
+ALTER TABLE "series" ADD COLUMN "volume_sourced" boolean DEFAULT false NOT NULL;

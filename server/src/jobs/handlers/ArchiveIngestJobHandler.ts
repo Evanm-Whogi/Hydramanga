@@ -46,6 +46,7 @@ export class ArchiveIngestJobHandler implements IJobHandler {
             seriesId: row.seriesId,
             localPath: row.localPath,
             candidateTitle: row.candidateTitle,
+            scrapeAfterIngest: row.scrapeAfterIngest,
         });
 
         // Download-only: remove the torrent to free scratch immediately. On

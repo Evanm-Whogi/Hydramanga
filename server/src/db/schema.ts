@@ -91,6 +91,10 @@ export const series = pgTable('series', {
   tags: jsonb('tags'),
   tagsV2: jsonb('tags_v2'),
   lastUpdatedAt: timestamp('last_updated_at', { withTimezone: true }),
+  // Set when an archive volume-pack was ingested as whole-volume "chapters". Such a
+  // series is volume-organised; the scraper writes real per-chapter numbers that would
+  // collide on (seriesId, chapterNumber), so chapter scanning is skipped for it.
+  volumeSourced: boolean('volume_sourced').notNull().default(false),
   source: jsonb('source'),
   weightedScore: real('weighted_score').generatedAlwaysAs(
     sql`((COALESCE("rating", 0) * 0.6) + (((
