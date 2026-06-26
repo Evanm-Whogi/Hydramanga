@@ -211,7 +211,8 @@ class ArchiveIngestService {
         // Archive sources are pristine high-res scans (lots of screentone gradient);
         // encode at higher webp quality than the scrape default to avoid block artifacts.
         const transform = { quality: this.pipeline.webpQuality, effort: this.pipeline.webpEffort };
-        for (let i = 0; i < pages.length; i++) {
+
+        const uploadOne = async (i: number) => {
             const pagePath = pages[i];
             try {
                 if (isJxlFile(pagePath)) {
@@ -234,6 +235,17 @@ class ArchiveIngestService {
                     throw err;
                 }
             }
+        };
+
+        // Transcode+upload pages in bounded parallel batches (was strictly serial). Each
+        // sharp encode threads internally via libvips, so the batch overlaps CPU-heavy
+        // encodes with each other and with the Garage upload round-trips. A non-recoverable
+        // page rejects its promise → the batch rejects → the chapter fails (unchanged).
+        const batchSize = Math.max(1, this.pipeline.transcodeBatchSize);
+        for (let start = 0; start < pages.length; start += batchSize) {
+            const end = Math.min(start + batchSize, pages.length);
+            const batch = Array.from({ length: end - start }, (_, j) => uploadOne(start + j));
+            await Promise.all(batch);
         }
         return pages.length;
     }

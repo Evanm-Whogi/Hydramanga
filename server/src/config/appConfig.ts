@@ -319,6 +319,8 @@ export interface ArchiveConfig {
         webpQuality: number;
         /** WebP effort (0–6) for archive page transcode. */
         webpEffort: number;
+        /** Pages transcoded+uploaded in parallel per chapter (libvips threads within each). */
+        transcodeBatchSize: number;
     };
 }
 
@@ -633,6 +635,7 @@ export class AppConfigService {
                     djxlPath: parseEnvString('DJXL_PATH', 'djxl'),
                     webpQuality: parseEnvNumber('ARCHIVE_WEBP_QUALITY', 90),
                     webpEffort: parseEnvNumber('ARCHIVE_WEBP_EFFORT', 4),
+                    transcodeBatchSize: parseEnvNumber('ARCHIVE_TRANSCODE_BATCH_SIZE', 8),
                 },
             },
 
