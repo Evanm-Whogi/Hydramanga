@@ -12,6 +12,8 @@ import { RandomModal } from '@/components/RandomModal';
 import { ThemeModal, restoreThemeFromCookies } from '@/components/ThemeModal';
 import NotificationsMenu from '@/components/layout/NotificationsMenu';
 import NsfwToggle from '@/components/layout/NsfwToggle';
+import NavbarSearch from '@/components/layout/NavbarSearch';
+import NavIconTooltip from '@/components/layout/NavIconTooltip';
 import UserAvatar from '@/components/UserAvatar';
 
 type ThemeMode = 'theme-dark' | 'theme-light' | 'theme-night';
@@ -102,7 +104,7 @@ export default function NavbarClient() {
     return (
         <>
             <nav id="header" className={`fixed left-0 w-full z-50 transition-all duration-300 border-b ${isImpersonating ? 'top-10' : 'top-0'} ${isScrolled ? 'bg-foreground border-borders shadow-lg' : 'bg-foreground/5 backdrop-blur-md border-white/10'}`}>
-                <div className="flex container items-center h-18 pt-2 mx-auto px-5 lg:px-8 justify-between min-w-0">
+                <div className="flex container items-center gap-4 h-18 pt-2 mx-auto px-5 lg:px-8 justify-between min-w-0">
                     {/* Left Section */}
                     <div className="flex items-center gap-8 h-full">
                         <Link href="/" className="z-50 flex items-center h-full w-56">
@@ -130,15 +132,20 @@ export default function NavbarClient() {
 
                     {/* Right Section */}
                     <div className="flex items-center gap-6">
+                        <div className="hidden min-[1700px]:flex items-center">
+                            <NavbarSearch />
+                        </div>
                         <div className="hidden xl:flex items-center gap-3">
                             <div className="hidden min-[1700px]:flex items-center gap-3">
-                                {user && (
-                                    <Link href="/request" className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><CirclePlusIcon className="size-4" /> Request</Link>
-                                )}
-                                <div onClick={toggleRandomManga} className="flex items-center gap-2 px-3 py-2 text-sm bg-background rounded-lg hover:bg-foreground/80 transition-colors cursor-pointer"><DicesIcon className="size-4" />Random</div>
                                 <NsfwToggle />
-                                <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer" className="size-11" ><img src="/oauthIcons/discord.webp" alt="discord" /></a>
-                                <Link href="/discover" className="bg-background hover:bg-background/50 p-3 rounded-full"><SearchIcon className="size-5 hover:cursor-pointer" /></Link>
+                                {user && (
+                                    <NavIconTooltip label="Request">
+                                        <Link href="/request" aria-label="Request" className="bg-background hover:bg-background/50 p-3 rounded-full hover:cursor-pointer"><CirclePlusIcon className="size-4" /></Link>
+                                    </NavIconTooltip>
+                                )}
+                                <NavIconTooltip label="Random">
+                                    <button type="button" onClick={toggleRandomManga} aria-label="Random" className="bg-background hover:bg-background/50 p-3 rounded-full hover:cursor-pointer"><DicesIcon className="size-4" /></button>
+                                </NavIconTooltip>
                                 {user && <NotificationsMenu />}
                             </div>
                             

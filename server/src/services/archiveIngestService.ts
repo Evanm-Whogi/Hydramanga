@@ -24,6 +24,8 @@ import logger from '@/services/loggerService';
 import { objectStorageService } from '@/services/objectStorageService';
 import { chapterPersistenceService } from '@/services/chapterPersistenceService';
 import { mangaProgressService } from '@/services/mangaProgressService';
+import { cacheService } from '@/services/cacheService';
+import { invalidateCatalogCaches } from '@/lib/catalogCache';
 import { isUndecodableImageError } from '@/scrapers/lib/chapterImageDownloader';
 import { archiveLayoutParser, isVolumeLikeMode, type ArchiveLayoutMode, type ParsedChapterLayout } from '@/archive/ArchiveLayoutParser';
 import { parseArchiveTitle } from '@/archive/lib/archiveTitleParser';
@@ -53,6 +55,12 @@ export interface ArchiveIngestInput {
      * chapter numbers) is routed to needs_review instead of auto-ingested.
      */
     scrapeAfterIngest: boolean;
+    /**
+     * Operator override ("Import volume instead"): force-ingest a volume-like pack even
+     * on a scrape-tracked series. The caller deleted the colliding chapters + storage
+     * first, so this bypasses the volume-collision guard and the prefix-exists skip.
+     */
+    forceVolumeIngest?: boolean;
 }
 
 export type ArchiveIngestStatus = 'done' | 'needs_review' | 'failed';
@@ -69,7 +77,7 @@ class ArchiveIngestService {
     }
 
     async ingest(input: ArchiveIngestInput): Promise<ArchiveIngestResult> {
-        const { jobId, seriesId, localPath, candidateTitle, scrapeAfterIngest } = input;
+        const { jobId, seriesId, localPath, candidateTitle, scrapeAfterIngest, forceVolumeIngest } = input;
         const workDir = path.join(this.pipeline.scratchDir, `ingest-${jobId}`);
 
         await this.setJobStatus(jobId, 'ingesting');
@@ -112,7 +120,7 @@ class ArchiveIngestService {
             // archive-only series (no scrape will follow); a scrape-tracked series keeps
             // the scraper authoritative and routes the pack to review (plan: mutual
             // exclusivity per series).
-            if (isVolumeLikeMode(layout.mode) && scrapeAfterIngest) {
+            if (isVolumeLikeMode(layout.mode) && scrapeAfterIngest && !forceVolumeIngest) {
                 return await this.needsReview(
                     jobId,
                     layout,
@@ -132,27 +140,51 @@ class ArchiveIngestService {
         }
     }
 
+    /**
+     * Replace an operator's existing chapters with an incoming volume pack: delete the
+     * chapter rows + their S3 objects (so reused `${seriesId}/${n}` prefixes are clean)
+     * and invalidate caches. Runs on the worker, which owns DB + S3 access. Only called
+     * once the forced ingest has cleared every gate, so it can't strand a series empty.
+     */
+    private async replaceExistingForVolume(seriesId: number): Promise<void> {
+        await db.delete(chapters).where(eq(chapters.seriesId, seriesId));
+        await objectStorageService.deleteSeries(seriesId).catch((err) =>
+            logger.warn(`[INGEST] Failed to wipe storage for forced volume import of series ${seriesId}: ${err}`, {
+                service: 'archiveIngestService',
+            })
+        );
+        await cacheService.invalidatePattern(`manga:${seriesId}:*`).catch(() => {});
+        await cacheService.invalidatePattern(`series:${seriesId}:*`).catch(() => {});
+        await invalidateCatalogCaches().catch(() => {});
+        logger.info(`[INGEST] Series ${seriesId}: cleared existing chapters for forced volume import`, {
+            service: 'archiveIngestService',
+        });
+    }
+
     /** Upload + persist the auto-ingestable chapters (skip-if-present), drive progress. */
     private async ingestChapters(
         input: ArchiveIngestInput,
         layoutChapters: ParsedChapterLayout[],
         mode: ArchiveLayoutMode
     ): Promise<ArchiveIngestResult> {
-        const { jobId, seriesId } = input;
+        const { jobId, seriesId, forceVolumeIngest } = input;
 
-        // Existing chapters → gap-fill only (Q7).
+        // Existing chapters → gap-fill only (Q7). A forced volume import instead REPLACES
+        // them, so it ignores both the existing-number and prefix checks (the colliding
+        // rows/objects are deleted below once we confirm the pack is non-empty).
         const existing = await db
             .select({ chapterNumber: chapters.chapterNumber })
             .from(chapters)
             .where(eq(chapters.seriesId, seriesId));
         const existingNumbers = new Set(existing.map((c) => c.chapterNumber));
-        const base = existing.length;
 
         const autoChapters: ParsedChapterLayout[] = [];
         for (const ch of layoutChapters) {
-            if (existingNumbers.has(ch.chapterNumber)) continue;
-            // Storage-level idempotency for re-ingests where the DB row was lost.
-            if (await objectStorageService.prefixExists(`${seriesId}/${ch.chapterNumber}`)) continue;
+            if (!forceVolumeIngest) {
+                if (existingNumbers.has(ch.chapterNumber)) continue;
+                // Storage-level idempotency for re-ingests where the DB row was lost.
+                if (await objectStorageService.prefixExists(`${seriesId}/${ch.chapterNumber}`)) continue;
+            }
             if (ch.pages.length > 0) autoChapters.push(ch);
         }
 
@@ -160,8 +192,14 @@ class ArchiveIngestService {
             logger.info(`[INGEST] Series ${seriesId}: all ${layoutChapters.length} chapter(s) already present; nothing to ingest`, {
                 service: 'archiveIngestService',
             });
+            // Nothing to import — for a forced import this leaves the series intact.
             return await this.done(jobId, 0, 'all chapters already present (gap-fill no-op)');
         }
+
+        // Forced volume import: now that we have a non-empty pack to put in their place,
+        // delete the operator's existing chapters + storage (never strands a series empty).
+        if (forceVolumeIngest) await this.replaceExistingForVolume(seriesId);
+        const base = forceVolumeIngest ? 0 : existing.length;
 
         // Progress lifecycle must mirror the scanner or incrementDownloaded no-ops (§11.1).
         await mangaProgressService.initializeProgress(seriesId, base, base);

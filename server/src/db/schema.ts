@@ -717,6 +717,14 @@ export const acquisitionJobs = pgTable('acquisition_jobs', {
   localPath: text('local_path'),
   sizeBytes: bigint('size_bytes', { mode: 'number' }),
   chaptersIngested: integer('chapters_ingested').notNull().default(0),
+  // Download progress (0..1) + the last time it advanced. The poller uses
+  // lastProgressAt as the stall clock so a slow-but-advancing torrent is never
+  // killed; both are surfaced in the admin dashboard ("slow ≠ failed").
+  progress: real('progress').notNull().default(0),
+  lastProgressAt: timestamp('last_progress_at', { withTimezone: true }),
+  // Soft-acknowledge a needs_review/failed job: hidden from the default admin
+  // list (Dismissed tab shows them) without deleting the record.
+  dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
   // Whether to run a scraper gap-fill AFTER a successful ingest, regardless of
   // series status. Set for manual-backfill (operator wants "archive + scrape")
   // and for archive_then_scrape strategies; completed-series initial-imports leave

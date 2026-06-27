@@ -46,6 +46,13 @@ export async function updateSettings(updates: Partial<UserSettings>): Promise<Us
   };
 }
 
+export interface QuickSearchUser { id: string; username: string; name: string; image?: string | null }
+
+export async function searchUsers(search: string, limit = 8): Promise<{ items: QuickSearchUser[] }> {
+    const params = new URLSearchParams({ search: search.trim(), limit: String(limit) });
+    return await apiGet(`/users/search?${params}`);
+}
+
 export async function uploadProfilePicture(file: File): Promise<any> {
     const formData = new FormData();
     formData.append("profilePicture", file);

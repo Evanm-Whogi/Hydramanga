@@ -14,6 +14,7 @@ import {
     ARCHIVE_ACQUIRE_QUEUE,
     ARCHIVE_INGEST_QUEUE,
     ARCHIVE_POLL_QUEUE,
+    ARCHIVE_MAINTENANCE_QUEUE,
 } from '@/jobs/handlers/archiveQueueNames';
 
 if (process.env.ENABLE_SENTRY === 'true') {
@@ -30,6 +31,10 @@ async function main() {
     queueService.getQueue('storageCleanupQueue');
     queueService.getQueue('seriesMigrationQueue');
     queueService.getQueue('emailQueue');
+    // Archive cleanup runs on the worker (it owns the scratch mount + qBittorrent
+    // access). Created unconditionally so admin cleanup works even when the archive
+    // pipeline itself is disabled.
+    queueService.getQueue(ARCHIVE_MAINTENANCE_QUEUE);
 
     // Archive ingestion (torrent) pipeline — only when enabled. The download poller
     // runs as a BullMQ repeatable job (independent of node-cron, which may be off).

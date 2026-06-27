@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BellRing, X } from 'lucide-react';
 import { useNotifications } from '@/providers/NotificationsProvider';
+import NavIconTooltip from '@/components/layout/NavIconTooltip';
 import type { UserNotification } from '@/services/notificationService';
 
 function formatRelativeTime(dateStr: string): string {
@@ -88,40 +89,44 @@ export default function NotificationsMenu({ variant = 'icon', onOpen }: Notifica
 
   const count = notifications.length;
 
+  const triggerButton = (
+    <button
+      type="button"
+      onClick={() => {
+        setIsOpen((open) => {
+          if (!open) onOpen?.();
+          return !open;
+        });
+      }}
+      aria-label="Notifications"
+      aria-expanded={isOpen}
+      className={
+        isDropdown
+          ? 'relative flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors focus:outline-none focus:ring-2 focus:ring-borders'
+          : isLink
+          ? 'relative flex w-full items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm text-muted hover:bg-foreground/70 focus:outline-none focus:ring-2 focus:ring-borders'
+          : 'relative bg-background hover:bg-background/50 p-3 rounded-full focus:outline-none focus:ring-2 focus:ring-borders'
+      }
+    >
+      <BellRing className={isLink || isDropdown ? 'size-4 shrink-0' : 'size-5'} />
+      {(isLink || isDropdown) && <span>Notifications</span>}
+      {count > 0 && (
+        <span
+          className={
+            isLink || isDropdown
+              ? 'ml-auto min-w-5 h-5 px-1 flex items-center justify-center rounded-full bg-accent text-background text-[10px] font-bold leading-none'
+              : 'absolute -top-0.5 -right-0.5 min-w-5 h-5 px-1 flex items-center justify-center rounded-full bg-accent text-background text-[10px] font-bold leading-none'
+          }
+        >
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
+    </button>
+  );
+
   return (
     <div className="relative" ref={rootRef}>
-      <button
-        type="button"
-        onClick={() => {
-          setIsOpen((open) => {
-            if (!open) onOpen?.();
-            return !open;
-          });
-        }}
-        aria-label="Notifications"
-        aria-expanded={isOpen}
-        className={
-          isDropdown
-            ? 'relative flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors focus:outline-none focus:ring-2 focus:ring-borders'
-            : isLink
-            ? 'relative flex w-full items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm text-muted hover:bg-foreground/70 focus:outline-none focus:ring-2 focus:ring-borders'
-            : 'relative bg-background hover:bg-background/50 p-3 rounded-full focus:outline-none focus:ring-2 focus:ring-borders'
-        }
-      >
-        <BellRing className={isLink || isDropdown ? 'size-4 shrink-0' : 'size-5'} />
-        {(isLink || isDropdown) && <span>Notifications</span>}
-        {count > 0 && (
-          <span
-            className={
-              isLink || isDropdown
-                ? 'ml-auto min-w-5 h-5 px-1 flex items-center justify-center rounded-full bg-accent text-background text-[10px] font-bold leading-none'
-                : 'absolute -top-0.5 -right-0.5 min-w-5 h-5 px-1 flex items-center justify-center rounded-full bg-accent text-background text-[10px] font-bold leading-none'
-            }
-          >
-            {count > 99 ? '99+' : count}
-          </span>
-        )}
-      </button>
+      {variant === 'icon' ? <NavIconTooltip label="Notifications">{triggerButton}</NavIconTooltip> : triggerButton}
 
       {isOpen && (
         <div className="fixed left-4 right-4 top-24 max-w-md mx-auto xl:absolute xl:left-auto xl:right-0 xl:top-auto xl:mx-0 xl:mt-2 w-auto xl:w-80 sm:xl:w-96 max-h-[min(24rem,70vh)] flex flex-col bg-background border border-borders rounded-xl shadow-xl z-80 animate-in fade-in zoom-in duration-200">

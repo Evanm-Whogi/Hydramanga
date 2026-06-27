@@ -2,16 +2,21 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, ChevronLeft, ChevronRight, RefreshCw, RotateCcw, ExternalLink, AlertTriangle } from "lucide-react";
+import { Loader2, ChevronLeft, ChevronRight, RefreshCw, RotateCcw, ExternalLink, AlertTriangle, Trash2, Ban, Layers, EyeOff, Recycle, type LucideIcon } from "lucide-react";
 import { toast } from "react-toastify";
 import {
   listArchiveJobs,
-  reingestArchive,
+  retryArchiveJob,
+  dismissArchiveJob,
+  deleteArchiveJob,
+  abandonArchiveTorrent,
+  importVolumeFromArchive,
+  purgeOrphanedTorrents,
   type ArchiveJob,
-  type ArchiveJobStatus,
+  type ArchiveJobFilter,
 } from "@/services/adminArchiveService";
 
-const STATUS_TABS: { value: ArchiveJobStatus | "all"; label: string }[] = [
+const STATUS_TABS: { value: ArchiveJobFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "searching", label: "Searching" },
   { value: "downloading", label: "Downloading" },
@@ -19,9 +24,10 @@ const STATUS_TABS: { value: ArchiveJobStatus | "all"; label: string }[] = [
   { value: "done", label: "Done" },
   { value: "needs_review", label: "Needs review" },
   { value: "failed", label: "Failed" },
+  { value: "dismissed", label: "Dismissed" },
 ];
 
-function statusClass(status: ArchiveJobStatus): string {
+function statusClass(status: ArchiveJob["status"]): string {
   switch (status) {
     case "searching":
     case "downloading":
@@ -64,12 +70,13 @@ export default function ArchiveAdminClient() {
   const [jobs, setJobs] = useState<ArchiveJob[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [enabled, setEnabled] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<ArchiveJobStatus | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<ArchiveJobFilter>("all");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [reingestingId, setReingestingId] = useState<number | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [purging, setPurging] = useState(false);
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
@@ -96,16 +103,47 @@ export default function ArchiveAdminClient() {
     fetchJobs();
   }, [fetchJobs]);
 
-  const handleReingest = async (job: ArchiveJob) => {
-    setReingestingId(job.id);
+  /** Run a per-job action with a busy spinner, optional confirm, toast + refresh. */
+  const runJobAction = async (jobId: number, action: () => Promise<unknown>, successMsg: string, confirmMsg?: string) => {
+    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    setBusyId(jobId);
     try {
-      const res = await reingestArchive(job.seriesId);
-      toast.success(res.message || "Re-ingest queued");
+      await action();
+      toast.success(successMsg);
       await fetchJobs();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to queue re-ingest");
+      toast.error(e instanceof Error ? e.message : "Action failed");
     } finally {
-      setReingestingId(null);
+      setBusyId(null);
+    }
+  };
+
+  const handleDelete = async (job: ArchiveJob) => {
+    if (!window.confirm(`Delete acquisition job #${job.id}? This removes the job record.`)) return;
+    // Binary confirm: offer to also stop seeding + wipe the downloaded files.
+    const deleteTorrent = !!job.clientHandle && window.confirm("Also remove the torrent from qBittorrent and delete its downloaded files (stop seeding)?\n\nOK = remove torrent + files · Cancel = keep them.");
+    setBusyId(job.id);
+    try {
+      await deleteArchiveJob(job.id, { deleteTorrent, deleteFiles: deleteTorrent });
+      toast.success(deleteTorrent ? "Job deleted; torrent removal queued" : "Job deleted");
+      await fetchJobs();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete job");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handlePurge = async () => {
+    if (!window.confirm("Remove every torrent in the manga category that has no active job (stops seeding + deletes their files) and sweep stale scratch folders?")) return;
+    setPurging(true);
+    try {
+      await purgeOrphanedTorrents();
+      toast.success("Cleanup started on the worker — orphaned torrents and stale folders are being removed");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to start cleanup");
+    } finally {
+      setPurging(false);
     }
   };
 
@@ -145,15 +183,27 @@ export default function ArchiveAdminClient() {
             );
           })}
         </div>
-        <button
-          type="button"
-          onClick={() => fetchJobs()}
-          disabled={loading}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm bg-foreground border border-borders text-primary hover:bg-foreground/80 disabled:opacity-50 self-start"
-        >
-          <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
+        <div className="flex gap-2 self-start">
+          <button
+            type="button"
+            onClick={handlePurge}
+            disabled={purging}
+            title="Stop seeding + delete torrents that have no active job, and sweep stale scratch folders"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm bg-foreground border border-borders text-amber-400 hover:bg-foreground/80 disabled:opacity-50"
+          >
+            {purging ? <Loader2 className="size-4 animate-spin" /> : <Recycle className="size-4" />}
+            Purge orphaned torrents
+          </button>
+          <button
+            type="button"
+            onClick={() => fetchJobs()}
+            disabled={loading}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm bg-foreground border border-borders text-primary hover:bg-foreground/80 disabled:opacity-50"
+          >
+            <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       <p className="text-sm text-muted">{total} acquisition job{total === 1 ? "" : "s"}</p>
@@ -169,7 +219,7 @@ export default function ArchiveAdminClient() {
                 <th className="px-4 py-3 font-semibold text-muted">Chapters</th>
                 <th className="px-4 py-3 font-semibold text-muted">Size</th>
                 <th className="px-4 py-3 font-semibold text-muted">Updated</th>
-                <th className="px-4 py-3 font-semibold text-muted text-right">Action</th>
+                <th className="px-4 py-3 font-semibold text-muted text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -216,29 +266,58 @@ export default function ArchiveAdminClient() {
                       <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${statusClass(job.status)}`}>
                         {job.status.replace("_", " ")}
                       </span>
+                      {job.status === "downloading" && typeof job.progress === "number" && (
+                        <p className="text-xs text-muted mt-1">{Math.round(job.progress * 100)}% downloaded</p>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-primary">{job.chaptersIngested}</td>
                     <td className="px-4 py-3 text-muted whitespace-nowrap">{formatBytes(job.sizeBytes)}</td>
                     <td className="px-4 py-3 text-muted whitespace-nowrap">{formatDate(job.updatedAt)}</td>
-                    <td className="px-4 py-3 text-right">
-                      {job.hasLocalArchive && (job.status === "needs_review" || job.status === "failed" || job.status === "done") ? (
-                        <button
-                          type="button"
-                          onClick={() => handleReingest(job)}
-                          disabled={reingestingId === job.id || !enabled}
-                          title={enabled ? "Re-run ingest on the downloaded files" : "Archive ingestion is disabled"}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs bg-foreground border border-borders text-primary hover:bg-background disabled:opacity-50"
-                        >
-                          {reingestingId === job.id ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            <RotateCcw className="size-3.5" />
-                          )}
-                          Re-ingest
-                        </button>
-                      ) : (
-                        <span className="text-muted text-xs">—</span>
-                      )}
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1.5 justify-end">
+                        {busyId === job.id ? (
+                          <Loader2 className="size-4 animate-spin text-muted" />
+                        ) : (
+                          <>
+                            {(job.status === "failed" || job.status === "needs_review" || job.status === "downloaded") && (
+                              <ActionBtn
+                                icon={RotateCcw}
+                                label="Retry"
+                                disabled={!enabled && !job.hasLocalArchive}
+                                title={job.hasLocalArchive ? "Re-run ingest on the downloaded files" : "Re-search and download again"}
+                                onClick={() => runJobAction(job.id, () => retryArchiveJob(job.id), "Retry queued")}
+                              />
+                            )}
+                            {job.status === "needs_review" && job.hasLocalArchive && (
+                              <ActionBtn
+                                icon={Layers}
+                                label="Import volume"
+                                tone="accent"
+                                disabled={!enabled}
+                                title="Delete scraped chapters and import the downloaded volume pack instead"
+                                onClick={() => runJobAction(job.id, () => importVolumeFromArchive(job.id), "Volume import queued", `Delete this series' existing chapters and import the downloaded volume pack instead?\n\nThe series will be locked to archive-only (the scraper stops touching it).`)}
+                              />
+                            )}
+                            {job.clientHandle && ["searching", "downloading", "downloaded", "needs_review"].includes(job.status) && (
+                              <ActionBtn
+                                icon={Ban}
+                                label="Abandon"
+                                title="Stop seeding + delete files, leave the series to the scrapers"
+                                onClick={() => runJobAction(job.id, () => abandonArchiveTorrent(job.id), "Torrent abandoned", "Stop seeding + delete this torrent's files and leave the series to the scrapers?")}
+                              />
+                            )}
+                            {!job.dismissedAt && ["done", "failed", "needs_review"].includes(job.status) && (
+                              <ActionBtn
+                                icon={EyeOff}
+                                label="Dismiss"
+                                title="Hide this job from the default list"
+                                onClick={() => runJobAction(job.id, () => dismissArchiveJob(job.id), "Dismissed")}
+                              />
+                            )}
+                            <ActionBtn icon={Trash2} label="Delete" tone="danger" title="Delete this job record" onClick={() => handleDelete(job)} />
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -272,5 +351,32 @@ export default function ArchiveAdminClient() {
         </div>
       )}
     </div>
+  );
+}
+
+function ActionBtn({ icon: Icon, label, onClick, disabled, tone = "default", title }: {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  tone?: "default" | "danger" | "accent";
+  title?: string;
+}) {
+  const toneClass =
+    tone === "danger"
+      ? "text-red-400 hover:bg-red-500/10"
+      : tone === "accent"
+        ? "text-accent hover:bg-accent/10"
+        : "text-primary hover:bg-background";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title ?? label}
+      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-foreground border border-borders disabled:opacity-40 ${toneClass}`}
+    >
+      <Icon className="size-3.5" /> {label}
+    </button>
   );
 }

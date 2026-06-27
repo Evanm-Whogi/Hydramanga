@@ -9,6 +9,7 @@
 import axios from 'axios';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
+import { normalizeQueryPunctuation } from './lib/archiveTitleParser';
 import type { IArchiveIndexer, ArchiveSearchInput } from './interfaces/IArchiveIndexer';
 import type { ArchiveCandidate } from './interfaces/types';
 
@@ -121,7 +122,7 @@ export class ProwlarrIndexerService implements IArchiveIndexer {
         const seen = new Set<string>();
         const out: string[] = [];
         for (const q of queries) {
-            const trimmed = (q || '').trim();
+            const trimmed = normalizeQueryPunctuation(q || '');
             if (!trimmed) continue;
             const key = trimmed.toLowerCase();
             if (seen.has(key)) continue;

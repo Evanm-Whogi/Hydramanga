@@ -19,7 +19,9 @@ const execFileAsync = promisify(execFile);
 const IMAGE_EXTS = new Set([
     '.jpg', '.jpeg', '.png', '.webp', '.avif', '.gif', '.bmp', '.jxl', '.tif', '.tiff',
 ]);
-const ARCHIVE_EXTS = new Set(['.zip', '.cbz', '.rar', '.cbr', '.7z', '.cb7', '.tar']);
+// .epub is a ZIP container — unar extracts it like any zip; images land under
+// OEBPS/ and are collected by the normal walk (xhtml/opf/ncx/css filtered as junk).
+const ARCHIVE_EXTS = new Set(['.zip', '.cbz', '.rar', '.cbr', '.7z', '.cb7', '.tar', '.epub']);
 const JUNK_NAMES = new Set(['thumbs.db', '.ds_store', 'desktop.ini']);
 
 export function isImageFile(name: string): boolean {

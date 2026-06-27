@@ -47,6 +47,7 @@ export class ArchiveIngestJobHandler implements IJobHandler {
             localPath: row.localPath,
             candidateTitle: row.candidateTitle,
             scrapeAfterIngest: row.scrapeAfterIngest,
+            forceVolumeIngest: data.forceVolumeIngest ?? false,
         });
 
         // Download-only: remove the torrent to free scratch immediately. On
@@ -68,6 +69,16 @@ export class ArchiveIngestJobHandler implements IJobHandler {
         // Follow-up scrape, serialized AFTER ingest for this series.
         if (result.status === 'failed' || result.status === 'needs_review') {
             await acquisitionRouterService.enqueueScrape(row.seriesId, `${result.status}-fallback`);
+            return;
+        }
+
+        // A forced volume import locks the series to archive-only (volumeSourced); a
+        // gap-fill scrape would re-add real-numbered chapters that collide with the
+        // volume numbering we just imported, so never scrape after it.
+        if (data.forceVolumeIngest) {
+            logger.info(`[INGEST] Series ${row.seriesId} forced volume import (${result.reason}); skipping follow-up scrape`, {
+                service: 'archiveIngestJobHandler',
+            });
             return;
         }
 

@@ -15,7 +15,7 @@ import { requireRole } from '@/middlewares/requireRole';
 import { listAdminStickers, createAdminSticker, updateAdminSticker, deleteAdminSticker, scanAdminStickers } from '@/controllers/adminStickerController';
 import { listAdminLogContainers, getAdminContainerLogs } from '@/controllers/adminDockerLogController';
 import { listAdminBadges } from '@/controllers/adminBadgeController';
-import { listAdminArchiveJobs, getAdminSeriesArchiveStatus } from '@/controllers/adminArchiveController';
+import { listAdminArchiveJobs, getAdminSeriesArchiveStatus, retryAdminArchiveJob, dismissAdminArchiveJob, deleteAdminArchiveJob, abandonAdminArchiveTorrent, importVolumeFromArchiveJob, purgeOrphanedArchiveTorrents } from '@/controllers/adminArchiveController';
 
 const router = Router();
 
@@ -71,6 +71,12 @@ router.delete('/queues/:name/jobs/:jobId', requireRole('admin'), removeAdminQueu
 
 // Archive (torrent) acquisition
 router.get('/archive/jobs', requireRole('admin'), listAdminArchiveJobs as RequestHandler);
+router.post('/archive/orphans/purge', requireRole('admin'), purgeOrphanedArchiveTorrents as RequestHandler);
+router.post('/archive/jobs/:jobId/retry', requireRole('admin'), retryAdminArchiveJob as RequestHandler);
+router.post('/archive/jobs/:jobId/dismiss', requireRole('admin'), dismissAdminArchiveJob as RequestHandler);
+router.post('/archive/jobs/:jobId/abandon-torrent', requireRole('admin'), abandonAdminArchiveTorrent as RequestHandler);
+router.post('/archive/jobs/:jobId/import-volume', requireRole('admin'), importVolumeFromArchiveJob as RequestHandler);
+router.delete('/archive/jobs/:jobId', requireRole('admin'), deleteAdminArchiveJob as RequestHandler);
 
 // Docker container logs
 router.get('/logs/containers', requireRole('admin'), listAdminLogContainers as RequestHandler);

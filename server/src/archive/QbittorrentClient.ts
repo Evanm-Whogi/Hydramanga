@@ -215,6 +215,17 @@ export class QbittorrentClient implements IDownloadClient {
         };
     }
 
+    /** List torrents in our category (for orphan reconciliation). */
+    async listCategory(): Promise<{ hash: string; name: string; state: string; path?: string }[]> {
+        const list = await this.torrentsInfo({ category: this.cfg.category });
+        return list.map((t) => ({
+            hash: t.hash.toLowerCase(),
+            name: t.name,
+            state: t.state,
+            path: t.content_path || t.save_path,
+        }));
+    }
+
     async remove(handle: string, deleteFiles: boolean): Promise<void> {
         const form = new URLSearchParams({ hashes: handle, deleteFiles: String(deleteFiles) });
         await this.withAuth(async (headers) => {
@@ -226,11 +237,12 @@ export class QbittorrentClient implements IDownloadClient {
         logger.info(`[QBT] Removed torrent ${handle} (deleteFiles=${deleteFiles})`, { service: 'qbittorrentClient' });
     }
 
-    private async torrentsInfo(filter: { hashes?: string; tag?: string }): Promise<QbtTorrentInfo[]> {
+    private async torrentsInfo(filter: { hashes?: string; tag?: string; category?: string }): Promise<QbtTorrentInfo[]> {
         return this.withAuth(async (headers) => {
             const params = new URLSearchParams();
             if (filter.hashes) params.set('hashes', filter.hashes);
             if (filter.tag) params.set('tag', filter.tag);
+            if (filter.category) params.set('category', filter.category);
             const resp = await this.http.get('/api/v2/torrents/info', { headers, params });
             this.assertSession(resp);
             return Array.isArray(resp.data) ? resp.data : [];

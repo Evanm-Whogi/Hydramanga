@@ -26,6 +26,8 @@ export function resolveAdminAuditAction(method: string, path: string, params: Re
       normalized === '/admin/import-requests' ||
       normalized === '/admin/queues' ||
       normalized.match(/^\/admin\/queues\/[^/]+\/jobs$/) ||
+      normalized === '/admin/archive/jobs' ||
+      normalized.match(/^\/admin\/manga\/[^/]+\/archive-status$/) ||
       normalized === '/admin/audit' ||
       normalized === '/admin/settings'
     ) {
@@ -199,6 +201,36 @@ export function resolveAdminAuditAction(method: string, path: string, params: Re
       category: 'admin',
       resourceType: 'queue_job',
       resourceId: params.jobId,
+    };
+  }
+
+  // Archive (torrent) acquisition management
+  if (normalized === '/admin/archive/orphans/purge') {
+    return { action: 'admin.archive.orphans.purge', category: 'admin', resourceType: 'system' };
+  }
+  const archiveJobAction = normalized.match(/^\/admin\/archive\/jobs\/[^/]+\/(retry|dismiss|abandon-torrent|import-volume)$/);
+  if (archiveJobAction) {
+    return {
+      action: `admin.archive.job.${archiveJobAction[1].replace(/-/g, '_')}`,
+      category: 'admin',
+      resourceType: 'acquisition_job',
+      resourceId: params.jobId,
+    };
+  }
+  if (normalized.match(/^\/admin\/archive\/jobs\/[^/]+$/) && method === 'DELETE') {
+    return {
+      action: 'admin.archive.job.delete',
+      category: 'admin',
+      resourceType: 'acquisition_job',
+      resourceId: params.jobId,
+    };
+  }
+  if (normalized.match(/^\/admin\/manga\/[^/]+\/archive-import$/) || normalized.match(/^\/admin\/manga\/[^/]+\/archive-reingest$/)) {
+    return {
+      action: normalized.endsWith('archive-import') ? 'admin.archive.import' : 'admin.archive.reingest',
+      category: 'admin',
+      resourceType: 'series',
+      resourceId: params.id,
     };
   }
 

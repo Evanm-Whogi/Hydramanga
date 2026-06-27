@@ -1,6 +1,7 @@
 'use client';
 import { Eye, EyeOff } from 'lucide-react';
 import { useNsfw } from '@/providers/NsfwProvider';
+import NavIconTooltip from '@/components/layout/NavIconTooltip';
 
 /**
  * Navbar control toggling whether 18+ (NSFW) content is shown.
@@ -29,15 +30,16 @@ export default function NsfwToggle({ variant = 'desktop' }: { variant?: 'desktop
   }
 
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      aria-pressed={showAdult}
-      aria-label="Toggle 18+ content"
-      title={title}
-      className={`p-3 rounded-full transition-colors cursor-pointer ${showAdult ? 'bg-accent text-white hover:bg-accent/80' : 'bg-background text-muted hover:bg-background/50'}`}
-    >
-      <Icon className="size-5" />
-    </button>
+    <NavIconTooltip label={title}>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-pressed={showAdult}
+        aria-label="Toggle 18+ content"
+        className={`p-3 rounded-full transition-colors cursor-pointer ${showAdult ? 'bg-accent text-white hover:bg-accent/80' : 'bg-background text-muted hover:bg-background/50'}`}
+      >
+        <Icon className="size-5" />
+      </button>
+    </NavIconTooltip>
   );
 }

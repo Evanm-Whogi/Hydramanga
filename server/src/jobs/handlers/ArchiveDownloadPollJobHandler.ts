@@ -38,12 +38,11 @@ export class ArchiveDownloadPollJobHandler implements IJobHandler {
             if (!row.clientHandle) continue;
             try {
                 const status = await qbittorrentClient.status(row.clientHandle);
-                const ageMs = Date.now() - row.createdAt.getTime();
 
                 if (status.state === 'completed' && status.outputDir) {
                     await db
                         .update(acquisitionJobs)
-                        .set({ status: 'downloaded', localPath: status.outputDir, updatedAt: new Date() })
+                        .set({ status: 'downloaded', localPath: status.outputDir, progress: 1, updatedAt: new Date() })
                         .where(eq(acquisitionJobs.id, row.id));
                     await queueService.addJob(
                         ARCHIVE_INGEST_QUEUE,
@@ -54,18 +53,47 @@ export class ArchiveDownloadPollJobHandler implements IJobHandler {
                     logger.info(`[POLL] Series ${row.seriesId}: download complete → enqueued ingest (job ${row.id})`, {
                         service: 'archiveDownloadPollJobHandler',
                     });
-                } else if (
-                    status.state === 'error' ||
-                    status.state === 'missing' ||
-                    (status.state === 'stalled' && ageMs > stallTimeoutMs)
-                ) {
-                    const reason =
-                        status.state === 'stalled'
-                            ? `dead swarm (stalled > ${Math.round(stallTimeoutMs / 3600000)}h)`
-                            : `download ${status.state}: ${status.error ?? 'unknown'}`;
-                    await this.failAndFallback(row.id, row.seriesId, row.clientHandle, reason);
+                } else if (status.state === 'error' || status.state === 'missing') {
+                    await this.failAndFallback(
+                        row.id,
+                        row.seriesId,
+                        row.clientHandle,
+                        `download ${status.state}: ${status.error ?? 'unknown'}`
+                    );
+                } else {
+                    // Still in flight. Record progress so the stall clock measures time
+                    // with zero forward movement (reset whenever progress advances).
+                    const progress = status.progress ?? 0;
+                    const advanced = progress > (row.progress ?? 0);
+                    const seeders = status.seeders ?? 0;
+
+                    await db
+                        .update(acquisitionJobs)
+                        .set({
+                            progress,
+                            ...(advanced ? { lastProgressAt: new Date() } : {}),
+                            updatedAt: new Date(),
+                        })
+                        .where(eq(acquisitionJobs.id, row.id));
+
+                    // Only a genuinely DEAD SWARM is failed: state must be `stalled`
+                    // (stalledDL — actively trying, no data) with no seeders and no
+                    // progress past the timeout. A `queued` torrent (waiting behind others
+                    // in qBittorrent's queue, or fetching metadata) and any actively
+                    // `downloading` torrent are NEVER killed here — a slow/large torrent
+                    // queued behind a batch must be left to finish, not fall back to scrape.
+                    const stallSince = (row.lastProgressAt ?? row.createdAt).getTime();
+                    const stalledMs = Date.now() - stallSince;
+                    if (status.state === 'stalled' && seeders === 0 && !advanced && stalledMs > stallTimeoutMs) {
+                        await this.failAndFallback(
+                            row.id,
+                            row.seriesId,
+                            row.clientHandle,
+                            `dead swarm (stalled, no seeders, no progress > ${Math.round(stallTimeoutMs / 3600000)}h)`
+                        );
+                    }
+                    // else: queued / downloading / has seeders / advancing → wait.
                 }
-                // else: queued/downloading → wait for the next tick.
             } catch (err) {
                 logger.warn(`[POLL] Status check failed for job ${row.id} (series ${row.seriesId}): ${err}`, {
                     service: 'archiveDownloadPollJobHandler',

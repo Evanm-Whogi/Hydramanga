@@ -1,12 +1,40 @@
 import { Request, Response } from 'express';
 import sharp from 'sharp';
 import { db, schema } from '@/db/index';
-import { eq } from 'drizzle-orm';
+import { eq, and, or, ilike, isNull } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { recordAuditFromRequest } from '@/audit/record';
 import { bufferMatchesAllowedImageSignature } from '@/lib/imageMagicBytes';
 import { profilePictureStorageService } from '@/services/profilePictureStorageService';
 import { badgeService } from '@/services/badgeService';
+
+export const searchUsers = async (req: Request, res: Response) => {
+  try {
+    const rawSearch = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    if (!rawSearch) return res.status(200).json({ items: [] });
+
+    const limit = Math.min(Number(req.query.limit) || 8, 20);
+    const pattern = `%${rawSearch.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+
+    const rows = await db
+      .select({
+        id: schema.user.id,
+        username: schema.user.username,
+        name: schema.user.name,
+        image: schema.user.image,
+      })
+      .from(schema.user)
+      .where(and(or(ilike(schema.user.username, pattern), ilike(schema.user.name, pattern)), or(eq(schema.user.banned, false), isNull(schema.user.banned))))
+      .limit(limit);
+
+    // Only surface users with a public username (the profile is addressed by username).
+    return res.status(200).json({ items: rows.filter((r) => r.username) });
+  } catch (error: any) {
+    logger.error(`Error searching users: ${error.message}`);
+    const message = process.env.NODE_ENV === 'production' ? 'Failed to search users' : error.message || 'Failed to search users';
+    return res.status(500).json({ error: message });
+  }
+};
 
 export const uploadProfilePicture = async (req: Request, res: Response) => {
   try {

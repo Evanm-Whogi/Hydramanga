@@ -12,6 +12,7 @@ import { SeriesMigrationJobHandler } from './SeriesMigrationJobHandler';
 import { ArchiveAcquireJobHandler } from './ArchiveAcquireJobHandler';
 import { ArchiveIngestJobHandler } from './ArchiveIngestJobHandler';
 import { ArchiveDownloadPollJobHandler } from './ArchiveDownloadPollJobHandler';
+import { ArchiveMaintenanceJobHandler } from './ArchiveMaintenanceJobHandler';
 import logger from '@/services/loggerService';
 
 export class JobHandlerRegistry {
@@ -28,6 +29,7 @@ export class JobHandlerRegistry {
     this.registerHandler(new ArchiveAcquireJobHandler());
     this.registerHandler(new ArchiveIngestJobHandler());
     this.registerHandler(new ArchiveDownloadPollJobHandler());
+    this.registerHandler(new ArchiveMaintenanceJobHandler());
   }
 
   /**

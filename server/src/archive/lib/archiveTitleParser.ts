@@ -179,6 +179,22 @@ export function parseArchiveTitle(raw: string): ParsedArchiveTitle {
 }
 
 /**
+ * Map typographic punctuation to its ASCII equivalent (curly quotes/apostrophes,
+ * en/em dashes, ellipsis). Indexers like nyaa do exact substring matching, so a
+ * "smart" apostrophe (’ U+2019) and a straight one (') are different searches —
+ * normalize outgoing queries to the ASCII form that indexers actually carry.
+ */
+export function normalizeQueryPunctuation(input: string): string {
+    return (input || '')
+        .replace(/[‘’‚‛′‵]/g, "'") // single quotes / primes
+        .replace(/[“”„‟″‶]/g, '"') // double quotes / primes
+        .replace(/[‐-―−]/g, '-') // hyphens, en/em dashes, minus
+        .replace(/…/g, '...') // ellipsis
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+/**
  * Normalize a title for fuzzy matching: lowercase, strip diacritics, collapse
  * connectors/punctuation to spaces. Used by the candidate scorer.
  */

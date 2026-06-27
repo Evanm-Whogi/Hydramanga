@@ -1,7 +1,7 @@
 import { Router, RequestHandler } from 'express';
 import { authMiddleware } from '@/middlewares/auth';
 import { profilePictureUpload } from '@/config/multer';
-import { uploadProfilePicture, deleteProfilePicture } from '@/controllers/userController';
+import { uploadProfilePicture, deleteProfilePicture, searchUsers } from '@/controllers/userController';
 import { getSettings, patchSettings } from '@/controllers/userSettingsController';
 import { getPublicProfile } from '@/controllers/profileController';
 import { listMyAuthAuditLogs } from '@/controllers/userAuditController';
@@ -11,9 +11,11 @@ import { followUser, unfollowUser } from '@/controllers/userFollowController';
 import { claimEasterEggBadge } from '@/controllers/userBadgeController';
 import { reportUser } from '@/controllers/userReportController';
 import { publicFormRateLimiter } from '@/middlewares/rateLimit';
-import { dataExportRateLimit, dataImportRateLimit, profilePictureRateLimit, settingsPatchRateLimit, commentMutationRateLimit, listVoteRateLimit, listWriteRateLimit } from '@/middlewares/userActionRateLimit';
+import { dataExportRateLimit, dataImportRateLimit, profilePictureRateLimit, settingsPatchRateLimit, commentMutationRateLimit, listVoteRateLimit, listWriteRateLimit, mangaSearchRateLimit } from '@/middlewares/userActionRateLimit';
 
 const router = Router();
+
+router.get('/search', mangaSearchRateLimit, searchUsers as RequestHandler);
 
 router.post('/me/badges/easter-egg', authMiddleware, claimEasterEggBadge as RequestHandler);
 router.get('/me/audit', authMiddleware, listMyAuthAuditLogs as RequestHandler);

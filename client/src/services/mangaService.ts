@@ -21,6 +21,13 @@ export async function searchMangaByTitle(search: string,limit = 8): Promise<{ it
     return await apiGet(`/manga/search?${params}`);
 }
 
+export interface QuickSearchSeries { id: number; title: string | null; displayTitle?: string | null; cover?: unknown; type?: string | null; status?: string | null; year?: number | null }
+
+export async function quickSearchSeries(search: string, limit = 8): Promise<{ items: QuickSearchSeries[] }> {
+    const params = new URLSearchParams({ search: search.trim(), limit: String(limit) });
+    return await apiGet(`/manga/search?${params}`);
+}
+
 // Trigger on-demand chapter scan for a manga
 export async function triggerMangaScan(mangaId: number): Promise<any> {
     try {
