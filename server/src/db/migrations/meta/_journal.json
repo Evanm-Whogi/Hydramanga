@@ -50,6 +50,13 @@
       "when": 1782517709446,
       "tag": "0006_lean_wild_child",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782586961627,
+      "tag": "0007_spooky_kate_bishop",
+      "breakpoints": true
     }
   ]
 }

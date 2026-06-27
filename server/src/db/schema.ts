@@ -121,7 +121,10 @@ export const series = pgTable('series', {
   tagsGin: index('idx_series_tags').using('gin', t.tags),
   genresV2Gin: index('idx_series_genres_v2').using('gin', t.genresV2),
   tagsV2Gin: index('idx_series_tags_v2').using('gin', t.tagsV2),
-  
+
+  // Author browse: containment lookups (authors @> '["Name"]')
+  authorsGin: index('idx_series_authors').using('gin', t.authors),
+
   // Fuzzy Search Title (Requires pg_trgm extension)
   titleTrgmIdx: index('idx_series_title_trgm').using('gin', t.title.op('gin_trgm_ops')),
   searchTextTrgmIdx: index('idx_series_search_text_trgm').using('gin', t.searchText.op('gin_trgm_ops')),

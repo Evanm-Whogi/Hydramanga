@@ -120,6 +120,19 @@ export default function CatalogContent({ initialFilters: _initialFilters }: Cata
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
+  // Adopt the URL query when it changes via client-side navigation (e.g. the navbar
+  // "Top Rated"/"Most Popular" links to /discover?sort=...). In-page filter edits use
+  // replaceDiscoverUrl (raw history.replaceState), which does NOT update useSearchParams,
+  // so this effect never loops with those edits. The guard skips no-op syncs (e.g. mount).
+  const searchParamsKey = searchParams.toString();
+  useEffect(() => {
+    const next = filtersFromSearchParams(new URLSearchParams(searchParamsKey));
+    if (buildSearchParams(next).toString() !== buildSearchParams(filtersRef.current).toString()) {
+      setFilters(next);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParamsKey]);
+
   useEffect(() => {
     let isMounted = true;
 

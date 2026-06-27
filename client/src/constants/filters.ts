@@ -12,11 +12,13 @@ export const FILTER_OPTIONS = {
   types: ["Manga", "Manhua", "Manhwa", "Oel", "Other"] as const,
 
   sort: [
-    { label: "Popular", value: "weightedScore" },
+    { label: "Top Rated", value: "topRated" },
+    { label: "Most Popular", value: "mostPopular" },
+    { label: "Recently Updated", value: "recentlyUpdated" },
+    { label: "Trending", value: "trending" },
     { label: "Total Chapters", value: "totalChapters" },
-    { label: "Recently Added", value: "lastUpdatedAt" },
     { label: "Title", value: "title" },
-    { label: "Year", value: "year" }
+    { label: "Year", value: "year" },
   ] as const,
 
   status: [
@@ -55,7 +57,7 @@ export const DEFAULT_FILTERS = {
   types: [] as string[],
   statuses: [] as string[],
   years: [] as string[],
-  sort: "weightedScore",
+  sort: "topRated",
 } as const;
 
 export const WARNING_GENRES = ["Hentai", "Adult", "Doujinshi", "Lolicon", "Shotacon", "Erotica", "Smut"] as const;

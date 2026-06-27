@@ -1,0 +1,1 @@
+CREATE INDEX "idx_series_authors" ON "series" USING gin ("authors");

@@ -1,5 +1,5 @@
 'use client';
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import DropdownContainer from "@/components/DropdownContainer";
 
 interface Option {
@@ -16,6 +16,18 @@ export default function SingleDropdown({ title, options, size, onChange, initial
         }
         return options?.[0]?.label || "";
     });
+
+    // Follow external changes to initialValue (e.g. sort set via navbar links),
+    // not just the value chosen by clicking an option.
+    useEffect(() => {
+        if (initialValue) {
+            const option = options?.find(opt => opt.value === initialValue);
+            setSelectedLabel(option ? option.label : options?.[0]?.label || "");
+        } else {
+            setSelectedLabel(options?.[0]?.label || "");
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialValue]);
 
     const handleSelect = (option: Option | null, setIsOpen: (open: boolean) => void) => {
         const label = option ? option.label : "";

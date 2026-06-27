@@ -18,6 +18,7 @@ import contactRoutes from '@/routes/contactRoutes';
 import userRoutes from '@/routes/userRoutes';
 import importRequestRoutes from '@/routes/importRequestRoutes';
 import leaderboardRoutes from '@/routes/leaderboardRoutes';
+import authorRoutes from '@/routes/authorRoutes';
 import forumRoutes from '@/routes/forumRoutes';
 import chatRoutes from '@/routes/chatRoutes';
 import notificationRoutes from '@/routes/notificationRoutes';
@@ -57,6 +58,7 @@ module.exports = (app: Express) => {
     app.use('/import-requests', authMiddleware, importRequestRoutes);
 
     app.use('/leaderboard', optionalAuthMiddleware, leaderboardRoutes);
+    app.use('/authors', optionalAuthMiddleware, authorRoutes);
     app.use('/forum', optionalAuthMiddleware, forumRoutes);
     app.use('/chat', optionalAuthMiddleware, chatRoutes);
 

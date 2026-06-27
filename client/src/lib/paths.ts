@@ -6,3 +6,7 @@ export function mangaPath(id: number | string): string {
 export function mangaReadPath(seriesId: number | string, chapterId: number | string): string {
   return `/manga/${seriesId}/read/${chapterId}`;
 }
+
+export function authorPath(name: string): string {
+  return `/authors/${encodeURIComponent(name)}`;
+}

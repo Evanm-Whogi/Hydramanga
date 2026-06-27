@@ -16,7 +16,8 @@ type SitemapSeriesResponse = {
 const STATIC_ROUTES: Array<{ path: string; changeFrequency: MetadataRoute.Sitemap[number]['changeFrequency']; priority: number }> = [
   { path: '/', changeFrequency: 'hourly', priority: 1 },
   { path: '/discover', changeFrequency: 'hourly', priority: 0.8 },
-  { path: '/collections', changeFrequency: 'daily', priority: 0.8 },
+  { path: '/genres', changeFrequency: 'daily', priority: 0.8 },
+  { path: '/authors', changeFrequency: 'daily', priority: 0.7 },
   { path: '/leaderboard', changeFrequency: 'daily', priority: 0.7 },
   { path: '/forum', changeFrequency: 'hourly', priority: 0.7 },
   { path: '/contact', changeFrequency: 'monthly', priority: 0.4 },

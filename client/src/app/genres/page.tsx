@@ -15,7 +15,7 @@ export default async function CollectionsPage() {
 
     return (
         <> 
-            <PageHeader title="Collections" description="Explore curated manga collections by genre and theme." />
+            <PageHeader title="Genres" description="Explore curated manga Genres" />
             <div className="container mx-auto text-primary flex flex-col py-10 min-h-[65vh] overflow-hidden">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {Object.entries(collections).map(([genreName, details]: [string, any]) => (

@@ -9,8 +9,8 @@ export const CATALOG_CACHE_TTL = 0;
 // keys from these constants so the version can never drift out of sync again — a past bug
 // left invalidation pinned to v6 while reads moved to v7, so the (TTL=0, never-expiring)
 // cache was effectively impossible to clear.
-export const DISCOVER_SEARCH_CACHE_PREFIX = 'manga:search:v7';
-export const DISCOVER_SEARCH_COUNT_CACHE_PREFIX = 'manga:search:count:v7';
+export const DISCOVER_SEARCH_CACHE_PREFIX = 'manga:search:v9';
+export const DISCOVER_SEARCH_COUNT_CACHE_PREFIX = 'manga:search:count:v9';
 
 export async function invalidateCatalogCaches(): Promise<void> {
     await Promise.all([

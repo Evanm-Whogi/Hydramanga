@@ -60,19 +60,108 @@ const discoverSeriesSelect = {
     lastUpdatedAt: schema.series.lastUpdatedAt,
 };
 
-const DISCOVER_SORT_KEYS = ['weightedScore', 'totalChapters', 'lastUpdatedAt', 'title', 'year'] as const;
+const DISCOVER_SORT_KEYS = [
+    'weightedScore', 'totalChapters', 'lastUpdatedAt', 'title', 'year', 'trending', 'popular', 'recentlyUpdated', 'mostPopular', 'topRated'] as const;
 type DiscoverSortKey = (typeof DISCOVER_SORT_KEYS)[number];
+type DiscoverSortType = 'number' | 'timestamp' | 'text';
 
-function resolveDiscoverSortKey(sort: unknown): DiscoverSortKey {
-    const key = String(sort || 'weightedScore');
-    return (DISCOVER_SORT_KEYS as readonly string[]).includes(key) ? (key as DiscoverSortKey) : 'weightedScore';
+// View-based sorts rank by number of views within a recent window. Windows are
+// kept broad so the catalog still returns plenty of results per page.
+const DISCOVER_TRENDING_WINDOW_DAYS = 30;
+const DISCOVER_POPULAR_WINDOW_DAYS = 90;
+
+interface DiscoverSortPlan {
+    orderExpr: any;
+    type: DiscoverSortType;
+    joins: { table: any; on: any }[];
 }
 
-function getDiscoverSortColumn(sortKey: DiscoverSortKey) {
-    if (sortKey === 'totalChapters') {
-        return sql`NULLIF(${schema.series.totalChapters}, '')::int`;
+function resolveDiscoverSortKey(sort: unknown): DiscoverSortKey {
+    const key = String(sort || 'topRated');
+    return (DISCOVER_SORT_KEYS as readonly string[]).includes(key) ? (key as DiscoverSortKey) : 'topRated';
+}
+
+/** Per-series view count within the last `days`, used by Popular/Trending sorts. */
+function periodViewsSubquery(days: number, alias: string) {
+    const start = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    return db
+        .select({
+            seriesId: schema.mangaViews.seriesId,
+            cnt: sql<number>`count(*)`.mapWith(Number).as(`${alias}_cnt`),
+        })
+        .from(schema.mangaViews)
+        .where(gte(schema.mangaViews.viewedAt, start))
+        .groupBy(schema.mangaViews.seriesId)
+        .as(alias);
+}
+
+/**
+ * Resolves a sort key to the SQL expression to order/keyset by, its value type,
+ * and any subquery/table joins required. Keyset pagination compares
+ * `(orderExpr, series.id)` against the cursor, so `orderExpr` must be valid in
+ * both ORDER BY and WHERE once the joins are applied.
+ */
+function buildDiscoverSortPlan(sortKey: DiscoverSortKey): DiscoverSortPlan {
+    switch (sortKey) {
+        case 'totalChapters':
+            return { orderExpr: sql`NULLIF(${schema.series.totalChapters}, '')::int`, type: 'number', joins: [] };
+        case 'lastUpdatedAt':
+            return { orderExpr: schema.series.lastUpdatedAt, type: 'timestamp', joins: [] };
+        case 'title':
+            return { orderExpr: schema.series.title, type: 'text', joins: [] };
+        case 'year':
+            return { orderExpr: schema.series.year, type: 'number', joins: [] };
+        case 'topRated':
+        case 'weightedScore':
+            return { orderExpr: schema.series.weightedScore, type: 'number', joins: [] };
+        case 'mostPopular':
+            return {
+                orderExpr: sql`COALESCE(${schema.mangaViewStats.totalViews}, 0)`,
+                type: 'number',
+                joins: [{ table: schema.mangaViewStats, on: eq(schema.series.id, schema.mangaViewStats.seriesId) }],
+            };
+        case 'recentlyUpdated': {
+            const sub = db
+                .select({
+                    seriesId: chapters.seriesId,
+                    lastAt: sql<string>`max(${chapters.createdAt})`.as('last_chapter_at'),
+                })
+                .from(chapters)
+                .groupBy(chapters.seriesId)
+                .as('latest_chapter');
+            return {
+                orderExpr: sql`COALESCE(${sub.lastAt}, to_timestamp(0))`,
+                type: 'timestamp',
+                joins: [{ table: sub, on: eq(schema.series.id, sub.seriesId) }],
+            };
+        }
+        case 'trending':
+        case 'popular': {
+            const days = sortKey === 'trending' ? DISCOVER_TRENDING_WINDOW_DAYS : DISCOVER_POPULAR_WINDOW_DAYS;
+            const sub = periodViewsSubquery(days, sortKey === 'trending' ? 'trending_views' : 'popular_views');
+            return {
+                orderExpr: sql`COALESCE(${sub.cnt}, 0)`,
+                type: 'number',
+                joins: [{ table: sub, on: eq(schema.series.id, sub.seriesId) }],
+            };
+        }
+        default:
+            return { orderExpr: schema.series.weightedScore, type: 'number', joins: [] };
     }
-    return discoverSeriesSelect[sortKey];
+}
+
+/**
+ * Serializes a row's sort value into the keyset-cursor form. Driven by the sort
+ * type so numeric values (Postgres returns bigint counts as strings) are never
+ * accidentally reinterpreted as dates.
+ */
+function serializeDiscoverCursorValue(val: any, type: DiscoverSortType): string {
+    if (type === 'timestamp') {
+        if (val instanceof Date) return val.toISOString();
+        const parsed = Date.parse(String(val));
+        return isNaN(parsed) ? String(val) : new Date(parsed).toISOString();
+    }
+    return String(val);
 }
 
 // Helper function to enrich manga data with view stats
@@ -293,23 +382,23 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
 
         // 2. Sorting & Pagination Setup
         const sortKey = resolveDiscoverSortKey(sort);
-        const effectiveSort = getDiscoverSortColumn(sortKey);
+        const sortPlan = buildDiscoverSortPlan(sortKey);
+        const effectiveSort = sortPlan.orderExpr;
 
         const baseConditions = [...conditions];
 
         if (cursor) {
             const [cursorVal, cursorId] = String(cursor).split('|');
             const operator = isAsc ? sql`>` : sql`<`;
-            const isTimestampSort = sortKey === 'lastUpdatedAt';
 
             let typedVal: any;
-            if (isTimestampSort) {
+            if (sortPlan.type === 'timestamp') {
                 const parsed = new Date(cursorVal);
                 typedVal = isNaN(parsed.getTime()) ? cursorVal : parsed;
+            } else if (sortPlan.type === 'number') {
+                typedVal = Number(cursorVal);
             } else {
-                typedVal = (sortKey === 'totalChapters' || sortKey === 'year' || sortKey === 'weightedScore')
-                    ? Number(cursorVal)
-                    : cursorVal;
+                typedVal = cursorVal;
             }
 
             conditions.push(sql`(${effectiveSort}, ${schema.series.id}) ${operator} (${typedVal}, ${Number(cursorId)})`);
@@ -318,9 +407,14 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         const skeleton = await cacheService.getOrSet(
             { key: cacheKey, ttl: CATALOG_CACHE_TTL },
             async (): Promise<DiscoverSearchPayload> => {
-                const data = await db
-                    .select(discoverSeriesSelect)
+                let query = db
+                    .select({ ...discoverSeriesSelect, __sortVal: sql<any>`${effectiveSort}`.as('sort_val') })
                     .from(series)
+                    .$dynamic();
+                for (const join of sortPlan.joins) {
+                    query = query.leftJoin(join.table, join.on);
+                }
+                const data = await query
                     .where(and(...conditions))
                     .orderBy(
                         isAsc ? asc(effectiveSort) : desc(effectiveSort),
@@ -334,15 +428,7 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                 let nextCursor: string | null = null;
                 if (hasNextPage) {
                     const last = items[items.length - 1];
-                    let val: any = last[sortKey as keyof typeof last] ?? 0;
-
-                    if (val instanceof Date) {
-                        val = val.toISOString();
-                    } else if (typeof val === 'string') {
-                        const parsed = Date.parse(val);
-                        if (!isNaN(parsed)) val = new Date(parsed).toISOString();
-                    }
-
+                    const val = serializeDiscoverCursorValue(last.__sortVal ?? 0, sortPlan.type);
                     nextCursor = `${val}|${last.id}`;
                 }
 
@@ -375,20 +461,16 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
         let nextCursor = responsePayload.nextCursor;
         if (slicedItems.length > 0 && hasNextPage && responsePayload.items.length > pageSize) {
             const last = slicedItems[slicedItems.length - 1];
-            const sortKey = resolveDiscoverSortKey(sort);
-            let val: any = last[sortKey as keyof typeof last] ?? 0;
-            if (val instanceof Date) {
-                val = val.toISOString();
-            } else if (typeof val === 'string') {
-                const parsed = Date.parse(val);
-                if (!isNaN(parsed)) val = new Date(parsed).toISOString();
-            }
+            const val = serializeDiscoverCursorValue((last as any).__sortVal ?? 0, sortPlan.type);
             nextCursor = `${val}|${last.id}`;
         }
 
+        // Strip the internal keyset value before returning to the client.
+        const cleanItems = slicedItems.map(({ __sortVal, ...rest }: any) => rest);
+
         return res.json({
             ...responsePayload,
-            items: slicedItems,
+            items: cleanItems,
             meta: { ...responsePayload.meta, hasNextPage },
             nextCursor: hasNextPage ? nextCursor : null,
         });

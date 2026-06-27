@@ -2,8 +2,9 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { HouseIcon, BookOpenIcon, DicesIcon, LibraryBig, SearchIcon, BellIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, CirclePlusIcon, ShieldIcon, TrophyIcon, MessagesSquareIcon, MessageCircleIcon, Bookmark } from 'lucide-react';
+import { HouseIcon, BookOpenIcon, DicesIcon, LibraryBig, SearchIcon, BellIcon, UserIcon, SettingsIcon, LogOutIcon, ListIcon, PaletteIcon, BookTextIcon, ChartBarDecreasingIcon, CirclePlusIcon, ShieldIcon, TrophyIcon, MessagesSquareIcon, MessageCircleIcon, Bookmark, FlameIcon, StarIcon, Users2Icon, PenToolIcon, ClockIcon, InfoIcon } from 'lucide-react';
 import NavItem from './NavItem';
+import NavDropdown, { type NavDropdownItem } from './NavDropdown';
 import { authClient } from '@/lib/auth';
 import { useRouter, usePathname } from 'next/navigation';
 import { toast } from 'react-toastify';
@@ -19,6 +20,23 @@ import UserAvatar from '@/components/UserAvatar';
 type ThemeMode = 'theme-dark' | 'theme-light' | 'theme-night';
 
 const DISCORD_URL = process.env.NEXT_PUBLIC_DISCORD ?? "https://discord.gg/A27sQQTWWe";
+
+const DISCOVER_NAV_ITEMS: NavDropdownItem[] = [
+    { label: 'Browse', href: '/discover', icon: <BookOpenIcon className="size-4" /> },
+    { label: 'Top Rated', href: '/discover?sort=topRated', icon: <FlameIcon className="size-4" /> },
+    { label: 'Most Popular', href: '/discover?sort=mostPopular', icon: <FlameIcon className="size-4" /> },
+    { label: 'Recent', href: '/discover?sort=recentlyUpdated', icon: <ClockIcon className="size-4" /> },
+    { label: 'Genres', href: '/genres', icon: <LibraryBig className="size-4" /> },
+    { label: 'Lists', href: '/lists', icon: <ListIcon className="size-4" /> },
+    { label: 'Authors', href: '/authors', icon: <PenToolIcon className="size-4" /> },
+];
+
+const COMMUNITY_NAV_ITEMS: NavDropdownItem[] = [
+    { label: 'Forum', href: '/forum', icon: <MessagesSquareIcon className="size-4" /> },
+    { label: 'Leaderboard', href: '/leaderboard', icon: <TrophyIcon className="size-4" /> },
+    { label: 'Chat', href: '/chat', icon: <MessageCircleIcon className="size-4" /> },
+    { label: 'Discord', href: DISCORD_URL, external: true, icon: <img src="/oauthIcons/discord.webp" alt="" className="size-4 rounded-sm" /> },
+];
 
 export default function NavbarClient() {
     const [isOpen, setIsOpen] = useState(false);
@@ -92,10 +110,6 @@ export default function NavbarClient() {
             <hr className="my-1 border-borders" />
             <Link href="/request" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><CirclePlusIcon className="size-4" /> Request</Link>
             <button type="button" className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors hover:cursor-pointer" onClick={openRandomManga}><DicesIcon className="size-4" /> Random</button>
-            <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}>
-                <img src="/oauthIcons/discord.webp" alt="" className="size-4 rounded-sm" />
-                Discord
-            </a>
             <Link href="/discover" className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-foreground/50 transition-colors" onClick={closeDropdown}><SearchIcon className="size-4" /> Search</Link>
             <NotificationsMenu variant="dropdown" onOpen={closeDropdown} />
         </div>
@@ -121,12 +135,9 @@ export default function NavbarClient() {
                         </Link>
                         <nav className="hidden xl:flex items-center space-x-6 text-md text-muted ml-6">
                             <NavItem href='/' icon={<HouseIcon className="size-4 inline" />} label='Home' />
-                            <NavItem href='/discover' icon={<BookOpenIcon className="size-4 inline" />} label='Discover' />
-                            <NavItem href='/collections' icon={<LibraryBig className="size-4 inline" />} label='Collections' />
-                            <NavItem href='/lists' icon={<ListIcon className="size-4 inline" />} label='Lists' />
-                            <NavItem href='/leaderboard' icon={<TrophyIcon className="size-4 inline" />} label='Leaderboard' />
-                            <NavItem href='/forum' icon={<MessagesSquareIcon className="size-4 inline" />} label='Forum' />
-                            <NavItem href='/chat' icon={<MessageCircleIcon className="size-4 inline" />} label='Chat' />
+                            <NavItem href='/about' icon={<InfoIcon className="size-4 inline" />} label='About' />
+                            <NavDropdown label='Discover' icon={<BookOpenIcon className="size-4 inline" />} items={DISCOVER_NAV_ITEMS} />
+                            <NavDropdown label='Community' icon={<Users2Icon className="size-4 inline" />} items={COMMUNITY_NAV_ITEMS} />
                         </nav>
                     </div>
 
@@ -208,17 +219,18 @@ export default function NavbarClient() {
                                             <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                                         </div>
                                     </div>
-
+                                    
                                     <div className="grid grid-cols-2 gap-3">
                                         <Link href="/" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/' ? 'text-primary' : 'text-muted'}`}>
                                             <HouseIcon className="size-4" /> Home
                                         </Link>
+                                        <Link href="/about" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/about' ? 'text-primary' : 'text-muted'}`}>
+                                            <InfoIcon className="size-4" /> About
+                                        </Link>
                                         <Link href="/discover" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/discover' ? 'text-primary' : 'text-muted'}`}>
                                             <BookOpenIcon className="size-4" /> Discover
                                         </Link>
-                                    </div>
 
-                                    <div className="grid grid-cols-2 gap-3">
                                         <Link href="/lists" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/lists' ? 'text-primary' : 'text-muted'}`}>
                                             <ListIcon className="size-4" /> Lists
                                         </Link>
@@ -231,8 +243,11 @@ export default function NavbarClient() {
                                         <Link href="/users/me?tab=saved-lists" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/users/me' ? 'text-primary' : 'text-muted'}`}>
                                             <Bookmark className="size-4" /> Saved Lists
                                         </Link>
-                                        <Link href="/collections" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/collections' ? 'text-primary' : 'text-muted'}`}>
-                                            <LibraryBig className="size-4" /> Collections
+                                        <Link href="/genres" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/genres' ? 'text-primary' : 'text-muted'}`}>
+                                            <LibraryBig className="size-4" /> Genres
+                                        </Link>
+                                        <Link href="/authors" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/authors' || pathname.startsWith('/authors/') ? 'text-primary' : 'text-muted'}`}>
+                                            <PenToolIcon className="size-4" /> Authors
                                         </Link>
                                         <Link href="/history" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/history' ? 'text-primary' : 'text-muted'}`}>
                                             <ChartBarDecreasingIcon className="size-4" /> History
@@ -274,11 +289,17 @@ export default function NavbarClient() {
                                         <Link href="/" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/' ? 'text-primary' : 'text-muted'}`}>
                                             <HouseIcon className="size-4" /> Home
                                         </Link>
+                                        <Link href="/about" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/about' ? 'text-primary' : 'text-muted'}`}>
+                                            <InfoIcon className="size-4" /> About
+                                        </Link>
                                         <Link href="/discover" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/discover' ? 'text-primary' : 'text-muted'}`}>
                                             <BookOpenIcon className="size-4" /> Discover
                                         </Link>
-                                        <Link href="/collections" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/collections' ? 'text-primary' : 'text-muted'}`}>
-                                            <LibraryBig className="size-4" /> Collections
+                                        <Link href="/genres" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/genres' ? 'text-primary' : 'text-muted'}`}>
+                                            <LibraryBig className="size-4" /> Genres
+                                        </Link>
+                                        <Link href="/authors" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/authors' || pathname.startsWith('/authors/') ? 'text-primary' : 'text-muted'}`}>
+                                            <PenToolIcon className="size-4" /> Authors
                                         </Link>
                                         <Link href="/leaderboard" onClick={() => setIsOpen(false)} className={`flex items-center gap-2 rounded-lg border border-borders px-3 py-2 text-sm hover:bg-foreground/70 ${pathname === '/leaderboard' ? 'text-primary' : 'text-muted'}`}>
                                             <TrophyIcon className="size-4" /> Leaderboard
