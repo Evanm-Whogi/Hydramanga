@@ -31,11 +31,9 @@
  */
 
 import { chromium } from 'playwright';
-import axios from 'axios';
 import sharp from 'sharp';
 import { objectStorageService } from '@/services/objectStorageService';
-import http from 'http';
-import https from 'https';
+import { buildAxios, getPlaywrightProxy } from '@/scrapers/lib/scraperEgress';
 import {
     IChapterScraper,
     ScrapedChapter,
@@ -220,26 +218,11 @@ export class ComixScraper implements IChapterScraper {
         searchTimeoutMs: 130_000,
     };
 
-    private static readonly httpAgent = new http.Agent({
-        keepAlive: true,
-        keepAliveMsecs: 30000,
-        maxSockets: 50,
-        maxFreeSockets: 10,
-        timeout: 30000,
-    });
-
-    private static readonly httpsAgent = new https.Agent({
-        keepAlive: true,
-        keepAliveMsecs: 30000,
-        maxSockets: 50,
-        maxFreeSockets: 10,
-        timeout: 30000,
-    });
-
-    private static readonly axiosInstance = axios.create({
+    // Egress (agents + proxy + ban detection) centralized in scraperEgress; flag off
+    // → identical to the previous keep-alive axios instance.
+    private static readonly axiosInstance = buildAxios({
+        scraperId: 'comix',
         timeout: appConfig.scraper.comix.timeout,
-        httpAgent: ComixScraper.httpAgent,
-        httpsAgent: ComixScraper.httpsAgent,
         headers: {
             Accept: 'application/json, text/plain, */*',
             'Accept-Language': 'en-US,en;q=0.9',
@@ -315,6 +298,7 @@ export class ComixScraper implements IChapterScraper {
         return chromium.launch({
             headless: true,
             args: ['--disable-dev-shm-usage', '--no-sandbox'],
+            proxy: getPlaywrightProxy('comix'),
         });
     }
 

@@ -143,11 +143,11 @@ export default function NavbarClient() {
 
                     {/* Right Section */}
                     <div className="flex items-center gap-6">
-                        <div className="hidden min-[1700px]:flex items-center">
+                        <div className="hidden min-[1500px]:flex items-center">
                             <NavbarSearch />
                         </div>
                         <div className="hidden xl:flex items-center gap-3">
-                            <div className="hidden min-[1700px]:flex items-center gap-3">
+                            <div className="hidden min-[1500px]:flex items-center gap-3">
                                 <NsfwToggle />
                                 {user && (
                                     <NavIconTooltip label="Request">

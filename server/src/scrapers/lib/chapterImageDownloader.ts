@@ -17,8 +17,9 @@
  * source's known broken-image graphic or simply aren't a decodable image
  * (a corrupt/zero-filled 200 standing in for a missing page).
  */
-import axios, { type AxiosInstance } from 'axios';
+import { type AxiosInstance } from 'axios';
 import { objectStorageService } from '@/services/objectStorageService';
+import { buildAxios } from './scraperEgress';
 import logger from '@/services/loggerService';
 import { matchKnownBrokenImage } from './knownBrokenImages';
 import { ScraperStageError, describeError } from './scraperError';
@@ -64,7 +65,7 @@ export interface DownloadAndStoreOptions {
     storagePrefix: string;
     /** Ordered list of page image URLs to download. */
     images: string[];
-    /** Axios instance to use for downloads (defaults to the shared `axios`). */
+    /** Axios instance to use for downloads (defaults to a proxy-aware client per `scraperId`). */
     client?: AxiosInstance;
     /** Request headers (Referer, User-Agent, …) for the image downloads. */
     headers?: Record<string, string>;
@@ -121,7 +122,10 @@ export async function downloadAndStoreChapter(
     const {
         storagePrefix,
         images,
-        client = axios,
+        // Default to a proxy-aware client (scoped to this scraper) so image-CDN
+        // downloads honour the egress proxy + feed ban detection when no explicit
+        // client is passed. With the proxy flag off this is a bare keep-alive client.
+        client = buildAxios({ scraperId: opts.scraperId }),
         headers,
         batchSize = 10,
         maxRetries = 3,

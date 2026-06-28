@@ -19,10 +19,8 @@
  */
 
 import { chromium } from 'playwright';
-import axios from 'axios';
 import { downloadAndStoreChapter } from '../lib/chapterImageDownloader';
-import http from 'http';
-import https from 'https';
+import { buildAxios, getPlaywrightProxy } from '@/scrapers/lib/scraperEgress';
 import {
     IChapterScraper,
     ScrapedChapter,
@@ -115,26 +113,11 @@ export class ToonilyScraper implements IChapterScraper {
     private static browserPool: any[] = [];
     private static readonly MAX_BROWSERS = 5;
 
-    private static readonly httpAgent = new http.Agent({
-        keepAlive: true,
-        keepAliveMsecs: 30000,
-        maxSockets: 50,
-        maxFreeSockets: 10,
-        timeout: 30000,
-    });
-
-    private static readonly httpsAgent = new https.Agent({
-        keepAlive: true,
-        keepAliveMsecs: 30000,
-        maxSockets: 50,
-        maxFreeSockets: 10,
-        timeout: 30000,
-    });
-
-    private static readonly axiosInstance = axios.create({
+    // Egress (agents + proxy + ban detection) centralized in scraperEgress; flag off
+    // → identical to the previous keep-alive axios instance.
+    private static readonly axiosInstance = buildAxios({
+        scraperId: 'toonily',
         timeout: appConfig.scraper.toonily.timeout,
-        httpAgent: ToonilyScraper.httpAgent,
-        httpsAgent: ToonilyScraper.httpsAgent,
         headers: {
             'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
@@ -174,6 +157,7 @@ export class ToonilyScraper implements IChapterScraper {
         return chromium.launch({
             headless: true,
             args: ['--disable-dev-shm-usage', '--no-sandbox'],
+            proxy: getPlaywrightProxy('toonily'),
         });
     }
 

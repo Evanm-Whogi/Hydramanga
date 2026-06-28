@@ -23,11 +23,9 @@
  */
 
 import { chromium } from 'playwright';
-import axios from 'axios';
 import sharp from 'sharp';
 import { objectStorageService } from '@/services/objectStorageService';
-import http from 'http';
-import https from 'https';
+import { buildAxios, getPlaywrightProxy } from '@/scrapers/lib/scraperEgress';
 import {
     IChapterScraper,
     ScrapedChapter,
@@ -129,26 +127,11 @@ export class MangaFireScraper implements IChapterScraper {
         enabled: appConfig.scraper.mangaFire.enabled,
     };
 
-    private static readonly httpAgent = new http.Agent({
-        keepAlive: true,
-        keepAliveMsecs: 30000,
-        maxSockets: 50,
-        maxFreeSockets: 10,
-        timeout: 30000,
-    });
-
-    private static readonly httpsAgent = new https.Agent({
-        keepAlive: true,
-        keepAliveMsecs: 30000,
-        maxSockets: 50,
-        maxFreeSockets: 10,
-        timeout: 30000,
-    });
-
-    private static readonly axiosInstance = axios.create({
+    // Egress (agents + proxy + ban detection) is centralized in scraperEgress; with
+    // the proxy flag off this is identical to the previous keep-alive axios instance.
+    private static readonly axiosInstance = buildAxios({
+        scraperId: 'mangafire',
         timeout: appConfig.scraper.mangaFire.timeout,
-        httpAgent: MangaFireScraper.httpAgent,
-        httpsAgent: MangaFireScraper.httpsAgent,
         headers: {
             Accept: 'text/html,application/xhtml+xml,application/json,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
@@ -210,7 +193,11 @@ export class MangaFireScraper implements IChapterScraper {
 
     private static async getBrowser() {
         logger.debug('[MangaFire] Launching new browser', { service: 'mangaFireScraper' });
-        return chromium.launch({ headless: true, args: ['--disable-dev-shm-usage', '--no-sandbox'] });
+        return chromium.launch({
+            headless: true,
+            args: ['--disable-dev-shm-usage', '--no-sandbox'],
+            proxy: getPlaywrightProxy('mangafire'),
+        });
     }
 
     private static async releaseBrowser(browser: any) {

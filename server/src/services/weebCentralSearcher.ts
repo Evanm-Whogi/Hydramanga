@@ -10,9 +10,9 @@
  * - Find the best match using sophisticated scoring
  */
 
-import axios from 'axios';
 import { JSDOM } from 'jsdom';
 import logger from '@/services/loggerService';
+import { buildAxios } from '@/scrapers/lib/scraperEgress';
 export interface SearchResult {
     href: string;
     title?: string;
@@ -50,9 +50,11 @@ const USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, l
 /**
  * WeebCentral API endpoints
  */
-const API_ENDPOINTS = {
-    SEARCH: 'https://weebcentral.com/search/simple?location=main',
-} as const;
+const API_ENDPOINTS = {SEARCH: 'https://weebcentral.com/search/simple?location=main'} as const;
+
+// Search hits weebcentral.com (the banned host), so it must share the scraper's
+// egress proxy + ban detection. Off by default → bare keep-alive client.
+const searchClient = buildAxios({ scraperId: 'weebcentral' });
 
 /**
  * Normalize search query strings to improve match rates on finicky search bars
@@ -83,7 +85,7 @@ export class WeebCentralSearcher {
 
             const params = new URLSearchParams({ text: searchTerm });
 
-            const response = await axios.post(
+            const response = await searchClient.post(
                 API_ENDPOINTS.SEARCH,
                 params,
                 {

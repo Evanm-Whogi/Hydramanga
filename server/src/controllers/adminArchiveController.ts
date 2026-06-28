@@ -5,6 +5,8 @@ import { eq, count, desc, and, isNull, isNotNull } from 'drizzle-orm';
 import { ARCHIVE_INGEST_QUEUE, ARCHIVE_MAINTENANCE_QUEUE } from '@/jobs/handlers/archiveQueueNames';
 import { acquisitionRouterService } from '@/services/acquisitionRouterService';
 import { queueService } from '@/services/queueService';
+import { scraperVpnRotationService } from '@/services/scraperVpnRotationService';
+import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
 
 const ARCHIVE_STATUSES = acquisitionJobStatusEnum.enumValues;
@@ -291,6 +293,43 @@ export async function importVolumeFromArchiveJob(req: Request, res: Response, ne
         return res.json({ success: true, jobId: job.id, seriesId: job.seriesId });
     } catch (error) {
         logger.error(`Admin import volume failed: ${(error as Error).message}`, { service: 'adminArchiveController' });
+        return next(error);
+    }
+}
+
+/**
+ * Admin: current scraper egress status — whether the proxy is enabled and the exit
+ * IP/org reported by the scraper gluetun. Powers the egress panel in the archive
+ * admin. Read-only (not audited).
+ */
+export async function getScraperEgressStatus(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+    try {
+        const proxy = appConfig.scraper.proxy;
+        const status = await scraperVpnRotationService.getStatus();
+        return res.json({
+            proxyEnabled: proxy.enabled,
+            proxyUrl: proxy.url || null,
+            publicIp: status.publicIp ?? null,
+            provider: status.provider ?? null,
+            reachable: !status.reason,
+            reason: status.reason ?? null,
+        });
+    } catch (error) {
+        logger.error(`Admin get scraper egress status failed: ${(error as Error).message}`, { service: 'adminArchiveController' });
+        return next(error);
+    }
+}
+
+/**
+ * Admin: rotate the scraper exit IP now (stop→start the scraper gluetun). Guarded by
+ * the rotation service's in-flight lock + cooldown, so a double-click rotates once.
+ */
+export async function rotateScraperEgress(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+    try {
+        const result = await scraperVpnRotationService.rotate('admin-manual');
+        return res.json({ success: true, ...result });
+    } catch (error) {
+        logger.error(`Admin rotate scraper egress failed: ${(error as Error).message}`, { service: 'adminArchiveController' });
         return next(error);
     }
 }

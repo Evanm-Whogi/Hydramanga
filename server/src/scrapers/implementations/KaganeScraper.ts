@@ -10,8 +10,7 @@
 import { chromium } from 'playwright';
 import axios from 'axios';
 import { objectStorageService } from '@/services/objectStorageService';
-import http from 'http';
-import https from 'https';
+import { buildAgents, getPlaywrightProxy } from '@/scrapers/lib/scraperEgress';
 import {
     IChapterScraper,
     ScrapedChapter,
@@ -201,21 +200,11 @@ export class KaganeScraper implements IChapterScraper {
         searchTimeoutMs: 130_000,
     };
 
-    private static readonly httpAgent = new http.Agent({
-        keepAlive: true,
-        keepAliveMsecs: 30000,
-        maxSockets: 50,
-        maxFreeSockets: 10,
-        timeout: 30000,
-    });
-
-    private static readonly httpsAgent = new https.Agent({
-        keepAlive: true,
-        keepAliveMsecs: 30000,
-        maxSockets: 50,
-        maxFreeSockets: 10,
-        timeout: 30000,
-    });
+    // Egress agents (bare keep-alive, or proxy agents when the flag is on) come from
+    // scraperEgress so Kagane's direct axios calls honour the configured proxy.
+    private static readonly agents = buildAgents('kagane');
+    private static readonly httpAgent = KaganeScraper.agents.httpAgent;
+    private static readonly httpsAgent = KaganeScraper.agents.httpsAgent;
 
     private static async getBrowser() {
         if (KaganeScraper.browserPool.length > 0) {
@@ -225,6 +214,7 @@ export class KaganeScraper implements IChapterScraper {
         return chromium.launch({
             headless: true,
             args: ['--disable-dev-shm-usage', '--no-sandbox', '--disable-blink-features=AutomationControlled'],
+            proxy: getPlaywrightProxy('kagane'),
         });
     }
 

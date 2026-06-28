@@ -5,10 +5,8 @@
  * Uses Typesense search API, allChapters API for chapter lists, and read/chapter API for page URLs.
  */
 
-import axios from 'axios';
 import { downloadAndStoreChapter, isNetworkRetryableError } from '../lib/chapterImageDownloader';
-import http from 'http';
-import https from 'https';
+import { buildAxios } from '@/scrapers/lib/scraperEgress';
 import {
     IChapterScraper,
     ScrapedChapter,
@@ -162,26 +160,11 @@ export class AtsuMoeScraper implements IChapterScraper {
         enabled: appConfig.scraper.atsuMoe.enabled,
     };
 
-    private static readonly httpAgent = new http.Agent({
-        keepAlive: true,
-        keepAliveMsecs: 30000,
-        maxSockets: 50,
-        maxFreeSockets: 10,
-        timeout: 30000,
-    });
-
-    private static readonly httpsAgent = new https.Agent({
-        keepAlive: true,
-        keepAliveMsecs: 30000,
-        maxSockets: 50,
-        maxFreeSockets: 10,
-        timeout: 30000,
-    });
-
-    private static readonly axiosInstance = axios.create({
+    // Egress (agents + proxy + ban detection) centralized in scraperEgress; flag off
+    // → identical to the previous keep-alive axios instance.
+    private static readonly axiosInstance = buildAxios({
+        scraperId: 'atsumoe',
         timeout: appConfig.scraper.atsuMoe.timeout,
-        httpAgent: AtsuMoeScraper.httpAgent,
-        httpsAgent: AtsuMoeScraper.httpsAgent,
         headers: {
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'en-US,en;q=0.9',

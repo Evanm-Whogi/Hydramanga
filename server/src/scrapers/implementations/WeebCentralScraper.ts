@@ -12,6 +12,7 @@
  */
 
 import { chromium } from 'playwright';
+import { getPlaywrightProxy } from '@/scrapers/lib/scraperEgress';
 import {
     IChapterScraper,
     ScrapedChapter,
@@ -62,6 +63,7 @@ export class WeebCentralScraper implements IChapterScraper {
         return chromium.launch({
             headless: true,
             args: ['--disable-dev-shm-usage', '--no-sandbox'],
+            proxy: getPlaywrightProxy('weebcentral'),
         });
     }
 

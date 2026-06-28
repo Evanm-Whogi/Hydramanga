@@ -18,6 +18,7 @@
     "fs-extra": "^11.3.3",
     "handlebars": "^4.7.8",
     "helmet": "^8.2.0",
+    "https-proxy-agent": "^5.0.1",
     "ioredis": "^5.9.1",
     "jsdom": "^27.4.0",
     "morgan": "^1.10.1",
@@ -30,6 +31,7 @@
     "redis": "^5.10.0",
     "sharp": "^0.34.5",
     "socket.io": "^4.8.3",
+    "socks-proxy-agent": "^7.0.0",
     "tar": "^7.5.6",
     "tsconfig-paths": "^4.2.0",
     "winston": "^3.19.0"
@@ -59,13 +61,10 @@
     "build": "tsc",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "badges:backfill": "npx ts-node -r tsconfig-paths/register scripts/backfill-badges.ts",
-    "seed:leaderboard": "npx ts-node -r tsconfig-paths/register scripts/seed-leaderboard.ts",
     "emails:test": "npx ts-node -r tsconfig-paths/register scripts/test-emails.ts",
-    "smoke:guest-reading": "npx ts-node -r tsconfig-paths/register scripts/smoke-guest-reading.ts",
     "placeholders:scan": "npx ts-node -r tsconfig-paths/register scripts/scan-placeholders.ts",
     "placeholders:redownload": "npx ts-node -r tsconfig-paths/register scripts/redownload-placeholders.ts",
-    "scan:status": "LOG_LEVEL=error npx ts-node -r tsconfig-paths/register scripts/scan-status.ts"
+    "smoke:authors": "npx ts-node -r tsconfig-paths/register scripts/smoke-authors.ts"
   },
   "author": "",
   "license": "ISC",

@@ -109,3 +109,32 @@ export async function importVolumeFromArchive(jobId: number): Promise<{ success:
 export async function purgeOrphanedTorrents(): Promise<{ success: boolean; queued: boolean }> {
   return apiPost(`/admin/archive/orphans/purge`);
 }
+
+// --- Scraper egress (VPN) ---
+
+export interface ScraperEgressStatus {
+  proxyEnabled: boolean;
+  proxyUrl: string | null;
+  publicIp: string | null;
+  provider: string | null;
+  reachable: boolean;
+  reason: string | null;
+}
+
+/** Current scraper exit IP + whether the egress proxy is enabled. */
+export async function getScraperEgressStatus(): Promise<ScraperEgressStatus> {
+  return apiGet(`/admin/scrapers/egress-status`) as Promise<ScraperEgressStatus>;
+}
+
+export interface RotateScraperEgressResult {
+  success: boolean;
+  rotated: boolean;
+  previousIp?: string;
+  newIp?: string;
+  reason?: string;
+}
+
+/** Rotate the scraper exit IP now (stop→start the scraper gluetun). */
+export async function rotateScraperEgress(): Promise<RotateScraperEgressResult> {
+  return apiPost(`/admin/scrapers/rotate-egress`) as Promise<RotateScraperEgressResult>;
+}

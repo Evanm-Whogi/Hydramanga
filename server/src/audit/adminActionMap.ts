@@ -27,6 +27,7 @@ export function resolveAdminAuditAction(method: string, path: string, params: Re
       normalized === '/admin/queues' ||
       normalized.match(/^\/admin\/queues\/[^/]+\/jobs$/) ||
       normalized === '/admin/archive/jobs' ||
+      normalized === '/admin/scrapers/egress-status' ||
       normalized.match(/^\/admin\/manga\/[^/]+\/archive-status$/) ||
       normalized === '/admin/audit' ||
       normalized === '/admin/settings'
@@ -224,6 +225,9 @@ export function resolveAdminAuditAction(method: string, path: string, params: Re
       resourceType: 'acquisition_job',
       resourceId: params.jobId,
     };
+  }
+  if (normalized === '/admin/scrapers/rotate-egress') {
+    return { action: 'admin.scrapers.rotate_egress', category: 'admin', resourceType: 'system' };
   }
   if (normalized.match(/^\/admin\/manga\/[^/]+\/archive-import$/) || normalized.match(/^\/admin\/manga\/[^/]+\/archive-reingest$/)) {
     return {

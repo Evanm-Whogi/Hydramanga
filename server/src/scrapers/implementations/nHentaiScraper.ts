@@ -20,7 +20,7 @@
  */
 
 import { chromium } from 'playwright';
-import axios from 'axios';
+import { buildAxios, getPlaywrightProxy } from '@/scrapers/lib/scraperEgress';
 import { objectStorageService } from '@/services/objectStorageService';
 import {
     IChapterScraper,
@@ -32,6 +32,10 @@ import {
 } from '../interfaces/IChapterScraper';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
+
+// Proxy-aware client for nHentai's custom image-download loop (it doesn't use the
+// shared chapterImageDownloader). Off by default → bare keep-alive client.
+const nhentaiClient = buildAxios({ scraperId: 'nhentai' });
 import { ScraperStageError, describeError } from '../lib/scraperError';
 
 
@@ -82,6 +86,7 @@ export class NHentaiScraper implements IChapterScraper {
         return chromium.launch({
             headless: true,
             args: ['--disable-dev-shm-usage', '--no-sandbox'],
+            proxy: getPlaywrightProxy('nhentai'),
         });
     }
 
@@ -570,7 +575,7 @@ export class NHentaiScraper implements IChapterScraper {
             let lastError: any;
             for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
                 try {
-                    const response = await axios.get(imageUrl, {
+                    const response = await nhentaiClient.get(imageUrl, {
                         responseType: 'arraybuffer',
                         timeout: BASE_TIMEOUT,
                         headers,

@@ -20,10 +20,8 @@
  */
 
 import { chromium } from 'playwright';
-import axios from 'axios';
+import { buildAxios, getPlaywrightProxy } from '@/scrapers/lib/scraperEgress';
 import { downloadAndStoreChapter, isNetworkRetryableError } from '../lib/chapterImageDownloader';
-import http from 'http';
-import https from 'https';
 import {
     IChapterScraper,
     ScrapedChapter,
@@ -136,27 +134,12 @@ export class MangaTaroScraper implements IChapterScraper {
     private static readonly MAX_BROWSERS = 6; // Match default chapter download concurrency
     private static browserPoolLock = false;
 
-    private static readonly httpAgent = new http.Agent({
-        keepAlive: true,
-        keepAliveMsecs: 30000,
-        maxSockets: 50, // Increased from 10 to 50 for parallel downloads
-        maxFreeSockets: 10, // Increased from 5 to 10
-        timeout: 30000,
-    });
-
-    private static readonly httpsAgent = new https.Agent({
-        keepAlive: true,
-        keepAliveMsecs: 30000,
-        maxSockets: 50, // Increased from 10 to 50 for parallel downloads
-        maxFreeSockets: 10, // Increased from 5 to 10
-        timeout: 30000,
-    });
-
-    private static readonly axiosInstance = axios.create({
+    // Egress (agents + proxy + ban detection) centralized in scraperEgress; flag off
+    // → identical to the previous keep-alive axios instance.
+    private static readonly axiosInstance = buildAxios({
+        scraperId: 'mangataro',
         timeout: appConfig.scraper.mangaTaro.timeout,
-        withCredentials: true, // Include cookies
-        httpAgent: MangaTaroScraper.httpAgent,
-        httpsAgent: MangaTaroScraper.httpsAgent,
+        extra: { withCredentials: true }, // Include cookies
         headers: {
             'Accept': '*/*',
             'Accept-Language': 'en-US,en;q=0.9',
@@ -199,9 +182,10 @@ export class MangaTaroScraper implements IChapterScraper {
 
         // Create new browser if pool is not at max
         logger.debug('[MangaTaro] Launching new browser for pool', { service: 'mangaTaroScraper' });
-        const browser = await chromium.launch({ 
+        const browser = await chromium.launch({
             headless: true,
-            args: ['--disable-dev-shm-usage', '--no-sandbox'] // Better for Docker/containerized environments
+            args: ['--disable-dev-shm-usage', '--no-sandbox'], // Better for Docker/containerized environments
+            proxy: getPlaywrightProxy('mangataro'),
         });
         return browser;
     }

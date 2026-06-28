@@ -31,9 +31,6 @@ async function main() {
     queueService.getQueue('storageCleanupQueue');
     queueService.getQueue('seriesMigrationQueue');
     queueService.getQueue('emailQueue');
-    // Archive cleanup runs on the worker (it owns the scratch mount + qBittorrent
-    // access). Created unconditionally so admin cleanup works even when the archive
-    // pipeline itself is disabled.
     queueService.getQueue(ARCHIVE_MAINTENANCE_QUEUE);
 
     // Archive ingestion (torrent) pipeline — only when enabled. The download poller

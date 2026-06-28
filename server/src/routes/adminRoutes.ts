@@ -15,7 +15,7 @@ import { requireRole } from '@/middlewares/requireRole';
 import { listAdminStickers, createAdminSticker, updateAdminSticker, deleteAdminSticker, scanAdminStickers } from '@/controllers/adminStickerController';
 import { listAdminLogContainers, getAdminContainerLogs } from '@/controllers/adminDockerLogController';
 import { listAdminBadges } from '@/controllers/adminBadgeController';
-import { listAdminArchiveJobs, getAdminSeriesArchiveStatus, retryAdminArchiveJob, dismissAdminArchiveJob, deleteAdminArchiveJob, abandonAdminArchiveTorrent, importVolumeFromArchiveJob, purgeOrphanedArchiveTorrents } from '@/controllers/adminArchiveController';
+import { listAdminArchiveJobs, getAdminSeriesArchiveStatus, retryAdminArchiveJob, dismissAdminArchiveJob, deleteAdminArchiveJob, abandonAdminArchiveTorrent, importVolumeFromArchiveJob, purgeOrphanedArchiveTorrents, getScraperEgressStatus, rotateScraperEgress } from '@/controllers/adminArchiveController';
 
 const router = Router();
 
@@ -77,6 +77,10 @@ router.post('/archive/jobs/:jobId/dismiss', requireRole('admin'), dismissAdminAr
 router.post('/archive/jobs/:jobId/abandon-torrent', requireRole('admin'), abandonAdminArchiveTorrent as RequestHandler);
 router.post('/archive/jobs/:jobId/import-volume', requireRole('admin'), importVolumeFromArchiveJob as RequestHandler);
 router.delete('/archive/jobs/:jobId', requireRole('admin'), deleteAdminArchiveJob as RequestHandler);
+
+// Scraper egress (VPN) — current exit IP + manual rotation
+router.get('/scrapers/egress-status', requireRole('admin'), getScraperEgressStatus as RequestHandler);
+router.post('/scrapers/rotate-egress', requireRole('admin'), rotateScraperEgress as RequestHandler);
 
 // Docker container logs
 router.get('/logs/containers', requireRole('admin'), listAdminLogContainers as RequestHandler);

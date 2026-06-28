@@ -172,6 +172,32 @@ export interface ScraperConfig {
         enabled: boolean;
         language: string;
     };
+    /**
+     * Proxy-agnostic scraper egress. When `enabled`, all scraper transports
+     * (axios + Playwright + image downloads) route through `url` (today a
+     * gluetun HTTP proxy; swap the URL for a residential provider with zero
+     * scraper code changes). `perScraper` overrides the global URL per scraper id.
+     * When disabled, scrapers behave exactly as before (bare keep-alive agents).
+     */
+    proxy: {
+        enabled: boolean;
+        url: string;
+        perScraper: Record<string, string>;
+    };
+    /**
+     * Control-API client config for the gluetun container that fronts scraper
+     * egress. Used to read the current exit IP and to rotate it (stop→start)
+     * on sustained ban signals or an admin "rotate now".
+     */
+    egressVpn: {
+        controlUrl: string;
+        timeout: number; // ms for control-API calls
+        rotateCooldownMs: number; // min spacing between auto-rotations
+        banThreshold: number; // distinct ban signals within the window to rotate
+        banWindowMs: number; // sliding-window length for ban-signal counting
+    };
+    /** Optional user-agent rotation pool (politeness). Empty → each scraper's own UA. */
+    userAgents: string[];
 }
 
 /**
@@ -385,8 +411,43 @@ function parseEnvNumberList(key: string): number[] {
 }
 
 /**
+ * Parse a comma- or newline-separated list of strings, trimming and dropping blanks.
+ */
+function parseEnvStringList(key: string): string[] {
+    const value = process.env[key];
+    if (!value) return [];
+    return value
+        .split(/[\n,]/)
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0);
+}
+
+/**
+ * Parse a JSON object env var into a string→string map. Returns {} on absence or
+ * malformed JSON (logged), so a bad override never crashes config load.
+ */
+function parseEnvJsonMap(key: string): Record<string, string> {
+    const value = process.env[key];
+    if (!value) return {};
+    try {
+        const parsed = JSON.parse(value);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            const out: Record<string, string> = {};
+            for (const [k, v] of Object.entries(parsed)) {
+                if (typeof v === 'string') out[k] = v;
+            }
+            return out;
+        }
+        logger.warn(`Invalid JSON object for ${key}, expected a string map; ignoring`);
+    } catch {
+        logger.warn(`Failed to parse JSON for ${key}; ignoring`);
+    }
+    return {};
+}
+
+/**
  * Application Configuration Service
- * 
+ *
  * Usage:
  * ```typescript
  * import { appConfig } from '@/config/appConfig';
@@ -565,6 +626,20 @@ export class AppConfigService {
                     enabled: parseEnvBoolean('MANGAFIRE_ENABLED', true),
                     language: 'en'
                 },
+                proxy: {
+                    enabled: parseEnvBoolean('SCRAPER_PROXY_ENABLED', false),
+                    url: parseEnvString('SCRAPER_PROXY_URL'),
+                    // JSON map of scraperId → proxy URL, e.g. {"weebcentral":"http://gluetun-scraper:8888"}
+                    perScraper: parseEnvJsonMap('SCRAPER_PROXY_PER_SCRAPER'),
+                },
+                egressVpn: {
+                    controlUrl: parseEnvString('SCRAPER_GLUETUN_CONTROL_URL', 'http://gluetun-scraper:8000'),
+                    timeout: parseEnvNumber('SCRAPER_GLUETUN_CONTROL_TIMEOUT', 10000),
+                    rotateCooldownMs: parseEnvNumber('SCRAPER_VPN_ROTATE_COOLDOWN_MS', 60 * 1000),
+                    banThreshold: parseEnvNumber('SCRAPER_BAN_THRESHOLD', 3),
+                    banWindowMs: parseEnvNumber('SCRAPER_BAN_WINDOW_MS', 5 * 60 * 1000),
+                },
+                userAgents: parseEnvStringList('SCRAPER_USER_AGENTS'),
             },
 
             // Object Storage Configuration (S3-compatible / Garage)

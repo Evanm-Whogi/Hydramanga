@@ -13,7 +13,7 @@
  * - Robust error handling and logging
  */
 
-import axios from 'axios';
+import { buildAxios } from '@/scrapers/lib/scraperEgress';
 import { downloadAndStoreChapter } from '../lib/chapterImageDownloader';
 import {
     IChapterScraper,
@@ -70,7 +70,10 @@ export class MangaDexScraper implements IChapterScraper {
     private static readonly REQUEST_DELAY_MS = 2500;
     private static lastRequestTime = 0;
 
-    private static readonly axiosInstance = axios.create({
+    // Egress (agents + proxy + ban detection) centralized in scraperEgress; flag off
+    // → identical to the previous keep-alive axios instance.
+    private static readonly axiosInstance = buildAxios({
+        scraperId: 'mangadex',
         timeout: appConfig.scraper.mangaDex.timeout,
         headers: {
             'User-Agent': appConfig.scraper.mangaDex.userAgent,
