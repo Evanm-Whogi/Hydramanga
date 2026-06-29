@@ -6,28 +6,44 @@
  * URL. This class holds the per-bucket config and exposes the low-level object
  * operations; media-specific services compose an instance of it.
  */
-import {
-    S3Client,
-    PutObjectCommand,
-    DeleteObjectCommand,
-    DeleteObjectsCommand,
-    HeadObjectCommand,
-    CopyObjectCommand,
-    ListObjectsV2Command,
-} from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, HeadObjectCommand, CopyObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
+import { Agent as HttpAgent } from 'http';
+import { Agent as HttpsAgent } from 'https';
 import { appConfig } from '@/config/appConfig';
 
 let sharedClient: S3Client | null = null;
 
+/**
+ * Global write-concurrency gate (backpressure for Garage). Bounds simultaneous PutObject
+ * calls across every job/queue so producers (download/transcode) self-throttle to S3's
+ * drain rate instead of flooding the socket pool. Sized by `S3_MAX_CONCURRENT_UPLOADS`,
+ * kept below the client's `maxSockets` so reads/heads aren't starved behind uploads.
+ */
+class Semaphore {
+    private active = 0;
+    private readonly waiters: (() => void)[] = [];
+    constructor(private readonly max: number) {}
+    async run<T>(fn: () => Promise<T>): Promise<T> {
+        if (this.active >= this.max) await new Promise<void>((resolve) => this.waiters.push(resolve));
+        else this.active++;
+        try { return await fn(); }
+        finally { const next = this.waiters.shift(); if (next) next(); else this.active--; }
+    }
+}
+const uploadSemaphore = new Semaphore(Math.max(1, appConfig.storage.maxConcurrentUploads));
+
 /** Lazily-built S3 client shared across all buckets. */
 export function getS3Client(): S3Client {
     if (!sharedClient) {
-        const { endpoint, region, accessKeyId, secretAccessKey, forcePathStyle } = appConfig.storage;
+        const { endpoint, region, accessKeyId, secretAccessKey, forcePathStyle, maxSockets } = appConfig.storage;
+        const agentOpts = { maxSockets: Math.max(1, maxSockets), keepAlive: true };
         sharedClient = new S3Client({
             endpoint,
             region,
             forcePathStyle,
             credentials: { accessKeyId, secretAccessKey },
+            requestHandler: new NodeHttpHandler({ httpAgent: new HttpAgent(agentOpts), httpsAgent: new HttpsAgent(agentOpts), connectionTimeout: 10_000, requestTimeout: 120_000 }),
         });
     }
     return sharedClient;
@@ -55,8 +71,8 @@ export class S3Bucket {
     }
 
     async putObject(key: string, body: Buffer, contentType = 'application/octet-stream'): Promise<void> {
-        await this.client.send(
-            new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType })
+        await uploadSemaphore.run(() =>
+            this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType }))
         );
     }
 

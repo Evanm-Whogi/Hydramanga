@@ -261,6 +261,10 @@ export interface StorageConfig {
     accessKeyId: string;
     secretAccessKey: string;
     forcePathStyle: boolean; // Garage typically needs path-style addressing
+    /** Global cap on concurrent object writes (PutObject) across all jobs — backpressure for Garage. */
+    maxConcurrentUploads: number;
+    /** S3 client socket-pool ceiling; kept above maxConcurrentUploads so reads aren't starved behind uploads. */
+    maxSockets: number;
     manga: S3BucketConfig;
     profilePictures: S3BucketConfig;
     stickers: S3BucketConfig;
@@ -655,6 +659,8 @@ export class AppConfigService {
                 accessKeyId: parseEnvString('S3_ACCESS_KEY_ID', ''),
                 secretAccessKey: parseEnvString('S3_SECRET_ACCESS_KEY', ''),
                 forcePathStyle: parseEnvBoolean('S3_FORCE_PATH_STYLE', true),
+                maxConcurrentUploads: parseEnvNumber('S3_MAX_CONCURRENT_UPLOADS', 48),
+                maxSockets: parseEnvNumber('S3_MAX_SOCKETS', 80),
                 manga: {
                     bucket: parseEnvString('S3_BUCKET_NAME', 'manga'),
                     publicBaseUrl: parseEnvString('S3_PUBLIC_BASE_URL', 'https://manga.garage.chit.sh'),
