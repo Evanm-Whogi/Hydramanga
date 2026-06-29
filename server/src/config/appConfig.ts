@@ -177,12 +177,15 @@ export interface ScraperConfig {
      * (axios + Playwright + image downloads) route through `url` (today a
      * gluetun HTTP proxy; swap the URL for a residential provider with zero
      * scraper code changes). `perScraper` overrides the global URL per scraper id.
-     * When disabled, scrapers behave exactly as before (bare keep-alive agents).
+     * `disabled` lists scraper ids that egress directly even when the proxy is on
+     * (e.g. Kagane, which blocks datacenter IPs). When the proxy is disabled
+     * globally, scrapers behave exactly as before (bare keep-alive agents).
      */
     proxy: {
         enabled: boolean;
         url: string;
         perScraper: Record<string, string>;
+        disabled: string[];
     };
     /**
      * Control-API client config for the gluetun container that fronts scraper
@@ -631,6 +634,8 @@ export class AppConfigService {
                     url: parseEnvString('SCRAPER_PROXY_URL'),
                     // JSON map of scraperId → proxy URL, e.g. {"weebcentral":"http://gluetun-scraper:8888"}
                     perScraper: parseEnvJsonMap('SCRAPER_PROXY_PER_SCRAPER'),
+                    // Comma-separated scraper ids that bypass the proxy even when it's on, e.g. "kagane"
+                    disabled: parseEnvStringList('SCRAPER_PROXY_DISABLED'),
                 },
                 egressVpn: {
                     controlUrl: parseEnvString('SCRAPER_GLUETUN_CONTROL_URL', 'http://gluetun-scraper:8000'),

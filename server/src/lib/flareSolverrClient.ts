@@ -45,7 +45,8 @@ export async function requestFlareSolverr(flareSolverrUrl: string, payload: Reco
         });
 
         if (response.status < 200 || response.status >= 300) {
-            throw new Error(`FlareSolverr HTTP ${response.status}`);
+            const detail = response.data?.message || (typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? ''));
+            throw new Error(`FlareSolverr HTTP ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ''}`);
         }
         if (response.data?.status !== 'ok') {
             throw new Error(`FlareSolverr error: ${response.data?.message || 'unknown error'}`);

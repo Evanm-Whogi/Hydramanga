@@ -380,6 +380,15 @@ export class ScraperManager {
 
             if (mangaUrl && scraperId) {
                 const resolved = this.getScraperById(scraperId);
+                if (resolved && !resolved.getMetadata().enabled) {
+                    // Pinned source is disabled (e.g. *_ENABLED=false). Skip the series
+                    // rather than re-searching and silently switching to another source.
+                    logger.info(
+                        `Skipping "${mangaName}": pinned scraper "${scraperId}" is disabled`,
+                        { service: 'scraperManager' }
+                    );
+                    return;
+                }
                 if (resolved) {
                     scraper = resolved;
                     pageUrl = mangaUrl;

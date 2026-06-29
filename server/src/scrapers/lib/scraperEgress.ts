@@ -55,6 +55,10 @@ export interface ScraperAgents {
 export function resolveProxyUrl(scraperId?: string): string | undefined {
     const cfg = appConfig.scraper.proxy;
     if (!cfg.enabled) return undefined;
+    // Per-scraper opt-out: some sites (e.g. Kagane) block datacenter IPs, so the
+    // shared gluetun exit hurts them — let them egress directly even when the
+    // global proxy is on.
+    if (scraperId && cfg.disabled.includes(scraperId)) return undefined;
     const url = (scraperId && cfg.perScraper[scraperId]) || cfg.url;
     return url ? url.trim() || undefined : undefined;
 }

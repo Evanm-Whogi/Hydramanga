@@ -104,16 +104,14 @@ interface MangaFirePageAsset {
 }
 
 export class MangaFireScraper implements IChapterScraper {
-    // MangaFire serves both full manga pages (portrait, ~700-1100px wide) and
-    // long-strip webtoons sliced into wide, short horizontal bands (e.g. 720x130).
-    // Validation keys off a minimum width shared by both formats plus a small
-    // minimum height, so short webtoon slices are kept while thumbnails, icons and
-    // CDN error blobs are still rejected. A taller short-edge assumption would
-    // discard legitimate webtoon strips and needlessly fail their chapters.
-    private static readonly MIN_CHAPTER_IMAGE_WIDTH = 320;
-    private static readonly MIN_CHAPTER_IMAGE_HEIGHT = 96;
-    private static readonly MIN_IMAGE_NATURAL_WIDTH = 320;
-    private static readonly MIN_IMAGE_NATURAL_HEIGHT = 96;
+    // MangaFire serves full manga pages, long-strip webtoon slices (e.g. 73x1100)
+    // and genuinely tiny legacy scans (e.g. 311x500, 138x200) that are impossible
+    // to distinguish from thumbnails by size alone. We therefore keep only a low
+    // floor on both edges to drop degenerate slivers / tracking pixels; the real
+    // junk filters are the byte gate (empty/error responses) and a successful
+    // sharp decode, both of which run before this check.
+    private static readonly MIN_CHAPTER_LONG_EDGE = 128;
+    private static readonly MIN_CHAPTER_SHORT_EDGE = 32;
     // Only meant to short-circuit truly empty/error responses; real strips can be
     // very small once compressed, so dimension validation is the real gate.
     private static readonly MIN_IMAGE_DOWNLOAD_BYTES = 256;
@@ -153,10 +151,9 @@ export class MangaFireScraper implements IChapterScraper {
 
     private static isValidChapterImageDimensions(width: number, height: number): boolean {
         if (width <= 0 || height <= 0) return false;
-        return (
-            width >= MangaFireScraper.MIN_CHAPTER_IMAGE_WIDTH &&
-            height >= MangaFireScraper.MIN_CHAPTER_IMAGE_HEIGHT
-        );
+        const longEdge = Math.max(width, height);
+        const shortEdge = Math.min(width, height);
+        return longEdge >= MangaFireScraper.MIN_CHAPTER_LONG_EDGE && shortEdge >= MangaFireScraper.MIN_CHAPTER_SHORT_EDGE;
     }
 
     private static summarizeAssetUrl(url: string): string {
@@ -713,10 +710,8 @@ export class MangaFireScraper implements IChapterScraper {
     ): Promise<MangaFirePageAsset[]> {
         const pageMap = new Map<number, MangaFirePageAsset>();
         const maxSteps = Math.max(expectedPageCount > 0 ? expectedPageCount * 8 : 420, 160);
-        const minW = MangaFireScraper.MIN_IMAGE_NATURAL_WIDTH;
-        const minH = MangaFireScraper.MIN_IMAGE_NATURAL_HEIGHT;
-        const minCanvasW = MangaFireScraper.MIN_CHAPTER_IMAGE_WIDTH;
-        const minCanvasH = MangaFireScraper.MIN_CHAPTER_IMAGE_HEIGHT;
+        const minLong = MangaFireScraper.MIN_CHAPTER_LONG_EDGE;
+        const minShort = MangaFireScraper.MIN_CHAPTER_SHORT_EDGE;
         let stagnantSteps = 0;
 
         await page.evaluate(() => window.scrollTo(0, 0));
@@ -731,7 +726,8 @@ export class MangaFireScraper implements IChapterScraper {
                 canvasWidth?: number;
                 canvasHeight?: number;
             }> = await page.evaluate(
-                ({ minW, minH, canvasMinW, canvasMinH }: { minW: number; minH: number; canvasMinW: number; canvasMinH: number }) => {
+                ({ minLong, minShort }: { minLong: number; minShort: number }) => {
+                    const edgesOk = (w: number, h: number) => Math.min(w, h) >= minShort && Math.max(w, h) >= minLong;
                     // A "page slot" is any element carrying a 1-based page index.
                     const slots = Array.from(
                         document.querySelectorAll<HTMLElement>(
@@ -760,14 +756,14 @@ export class MangaFireScraper implements IChapterScraper {
                         if (!Number.isFinite(pageNum) || pageNum < 1) return;
 
                         const imgReady =
-                            !!img && img.complete && img.naturalWidth >= minW && img.naturalHeight >= minH;
+                            !!img && img.complete && edgesOk(img.naturalWidth, img.naturalHeight);
 
                         const rect = node.getBoundingClientRect();
                         const visible = rect.bottom >= 0 && rect.top <= window.innerHeight;
                         const canvas = node.querySelector('canvas') as HTMLCanvasElement | null;
                         const cw = canvas?.width || 0;
                         const ch = canvas?.height || 0;
-                        const hasCanvas = !!canvas && visible && cw >= canvasMinW && ch >= canvasMinH;
+                        const hasCanvas = !!canvas && visible && edgesOk(cw, ch);
 
                         if (imgReady && /^https?:\/\//i.test(src) && /\.(webp|jpg|jpeg|png|avif)(\?|$)/i.test(src)) {
                             out.push({ page: pageNum, imageUrl: src, hasCanvas, canvasWidth: cw, canvasHeight: ch });
@@ -778,7 +774,7 @@ export class MangaFireScraper implements IChapterScraper {
 
                     return out;
                 },
-                { minW, minH, canvasMinW: minCanvasW, canvasMinH: minCanvasH },
+                { minLong, minShort },
             );
 
             for (const a of snapshot) {
