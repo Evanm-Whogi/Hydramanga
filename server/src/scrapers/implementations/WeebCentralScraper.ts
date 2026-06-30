@@ -624,6 +624,10 @@ export class WeebCentralScraper implements IChapterScraper {
             // WeebCentral also serves its broken-image graphic from normal-looking
             // CDN URLs (200, not 404), so match it by content too.
             detectKnownBrokenImages: true,
+            // WeebCentral serves clean B&W PNG line-art; the q75 default visibly blocks
+            // on screentone/gradients. q85 is the line-art sweet spot — most of the
+            // clarity for far fewer bytes than q90.
+            transform: { quality: 85 },
         });
 
         return storagePrefix;

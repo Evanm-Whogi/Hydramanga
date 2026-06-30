@@ -26,6 +26,10 @@ RUN --mount=type=cache,target=/var/cache/pw-browsers \
 FROM node:20-bookworm AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+# libuv thread pool for sharp (transcode) + async I/O. Default 4 caps transcode
+# concurrency well below the worker's CPU allocation; size it to the cores.
+# Safe standalone default; docker-compose overrides this to match the worker cpu limit.
+ENV UV_THREADPOOL_SIZE=16
 ENV PLAYWRIGHT_BROWSERS_PATH=/pw-browsers
 
 # Longer timeouts for Playwright browser download (large binaries)

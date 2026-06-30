@@ -186,6 +186,8 @@ export interface ScraperConfig {
         url: string;
         perScraper: Record<string, string>;
         disabled: string[];
+        maxSockets: number;
+        maxFreeSockets: number;
     };
     /**
      * Control-API client config for the gluetun container that fronts scraper
@@ -640,6 +642,10 @@ export class AppConfigService {
                     perScraper: parseEnvJsonMap('SCRAPER_PROXY_PER_SCRAPER'),
                     // Comma-separated scraper ids that bypass the proxy even when it's on, e.g. "kagane"
                     disabled: parseEnvStringList('SCRAPER_PROXY_DISABLED'),
+                    // Proxy-agent socket pool. keepAlive reuses the CONNECT tunnel across image
+                    // fetches (without it every page reopens a tunnel + TLS over the VPN).
+                    maxSockets: parseEnvNumber('SCRAPER_PROXY_MAX_SOCKETS', 256),
+                    maxFreeSockets: parseEnvNumber('SCRAPER_PROXY_MAX_FREE_SOCKETS', 32),
                 },
                 egressVpn: {
                     controlUrl: parseEnvString('SCRAPER_GLUETUN_CONTROL_URL', 'http://gluetun-scraper:8000'),

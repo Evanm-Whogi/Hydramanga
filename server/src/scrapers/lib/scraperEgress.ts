@@ -67,12 +67,13 @@ function buildProxyAgent(proxyUrl: string): http.Agent {
     const cached = proxyAgentCache.get(proxyUrl);
     if (cached) return cached;
     const scheme = proxyUrl.split(':', 1)[0].toLowerCase();
-    // These agents extend agent-base's Agent, which is structurally compatible with
-    // http.Agent for our use (axios/node http only call connect/request hooks) but
-    // not nominally assignable — cast through unknown.
+    // agent-base v7's Agent extends http.Agent, so these honour keepAlive + socket caps.
+    // keepAlive is critical: it reuses the proxy CONNECT tunnel + TLS session across page
+    // fetches instead of reopening one per image — the dominant cost when egressing via VPN.
+    const proxyOpts = { keepAlive: true, keepAliveMsecs: KEEP_ALIVE_OPTS.keepAliveMsecs, maxSockets: appConfig.scraper.proxy.maxSockets, maxFreeSockets: appConfig.scraper.proxy.maxFreeSockets, timeout: KEEP_ALIVE_OPTS.timeout };
     const proxyAgent = scheme.startsWith('socks')
-        ? new SocksProxyAgent(proxyUrl)
-        : new HttpsProxyAgent(proxyUrl);
+        ? new SocksProxyAgent(proxyUrl, proxyOpts)
+        : new HttpsProxyAgent(proxyUrl, proxyOpts);
     const agent = proxyAgent as unknown as http.Agent;
     proxyAgentCache.set(proxyUrl, agent);
     return agent;

@@ -18,7 +18,7 @@
  * (a corrupt/zero-filled 200 standing in for a missing page).
  */
 import { type AxiosInstance } from 'axios';
-import { objectStorageService } from '@/services/objectStorageService';
+import { objectStorageService, type PageTransformOptions } from '@/services/objectStorageService';
 import { buildAxios } from './scraperEgress';
 import logger from '@/services/loggerService';
 import { matchKnownBrokenImage } from './knownBrokenImages';
@@ -106,6 +106,8 @@ export interface DownloadAndStoreOptions {
     placeholderOnFailure?: boolean;
     /** Whether a thrown error should be retried (default: always retry until maxRetries). */
     isRetryable?: (err: any) => boolean;
+    /** Per-page webp transform overrides (quality/effort/width); e.g. higher quality for clean line-art sources. */
+    transform?: PageTransformOptions;
 }
 
 /**
@@ -140,6 +142,7 @@ export async function downloadAndStoreChapter(
         detectKnownBrokenImages = false,
         placeholderOnFailure = false,
         isRetryable,
+        transform,
     } = opts;
 
     const retryDelayMs = 1000;
@@ -173,7 +176,7 @@ export async function downloadAndStoreChapter(
                         return;
                     }
                     try {
-                        await objectStorageService.transformAndUploadPage(storagePrefix, i, buffer);
+                        await objectStorageService.transformAndUploadPage(storagePrefix, i, buffer, transform);
                     } catch (transformErr: any) {
                         // The source returned a 200 with bytes that aren't a decodable
                         // image (corrupt/zero-filled stand-in for a missing page).
@@ -190,7 +193,7 @@ export async function downloadAndStoreChapter(
                     }
                     return; // success
                 }
-                await objectStorageService.transformAndUploadPage(storagePrefix, i, response.data);
+                await objectStorageService.transformAndUploadPage(storagePrefix, i, response.data, transform);
                 return; // success
             } catch (err: any) {
                 lastError = err;
@@ -235,14 +238,28 @@ export async function downloadAndStoreChapter(
         await objectStorageService.uploadPlaceholderSlot(storagePrefix, i);
     };
 
-    for (let batchStart = 0; batchStart < images.length; batchStart += batchSize) {
-        const batchEnd = Math.min(batchStart + batchSize, images.length);
-        const batch = images.slice(batchStart, batchEnd);
-        await Promise.all(batch.map((imageUrl, j) => downloadOne(imageUrl, batchStart + j)));
-        if (batchEnd < images.length && batchDelayMs > 0) {
-            await new Promise((resolve) => setTimeout(resolve, batchDelayMs));
+    // Sliding-window pool: keep `batchSize` page tasks in flight instead of fixed
+    // batches that block on their slowest member. `batchDelayMs` (previously an
+    // inter-batch sleep) becomes a per-launch spacing so a slow page no longer
+    // stalls the rest while still easing sources that need paced requests (MangaDex).
+    const concurrency = Math.max(1, batchSize);
+    const launchSpacingMs = batchDelayMs > 0 ? Math.ceil(batchDelayMs / concurrency) : 0;
+    let nextIndex = 0;
+    let nextLaunchAt = 0;
+    const runWorker = async () => {
+        while (true) {
+            const i = nextIndex++;
+            if (i >= images.length) return;
+            if (launchSpacingMs > 0) {
+                const now = Date.now();
+                const scheduledAt = Math.max(now, nextLaunchAt);
+                nextLaunchAt = scheduledAt + launchSpacingMs; // reserve slot synchronously
+                if (scheduledAt > now) await new Promise((resolve) => setTimeout(resolve, scheduledAt - now));
+            }
+            await downloadOne(images[i], i);
         }
-    }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, images.length) }, () => runWorker()));
 
     return { pageCount: images.length };
 }

@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 import 'tsconfig-paths/register';
 
+import sharp from 'sharp';
 import { initSentry } from '@/sentry';
 import '@/services/loggerService';
 import logger from '@/services/loggerService';
@@ -20,6 +21,17 @@ import {
 if (process.env.ENABLE_SENTRY === 'true') {
     initSentry();
 }
+
+// Transcode threading. sharp/libvips defaults to one thread *per image* equal to the
+// core count, so concurrent page transcodes (up to chapterDownload jobs × batchSize)
+// each try to grab every core and thrash — measured as ~no parallel speedup. Cap it
+// to 1 thread per image so parallelism comes from job/page concurrency instead, with
+// the libuv pool (UV_THREADPOOL_SIZE) bounding how many run at once. Worker-only; the
+// API server keeps the default for its occasional single-image (avatar) resizes.
+// Override with SHARP_CONCURRENCY (0 = libvips default = core count) for low-parallelism
+// paths like archive ingest where one big scan should use multiple cores.
+sharp.concurrency(Number(process.env.SHARP_CONCURRENCY ?? 1));
+logger.info(`sharp libvips concurrency: ${sharp.concurrency()} thread(s) per image`, { service: 'worker' });
 
 async function main() {
     initializeScrapers();

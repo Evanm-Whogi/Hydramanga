@@ -904,7 +904,7 @@ export class MangaFireScraper implements IChapterScraper {
                 try {
                     if (asset.dataUrl?.startsWith('data:image')) {
                         const raw = Buffer.from(asset.dataUrl.split(',')[1] || '', 'base64');
-                        const out = await sharp(raw, { failOn: 'none' }).webp({ lossless: true, effort: 4 }).toBuffer();
+                        const out = await sharp(raw, { failOn: 'none' }).webp({ lossless: true, effort: 2 }).toBuffer();
                         await objectStorageService.putObject(key, out);
                         return;
                     }
@@ -936,7 +936,7 @@ export class MangaFireScraper implements IChapterScraper {
                         if (isWebp) {
                             await objectStorageService.putObject(key, buffer);
                         } else {
-                            const out = await sharp(buffer, { failOn: 'none' }).webp({ quality: 90, effort: 4 }).toBuffer();
+                            const out = await sharp(buffer, { failOn: 'none' }).webp({ quality: 90, effort: 2 }).toBuffer();
                             await objectStorageService.putObject(key, out);
                         }
                         logger.debug(
