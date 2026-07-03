@@ -19,10 +19,25 @@ const IGNORED_TITLES = new Set(['one piece', "hajime no ippo: fighting spirit!"]
 const isIgnored = (title: string | null | undefined) => IGNORED_TITLES.has((title || '').trim().toLowerCase());
 const MAX_RANKED_SCAN_BATCH = 500;
 const notMergedCondition = or(isNull(series.state), ne(series.state, 'merged'));
-const CHAPTER_SCAN_JOB_PREFIXES = ['rescan', 'ondemand', 'trending', 'ranked', 'monitored'] as const;
+const CHAPTER_SCAN_JOB_PREFIXES = ['rescan', 'ondemand', 'trending', 'ranked', 'monitored', 'catalog'] as const;
 
 function chapterScanJobIds(seriesId: number): string[] {
   return CHAPTER_SCAN_JOB_PREFIXES.map((prefix) => `${prefix}-${seriesId}`);
+}
+
+function resolveJobIdPrefix(prefix?: RankedChapterScanOptions['jobIdPrefix']): string {
+  if (prefix === 'trending') return 'trending';
+  if (prefix === 'catalog') return 'catalog';
+  return 'ranked';
+}
+
+export function buildRankedCatalogConditions(typeFilter?: string) {
+  const conditions = [notMergedCondition, ...getExcludeNovelConditions(series)];
+  const normalized = typeFilter?.trim().toLowerCase();
+  if (normalized && normalized !== 'all') {
+    conditions.push(eq(series.type, normalized));
+  }
+  return conditions;
 }
 
 export type RankedChapterScanOptions = {
@@ -37,8 +52,8 @@ export type RankedChapterScanOptions = {
    * Ignored when the archive pipeline is disabled. (`trending` cron stays pure scrape.)
    */
   useArchive?: boolean;
-  /** BullMQ job id prefix; use `trending` for cron top-N, `ranked` for admin incremental batches. */
-  jobIdPrefix?: 'ranked' | 'trending';
+  /** BullMQ job id prefix; use `trending` for cron top-N, `ranked` for admin incremental batches, `catalog` for full catalog scan. */
+  jobIdPrefix?: 'ranked' | 'trending' | 'catalog';
 };
 
 export type RankedChapterScanResult = {
@@ -53,6 +68,8 @@ export type RankedChapterScanResult = {
   sourcesNotFound: number;
   sourcesLowScore: number;
   archived: number;
+  enqueuedSeriesIds: number[];
+  archivedSeriesIds: number[];
 };
 
 class MangaOrchestratorService {
@@ -87,6 +104,16 @@ class MangaOrchestratorService {
     return trending.some((t) => t.id === seriesId);
   }
 
+  // Count titles in the ranked catalog pool (for progress %).
+  async countRankedCatalog(typeFilter?: string): Promise<number> {
+    const conditions = buildRankedCatalogConditions(typeFilter);
+    const [row] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(series)
+      .where(and(...conditions));
+    return row?.count ?? 0;
+  }
+
   // Schedule chapter scans for a 1-based global rank range (by weightedScore).
   async enqueueRankedChapterScans(options: RankedChapterScanOptions): Promise<RankedChapterScanResult> {
     const start = Math.max(1, Math.floor(options.start));
@@ -100,13 +127,10 @@ class MangaOrchestratorService {
     const skipWithChapters = options.skipWithChapters === true;
     const autoSelectSource = options.autoSelectSource !== false;
     const useArchive = options.useArchive !== false && acquisitionRouterService.enabled;
-    const jobIdPrefix = options.jobIdPrefix === 'trending' ? 'trending' : 'ranked';
+    const jobIdPrefix = resolveJobIdPrefix(options.jobIdPrefix);
     const typeFilter = options.type?.trim().toLowerCase();
 
-    const conditions = [notMergedCondition, ...getExcludeNovelConditions(series)];
-    if (typeFilter && typeFilter !== 'all') {
-      conditions.push(eq(series.type, typeFilter));
-    }
+    const conditions = buildRankedCatalogConditions(typeFilter);
 
     const rows = await db
       .select({
@@ -139,6 +163,8 @@ class MangaOrchestratorService {
     let sourcesNotFound = 0;
     let sourcesLowScore = 0;
     let archived = 0;
+    const enqueuedSeriesIds: number[] = [];
+    const archivedSeriesIds: number[] = [];
     for (const row of rows) {
       if (!row.title || isIgnored(row.title)) {
         skippedIgnored++;
@@ -176,6 +202,7 @@ class MangaOrchestratorService {
           const strategy = await acquisitionRouterService.routeImport(row.id, 'initial-import', { scrapeFallback: false });
           if (strategy !== 'scrape') {
             archived++;
+            archivedSeriesIds.push(row.id);
             continue;
           }
         } catch (err) {
@@ -193,6 +220,7 @@ class MangaOrchestratorService {
         { jobId: `${jobIdPrefix}-${row.id}`, attempts: 3 }
       );
       queued++;
+      enqueuedSeriesIds.push(row.id);
     }
 
     const result: RankedChapterScanResult = {
@@ -207,6 +235,8 @@ class MangaOrchestratorService {
       sourcesNotFound,
       sourcesLowScore,
       archived,
+      enqueuedSeriesIds,
+      archivedSeriesIds,
     };
     logger.info(
       `Queued ranked chapter scans ranks ${start}-${end}: ${queued} scrape-queued, ${archived} archive-routed, ${sourcesSelected} sources auto-selected, ${sourcesAlreadySet} already had source, ${sourcesNotFound} no match, ${sourcesLowScore} low score, ${skippedWithChapters} skipped (has chapters), ${skippedIgnored} ignored titles`,

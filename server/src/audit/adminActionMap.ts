@@ -21,6 +21,7 @@ export function resolveAdminAuditAction(method: string, path: string, params: Re
       normalized.match(/^\/admin\/users\/[^/]+$/) ||
       normalized === '/admin/manga' ||
       normalized === '/admin/manga/scraper-filters' ||
+      normalized === '/admin/manga/catalog-scan' ||
       normalized.match(/^\/admin\/manga\/[^/]+\/scraper-search$/) ||
       normalized.match(/^\/admin\/manga\/[^/]+\/source$/) ||
       normalized === '/admin/import-requests' ||
@@ -106,6 +107,18 @@ export function resolveAdminAuditAction(method: string, path: string, params: Re
   }
   if (normalized === '/admin/manga/scan-ranked') {
     return { action: 'admin.manga.scan_ranked', category: 'admin', resourceType: 'system' };
+  }
+  if (normalized === '/admin/manga/catalog-scan/start') {
+    return { action: 'admin.manga.catalog_scan.start', category: 'admin', resourceType: 'system' };
+  }
+  if (normalized === '/admin/manga/catalog-scan/stop') {
+    return { action: 'admin.manga.catalog_scan.stop', category: 'admin', resourceType: 'system' };
+  }
+  if (normalized === '/admin/manga/catalog-scan/force-stop') {
+    return { action: 'admin.manga.catalog_scan.force_stop', category: 'admin', resourceType: 'system' };
+  }
+  if (normalized === '/admin/manga/catalog-scan/reset') {
+    return { action: 'admin.manga.catalog_scan.reset', category: 'admin', resourceType: 'system' };
   }
   if (normalized.match(/^\/admin\/manga\/[^/]+\/source$/) && method === 'DELETE') {
     return {

@@ -13,6 +13,7 @@ import { ArchiveAcquireJobHandler } from './ArchiveAcquireJobHandler';
 import { ArchiveIngestJobHandler } from './ArchiveIngestJobHandler';
 import { ArchiveDownloadPollJobHandler } from './ArchiveDownloadPollJobHandler';
 import { ArchiveMaintenanceJobHandler } from './ArchiveMaintenanceJobHandler';
+import { CatalogScanCoordinatorJobHandler } from './CatalogScanCoordinatorJobHandler';
 import logger from '@/services/loggerService';
 
 export class JobHandlerRegistry {
@@ -30,6 +31,7 @@ export class JobHandlerRegistry {
     this.registerHandler(new ArchiveIngestJobHandler());
     this.registerHandler(new ArchiveDownloadPollJobHandler());
     this.registerHandler(new ArchiveMaintenanceJobHandler());
+    this.registerHandler(new CatalogScanCoordinatorJobHandler());
   }
 
   /**

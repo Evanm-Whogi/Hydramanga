@@ -224,6 +224,22 @@ export const discordService = {
         );
     },
 
+    async notifyCatalogScanCompleted(finalRank: number, stats: { queued: number; archived: number; batchesCompleted: number }, typeFilter: string | null) {
+        await sendEmbed('admin', buildEmbed({
+                title: 'Catalog Scan Completed',
+                description: `Full catalog scan finished at rank **${finalRank}**.`,
+                url: `${PUBLIC_APP_URL}/admin/manga`,
+                color: COLORS.success,
+                fields: [
+                    { name: 'Scrape Queued', value: String(stats.queued), inline: true },
+                    { name: 'Archive Routed', value: String(stats.archived), inline: true },
+                    { name: 'Batches', value: String(stats.batchesCompleted), inline: true },
+                    { name: 'Type Filter', value: typeFilter || 'all', inline: true },
+                ],
+            })
+        );
+    },
+
     async notifyScraperFailed(mangaTitle: string, seriesId: number, foundTitles: Array<{ text: string; url: string }>, coverUrl?: string) {
         const suggestions =
             foundTitles.length > 0

@@ -29,9 +29,14 @@ function normalizeLevel(raw: string): DockerLogLevel {
   return 'info';
 }
 
+// Clean completion events → green. Guarded so "completed with N failures" stays warn/error.
+const COMPLETION_MARKERS = /\b(completed|complete|finished)\b/i;
+const COMPLETION_NEGATIONS = /\b(fail|error|discrep|warn)/i;
+
 function detectMessageLevel(content: string): DockerLogLevel | null {
   const lower = content.toLowerCase();
   if (lower.includes('progress updated')) return 'progress';
+  if (COMPLETION_MARKERS.test(content) && !COMPLETION_NEGATIONS.test(content)) return 'success';
   return null;
 }
 
@@ -114,4 +119,24 @@ export function filterFormattedLogLines(lines: FormattedDockerLogLine[], query: 
   const trimmed = query.trim().toLowerCase();
   if (!trimmed) return lines;
   return lines.filter((line) => line.text.toLowerCase().includes(trimmed));
+}
+
+export type LogLevelFilter = 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'monitor';
+
+// Higher number = more severe. success/progress are info-tier positive/progress messages.
+const LEVEL_SEVERITY: Record<DockerLogLevel, number> = { trace: 0, debug: 1, info: 2, success: 2, progress: 2, warn: 3, error: 4 };
+const FILTER_MIN_SEVERITY: Record<Exclude<LogLevelFilter, 'monitor'>, number> = { trace: 0, debug: 1, info: 2, warn: 3, error: 4 };
+
+// Meaningful worker events: job starts, progress, completions, and failures. Extend as new signals appear.
+const MONITOR_MARKERS = /\[SCANNER\]|\[INGEST\]|\[ACQUIRE\]|\[POLL\]|progress updated|marked series .* as completed|as completed|finished scanning|processing (chapter|manga)|queued .*(scan|rescan|job)|storage cleanup completed|series migration .* completed|job handler failed|failed permanently|moved to failed/i;
+
+function isMonitorLine(line: FormattedDockerLogLine): boolean {
+  if (line.level === 'error' || line.level === 'warn' || line.level === 'progress') return true;
+  return MONITOR_MARKERS.test(line.text);
+}
+
+export function filterByLogLevel(lines: FormattedDockerLogLine[], filter: LogLevelFilter): FormattedDockerLogLine[] {
+  if (filter === 'monitor') return lines.filter(isMonitorLine);
+  const min = FILTER_MIN_SEVERITY[filter];
+  return lines.filter((line) => LEVEL_SEVERITY[line.level] >= min);
 }

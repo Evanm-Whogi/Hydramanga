@@ -1,16 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Loader2, RefreshCw, Search, Terminal } from "lucide-react";
+import { AlertTriangle, Loader2, Maximize2, Minimize2, RefreshCw, Search, Terminal } from "lucide-react";
 import { toast } from "react-toastify";
 import { getAdminContainerLogs, getAdminLogContainers, type AdminDockerContainerRow, type AdminDockerLogTail } from "@/services/adminDockerLogService";
-import { filterFormattedLogLines, formatDockerLogLines, getDockerLogLineClass } from "@/lib/dockerLogFormat";
+import { filterByLogLevel, filterFormattedLogLines, formatDockerLogLines, getDockerLogLineClass, type LogLevelFilter } from "@/lib/dockerLogFormat";
 
 const TAIL_OPTIONS: { value: AdminDockerLogTail; label: string }[] = [
   { value: 100, label: "100 lines" },
   { value: 500, label: "500 lines" },
   { value: 1000, label: "1000 lines" },
   { value: "all", label: "All" },
+];
+
+const LEVEL_OPTIONS: { value: LogLevelFilter; label: string }[] = [
+  { value: "error", label: "ERROR" },
+  { value: "warn", label: "WARN" },
+  { value: "info", label: "INFO" },
+  { value: "debug", label: "DEBUG" },
+  { value: "trace", label: "TRACE" },
+  { value: "monitor", label: "MONITOR" },
 ];
 
 function stateBadgeClass(state: string): string {
@@ -43,6 +52,8 @@ export default function LogsAdminClient() {
   const [logLines, setLogLines] = useState("");
   const [tail, setTail] = useState<AdminDockerLogTail>(500);
   const [searchQuery, setSearchQuery] = useState("");
+  const [levelFilter, setLevelFilter] = useState<LogLevelFilter>("info");
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [loadingContainers, setLoadingContainers] = useState(true);
   const [loadingLogs, setLoadingLogs] = useState(false);
@@ -116,10 +127,17 @@ export default function LogsAdminClient() {
     if (selectedId) await fetchLogs(selectedId, true);
   };
 
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") setIsFullscreen(false); };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [isFullscreen]);
+
   const formattedLogLines = useMemo(() => formatDockerLogLines(logLines), [logLines]);
   const displayedLogLines = useMemo(
-    () => filterFormattedLogLines(formattedLogLines, searchQuery),
-    [formattedLogLines, searchQuery],
+    () => filterFormattedLogLines(filterByLogLevel(formattedLogLines, levelFilter), searchQuery),
+    [formattedLogLines, levelFilter, searchQuery],
   );
 
   return (
@@ -190,7 +208,7 @@ export default function LogsAdminClient() {
           )}
         </div>
 
-        <div className="bg-foreground/50 rounded-lg p-4 border border-borders/30 flex flex-col min-h-[560px]">
+        <div className={isFullscreen ? "fixed inset-0 z-50 m-0 rounded-none p-4 bg-background border-0 flex flex-col" : "bg-foreground/50 rounded-lg p-4 border border-borders/30 flex flex-col min-h-[560px]"}>
           <div className="flex flex-wrap items-center gap-3 mb-4">
             <div className="min-w-0 flex-1">
               <h2 className="text-sm font-semibold text-primary">
@@ -220,6 +238,22 @@ export default function LogsAdminClient() {
               </select>
             </label>
 
+            <label className="flex items-center gap-2 text-sm text-muted">
+              <span>Level</span>
+              <select
+                value={levelFilter}
+                onChange={(e) => setLevelFilter(e.target.value as LogLevelFilter)}
+                disabled={!selectedId || !available}
+                className="rounded-lg border border-borders bg-background px-2 py-1.5 text-primary text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+              >
+                {LEVEL_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <label className="flex items-center gap-2 text-sm text-muted cursor-pointer">
               <input
                 type="checkbox"
@@ -239,6 +273,17 @@ export default function LogsAdminClient() {
             >
               <RefreshCw className={`size-4 ${loadingLogs ? "animate-spin" : ""}`} />
               Refresh
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsFullscreen((prev) => !prev)}
+              disabled={!selectedId || !available}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm bg-background border border-borders text-primary hover:bg-foreground/80 disabled:opacity-50"
+              title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            >
+              {isFullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+              {isFullscreen ? "Exit" : "Fullscreen"}
             </button>
           </div>
 

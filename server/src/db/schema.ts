@@ -669,6 +669,28 @@ export const mangaImportProgress = pgTable('manga_import_progress', {
   scraperIdIdx: index('idx_manga_import_progress_scraper_id').on(t.scraperId).where(sql`${t.scraperId} IS NOT NULL`),
 }));
 
+export const catalogScanStatusEnum = pgEnum('catalog_scan_status', ['idle', 'running', 'stopping', 'completed']);
+
+export const catalogScanState = pgTable('catalog_scan_state', {
+  id: integer('id').primaryKey(),
+  status: catalogScanStatusEnum('status').notNull().default('idle'),
+  nextRank: integer('next_rank').notNull().default(1),
+  batchSize: integer('batch_size').notNull().default(50),
+  type: text('type'),
+  skipWithChapters: boolean('skip_with_chapters').notNull().default(true),
+  autoSelectSource: boolean('auto_select_source').notNull().default(true),
+  useArchive: boolean('use_archive').notNull().default(true),
+  currentBatchStart: integer('current_batch_start'),
+  currentBatchEnd: integer('current_batch_end'),
+  currentBatchSeriesIds: jsonb('current_batch_series_ids').notNull().default(sql`'[]'::jsonb`),
+  currentBatchArchivedIds: jsonb('current_batch_archived_ids').notNull().default(sql`'[]'::jsonb`),
+  totalCatalogCount: integer('total_catalog_count').notNull().default(0),
+  stats: jsonb('stats').notNull().default(sql`'{}'::jsonb`),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  stoppedAt: timestamp('stopped_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const importRequestStatusEnum = pgEnum('import_request_status', ['pending', 'in_progress', 'completed', 'rejected']);
 
 export const importRequests = pgTable('import_requests', {

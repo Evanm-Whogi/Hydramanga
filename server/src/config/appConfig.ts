@@ -80,6 +80,11 @@ export interface QueueConfig {
         timeout: number;
         retries: number;
     };
+    catalogScanCoordinatorQueue: {
+        concurrency: number;
+        timeout: number;
+        retries: number;
+    };
 }
 
 /**
@@ -359,6 +364,11 @@ export interface ArchiveConfig {
     };
 }
 
+export interface CatalogScanConfig {
+    pollIntervalMs: number;
+    maxQueueDepth: number;
+}
+
 /**
  * Main Application Configuration
  */
@@ -367,6 +377,7 @@ export interface AppConfig {
     env: 'development' | 'production' | 'test';
     redis: RedisConfig;
     queues: QueueConfig;
+    catalogScan: CatalogScanConfig;
     cache: CacheConfig;
     scraper: ScraperConfig;
     storage: StorageConfig;
@@ -545,6 +556,16 @@ export class AppConfigService {
                     timeout: parseEnvNumber('ARCHIVE_POLL_TIMEOUT', 5 * 60 * 1000),
                     retries: parseEnvNumber('ARCHIVE_POLL_RETRIES', 0),
                 },
+                catalogScanCoordinatorQueue: {
+                    concurrency: parseEnvNumber('CATALOG_SCAN_COORDINATOR_CONCURRENCY', 1),
+                    timeout: parseEnvNumber('CATALOG_SCAN_COORDINATOR_TIMEOUT', 10 * 60 * 1000),
+                    retries: parseEnvNumber('CATALOG_SCAN_COORDINATOR_RETRIES', 1),
+                },
+            },
+
+            catalogScan: {
+                pollIntervalMs: parseEnvNumber('CATALOG_SCAN_POLL_MS', 30_000),
+                maxQueueDepth: parseEnvNumber('CATALOG_SCAN_MAX_QUEUE_DEPTH', 500),
             },
 
             // Cache Configuration

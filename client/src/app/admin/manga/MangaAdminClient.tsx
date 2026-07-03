@@ -9,6 +9,7 @@ import { adminGetSource } from "@/services/adminMangaService";
 import { getCoverUrl } from "@/lib/historyUtils";
 import AdminMangaEditModal from "@/app/manga/[id]/components/AdminMangaEditModal";
 import IncrementalScanPanel from "./IncrementalScanPanel";
+import CatalogScanPanel from "./CatalogScanPanel";
 
 const STATUS_FILTERS: { value: ListAdminMangaParams["status"]; label: string }[] = [
   { value: "all", label: "All" },
@@ -158,7 +159,14 @@ export default function MangaAdminClient() {
 
   return (
     <div className="space-y-4">
-      <IncrementalScanPanel />
+      <div className="flex flex-col lg:flex-row gap-4 items-stretch">
+        <div className="lg:w-1/2 flex">
+          <CatalogScanPanel />
+        </div>
+        <div className="lg:w-1/2 flex">
+          <IncrementalScanPanel />
+        </div>
+      </div>
       <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
         <div className="relative flex-1 max-w-md w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted" />

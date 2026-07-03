@@ -5,7 +5,7 @@ import { resolveCoverUrl } from '@/lib/coverUtils';
 import { seriesCardColumns, enrichSeriesListExtras } from '@/lib/seriesQueries';
 import { getCatalogFilterConditions, getExcludeNovelConditions, getNsfwFilterConditions, getBlockedGenres } from '@/config/contentFilter';
 
-const AGGREGATE_TTL = 3600; // 1h — full author aggregate is expensive to compute
+const AGGREGATE_TTL = 14 * 24 * 3600; // 2 weeks — full author aggregate is very expensive (4s+); refresh rarely
 
 export type AuthorSort = 'works' | 'name' | 'newest';
 
@@ -85,43 +85,51 @@ class AuthorService {
     const sort = params.sort ?? 'works';
     const search = params.search?.trim().toLowerCase();
     const letter = params.letter?.trim().toUpperCase();
+    const hideNsfw = params.hideNsfw ?? false;
 
-    let rows = await this.getAggregate();
+    const compute = async (): Promise<AuthorListResult> => {
+      let rows = await this.getAggregate();
 
-    if (search) rows = rows.filter((r) => r.name.toLowerCase().includes(search));
-    if (letter) rows = rows.filter((r) => letterBucket(r.name) === letter);
+      if (search) rows = rows.filter((r) => r.name.toLowerCase().includes(search));
+      if (letter) rows = rows.filter((r) => letterBucket(r.name) === letter);
 
-    rows = [...rows].sort((a, b) => {
-      if (sort === 'name') return a.name.localeCompare(b.name);
-      if (sort === 'newest') return (b.recent ?? '').localeCompare(a.recent ?? '');
-      // works (default) — tie-break by name
-      return b.works - a.works || a.name.localeCompare(b.name);
-    });
+      rows = [...rows].sort((a, b) => {
+        if (sort === 'name') return a.name.localeCompare(b.name);
+        if (sort === 'newest') return (b.recent ?? '').localeCompare(a.recent ?? '');
+        // works (default) — tie-break by name
+        return b.works - a.works || a.name.localeCompare(b.name);
+      });
 
-    const total = rows.length;
-    const pageRows = rows.slice((page - 1) * limit, (page - 1) * limit + limit);
-    const coverMap = await this.fetchPreviewCovers(pageRows.map((r) => r.name), params.hideNsfw ?? false);
+      const total = rows.length;
+      const pageRows = rows.slice((page - 1) * limit, (page - 1) * limit + limit);
+      const coverMap = await this.fetchPreviewCovers(pageRows.map((r) => r.name), hideNsfw);
 
-    return {
-      authors: pageRows.map((r) => ({
-        name: r.name,
-        works: r.works,
-        type: r.type,
-        previewCovers: coverMap.get(r.name) ?? [],
-      })),
-      total,
-      page,
-      limit,
+      return {
+        authors: pageRows.map((r) => ({ name: r.name, works: r.works, type: r.type, previewCovers: coverMap.get(r.name) ?? [] })),
+        total,
+        page,
+        limit,
+      };
     };
+
+    // Free-text search is unbounded, so leave it uncached (it's a cheap JS filter over the
+    // cached aggregate); cache the bounded browse combos — the /authors?sort=works&page=1 hot path.
+    if (search) return compute();
+    const key = `authors:list:v1:${hideNsfw ? 1 : 0}:${sort}:${letter ?? ''}:${page}:${limit}`;
+    return cacheService.getOrSet({ key, ttl: AGGREGATE_TTL }, compute);
   }
 
   async getTopAuthors(limit = 10, hideNsfw = false): Promise<AuthorSummary[]> {
-    const rows = await this.getAggregate();
-    const top = [...rows]
-      .sort((a, b) => b.works - a.works || a.name.localeCompare(b.name))
-      .slice(0, Math.min(Math.max(limit, 1), 30));
-    const coverMap = await this.fetchPreviewCovers(top.map((r) => r.name), hideNsfw);
-    return top.map((r) => ({ name: r.name, works: r.works, type: r.type, previewCovers: coverMap.get(r.name) ?? [] }));
+    const cappedLimit = Math.min(Math.max(limit, 1), 30);
+    const key = `authors:top:v1:${hideNsfw ? 1 : 0}:${cappedLimit}`;
+    return cacheService.getOrSet({ key, ttl: AGGREGATE_TTL }, async () => {
+      const rows = await this.getAggregate();
+      const top = [...rows]
+        .sort((a, b) => b.works - a.works || a.name.localeCompare(b.name))
+        .slice(0, cappedLimit);
+      const coverMap = await this.fetchPreviewCovers(top.map((r) => r.name), hideNsfw);
+      return top.map((r) => ({ name: r.name, works: r.works, type: r.type, previewCovers: coverMap.get(r.name) ?? [] }));
+    });
   }
 
   /** Top `perAuthor` covers (by weighted score) for each requested author name. */

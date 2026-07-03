@@ -111,10 +111,10 @@ export class MangaFireScraper implements IChapterScraper {
     // junk filters are the byte gate (empty/error responses) and a successful
     // sharp decode, both of which run before this check.
     private static readonly MIN_CHAPTER_LONG_EDGE = 128;
-    private static readonly MIN_CHAPTER_SHORT_EDGE = 32;
+    private static readonly MIN_CHAPTER_SHORT_EDGE = 8;
     // Only meant to short-circuit truly empty/error responses; real strips can be
     // very small once compressed, so dimension validation is the real gate.
-    private static readonly MIN_IMAGE_DOWNLOAD_BYTES = 256;
+    private static readonly MIN_IMAGE_DOWNLOAD_BYTES = 64;
     private static readonly SCREENSHOT_TIMEOUT_MS = 15_000;
 
     private readonly metadata: ScraperMetadata = {

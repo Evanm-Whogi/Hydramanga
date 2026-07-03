@@ -11,12 +11,8 @@ import { initializeScrapers } from '@/scrapers';
 import { mangaRecoveryService } from '@/services/mangaRecoveryService';
 import { initCronJobs, stopCronJobs } from '@/jobs/cron';
 import { appConfig } from '@/config/appConfig';
-import {
-    ARCHIVE_ACQUIRE_QUEUE,
-    ARCHIVE_INGEST_QUEUE,
-    ARCHIVE_POLL_QUEUE,
-    ARCHIVE_MAINTENANCE_QUEUE,
-} from '@/jobs/handlers/archiveQueueNames';
+import { ARCHIVE_ACQUIRE_QUEUE, ARCHIVE_INGEST_QUEUE, ARCHIVE_POLL_QUEUE, ARCHIVE_MAINTENANCE_QUEUE } from '@/jobs/handlers/archiveQueueNames';
+import { CATALOG_SCAN_COORDINATOR_QUEUE, catalogScanService } from '@/services/catalogScanService';
 
 if (process.env.ENABLE_SENTRY === 'true') {
     initSentry();
@@ -43,6 +39,7 @@ async function main() {
     queueService.getQueue('storageCleanupQueue');
     queueService.getQueue('seriesMigrationQueue');
     queueService.getQueue('emailQueue');
+    queueService.getQueue(CATALOG_SCAN_COORDINATOR_QUEUE);
     queueService.getQueue(ARCHIVE_MAINTENANCE_QUEUE);
 
     // Archive ingestion (torrent) pipeline — only when enabled. The download poller
@@ -69,6 +66,11 @@ async function main() {
     }
 
     initCronJobs();
+    try {
+        await catalogScanService.recoverOnStartup();
+    } catch (error) {
+        logger.error(`Failed to recover catalog scan coordinator: ${error}`, { service: 'worker' });
+    }
     logger.info('Worker started: queues, scrapers, cron, and recovery initialized', { service: 'worker' });
 }
 

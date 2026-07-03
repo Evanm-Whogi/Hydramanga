@@ -6,6 +6,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { getHeartbeat } from "@/services/healthservice";
 import { getAdminOverviewStats, getAdminTimeseries, type AdminOverviewStats, type AdminTimeseries } from "@/services/adminStatsService";
 import AdminStatCard from "../components/AdminStatCard";
+import ScraperEgressCard from "../components/ScraperEgressCard";
 import { formatCompactNumber as formatNumber } from "@/lib/utils";
 
 function formatChartDate(date: string): string {
@@ -158,6 +159,8 @@ export default function OverviewClient() {
 
   return (
     <div className="space-y-4">
+      <ScraperEgressCard />
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-foreground/50 rounded-lg p-6 border border-borders/30">
           <div className="flex items-center justify-between mb-3">
