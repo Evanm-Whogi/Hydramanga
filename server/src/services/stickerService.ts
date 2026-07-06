@@ -29,7 +29,7 @@ export const stickerService = {
   async create(data: { label?: string | null; imageUrl: string; sortOrder?: number; isActive?: boolean }) {
     const imageUrl = data.imageUrl.trim();
     if (!isAllowedStickerImageUrl(imageUrl)) {
-      throw new Error('Image URL must be a sticker URL (e.g. https://stickers.garage.chit.sh/name.webp)');
+      throw new Error('Image URL must be a sticker URL (e.g. /api/media/sticker/name.webp)');
     }
     const [row] = await db
       .insert(schema.contentStickers)
@@ -51,7 +51,7 @@ export const stickerService = {
     if (data.imageUrl !== undefined) {
       const imageUrl = data.imageUrl.trim();
       if (!isAllowedStickerImageUrl(imageUrl)) {
-        throw new Error('Image URL must be a sticker URL (e.g. https://stickers.garage.chit.sh/name.webp)');
+        throw new Error('Image URL must be a sticker URL (e.g. /api/media/sticker/name.webp)');
       }
       patch.imageUrl = imageUrl;
     }

@@ -75,3 +75,4 @@ export const dataImportRateLimit = createUserActionLimiter(rateLimitPresets.data
 export const importRequestRateLimit = createUserActionLimiter(rateLimitPresets.importRequest);
 export const progressDestructiveRateLimit = createUserActionLimiter(rateLimitPresets.progressDestructive);
 export const bookmarkRateLimit = createUserActionLimiter(rateLimitPresets.bookmark);
+export const mediaRedirectRateLimit = createUserActionLimiter(rateLimitPresets.mediaRedirect);

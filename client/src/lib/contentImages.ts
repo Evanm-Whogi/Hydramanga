@@ -1,5 +1,10 @@
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i;
+// Canonical same-origin sticker path (buckets are private; this 302s to a presigned URL).
+const STICKER_API_PREFIX = "/api/media/sticker/";
+// Legacy site path prefix, kept so historical stored content still validates/renders.
 const STICKER_MEDIA_PREFIX = "/media/stickers/";
+// Legacy public sticker-bucket hosts embedded in historical content (pre-private-bucket).
+const LEGACY_STICKER_HOSTS = new Set(["stickers.garage.chit.sh"]);
 const CODE_RE = /(```[\s\S]*?```|`[^`\n]+`)/g;
 const BARE_IMAGE_REF_RE = /(?:https?:\/\/[^\s<>"'()]+|\/[^\s<>"'()]+)/gi;
 const MARKDOWN_IMAGE_REF_RE = /!\[[^\]]*]\(([^)]+)\)/gi;
@@ -31,10 +36,37 @@ function isSafeStickerFilename(filename: string): boolean {
 function isAllowedStickerImageUrl(url: string): boolean {
   const trimmed = url.trim();
   if (!trimmed || trimmed.length > CONTENT_IMAGE_LIMITS.urlMaxLength) return false;
-  if (!trimmed.startsWith(STICKER_MEDIA_PREFIX)) return false;
   const pathOnly = trimmed.split("?")[0].split("#")[0];
-  const filename = pathOnly.slice(STICKER_MEDIA_PREFIX.length);
-  return isSafeStickerFilename(filename);
+  for (const prefix of [STICKER_API_PREFIX, STICKER_MEDIA_PREFIX]) {
+    if (pathOnly.startsWith(prefix)) return isSafeStickerFilename(pathOnly.slice(prefix.length));
+  }
+  return false;
+}
+
+/**
+ * Extract the sticker filename from a historical embed — a legacy `/media/stickers/<file>`
+ * site path or an old public sticker-bucket URL — so it can be rewritten to the canonical
+ * same-origin path. Returns null for anything that isn't a recognised sticker reference.
+ */
+function stickerFilenameFromHistorical(url: string): string | null {
+  const trimmed = url.trim();
+  const pathOnly = trimmed.split("?")[0].split("#")[0];
+  if (pathOnly.startsWith(STICKER_MEDIA_PREFIX)) {
+    const filename = pathOnly.slice(STICKER_MEDIA_PREFIX.length);
+    return isSafeStickerFilename(filename) ? filename : null;
+  }
+  if (isExternalImageUrl(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      if (LEGACY_STICKER_HOSTS.has(parsed.hostname)) {
+        const filename = parsed.pathname.split("/").filter(Boolean).pop() ?? "";
+        return isSafeStickerFilename(filename) ? filename : null;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 function looksLikeImageReference(url: string): boolean {
@@ -77,6 +109,13 @@ export function isAllowedImageUrl(url: string): boolean {
 }
 
 export function toContentImageDisplayUrl(url: string): string {
+  const trimmed = url.trim();
+  // Already-canonical sticker path → serve as-is (same-origin redirect to a presigned URL).
+  if (trimmed.startsWith(STICKER_API_PREFIX)) return trimmed;
+  // Historical sticker embed (legacy site path or old public bucket URL) → canonical path.
+  // Without this, old content 403s the instant the sticker bucket goes private.
+  const stickerFile = stickerFilenameFromHistorical(trimmed);
+  if (stickerFile) return `${STICKER_API_PREFIX}${stickerFile}`;
   if (!isAllowedImageUrl(url)) return url;
   if (isExternalImageUrl(url)) {
     return `/api/content-images/proxy?url=${encodeURIComponent(url)}`;

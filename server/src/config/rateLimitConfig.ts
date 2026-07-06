@@ -64,4 +64,6 @@ export const rateLimitPresets = {
   bookmark: preset(5 * 60 * 1000, 60, 'RATE_LIMIT_BOOKMARK_MAX', 'RATE_LIMIT_BOOKMARK_WINDOW_MS', 'You are updating bookmarks too quickly. Please wait.'),
   // window: 1 hour | max: 10 (contact, DMCA, manga-report)
   publicForm: preset(60 * 60 * 1000, 10, 'RATE_LIMIT_PUBLIC_FORM_MAX', 'RATE_LIMIT_PUBLIC_FORM_WINDOW_MS', 'Too many submissions. Please try again later.'),
+  // window: 1 min | max: 600 (avatar/sticker presign redirects; one hit per uncached asset per page load — the 302 max-age caching absorbs most repeats)
+  mediaRedirect: preset(60 * 1000, 600, 'RATE_LIMIT_MEDIA_REDIRECT_MAX', 'RATE_LIMIT_MEDIA_REDIRECT_WINDOW_MS', 'Too many media requests. Please wait.'),
 } as const;

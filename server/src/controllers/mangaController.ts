@@ -681,8 +681,9 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
                 END ASC`
             );
 
-        // 3. Construct image URLs from storagePrefix
-        // Images are served from the public object-storage (Garage) endpoint.
+        // 3. Construct image URLs from storagePrefix.
+        // Images are served as stable public URLs on the custom image domain
+        // (Cloudflare-fronted); the raw storage host is never exposed.
         const pageCount = chapter.pageCount || 0;
         const images: string[] = [];
 
@@ -695,13 +696,11 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
             && allChapters.every((ch) => ((ch.pageCount ?? 0) <= 1));
 
         const mergedPages = isSinglePageSeries
-            ? allChapters.map((ch) => {
-                return {
-                    chapterId: ch.id,
-                    chapterNumber: ch.chapterNumber,
-                    src: objectStorageService.publicUrl(ch.storagePrefix, 1),
-                };
-            })
+            ? allChapters.map((ch) => ({
+                chapterId: ch.id,
+                chapterNumber: ch.chapterNumber,
+                src: objectStorageService.publicUrl(ch.storagePrefix, 1),
+            }))
             : null;
 
         // 4. Return complete payload

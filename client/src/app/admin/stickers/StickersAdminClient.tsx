@@ -37,7 +37,7 @@ export default function StickersAdminClient() {
       return;
     }
     if (!isAllowedImageUrl(url)) {
-      toast.warning("URL must be a sticker URL like https://stickers.garage.chit.sh/name.webp");
+      toast.warning("URL must be a sticker URL like /api/media/sticker/name.webp");
       return;
     }
     setSaving(true);
@@ -111,8 +111,8 @@ export default function StickersAdminClient() {
           <div>
             <h2 className="text-lg font-semibold text-primary">Add sticker</h2>
             <p className="text-sm text-muted mt-1">
-              Stickers insert an image URL into user messages. Use the bucket URL, e.g.{" "}
-              <code className="text-primary">https://stickers.garage.chit.sh/name.webp</code>, or upload files
+              Stickers insert an image URL into user messages. Use a sticker path, e.g.{" "}
+              <code className="text-primary">/api/media/sticker/name.webp</code>, or upload files
               to the stickers bucket and click Scan to import them.
             </p>
           </div>
@@ -136,7 +136,7 @@ export default function StickersAdminClient() {
         <input
           value={imageUrl}
           onChange={(e) => setImageUrl(e.target.value)}
-          placeholder="https://stickers.garage.chit.sh/name.webp"
+          placeholder="/api/media/sticker/name.webp"
           className="w-full rounded-lg border border-borders bg-background px-3 py-2 text-primary"
         />
         <input

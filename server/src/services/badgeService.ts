@@ -532,7 +532,8 @@ class BadgeService {
       .limit(1);
     if (!userRow?.bio?.trim()) return;
     const image = userRow.image?.trim() || DEFAULT_AVATAR;
-    if (image === DEFAULT_AVATAR || image === LEGACY_DEFAULT_AVATAR) return;
+    // Any recognised default (new local, legacy pfp path, or legacy bucket default) = not a custom avatar.
+    if (image === LEGACY_DEFAULT_AVATAR || profilePictureStorageService.isDefaultUrl(image)) return;
 
     const [favRow] = await db
       .select({ total: count() })

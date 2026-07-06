@@ -25,6 +25,7 @@ import notificationRoutes from '@/routes/notificationRoutes';
 import { getPublicSiteSettings } from '@/controllers/siteSettingsController';
 import contentImageRoutes from '@/routes/contentImageRoutes';
 import stickerRoutes from '@/routes/stickerRoutes';
+import mediaRoutes from '@/routes/mediaRoutes';
 
 
 module.exports = (app: Express) => {
@@ -71,4 +72,5 @@ module.exports = (app: Express) => {
     app.get('/site-settings', getPublicSiteSettings as RequestHandler);
     app.use('/content-images', contentImageRoutes);
     app.use('/stickers', stickerRoutes);
+    app.use('/media', mediaRoutes);
 };

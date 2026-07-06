@@ -27,7 +27,7 @@ const MAX_IMG_RETRIES = 3;
 /**
  * Auto-recover from a truncated image load (e.g. ERR_CONTENT_LENGTH_MISMATCH).
  *
- * Pages are served straight from Garage via Cloudflare; when a response is
+ * Pages are served as stable public URLs via Cloudflare; when a response is
  * delivered short the browser caches the partial body, so every reload replays
  * the broken entry and the only "fix" is a manual cache clear. On `error` we
  * re-request with a cache-busting query param — a fresh cache key that bypasses
