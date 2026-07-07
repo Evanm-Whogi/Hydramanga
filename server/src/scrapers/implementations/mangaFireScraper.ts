@@ -4,18 +4,14 @@
  * Scraper for mangafire.to manga source.
  * Implements the IChapterScraper interface for integration with ScraperManager.
  *
- * Site characteristics (verified from live behaviour + public extractor logs):
- * - Manga pages:   https://mangafire.to/manga/<slug>.<shortId>
- * - Reader pages:  https://mangafire.to/read/<slug>.<shortId>/<lang>/chapter-<n>
- * - Search:        GET /filter?keyword=<q>&vrf=<token>   (HTML; results are `.unit`
- *                  cards linking to /manga/<slug>.<shortId>; VRF from scrapers/lib/mangaFireVrf.ts)
- * - Chapter list:  GET /ajax/read/<shortId>/chapter/<lang>?vrf=<token>
- *                  -> { status, result: { html: "<a data-number=… href=…>…</a>" } }
- *                  VRF input: `<shortId>@chapter@<lang>`.
- * - Chapter images: GET /ajax/read/chapter/<chapterId>?vrf=<token>
- *                  -> { status, result: { images: [[url, type, scrambleOffset], …] } }
- *                  VRF input: `chapter@<chapterId>`. Primary download path uses this
- *                  API; Playwright reader capture is kept as fallback for scrambled pages.
+ * Site characteristics (2026 SPA + JSON API):
+ * - Title pages:   https://mangafire.to/title/<hid>-<slug>
+ * - Reader pages:  https://mangafire.to/title/<hid>-<slug>/<chapterId>-chapter-<n>-<lang>
+ * - Search:        GET /api/titles?keyword=<q>&limit=<n>  -> { items: [{ title, url, hid, … }] }
+ * - Chapter list:  GET /api/titles/<hid>/chapters?language=<lang>&limit=<n>&page=<p>
+ * - Chapter pages: GET /api/chapters/<chapterId>  -> { data: { pages: [{ url, width, height }] } }
+ * Legacy /manga/, /read/, and VRF-gated /ajax/ endpoints are no longer used; Playwright
+ * reader capture is kept as fallback when the chapter API fails.
  *
  * Image fetching strategy mirrors the WeebCentral/Comix scrapers: plain <img>
  * pages are downloaded directly with a Referer header; scrambled/canvas pages are
@@ -38,7 +34,6 @@ import {
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
-import { generateMangaFireVrf } from '@/scrapers/lib/mangaFireVrf';
 import { ScraperStageError, describeError } from '@/scrapers/lib/scraperError';
 
 const SITE_BASE = appConfig.scraper.mangaFire.baseUrl;
@@ -72,26 +67,17 @@ function normalizeForSearch(value?: string): string {
         .trim();
 }
 
-/** Decode a handful of common HTML entities found in MangaFire markup. */
-function decodeHtmlEntities(input: string): string {
-    return input
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#0?39;/g, "'")
-        .replace(/&#x27;/gi, "'")
-        .replace(/&apos;/g, "'")
-        .replace(/&nbsp;/g, ' ');
+interface MangaFireTitleSearchItem {
+    title?: string;
+    url?: string;
+    hid?: string;
 }
 
-function stripTags(html: string): string {
-    return decodeHtmlEntities(html.replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim();
-}
-
-function attr(tag: string, name: string): string | undefined {
-    const m = tag.match(new RegExp(`${name}\\s*=\\s*"([^"]*)"`, 'i'));
-    return m ? m[1] : undefined;
+interface MangaFireChapterListItem {
+    id: number;
+    number: number | string;
+    name?: string;
+    language?: string;
 }
 
 interface MangaFirePageAsset {
@@ -166,7 +152,7 @@ export class MangaFireScraper implements IChapterScraper {
         }
     }
 
-    /** Extract the short id from a /manga/<slug>.<id> or /read/<slug>.<id>/… URL. */
+    /** Extract the hid (short id) from /title/, /manga/, or /read/ URLs. */
     private static extractShortId(mangaUrlOrPath: string): string | undefined {
         let segments: string[];
         try {
@@ -177,15 +163,59 @@ export class MangaFireScraper implements IChapterScraper {
         } catch {
             segments = mangaUrlOrPath.split(/[?#]/)[0].split('/').filter(Boolean);
         }
-        // The slug segment is the one shaped "<slug>.<id>" (after a /manga/ or
-        // /read/ prefix). Prefer the first such segment so /read/<slug>.<id>/<lang>/…
-        // resolves to the id, not the trailing chapter segment.
+        const titleIdx = segments.indexOf('title');
+        if (titleIdx >= 0 && segments[titleIdx + 1]) {
+            const slug = segments[titleIdx + 1];
+            const dash = slug.indexOf('-');
+            return dash > 0 ? slug.slice(0, dash) : slug;
+        }
         const idx = segments.findIndex(s => s === 'manga' || s === 'read');
         const slugSeg = idx >= 0 && segments[idx + 1] ? segments[idx + 1] : undefined;
         const candidate = slugSeg || segments.find(s => s.includes('.')) || segments[segments.length - 1] || '';
         const dot = candidate.lastIndexOf('.');
         const id = dot >= 0 ? candidate.slice(dot + 1) : candidate;
         return id || undefined;
+    }
+
+    /** Canonical title page path, e.g. `/title/rj9xp-antique-bakeryy`. */
+    private static extractTitlePath(mangaUrlOrPath: string): string | undefined {
+        try {
+            const u = mangaUrlOrPath.startsWith('http') ? new URL(mangaUrlOrPath) : new URL(mangaUrlOrPath, SITE_BASE);
+            const parts = u.pathname.split('/').filter(Boolean);
+            const titleIdx = parts.indexOf('title');
+            if (titleIdx >= 0 && parts[titleIdx + 1]) return `/title/${parts[titleIdx + 1]}`;
+            const mangaIdx = parts.indexOf('manga');
+            if (mangaIdx >= 0 && parts[mangaIdx + 1]) return `/manga/${parts[mangaIdx + 1]}`;
+        } catch {
+            /* ignore */
+        }
+        return undefined;
+    }
+
+    private static buildReaderUrl(titlePath: string, chapter: MangaFireChapterListItem): string {
+        const suffixParts = [`chapter-${chapter.number}`];
+        if (chapter.language) suffixParts.push(chapter.language);
+        const chapterSeg = `${chapter.id}-${suffixParts.join('-')}`;
+        return new URL(`${titlePath.replace(/\/$/, '')}/${chapterSeg}`, SITE_BASE).href;
+    }
+
+    private static extractChapterIdFromReaderUrl(readerUrl: string): string | undefined {
+        try {
+            const parts = new URL(readerUrl, SITE_BASE).pathname.split('/').filter(Boolean);
+            const chapterSeg = parts[parts.length - 1] || '';
+            const m = chapterSeg.match(/^(\d+)-chapter-/);
+            return m?.[1];
+        } catch {
+            return undefined;
+        }
+    }
+
+    private static apiHeaders(referer = `${SITE_BASE}/`): Record<string, string> {
+        return {
+            Referer: referer,
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        };
     }
 
     private static async getBrowser() {
@@ -208,68 +238,43 @@ export class MangaFireScraper implements IChapterScraper {
     }
 
     // ---------------------------------------------------------------------
-    // Search  (GET /filter?keyword=…  -> .unit cards)
+    // Search  (GET /api/titles?keyword=…)
     // ---------------------------------------------------------------------
-
-    private parseSearchHtml(html: string): Array<{ href: string; title: string }> {
-        const results: Array<{ href: string; title: string }> = [];
-        const seen = new Set<string>();
-
-        // Each result card links to /manga/<slug>.<id>; the poster anchor carries a
-        // title attribute, and a sibling info anchor repeats the title text.
-        const anchorRe = /<a\b[^>]*href="([^"]*\/manga\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
-        let m: RegExpExecArray | null;
-        while ((m = anchorRe.exec(html)) !== null) {
-            const rawHref = m[1];
-            const tag = m[0].slice(0, m[0].indexOf('>') + 1);
-            const inner = m[2];
-
-            let href: string;
-            try {
-                href = rawHref.startsWith('http') ? rawHref : new URL(rawHref, SITE_BASE).href;
-            } catch {
-                continue;
-            }
-            // Keep canonical /manga/<slug>.<id> only (skip /read/… deep links).
-            if (!/\/manga\/[^/]+/.test(href)) continue;
-            href = href.split('#')[0];
-            if (seen.has(href)) continue;
-
-            const title =
-                decodeHtmlEntities(attr(tag, 'title') || '') ||
-                stripTags(inner) ||
-                '';
-            if (!title) continue;
-
-            seen.add(href);
-            results.push({ href, title });
-        }
-        return results;
-    }
 
     private async searchMangaFire(query: string, limit: number): Promise<MangaSearchResponse> {
         const q = (query || '').trim();
         if (!q) return { results: [], summary: `Search "${q}" -> 0 results` };
         try {
-            const response = await MangaFireScraper.axiosInstance.get(`${SITE_BASE}/filter`, {
-                params: { keyword: q, vrf: generateMangaFireVrf(q) },
-                headers: { Referer: `${SITE_BASE}/` },
-                responseType: 'text',
+            const response = await MangaFireScraper.axiosInstance.get(`${SITE_BASE}/api/titles`, {
+                params: { keyword: q, limit: Math.min(Math.max(limit, 1), 20) },
+                headers: MangaFireScraper.apiHeaders(),
+                responseType: 'json',
                 timeout: appConfig.scraper.mangaFire.timeout,
             });
 
-            const rows = this.parseSearchHtml(String(response.data || ''));
-            logger.info(`[MangaFire] Search "${q}" -> ${rows.length} row(s)`, { service: 'mangaFireScraper' });
+            const items: MangaFireTitleSearchItem[] = Array.isArray(response.data?.items) ? response.data.items : [];
+            logger.info(`[MangaFire] Search "${q}" -> ${items.length} row(s)`, { service: 'mangaFireScraper' });
 
-            const results = rows
-                .map(r => ({ href: r.href, title: r.title, score: calculateTitleSimilarity(r.title, q) }))
+            const results = items
+                .map(item => {
+                    const title = (item.title || '').trim();
+                    let href = '';
+                    if (item.url) {
+                        try {
+                            href = item.url.startsWith('http') ? item.url : new URL(item.url, SITE_BASE).href;
+                        } catch {
+                            href = '';
+                        }
+                    }
+                    return { href, title, score: calculateTitleSimilarity(title, q) };
+                })
                 .filter(r => r.href && r.title && r.score >= 50)
                 .sort((a, b) => b.score - a.score)
                 .slice(0, limit);
             const top = results[0];
             const summary = top
-                ? `Search "${q}" -> ${rows.length} row(s); top: "${top.title}" (score: ${top.score})`
-                : `Search "${q}" -> ${rows.length} row(s)`;
+                ? `Search "${q}" -> ${items.length} row(s); top: "${top.title}" (score: ${top.score})`
+                : `Search "${q}" -> ${items.length} row(s)`;
             return { results, summary };
         } catch (error: any) {
             logger.error(`[MangaFire] searchMangaFire() failed for "${q}": ${error?.message || error}`, {
@@ -323,90 +328,53 @@ export class MangaFireScraper implements IChapterScraper {
     }
 
     // ---------------------------------------------------------------------
-    // Chapter discovery  (GET /ajax/read/<shortId>/chapter/<lang>)
+    // Chapter discovery  (GET /api/titles/<hid>/chapters)
     // ---------------------------------------------------------------------
 
-    private parseChapterListHtml(
-        html: string,
-    ): Array<{ url: string; title: string; number: string; chapterId?: string; isSpecial: boolean; specialType?: string }> {
-        const out: Array<{ url: string; title: string; number: string; chapterId?: string; isSpecial: boolean; specialType?: string }> =
-            [];
-
-        const anchorRe = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
-        let m: RegExpExecArray | null;
-        while ((m = anchorRe.exec(html)) !== null) {
-            const tag = `<a ${m[1]}>`;
-            const inner = m[2];
-            const rawHref = attr(tag, 'href');
-            if (!rawHref) continue;
-
-            let href: string;
-            try {
-                href = rawHref.startsWith('http') ? rawHref : new URL(rawHref, SITE_BASE).href;
-            } catch {
-                continue;
-            }
-            // Reader chapter links look like /read/<slug>.<id>/<lang>/chapter-<n>.
-            if (!/\/read\//.test(href)) continue;
-
-            const dataNumber = attr(tag, 'data-number');
-            const chapterId = attr(tag, 'data-id');
-            const text = stripTags(inner);
-            // The anchor text already reads like "Chapter 8: The End"; feed that
-            // straight to the parser. data-number is only an authoritative override
-            // for the numeric value when present.
-            const label = text || (dataNumber ? `Chapter ${dataNumber}` : href);
-            const parsed = ChapterNumberParser.parse(label);
-
-            out.push({
-                url: href,
-                title: parsed.title,
-                number: dataNumber || parsed.number,
-                chapterId: chapterId || undefined,
-                isSpecial: parsed.isSpecial,
-                specialType: parsed.specialType,
-            });
-        }
-        return out;
-    }
-
     private async fetchChapterList(
+        titlePath: string,
         shortId: string,
         lang: string,
     ): Promise<Array<{ url: string; title: string; number: string; chapterId?: string; isSpecial: boolean; specialType?: string }>> {
-        const vrfInput = `${shortId}@chapter@${lang}`;
-        const response = await MangaFireScraper.axiosInstance.get(`${SITE_BASE}/ajax/read/${shortId}/chapter/${lang}`, {
-            params: { vrf: generateMangaFireVrf(vrfInput) },
-            headers: {
-                Referer: `${SITE_BASE}/`,
-                'X-Requested-With': 'XMLHttpRequest',
-                Accept: 'application/json, text/javascript, */*; q=0.01',
-            },
-            responseType: 'json',
-            timeout: appConfig.scraper.mangaFire.timeout,
-        });
+        const out: Array<{ url: string; title: string; number: string; chapterId?: string; isSpecial: boolean; specialType?: string }> = [];
+        let page = 1;
+        let lastPage = 1;
 
-        const data = response.data;
-        const html: string | undefined = data?.result?.html ?? (typeof data?.result === 'string' ? data.result : undefined);
-        if (!html) {
-            logger.warn(
-                `[MangaFire] Chapter-list ajax returned no html for shortId=${shortId} lang=${lang} ` +
-                    `(status field=${data?.status})`,
-                { service: 'mangaFireScraper' },
-            );
-            return [];
-        }
+        do {
+            const response = await MangaFireScraper.axiosInstance.get(`${SITE_BASE}/api/titles/${shortId}/chapters`, {
+                params: { language: lang, limit: 100, page },
+                headers: MangaFireScraper.apiHeaders(new URL(titlePath, SITE_BASE).href),
+                responseType: 'json',
+                timeout: appConfig.scraper.mangaFire.timeout,
+            });
 
-        const chapters = this.parseChapterListHtml(html);
-        // De-dupe by chapter number (lowest-position wins) and sort ascending.
-        const byNumber = new Map<string, (typeof chapters)[number]>();
-        for (const c of chapters) if (!byNumber.has(c.number)) byNumber.set(c.number, c);
-        return Array.from(byNumber.values()).sort((a, b) =>
-            ChapterNumberParser.compareNumbers(a.number, b.number),
-        );
+            const items: MangaFireChapterListItem[] = Array.isArray(response.data?.items) ? response.data.items : [];
+            const meta = response.data?.meta;
+            lastPage = typeof meta?.lastPage === 'number' && meta.lastPage > 0 ? meta.lastPage : page;
+
+            for (const ch of items) {
+                if (ch.id == null || ch.number == null || ch.number === '') continue;
+                const number = String(ch.number);
+                const label = ch.name?.trim() ? `Chapter ${number}: ${ch.name.trim()}` : `Chapter ${number}`;
+                const parsed = ChapterNumberParser.parse(label);
+                out.push({
+                    url: MangaFireScraper.buildReaderUrl(titlePath, ch),
+                    title: parsed.title,
+                    number,
+                    chapterId: String(ch.id),
+                    isSpecial: parsed.isSpecial,
+                    specialType: parsed.specialType,
+                });
+            }
+            page += 1;
+        } while (page <= lastPage);
+
+        const byNumber = new Map<string, (typeof out)[number]>();
+        for (const c of out) if (!byNumber.has(c.number)) byNumber.set(c.number, c);
+        return Array.from(byNumber.values()).sort((a, b) => ChapterNumberParser.compareNumbers(a.number, b.number));
     }
 
-    /** Parse /read/<slug>.<id>/<lang>/chapter-<n> reader URLs. */
+    /** Parse legacy /read/<slug>.<id>/<lang>/chapter-<n> reader URLs. */
     private static parseReaderUrl(readerUrl: string): { shortId: string; lang: string } | undefined {
         try {
             const u = new URL(readerUrl, SITE_BASE);
@@ -423,11 +391,16 @@ export class MangaFireScraper implements IChapterScraper {
     }
 
     private async resolveChapterId(readerUrl: string): Promise<string> {
+        const direct = MangaFireScraper.extractChapterIdFromReaderUrl(readerUrl);
+        if (direct) return direct;
+
         const parsed = MangaFireScraper.parseReaderUrl(readerUrl);
         if (!parsed) throw new Error(`[MangaFire] Could not parse reader URL "${readerUrl}"`);
 
         const targetPath = new URL(readerUrl, SITE_BASE).pathname.replace(/\/$/, '');
-        const chapters = await this.fetchChapterList(parsed.shortId, parsed.lang);
+        const titlePath = MangaFireScraper.extractTitlePath(readerUrl);
+        if (!titlePath) throw new Error(`[MangaFire] Could not resolve title path from "${readerUrl}"`);
+        const chapters = await this.fetchChapterList(titlePath, parsed.shortId, parsed.lang);
         const match = chapters.find(ch => {
             try {
                 return new URL(ch.url, SITE_BASE).pathname.replace(/\/$/, '') === targetPath;
@@ -440,33 +413,24 @@ export class MangaFireScraper implements IChapterScraper {
     }
 
     private async fetchChapterImagesFromApi(chapterId: string, referer: string): Promise<MangaFirePageAsset[]> {
-        const response = await MangaFireScraper.axiosInstance.get(`${SITE_BASE}/ajax/read/chapter/${chapterId}`, {
-            params: { vrf: generateMangaFireVrf(`chapter@${chapterId}`) },
-            headers: {
-                Referer: referer,
-                'X-Requested-With': 'XMLHttpRequest',
-                Accept: 'application/json, text/javascript, */*; q=0.01',
-            },
+        const response = await MangaFireScraper.axiosInstance.get(`${SITE_BASE}/api/chapters/${chapterId}`, {
+            headers: MangaFireScraper.apiHeaders(referer),
             responseType: 'json',
             timeout: appConfig.scraper.mangaFire.timeout,
         });
 
-        const images: unknown = response.data?.result?.images;
-        if (!Array.isArray(images) || !images.length) {
-            throw new Error(`[MangaFire] Chapter ${chapterId} returned no images`);
+        const pages: unknown = response.data?.data?.pages;
+        if (!Array.isArray(pages) || !pages.length) {
+            throw new Error(`[MangaFire] Chapter ${chapterId} returned no pages`);
         }
 
         const assets: MangaFirePageAsset[] = [];
-        for (let i = 0; i < images.length; i++) {
-            const entry = images[i];
-            if (!Array.isArray(entry) || typeof entry[0] !== 'string') continue;
-            const scrambleOffset = Number(entry[2] || 0);
-            if (scrambleOffset > 0) {
-                throw new Error(`[MangaFire] Chapter ${chapterId} page ${i + 1} requires descrambling (offset=${scrambleOffset})`);
-            }
-            assets.push({ page: i + 1, imageUrl: entry[0], source: 'url' });
+        for (let i = 0; i < pages.length; i++) {
+            const entry = pages[i];
+            if (!entry || typeof entry !== 'object' || typeof (entry as { url?: string }).url !== 'string') continue;
+            assets.push({ page: i + 1, imageUrl: (entry as { url: string }).url, source: 'url' });
         }
-        if (!assets.length) throw new Error(`[MangaFire] Chapter ${chapterId} image list was empty after parsing`);
+        if (!assets.length) throw new Error(`[MangaFire] Chapter ${chapterId} page list was empty after parsing`);
         return assets;
     }
 
@@ -498,11 +462,14 @@ export class MangaFireScraper implements IChapterScraper {
         const shortId = MangaFireScraper.extractShortId(pageUrl);
         if (!shortId) throw new Error(`[MangaFire] Could not extract short id from "${pageUrl}"`);
 
+        const titlePath = MangaFireScraper.extractTitlePath(pageUrl);
+        if (!titlePath) throw new Error(`[MangaFire] Could not extract title path from "${pageUrl}"`);
+
         logger.info(`[MangaFire] "${mangaName}": shortId=${shortId}, lang=${DEFAULT_LANG}`, {
             service: 'mangaFireScraper',
         });
 
-        const chapters = await this.fetchChapterList(shortId, DEFAULT_LANG);
+        const chapters = await this.fetchChapterList(titlePath, shortId, DEFAULT_LANG);
         logger.info(`[MangaFire] "${mangaName}": ${chapters.length} chapter(s) discovered`, {
             service: 'mangaFireScraper',
         });
