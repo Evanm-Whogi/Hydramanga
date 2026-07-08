@@ -147,6 +147,11 @@ export async function downloadAndStoreChapter(
 
     const retryDelayMs = 1000;
 
+    // Flag-gated diagnostics: split source-download time vs transcode+upload time so we
+    // can tell whether a slow chapter is CDN-bound or storage/CPU-bound. Off by default.
+    const timed = process.env.STORE_TIMING === '1';
+    let dlMs = 0, stMs = 0, dlBytes = 0;
+
     const downloadOne = async (imageUrl: string, i: number) => {
         if (isPlaceholder?.(imageUrl)) {
             await objectStorageService.uploadPlaceholderSlot(storagePrefix, i);
@@ -156,6 +161,16 @@ export async function downloadAndStoreChapter(
         let lastError: Error | undefined;
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
+                if (timed) {
+                    const t0 = Date.now();
+                    const response = await client.get(imageUrl, { responseType: 'arraybuffer', timeout: timeoutMs, ...(maxRedirects !== undefined ? { maxRedirects } : {}), headers });
+                    const buf = Buffer.from(response.data);
+                    dlMs += Date.now() - t0; dlBytes += buf.length;
+                    const t1 = Date.now();
+                    await objectStorageService.transformAndUploadPage(storagePrefix, i, buf, transform);
+                    stMs += Date.now() - t1;
+                    return;
+                }
                 const response = await client.get(imageUrl, {
                     // Content detection needs the whole image in hand to fingerprint it;
                     // otherwise stream straight into the transform to avoid buffering.
@@ -259,7 +274,14 @@ export async function downloadAndStoreChapter(
             await downloadOne(images[i], i);
         }
     };
+    const wallStart = Date.now();
     await Promise.all(Array.from({ length: Math.min(concurrency, images.length) }, () => runWorker()));
+
+    if (timed) {
+        const wall = Date.now() - wallStart;
+        const kbps = dlMs > 0 ? Math.round(dlBytes / 1024 / (dlMs / 1000)) : 0;
+        logger.info(`[STORE_TIMING] ${images.length} pages in ${wall}ms wall — download(sum) ${dlMs}ms (${Math.round(dlBytes / 1024)}KB, ${kbps}KB/s/conn), transcode+upload(sum) ${stMs}ms, concurrency ${concurrency}`, { service });
+    }
 
     return { pageCount: images.length };
 }

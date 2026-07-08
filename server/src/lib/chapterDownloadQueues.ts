@@ -13,6 +13,7 @@ export const CHAPTER_DOWNLOAD_SCRAPER_IDS = [
     'asuracomic',
     'comix',
     'kagane',
+    'mangago',
     'mangadex',
     'nhentai',
 ] as const;
@@ -35,6 +36,7 @@ const SCRAPER_DISPLAY_NAMES: Record<string, string> = {
     comix: 'Comix',
     atsumoe: 'AtsuMoe',
     kagane: 'Kagane',
+    mangago: 'Mangago',
     nhentai: 'nHentai',
     [UNKNOWN_SCRAPER_QUEUE_ID]: 'Unknown',
 };
@@ -43,6 +45,9 @@ const SCRAPER_DISPLAY_NAMES: Record<string, string> = {
 const SCRAPER_DOWNLOAD_OVERRIDES: Record<string, Partial<Pick<ChapterDownloadWorkerConfig, 'concurrency'> & { limiterMax: number }>> = {
     mangadex: { concurrency: 1, limiterMax: 2 },
     kagane: { concurrency: 1, limiterMax: 2 },
+    // One chapter at a time: each download drives a headful Chromium (CF bypass) and the
+    // mangapicgallery CDN throttles per-connection; page-level parallelism comes from the batch downloader.
+    mangago: { concurrency: 1, limiterMax: 2 },
     nhentai: { concurrency: 2, limiterMax: 4 },
 };
 

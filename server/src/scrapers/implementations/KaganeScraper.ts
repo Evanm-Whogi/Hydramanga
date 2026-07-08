@@ -22,7 +22,7 @@ import {
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
-import { requestFlareSolverr, type FlareSolverrCookie, type FlareSolverrResult } from '@/lib/flareSolverrClient';
+import { requestFlareSolverr, resolveFlareSolverrUrl, hasFlareSolverr, type FlareSolverrCookie, type FlareSolverrResult } from '@/lib/flareSolverrClient';
 import { ScraperStageError, describeError } from '../lib/scraperError';
 
 const SITE_BASE = appConfig.scraper.kagane.baseUrl;
@@ -284,7 +284,7 @@ export class KaganeScraper implements IChapterScraper {
         const envClearance = process.env.KAGANE_CF_CLEARANCE?.trim();
         if (envClearance) return envClearance;
 
-        if (appConfig.scraper.kagane.flareSolverrUrl) {
+        if (hasFlareSolverr(appConfig.scraper.kagane.flareSolverrUrl)) {
             return (await this.getCfSession()).cfClearance;
         }
 
@@ -496,7 +496,7 @@ export class KaganeScraper implements IChapterScraper {
     }
 
     private async requestFlareSolverr(payload: Record<string, unknown>): Promise<FlareSolverrResult> {
-        const flareSolverrUrl = appConfig.scraper.kagane.flareSolverrUrl;
+        const flareSolverrUrl = resolveFlareSolverrUrl(appConfig.scraper.kagane.flareSolverrUrl);
         if (!flareSolverrUrl) {
             throw new Error('FlareSolverr URL is not configured');
         }
@@ -590,7 +590,7 @@ export class KaganeScraper implements IChapterScraper {
         if (!KaganeScraper.cfSessionPromise) {
             KaganeScraper.cfSessionPromise = (async () => {
                 try {
-                    if (appConfig.scraper.kagane.flareSolverrUrl) {
+                    if (hasFlareSolverr(appConfig.scraper.kagane.flareSolverrUrl)) {
                         return await this.getCfSessionViaFlareSolverr();
                     }
                     return await this.getCfSessionViaPlaywright();
@@ -668,7 +668,7 @@ export class KaganeScraper implements IChapterScraper {
 
         let data: KaganeIntegrityResponse;
         let userAgent = appConfig.scraper.kagane.userAgent;
-        if (appConfig.scraper.kagane.flareSolverrUrl) {
+        if (hasFlareSolverr(appConfig.scraper.kagane.flareSolverrUrl)) {
             const flareResult = await this.fetchIntegrityViaFlareSolverr();
             data = flareResult.data;
             userAgent = flareResult.userAgent;

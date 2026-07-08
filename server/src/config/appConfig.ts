@@ -99,6 +99,7 @@ export interface CacheConfig {
  * Scraper Configuration
  */
 export interface ScraperConfig {
+    flareSolverrPool: string[]; // round-robin pool of FlareSolverr endpoints (FLARESOLVERR_URLS or single FLARESOLVERR_URL)
     weebCentral: {
         apiUrl: string;
         userAgent: string;
@@ -160,8 +161,24 @@ export interface ScraperConfig {
         priority: number; // 1 = highest priority
         enabled: boolean;
     };
+    onisaga: {
+        baseUrl: string;
+        userAgent: string;
+        flareSolverrUrl?: string;
+        timeout: number; // milliseconds
+        priority: number; // 1 = highest priority
+        enabled: boolean;
+    };
     kagane: {
         apiUrl: string;
+        baseUrl: string;
+        userAgent: string;
+        flareSolverrUrl?: string;
+        timeout: number; // milliseconds
+        priority: number; // 1 = highest priority
+        enabled: boolean;
+    };
+    mangago: {
         baseUrl: string;
         userAgent: string;
         flareSolverrUrl?: string;
@@ -442,6 +459,24 @@ function parseEnvStringList(key: string): string[] {
         .filter((v) => v.length > 0);
 }
 
+/** FlareSolverr endpoint pool. Accepts a comma/newline list in EITHER FLARESOLVERR_URLS or FLARESOLVERR_URL, validates+dedupes each entry, and strips trailing slashes so lock/round-robin keys match. Malformed URLs are dropped with a warning rather than crashing config load or failing at request time. */
+function parseFlareSolverrPool(): string[] {
+    const raw = [...parseEnvStringList('FLARESOLVERR_URLS'), ...parseEnvStringList('FLARESOLVERR_URL')];
+    const seen = new Set<string>();
+    const pool: string[] = [];
+    for (const entry of raw) {
+        const url = entry.replace(/\/$/, '');
+        try {
+            new URL(url);
+        } catch {
+            logger.warn(`Ignoring invalid FlareSolverr URL: "${entry}" (each entry must be a full URL like http://flaresolverr:8191)`);
+            continue;
+        }
+        if (!seen.has(url)) { seen.add(url); pool.push(url); }
+    }
+    return pool;
+}
+
 /**
  * Parse a JSON object env var into a string→string map. Returns {} on absence or
  * malformed JSON (logged), so a bad override never crashes config load.
@@ -578,6 +613,7 @@ export class AppConfigService {
 
             // Scraper Configuration
             scraper: {
+                flareSolverrPool: parseFlareSolverrPool(),
                 weebCentral: {
                     apiUrl: 'https://weebcentral.com/search/simple?location=main',
                     userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -600,7 +636,7 @@ export class AppConfigService {
                     timeout: parseEnvNumber('COMIX_TIMEOUT', 30000), // 30 seconds
                     enabled: parseEnvBoolean('COMIX_ENABLED', true),
                     priority: parseEnvNumber('COMIX_PRIORITY', 4), // 4 = third priority tier
-                    flareSolverrUrl: parseEnvString('KAGANE_FLARESOLVERR_URL') || parseEnvString('FLARESOLVERR_URL'),
+                    flareSolverrUrl: parseEnvString('COMIX_FLARESOLVERR_URL'), // explicit pin only; shared instances come from flareSolverrPool
                 },
                 atsuMoe: {
                     apiUrl: 'https://atsu.moe/collections/manga/documents/search',
@@ -639,14 +675,30 @@ export class AppConfigService {
                     priority: parseEnvNumber('TOONILY_PRIORITY', 5), // 5 = fifth priority
                     enabled: parseEnvBoolean('TOONILY_ENABLED', true),
                 },
+                onisaga: {
+                    baseUrl: 'https://onisaga.com',
+                    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+                    flareSolverrUrl: parseEnvString('ONISAGA_FLARESOLVERR_URL'), // explicit pin only; shared instances come from flareSolverrPool
+                    timeout: parseEnvNumber('ONISAGA_TIMEOUT', 30000), // 30 seconds
+                    priority: parseEnvNumber('ONISAGA_PRIORITY', 4), // between Kagane (3) and Toonily (5)
+                    enabled: parseEnvBoolean('ONISAGA_ENABLED', true),
+                },
                 kagane: {
                     apiUrl: 'https://yuzuki.kagane.to',
                     baseUrl: 'https://kagane.to',
                     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
-                    flareSolverrUrl: parseEnvString('KAGANE_FLARESOLVERR_URL') || parseEnvString('FLARESOLVERR_URL'),
+                    flareSolverrUrl: parseEnvString('KAGANE_FLARESOLVERR_URL'), // explicit pin only; shared instances come from flareSolverrPool
                     timeout: parseEnvNumber('KAGANE_TIMEOUT', 30000), // 30 seconds
                     priority: parseEnvNumber('KAGANE_PRIORITY', 3), // 3 = third priority tier
                     enabled: parseEnvBoolean('KAGANE_ENABLED', true),
+                },
+                mangago: {
+                    baseUrl: 'https://www.mangago.me',
+                    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+                    flareSolverrUrl: parseEnvString('MANGAGO_FLARESOLVERR_URL'), // explicit pin only; shared instances come from flareSolverrPool
+                    timeout: parseEnvNumber('MANGAGO_TIMEOUT', 30000), // 30 seconds
+                    priority: parseEnvNumber('MANGAGO_PRIORITY', 5), // 5 = low fallback tier (Cloudflare + per-image descramble)
+                    enabled: parseEnvBoolean('MANGAGO_ENABLED', true),
                 },
                 mangaFire: {
                     baseUrl: 'https://mangafire.to/',

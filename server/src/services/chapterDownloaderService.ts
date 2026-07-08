@@ -61,7 +61,8 @@ export class ChapterDownloaderService {
                         data.seriesId,
                         chapterNumberStr,
                         data.mangaTitle,
-                        data.chapterTitle
+                        data.chapterTitle,
+                        data.scraperId
                     );
                 },
                 {

@@ -16,10 +16,12 @@ import { NHentaiScraper } from './implementations/nHentaiScraper';
 import { MangaDexScraper } from './implementations/MangaDexScraper';
 import { MangaTaroScraper } from './implementations/MangaTaroScraper';
 import { ToonilyScraper } from './implementations/ToonilyScraper';
+import { OnisagaScraper } from './implementations/OnisagaScraper';
 import { AtsuMoeScraper } from './implementations/AtsuMoeScraper';
 import { AsuraComicScraper } from './implementations/AsuraComicScraper';
 import { ComixScraper } from './implementations/ComixScraper';
 import { KaganeScraper } from './implementations/KaganeScraper';
+import { MangagoScraper } from './implementations/MangagoScraper';
 import logger from '@/services/loggerService';
 import { MangaFireScraper } from './implementations/mangaFireScraper';
 
@@ -42,10 +44,6 @@ export function initializeScrapers(): void {
     const asuraComicScraper = new AsuraComicScraper();
     scraperManager.registerScraper(asuraComicScraper);
 
-    // Register Comix scraper
-    const comixScraper = new ComixScraper();
-    scraperManager.registerScraper(comixScraper);
-
     // Register MangaTaro scraper
     const mangaTaroScraper = new MangaTaroScraper();
     scraperManager.registerScraper(mangaTaroScraper);
@@ -62,9 +60,23 @@ export function initializeScrapers(): void {
     const toonilyScraper = new ToonilyScraper();
     scraperManager.registerScraper(toonilyScraper);
 
+    // Register Comix scraper
+    // const comixScraper = new ComixScraper();
+    // scraperManager.registerScraper(comixScraper);
+
+    // Register Onisaga scraper
+    // const onisagaScraper = new OnisagaScraper();
+    // scraperManager.registerScraper(onisagaScraper);
+    // onisagaScraper.startClearanceKeepAlive();
+
     // Register Kagane scraper
-    const kaganeScraper = new KaganeScraper();
-    scraperManager.registerScraper(kaganeScraper);
+    // const kaganeScraper = new KaganeScraper();
+    // scraperManager.registerScraper(kaganeScraper);
+
+    // Register Mangago scraper
+    const mangagoScraper = new MangagoScraper();
+    scraperManager.registerScraper(mangagoScraper);
+    mangagoScraper.startClearanceKeepAlive();
 
     // Register MangaFire scraper
     const mangaFireScraper = new MangaFireScraper();

@@ -59,6 +59,10 @@ interface ScraperSourceSearchRow {
  */
 export class ScraperManager {
     private static readonly SOURCE_SEARCH_TIMEOUT_MS = 20_000;
+    // Cap the aggregate multi-source search below the Next proxy's 30s timeout so a single
+    // slow source (e.g. a Playwright/Cloudflare browser search) can't hang the whole endpoint.
+    private static readonly AGGREGATE_SEARCH_DEADLINE_MS = 25_000;
+    private static readonly AGGREGATE_TIMEOUT_SENTINEL = Symbol('aggregate-search-timeout');
     private scrapers: IChapterScraper[] = [];
     private attemptHistory: Map<string, ScraperAttempt[]> = new Map();
 
@@ -527,7 +531,8 @@ export class ScraperManager {
         seriesId: number,
         chapterNumber: string,
         mangaName: string,
-        folderName: string
+        folderName: string,
+        scraperId?: string | null
     ): Promise<DownloadedChapter> {
         const enabledScrapers = this.getEnabledScrapers();
 
@@ -539,6 +544,26 @@ export class ScraperManager {
             `Downloading chapter ${chapterNumber} for series ${seriesId} from ${url}`,
             { service: 'scraperManager' }
         );
+
+        // When the scanning scraper is known (persisted on the chapter), route straight
+        // to it and skip host matching — some sources serve chapters from rotating mirror
+        // domains (e.g. Mangago → mangago.zone / youhim.me) that won't match baseUrl's host.
+        const owner = scraperId ? this.getScraperById(scraperId) : undefined;
+        if (owner && owner.getMetadata().enabled) {
+            const metadata = owner.getMetadata();
+            try {
+                logger.info(`Attempting download with ${metadata.name} (routed by scraperId)`, { service: 'scraperManager' });
+                const result = await owner.downloadChapter(url, seriesId, chapterNumber, mangaName, folderName);
+                logger.info(`✓ Successfully downloaded ${result.pageCount} pages using ${metadata.name}`, { service: 'scraperManager' });
+                this.recordAttempt(`download:${url}`, metadata.id, metadata.name, metadata.priority, true);
+                return result;
+            } catch (error) {
+                const stageError = ScraperStageError.from(error, { stage: 'download_image', scraperId: metadata.id, scraperName: metadata.name, url });
+                logger.error(stageError.message, { service: 'scraperManager', ...stageError.toLogDetail() });
+                this.recordAttempt(`download:${url}`, metadata.id, metadata.name, metadata.priority, false, stageError.message);
+                throw stageError;
+            }
+        }
 
         // Track which scrapers we actually attempted and why each failed, so the
         // final error explains the real cause (shown as the queue failedReason)
@@ -699,14 +724,25 @@ export class ScraperManager {
         let enabledScrapers: IChapterScraper[] = [];
         try {
             enabledScrapers = this.getEnabledScrapers();
-            const settled = await Promise.allSettled(
-                enabledScrapers.map((scraper) => this.searchOneSource(scraper, mangaName, options, limitPerSource))
-            );
-
-            return settled.map((result, index) => {
-                if (result.status === 'fulfilled') return result.value;
-                return { ...this.emptySourceResult(enabledScrapers[index]), error: this.formatSourceSearchError(result.reason) };
-            }).sort((a, b) => a.priority - b.priority);
+            // searchOneSource never rejects, so race each source's row against a shared
+            // aggregate deadline and substitute a timeout marker for any still running.
+            // Guarantees the endpoint returns before the Next proxy resets the socket.
+            let deadlineTimer: NodeJS.Timeout | undefined;
+            const deadline = new Promise<typeof ScraperManager.AGGREGATE_TIMEOUT_SENTINEL>((resolve) => {
+                deadlineTimer = setTimeout(() => resolve(ScraperManager.AGGREGATE_TIMEOUT_SENTINEL), ScraperManager.AGGREGATE_SEARCH_DEADLINE_MS);
+            });
+            try {
+                const rows = await Promise.all(enabledScrapers.map(async (scraper) => {
+                    const outcome = await Promise.race([this.searchOneSource(scraper, mangaName, options, limitPerSource), deadline]);
+                    if (outcome === ScraperManager.AGGREGATE_TIMEOUT_SENTINEL) {
+                        return { ...this.emptySourceResult(scraper), error: `search timed out after ${ScraperManager.AGGREGATE_SEARCH_DEADLINE_MS}ms` };
+                    }
+                    return outcome;
+                }));
+                return rows.sort((a, b) => a.priority - b.priority);
+            } finally {
+                if (deadlineTimer) clearTimeout(deadlineTimer);
+            }
         } catch (err) {
             logger.error(`searchAllSources failed: ${err instanceof Error ? err.message : err}`, { service: 'scraperManager' });
             if (!enabledScrapers.length) enabledScrapers = this.scrapers;

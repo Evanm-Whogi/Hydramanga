@@ -46,7 +46,7 @@ import {
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
-import { requestFlareSolverr, type FlareSolverrCookie, type FlareSolverrResult } from '@/lib/flareSolverrClient';
+import { requestFlareSolverr, resolveFlareSolverrUrl, hasFlareSolverr, type FlareSolverrCookie, type FlareSolverrResult } from '@/lib/flareSolverrClient';
 import { ScraperStageError, describeError } from '../lib/scraperError';
 
 const SITE_BASE = appConfig.scraper.comix.baseUrl;
@@ -161,10 +161,7 @@ function getComixSearchCapturePriority(url: string, query: string): number {
 }
 
 function getFlareSolverrUrl(): string | undefined {
-    const url =
-        process.env.FLARESOLVERR_URL?.trim() ||
-        appConfig.scraper.comix.flareSolverrUrl?.trim();
-    return url ? url.replace(/\/$/, '') : undefined;
+    return resolveFlareSolverrUrl(appConfig.scraper.comix.flareSolverrUrl);
 }
 
 function mapSearchResults(items: ComixSearchItem[], query: string, limit: number, opts?: { trustSiteRanking?: boolean }): MangaSearchResult[] {
@@ -430,7 +427,7 @@ export class ComixScraper implements IChapterScraper {
         if (!ComixScraper.cfSessionPromise || forceRefresh) {
             ComixScraper.cfSessionPromise = (async () => {
                 try {
-                    if (getFlareSolverrUrl()) return await this.getCfSessionViaFlareSolverr();
+                    if (hasFlareSolverr(appConfig.scraper.comix.flareSolverrUrl)) return await this.getCfSessionViaFlareSolverr();
                     return await this.getCfSessionViaPlaywright();
                 } finally {
                     ComixScraper.cfSessionPromise = null;
