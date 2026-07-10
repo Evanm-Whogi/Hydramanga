@@ -656,6 +656,7 @@ export const mangaImportProgress = pgTable('manga_import_progress', {
   seriesId: integer('series_id').primaryKey().references(() => series.id, { onDelete: 'cascade' }),
   totalChapters: integer('total_chapters').notNull().default(0),
   downloadedChapters: integer('downloaded_chapters').notNull().default(0),
+  failedChapters: integer('failed_chapters').notNull().default(0),
   status: importStatusEnum('status').notNull().default('scanning'),
   scraperId: text('scraper_id'), // ID of the scraper used for this import (e.g., 'mangadex', 'weebcentral', null if unknown)
   scraperUrl: text('scraper_url'), // URL of the manga page on the scraper (avoids re-searching on rescans)
@@ -684,12 +685,38 @@ export const catalogScanState = pgTable('catalog_scan_state', {
   currentBatchEnd: integer('current_batch_end'),
   currentBatchSeriesIds: jsonb('current_batch_series_ids').notNull().default(sql`'[]'::jsonb`),
   currentBatchArchivedIds: jsonb('current_batch_archived_ids').notNull().default(sql`'[]'::jsonb`),
+  currentBatchStartedAt: timestamp('current_batch_started_at', { withTimezone: true }),
+  consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+  pauseReason: text('pause_reason'),
   totalCatalogCount: integer('total_catalog_count').notNull().default(0),
   stats: jsonb('stats').notNull().default(sql`'{}'::jsonb`),
   startedAt: timestamp('started_at', { withTimezone: true }),
   stoppedAt: timestamp('stopped_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+// Durable per-page failure/placeholder ledger. One row per page that either got a
+// placeholder (404 / known-broken / undecodable / source placeholder) or failed to
+// download permanently (download_failed). This is the queryable source of truth —
+// the BullMQ failed set is a rolling 25-deep buffer and is not reliable for history.
+export const chapterPlaceholderPages = pgTable('chapter_placeholder_pages', {
+  id: serial('id').primaryKey(),
+  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }),
+  storagePrefix: text('storage_prefix').notNull(),
+  pageNumber: integer('page_number').notNull(),
+  imageUrl: text('image_url'),
+  errorMessage: text('error_message'),
+  httpStatus: integer('http_status'),
+  scraperId: text('scraper_id'),
+  reason: text('reason').notNull(), // http_404 | known_broken | undecodable | source_placeholder | download_failed | legacy_scan
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  pageUnique: uniqueIndex('uniq_chapter_placeholder_prefix_page').on(t.storagePrefix, t.pageNumber),
+  seriesIdx: index('idx_chapter_placeholder_series').on(t.seriesId),
+  unresolvedIdx: index('idx_chapter_placeholder_unresolved').on(t.reason).where(sql`${t.resolvedAt} IS NULL`),
+}));
 
 export const importRequestStatusEnum = pgEnum('import_request_status', ['pending', 'in_progress', 'completed', 'rejected']);
 

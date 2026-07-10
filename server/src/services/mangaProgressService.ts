@@ -10,6 +10,16 @@ const PROGRESS_TTL = 3600; // 1 hour in seconds
 
 export type ProgressStatus = 'scanning' | 'downloading' | 'completed' | 'failed' | 'source_set';
 
+/**
+ * An import is finished once every chapter has resolved — either downloaded or
+ * permanently failed. Counting permanent failures toward completion is what stops
+ * a single dead chapter (e.g. a 403 forever) from wedging the series in
+ * `downloading` and stalling the catalog coordinator's batch poll.
+ */
+export function isImportFinished(downloaded: number, failed: number, total: number): boolean {
+  return total > 0 && downloaded + failed >= total;
+}
+
 /** Progress row with a scraper source saved but no chapter import started yet. */
 export function isSourceOnlyProgress(progress: {status: string; totalChapters: number; downloadedChapters: number; scraperId?: string | null; scraperUrl?: string | null;}): boolean {
   if (progress.status === 'source_set') {
@@ -28,6 +38,7 @@ export interface MangaProgress {
   seriesId: number;
   totalChapters: number;
   downloadedChapters: number;
+  failedChapters?: number;
   status: ProgressStatus;
   percentage: number;
   startedAt: Date;
@@ -296,28 +307,28 @@ class MangaProgressService {
       }
 
       const newDownloaded = updatedRecord.downloadedChapters;
-      
-      // Check if completed
-      const isCompleted = newDownloaded >= progress.totalChapters && progress.totalChapters > 0;
-      
-      // Calculate percentage - cap at 99% until actually completed to avoid false 100%
-      let percentage = progress.totalChapters > 0
-        ? Math.round((newDownloaded / progress.totalChapters) * 100)
-        : 0;
-      
-      // Don't show 100% unless actually completed
-      if (percentage === 100 && !isCompleted) {
-        percentage = 99;
-      }
-      
-      const newStatus: ProgressStatus = isCompleted ? 'completed' : 'downloading';
+      const failedChapters = updatedRecord.failedChapters ?? 0;
 
-      // Update status if completed
+      // Completed once every chapter has resolved — downloaded or permanently failed.
+      const isCompleted = isImportFinished(newDownloaded, failedChapters, progress.totalChapters);
+
+      // Percentage reflects processed chapters (downloaded + failed); cap at 99% until done.
+      let percentage = progress.totalChapters > 0
+        ? Math.round(((newDownloaded + failedChapters) / progress.totalChapters) * 100)
+        : 0;
+      if (isCompleted) percentage = 100;
+      else if (percentage >= 100) percentage = 99;
+
+      const newStatus: ProgressStatus = isCompleted ? 'completed' : 'downloading';
+      const partialFailureMessage = failedChapters > 0 ? `${failedChapters} chapter(s) failed to download` : null;
+
+      // Update status if completed; surface any partial failures in errorMessage.
       if (isCompleted) {
         await db.update(mangaImportProgress)
           .set({
             status: newStatus,
             completedAt: new Date(),
+            ...(partialFailureMessage ? { errorMessage: partialFailureMessage } : {}),
             updatedAt: new Date(),
           })
           .where(eq(mangaImportProgress.seriesId, seriesId));
@@ -327,11 +338,13 @@ class MangaProgressService {
       const updatedProgress: MangaProgress = {
         ...progress,
         downloadedChapters: newDownloaded,
+        failedChapters,
         status: newStatus,
         percentage,
         updatedAt: new Date(),
         lastDownloadedChapter: chapterInfo || null,
         ...(isCompleted && { completedAt: new Date() }),
+        ...(isCompleted && partialFailureMessage ? { errorMessage: partialFailureMessage } : {}),
       };
 
       await this.getRedis().setex(
@@ -356,6 +369,101 @@ class MangaProgressService {
       return { justCompleted: isCompleted };
     } catch (error) {
       logger.error(`Failed to increment downloaded for series ${seriesId}: ${error}`, { service: 'mangaProgressService' });
+      return { justCompleted: false };
+    }
+  }
+
+  // Increment the permanently-failed chapter count. A chapter whose download job
+  // exhausted its retries counts toward completion (downloaded + failed >= total)
+  // so it can't leave the series wedged in `downloading` forever. The series stays
+  // `completed` (not `failed`) with an errorMessage summarising the failures.
+  // Returns `justCompleted: true` on the call that finishes the import, so the
+  // caller can fire the same "chapters landed" announcement as the success path.
+  async incrementFailedChapters(seriesId: number): Promise<{ justCompleted: boolean }> {
+    try {
+      const progress = await this.getProgress(seriesId);
+      if (!progress) {
+        logger.warn(`No progress found for series ${seriesId} when incrementing failed chapters`, { service: 'mangaProgressService' });
+        return { justCompleted: false };
+      }
+
+      if (progress.status !== 'downloading') {
+        logger.warn(
+          `Cannot increment failed chapters for series ${seriesId}: current status is ${progress.status}, expected 'downloading'`,
+          { service: 'mangaProgressService' }
+        );
+        return { justCompleted: false };
+      }
+
+      await db.update(mangaImportProgress)
+        .set({
+          failedChapters: sql`failed_chapters + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(mangaImportProgress.seriesId, seriesId));
+
+      const [updatedRecord] = await db
+        .select()
+        .from(mangaImportProgress)
+        .where(eq(mangaImportProgress.seriesId, seriesId))
+        .limit(1);
+
+      if (!updatedRecord) {
+        logger.error(`Failed to fetch updated progress for series ${seriesId} after failed-chapter increment`, { service: 'mangaProgressService' });
+        return { justCompleted: false };
+      }
+
+      const newFailed = updatedRecord.failedChapters;
+      const newDownloaded = updatedRecord.downloadedChapters;
+      const isCompleted = isImportFinished(newDownloaded, newFailed, progress.totalChapters);
+      const errorMessage = `${newFailed} chapter(s) failed to download`;
+
+      let percentage = progress.totalChapters > 0
+        ? Math.round(((newDownloaded + newFailed) / progress.totalChapters) * 100)
+        : 0;
+      if (isCompleted) percentage = 100;
+      else if (percentage >= 100) percentage = 99;
+
+      const newStatus: ProgressStatus = isCompleted ? 'completed' : 'downloading';
+
+      await db.update(mangaImportProgress)
+        .set({
+          ...(isCompleted ? { status: newStatus, completedAt: new Date() } : {}),
+          errorMessage,
+          updatedAt: new Date(),
+        })
+        .where(eq(mangaImportProgress.seriesId, seriesId));
+
+      const updatedProgress: MangaProgress = {
+        ...progress,
+        downloadedChapters: newDownloaded,
+        failedChapters: newFailed,
+        status: newStatus,
+        percentage,
+        errorMessage,
+        updatedAt: new Date(),
+        ...(isCompleted && { completedAt: new Date() }),
+      };
+
+      await this.getRedis().setex(
+        `${PROGRESS_CHANNEL_PREFIX}${seriesId}`,
+        PROGRESS_TTL,
+        JSON.stringify(updatedProgress)
+      );
+      await this.publishProgress(seriesId, updatedProgress);
+
+      logger.warn(
+        `Failed-chapter recorded for series ${seriesId}: ${newDownloaded} downloaded, ${newFailed} failed / ${progress.totalChapters}${isCompleted ? ' (import completed with failures)' : ''}`,
+        { service: 'mangaProgressService' }
+      );
+
+      if (isCompleted) {
+        setTimeout(() => this.cleanupProgress(seriesId), 5 * 60 * 1000);
+      }
+
+      return { justCompleted: isCompleted };
+    } catch (error) {
+      logger.error(`Failed to increment failed chapters for series ${seriesId}: ${error}`, { service: 'mangaProgressService' });
       return { justCompleted: false };
     }
   }
@@ -526,6 +634,7 @@ class MangaProgressService {
         seriesId: dbProgress.seriesId,
         totalChapters: dbProgress.totalChapters,
         downloadedChapters: dbProgress.downloadedChapters,
+        failedChapters: dbProgress.failedChapters,
         status: dbProgress.status,
         percentage: dbProgress.totalChapters > 0
           ? Math.round((dbProgress.downloadedChapters / dbProgress.totalChapters) * 100)

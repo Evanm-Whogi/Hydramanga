@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, BookOpen, Inbox, ListOrdered, ScrollText, Settings, Sticker, Terminal, HardDriveDownload } from "lucide-react";
+import { LayoutDashboard, Users, BookOpen, Inbox, ListOrdered, ScrollText, Settings, Sticker, Terminal, HardDriveDownload, ImageOff } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 
 const NAV_ITEMS = [
     { href: "/admin/overview", label: "Overview", icon: LayoutDashboard },
     { href: "/admin/users", label: "Users", icon: Users },
     { href: "/admin/manga", label: "Manga", icon: BookOpen },
+    { href: "/admin/placeholders", label: "Placeholders", icon: ImageOff },
     { href: "/admin/imports", label: "Imports", icon: Inbox },
     { href: "/admin/archive", label: "Archive", icon: HardDriveDownload },
     { href: "/admin/queues", label: "Queues", icon: ListOrdered },
@@ -30,6 +31,10 @@ const PAGE_HEADERS: Record<string, { title: string; description: string }> = {
     "/admin/manga": {
         title: "Manga",
         description: "Recently imported series and import status",
+    },
+    "/admin/placeholders": {
+        title: "Failed & Placeholder Pages",
+        description: "Durable ledger of broken or missing chapter pages",
     },
     "/admin/imports": {
         title: "Import Requests",

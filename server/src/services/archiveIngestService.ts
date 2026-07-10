@@ -22,6 +22,7 @@ import { and, eq } from 'drizzle-orm';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
 import { objectStorageService } from '@/services/objectStorageService';
+import { placeholderTrackingService } from '@/services/placeholderTrackingService';
 import { chapterPersistenceService } from '@/services/chapterPersistenceService';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import { cacheService } from '@/services/cacheService';
@@ -269,6 +270,7 @@ class ArchiveIngestService {
                         service: 'archiveIngestService',
                     });
                     await objectStorageService.uploadPlaceholderSlot(storagePrefix, i);
+                    await placeholderTrackingService.recordForPrefix({ storagePrefix, pageNumber: i + 1, reason: 'undecodable', errorMessage: (err as Error)?.message ?? null, scraperId: 'archive' });
                 } else {
                     throw err;
                 }

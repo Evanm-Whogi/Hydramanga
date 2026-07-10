@@ -45,8 +45,7 @@ const SCRAPER_DISPLAY_NAMES: Record<string, string> = {
 const SCRAPER_DOWNLOAD_OVERRIDES: Record<string, Partial<Pick<ChapterDownloadWorkerConfig, 'concurrency'> & { limiterMax: number }>> = {
     mangadex: { concurrency: 1, limiterMax: 2 },
     kagane: { concurrency: 1, limiterMax: 2 },
-    // One chapter at a time: each download drives a headful Chromium (CF bypass) and the
-    // mangapicgallery CDN throttles per-connection; page-level parallelism comes from the batch downloader.
+    // Default when CHAPTER_DOWNLOAD_MANGAGO_* env vars are unset; env always wins (see resolveChapterDownloadQueueConfig).
     mangago: { concurrency: 1, limiterMax: 2 },
     nhentai: { concurrency: 2, limiterMax: 4 },
 };

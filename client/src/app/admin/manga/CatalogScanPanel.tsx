@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Play, Square, RotateCcw, OctagonX } from "lucide-react";
+import { Loader2, Play, Square, RotateCcw, OctagonX, AlertTriangle } from "lucide-react";
 import { toast } from "react-toastify";
 import {getCatalogScanState, startCatalogScan, stopCatalogScan, forceStopCatalogScan, resetCatalogScan, type CatalogScanState } from "@/services/adminScanService";
 
@@ -177,6 +177,17 @@ export default function CatalogScanPanel() {
           </span>
         )}
       </div>
+
+      {state?.status === "idle" && state.pauseReason && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-300">
+          <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium text-amber-200">Auto-paused after {state.consecutiveFailures} consecutive failed batches</p>
+            <p className="mt-0.5 text-amber-300/90">{state.pauseReason}</p>
+            <p className="mt-1 text-amber-300/70">Fix the scraper/source, then Resume at {state.nextRank} to re-attempt the failed batch.</p>
+          </div>
+        </div>
+      )}
 
       {loading && !state ? (
         <div className="flex items-center gap-2 text-sm text-muted">

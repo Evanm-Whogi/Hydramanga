@@ -36,7 +36,8 @@ import logger from '@/services/loggerService';
 // Proxy-aware client for nHentai's custom image-download loop (it doesn't use the
 // shared chapterImageDownloader). Off by default → bare keep-alive client.
 const nhentaiClient = buildAxios({ scraperId: 'nhentai' });
-import { ScraperStageError, describeError } from '../lib/scraperError';
+import { ScraperStageError, describeError, isTrue404Error } from '../lib/scraperError';
+import { store404PlaceholderIfMissing } from '../lib/chapterImageDownloader';
 
 
 /**
@@ -607,11 +608,13 @@ export class NHentaiScraper implements IChapterScraper {
                         `[nHentai] Attempt ${attempt}/${MAX_RETRIES} failed for image ${i + 1}: HTTP ${errorCode} - ${err.message}`,
                         { service: 'nHentaiScraper' }
                     );
+                    if (isTrue404Error(err)) break; // deterministic 404 → placeholder below
                     if (attempt < MAX_RETRIES) {
                         await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[attempt - 1]));
                     }
                 }
             }
+            if (await store404PlaceholderIfMissing(lastError, { storagePrefix, pageIndex: i, imageUrl, scraperId: this.metadata.id, service: 'nHentaiScraper' })) return;
             const described = describeError(lastError);
             const stageError = new ScraperStageError({
                 stage: 'download_image',

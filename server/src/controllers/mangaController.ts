@@ -686,9 +686,10 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
         // (Cloudflare-fronted); the raw storage host is never exposed.
         const pageCount = chapter.pageCount || 0;
         const images: string[] = [];
+        const pageCacheBust = chapter.updatedAt ? new Date(chapter.updatedAt).getTime() : undefined;
 
         for (let i = 1; i <= pageCount; i++) {
-            images.push(objectStorageService.publicUrl(chapter.storagePrefix, i));
+            images.push(objectStorageService.publicUrl(chapter.storagePrefix, i, pageCacheBust));
         }
 
         // Single-page series: every chapter has at most 1 page (1 or 0/legacy)
@@ -699,7 +700,7 @@ export async function getPages(req: Request, res: Response, next: NextFunction):
             ? allChapters.map((ch) => ({
                 chapterId: ch.id,
                 chapterNumber: ch.chapterNumber,
-                src: objectStorageService.publicUrl(ch.storagePrefix, 1),
+                src: objectStorageService.publicUrl(ch.storagePrefix, 1, ch.updatedAt ? new Date(ch.updatedAt).getTime() : undefined),
             }))
             : null;
 

@@ -61,10 +61,11 @@
     "worker": "UV_THREADPOOL_SIZE=16 RUN_WORKERS=true nodemon src/worker.ts",
     "build": "tsc",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "node scripts/ensure-pg-extensions.js && drizzle-kit migrate",
     "emails:test": "npx ts-node -r tsconfig-paths/register scripts/test-emails.ts",
     "placeholders:scan": "npx ts-node -r tsconfig-paths/register scripts/scan-placeholders.ts",
     "placeholders:redownload": "npx ts-node -r tsconfig-paths/register scripts/redownload-placeholders.ts",
+    "rescan:stuck": "npx ts-node -r tsconfig-paths/register scripts/rescan-stuck-imports.ts",
     "smoke:authors": "npx ts-node -r tsconfig-paths/register scripts/smoke-authors.ts"
   },
   "author": "",

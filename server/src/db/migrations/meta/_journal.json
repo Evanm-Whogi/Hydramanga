@@ -71,6 +71,13 @@
       "when": 1783309014705,
       "tag": "0009_sad_cargill",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783556458706,
+      "tag": "0010_naive_master_chief",
+      "breakpoints": true
     }
   ]
 }

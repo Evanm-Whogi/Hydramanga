@@ -10,7 +10,6 @@ import { getCoverUrl } from "@/lib/historyUtils";
 import AdminMangaEditModal from "@/app/manga/[id]/components/AdminMangaEditModal";
 import IncrementalScanPanel from "./IncrementalScanPanel";
 import CatalogScanPanel from "./CatalogScanPanel";
-
 const STATUS_FILTERS: { value: ListAdminMangaParams["status"]; label: string }[] = [
   { value: "all", label: "All" },
   { value: "scanning", label: "Scanning" },

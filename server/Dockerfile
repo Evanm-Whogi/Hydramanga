@@ -46,6 +46,7 @@ COPY --from=base /app/dist ./dist
 COPY --from=base /app/src/db/schema.ts ./src/db/schema.ts
 COPY --from=base /app/src/db/migrations ./src/db/migrations
 COPY --from=base /app/src/templates ./dist/templates
+COPY ./scripts/ensure-pg-extensions.js ./scripts/ensure-pg-extensions.js
 COPY ./entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 

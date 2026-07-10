@@ -113,6 +113,16 @@ export function describeError(err: unknown): ErrorDescription {
 }
 
 /**
+ * True when the failure is a genuine HTTP 404 (the page is really missing). 404 is
+ * deterministic — retrying just re-fetches the 404 — so callers substitute a
+ * placeholder for that one page instead of failing the whole chapter. Any other
+ * status (403, 410, 5xx) or a network error is NOT a 404 and must fail the chapter.
+ */
+export function isTrue404Error(err: unknown): boolean {
+    return describeError(err).httpStatus === 404;
+}
+
+/**
  * Error carrying the failed scraper stage plus concrete detail. The constructed
  * `message` is a single line suitable for display as a queue `failedReason`.
  */

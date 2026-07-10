@@ -61,6 +61,8 @@ export type CatalogScanState = {
   progressPercent: number;
   currentBatchCompleted: number;
   currentBatchTotal: number;
+  consecutiveFailures: number;
+  pauseReason: string | null;
   startedAt: string | null;
   stoppedAt: string | null;
   updatedAt: string;
@@ -94,4 +96,40 @@ export async function forceStopCatalogScan(): Promise<{ message: string; state: 
 
 export async function resetCatalogScan(): Promise<{ message: string; state: CatalogScanState }> {
   return apiPost('/admin/manga/catalog-scan/reset', {}) as Promise<{ message: string; state: CatalogScanState }>;
+}
+
+export type PlaceholderPage = {
+  id: number;
+  seriesId: number;
+  storagePrefix: string;
+  pageNumber: number;
+  imageUrl: string | null;
+  errorMessage: string | null;
+  httpStatus: number | null;
+  scraperId: string | null;
+  reason: string;
+  createdAt: string;
+};
+
+export type PlaceholderListResponse = {
+  total: number;
+  reason: string | null;
+  pages: PlaceholderPage[];
+};
+
+export async function getPlaceholderPages(params: { reason?: string; limit?: number; offset?: number } = {}): Promise<PlaceholderListResponse> {
+  const search = new URLSearchParams();
+  if (params.reason) search.set('reason', params.reason);
+  if (params.limit != null) search.set('limit', String(params.limit));
+  if (params.offset != null) search.set('offset', String(params.offset));
+  const qs = search.toString();
+  return apiGet(`/admin/placeholders${qs ? `?${qs}` : ''}`) as Promise<PlaceholderListResponse>;
+}
+
+export async function redownloadPlaceholder(storagePrefix: string): Promise<{ message: string }> {
+  return apiPost('/admin/placeholders/redownload', { storagePrefix }) as Promise<{ message: string }>;
+}
+
+export async function replacePlaceholderPage(args: { storagePrefix: string; pageNumber: number; imageUrl: string }): Promise<{ message: string }> {
+  return apiPost('/admin/placeholders/replace', args) as Promise<{ message: string }>;
 }

@@ -47,7 +47,8 @@ import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
 import { requestFlareSolverr, resolveFlareSolverrUrl, hasFlareSolverr, type FlareSolverrCookie, type FlareSolverrResult } from '@/lib/flareSolverrClient';
-import { ScraperStageError, describeError } from '../lib/scraperError';
+import { ScraperStageError, describeError, isTrue404Error } from '../lib/scraperError';
+import { store404PlaceholderIfMissing } from '../lib/chapterImageDownloader';
 
 const SITE_BASE = appConfig.scraper.comix.baseUrl;
 
@@ -1814,13 +1815,15 @@ export class ComixScraper implements IChapterScraper {
                         `[Comix] [${contextLabel}] Page ${pageNum} attempt ${attempt}/${maxRetries}: ${err?.message || err}`,
                         { service: 'comixScraper' },
                     );
+                    if (isTrue404Error(err)) break; // deterministic 404 → placeholder below
                     if (attempt < maxRetries) {
                         await new Promise(resolve => setTimeout(resolve, retryDelayMs * Math.pow(2, attempt - 1)));
                     }
                 }
             }
-            // Exhausted retries → fail the chapter so the queue retries it (and it
-            // stays in the failed set for manual retry) instead of silently placeholdering.
+            // A true 404 → placeholder this one page; any other exhausted failure fails the
+            // chapter (queue retries it, and onFailed records a download_failed ledger row).
+            if (await store404PlaceholderIfMissing(lastError, { storagePrefix, pageIndex: pageNum - 1, imageUrl: byPage.get(pageNum)?.imageUrl ?? '', scraperId: this.metadata.id, service: 'comixScraper' })) return;
             const described = describeError(lastError);
             const stageError = new ScraperStageError({
                 stage: 'download_image',

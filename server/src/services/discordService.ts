@@ -240,6 +240,21 @@ export const discordService = {
         );
     },
 
+    async notifyCatalogScanPaused(atRank: number, consecutiveFailures: number, pauseReason: string | null) {
+        await sendEmbed('admin', buildEmbed({
+                title: 'Catalog Scan Auto-Paused',
+                description: `Catalog scan paused at rank **${atRank}** after **${consecutiveFailures}** consecutive failed batches — likely a systemic scraper or upstream issue. Fix the source, then resume.`,
+                url: `${PUBLIC_APP_URL}/admin/manga`,
+                color: COLORS.warning,
+                fields: [
+                    { name: 'Paused At Rank', value: String(atRank), inline: true },
+                    { name: 'Consecutive Failures', value: String(consecutiveFailures), inline: true },
+                    { name: 'Reason', value: pauseReason || 'Unknown' },
+                ],
+            })
+        );
+    },
+
     async notifyScraperFailed(mangaTitle: string, seriesId: number, foundTitles: Array<{ text: string; url: string }>, coverUrl?: string) {
         const suggestions =
             foundTitles.length > 0

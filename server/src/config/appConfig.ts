@@ -384,6 +384,8 @@ export interface ArchiveConfig {
 export interface CatalogScanConfig {
     pollIntervalMs: number;
     maxQueueDepth: number;
+    maxConsecutiveFailures: number;
+    batchStallMs: number;
 }
 
 /**
@@ -601,6 +603,10 @@ export class AppConfigService {
             catalogScan: {
                 pollIntervalMs: parseEnvNumber('CATALOG_SCAN_POLL_MS', 30_000),
                 maxQueueDepth: parseEnvNumber('CATALOG_SCAN_MAX_QUEUE_DEPTH', 500),
+                // Pause the scan after this many consecutive failed batches (systemic scraper/service breakage). 0 = disabled.
+                maxConsecutiveFailures: parseEnvNumber('CATALOG_SCAN_MAX_CONSECUTIVE_FAILURES', 10),
+                // Force-terminate a batch that hasn't completed within this window (a job wedged so its counters never resolve). ~2× chapter-download timeout.
+                batchStallMs: parseEnvNumber('CATALOG_SCAN_BATCH_STALL_MS', 30 * 60 * 1000),
             },
 
             // Cache Configuration

@@ -24,6 +24,7 @@ import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
 import { requestFlareSolverr, resolveFlareSolverrUrl, hasFlareSolverr, type FlareSolverrCookie, type FlareSolverrResult } from '@/lib/flareSolverrClient';
 import { ScraperStageError, describeError } from '../lib/scraperError';
+import { store404PlaceholderIfMissing } from '../lib/chapterImageDownloader';
 
 const SITE_BASE = appConfig.scraper.kagane.baseUrl;
 const API_BASE = appConfig.scraper.kagane.apiUrl;
@@ -811,6 +812,7 @@ export class KaganeScraper implements IChapterScraper {
                         await new Promise(resolve => setTimeout(resolve, retryDelayMs * attempt));
                         continue;
                     }
+                    if (await store404PlaceholderIfMissing(err, { storagePrefix, pageIndex: i, imageUrl, scraperId: this.metadata.id, service: 'kaganeScraper' })) return;
                     const described = describeError(lastError);
                     const stageError = new ScraperStageError({
                         stage: 'download_image',

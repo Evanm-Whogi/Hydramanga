@@ -258,16 +258,48 @@ class QueueService {
                         },
                     });
 
-                    // A single chapter failing must NOT fail the whole series — the other
-                    // chapters are still downloading and would otherwise hit "cannot
-                    // increment progress: status is failed". The chapter is left in the
-                    // failed set for retry (auto-retries are already exhausted here); the
-                    // series stays in 'downloading' and completes once its pages succeed.
-                    // (Whole-import failure is handled by the scan job branch above.)
+                    // A single permanently-failed chapter must NOT flip the whole series
+                    // to 'failed' (the other chapters are still downloading). But it MUST
+                    // count toward completion, otherwise a chapter that can never succeed
+                    // (e.g. 403 forever) leaves the series wedged in 'downloading' and the
+                    // catalog coordinator polls that batch forever. So we increment
+                    // failedChapters (downloaded + failed >= total → completed) and record a
+                    // durable ledger row. The job also stays in the BullMQ failed set for
+                    // manual retry, but that set is a rolling 25-deep buffer — the ledger
+                    // row in chapter_placeholder_pages is the reliable record.
                     logger.warn(
-                        `Chapter ${jobData?.chapterNumber} for series ${jobData?.seriesId} failed after ${job?.attemptsMade} attempts; left for retry, series not failed: ${errorMessage}`,
+                        `Chapter ${jobData?.chapterNumber} for series ${jobData?.seriesId} failed after ${job?.attemptsMade} attempts; counting as failed chapter: ${errorMessage}`,
                         { service: 'queueService' }
                     );
+
+                    if (jobData?.seriesId != null && jobData?.chapterNumber != null) {
+                        try {
+                            const { placeholderTrackingService } = await import('@/services/placeholderTrackingService');
+                            await placeholderTrackingService.record({
+                                seriesId: jobData.seriesId,
+                                storagePrefix: `${jobData.seriesId}/${jobData.chapterNumber}`,
+                                pageNumber: (stageDetail?.page_number as number | undefined) ?? 0,
+                                reason: 'download_failed',
+                                imageUrl: (stageDetail?.image_url as string | undefined) ?? jobData?.chapterUrl ?? null,
+                                errorMessage,
+                                httpStatus: (stageDetail?.http_status as number | undefined) ?? null,
+                                scraperId: jobData?.scraperId ?? null,
+                            });
+                        } catch (ledgerError) {
+                            logger.error(`Failed to record chapter failure ledger row: ${ledgerError}`, { service: 'queueService' });
+                        }
+
+                        try {
+                            const { mangaProgressService } = await import('@/services/mangaProgressService');
+                            const { justCompleted } = await mangaProgressService.incrementFailedChapters(jobData.seriesId);
+                            if (justCompleted) {
+                                const { notificationService } = await import('@/services/notificationService');
+                                await notificationService.announceNewlyDownloadedChapters(jobData.seriesId);
+                            }
+                        } catch (progressError) {
+                            logger.error(`Failed to increment failed chapters for series ${jobData?.seriesId}: ${progressError}`, { service: 'queueService' });
+                        }
+                    }
                 }
             }
         };

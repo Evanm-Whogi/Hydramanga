@@ -1,6 +1,6 @@
 import axios, { type AxiosResponse } from 'axios';
 import { isIP } from 'net';
-import { extractImageUrls, getContentImageValidationError, isAllowedExternalImageUrl, isExternalImageUrl } from '@/lib/contentImages';
+import { extractImageUrls, getContentImageValidationError, hasTraversalSegments, isAllowedExternalImageUrl, isExternalImageUrl } from '@/lib/contentImages';
 import { CONTENT_LIMITS } from '@/lib/securityLimits';
 
 const FETCH_TIMEOUT_MS = 12_000;
@@ -23,6 +23,16 @@ function isPrivateOrLocalHost(hostname: string): boolean {
     if (host === '::1' || host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd')) return true;
   }
   return false;
+}
+
+export function assertSafeAdminFetchUrl(url: string): void {
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.length > CONTENT_LIMITS.contentImageUrlMaxLength) throw new Error('Invalid image URL');
+  if (hasTraversalSegments(trimmed)) throw new Error('Invalid image URL');
+  const parsed = new URL(trimmed);
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('Invalid image URL');
+  if (hasTraversalSegments(parsed.pathname)) throw new Error('Invalid image URL');
+  if (isPrivateOrLocalHost(parsed.hostname)) throw new Error('Image URL host is not allowed');
 }
 
 export function assertSafeExternalFetchUrl(url: string): void {
@@ -99,6 +109,28 @@ export async function validateExternalImageSize(url: string): Promise<string | n
   } catch {
     return `External image could not be verified (max ${maxBytesLabel()})`;
   }
+}
+
+export async function fetchAdminExternalImageStream(url: string): Promise<{ stream: NodeJS.ReadableStream; contentType: string }> {
+  assertSafeAdminFetchUrl(url);
+  const response = await axios.get(url, {
+    timeout: FETCH_TIMEOUT_MS,
+    maxRedirects: MAX_REDIRECTS,
+    responseType: 'stream',
+    validateStatus: (status) => status >= 200 && status < 400,
+    beforeRedirect: assertSafeRedirect,
+  });
+  const contentType = String(response.headers['content-type'] ?? '');
+  if (contentType && !contentType.startsWith('image/')) {
+    response.data.destroy();
+    throw new Error('URL does not point to an image');
+  }
+  const declaredLength = parseContentLength(response.headers['content-length']);
+  if (declaredLength != null && declaredLength > CONTENT_LIMITS.contentMaxImageBytes) {
+    response.data.destroy();
+    throw new Error('Image too large');
+  }
+  return { stream: response.data, contentType: contentType || 'application/octet-stream' };
 }
 
 export async function fetchExternalImageStream(url: string): Promise<{ stream: NodeJS.ReadableStream; contentType: string }> {

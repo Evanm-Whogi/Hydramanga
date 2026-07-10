@@ -898,6 +898,9 @@ export class OnisagaScraper implements IChapterScraper {
                             ...(cfCookie ? { Cookie: `cf_clearance=${cfCookie}` } : {}),
                         },
                         service: 'onisagaScraper',
+                        // A 404 on a direct image URL may still be recoverable by re-rendering
+                        // the reader, so surface it and let the canvas fallback below try.
+                        throw404: true,
                     });
                     return { storagePrefix, pageCount: uniqueImages.length };
                 } catch (error: any) {

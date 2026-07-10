@@ -4,6 +4,7 @@ import { desc, eq } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { queueService } from '@/services/queueService';
 import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
+import { mangaProgressService } from '@/services/mangaProgressService';
 import { discordService } from '@/services/discordService';
 import { appConfig } from '@/config/appConfig';
 
@@ -50,6 +51,8 @@ export type CatalogScanPublicState = {
   progressPercent: number;
   currentBatchCompleted: number;
   currentBatchTotal: number;
+  consecutiveFailures: number;
+  pauseReason: string | null;
   startedAt: string | null;
   stoppedAt: string | null;
   updatedAt: string;
@@ -145,6 +148,8 @@ class CatalogScanService {
       progressPercent,
       currentBatchCompleted: 0,
       currentBatchTotal,
+      consecutiveFailures: row.consecutiveFailures,
+      pauseReason: row.pauseReason,
       startedAt: row.startedAt?.toISOString() ?? null,
       stoppedAt: row.stoppedAt?.toISOString() ?? null,
       updatedAt: row.updatedAt.toISOString(),
@@ -184,7 +189,7 @@ class CatalogScanService {
 
   private async isScrapeSeriesTerminal(seriesId: number): Promise<boolean> {
     const { scanStatus } = await mangaOrchestratorService.getScanStatus(seriesId);
-    return scanStatus !== 'scanning' && scanStatus !== 'downloading' && scanStatus !== 'queued';
+    return scanStatus !== 'scanning' && scanStatus !== 'downloading' && scanStatus !== 'queued' && scanStatus !== 'source_set';
   }
 
   private async isArchivedSeriesTerminal(seriesId: number): Promise<boolean> {
@@ -208,6 +213,96 @@ class CatalogScanService {
       this.countTerminalArchivedSeries(archivedIds),
     ]);
     return scrapeDone === seriesIds.length && archiveDone === archivedIds.length;
+  }
+
+  /**
+   * Circuit-breaker classification for a completed batch (order-independent, batch-level):
+   * count clear successes vs. failures across both the scrape and archive series.
+   * `treatNonTerminalAsFailure` is set only by the stall watchdog, where a series still
+   * stuck mid-flight is itself the problem.
+   */
+  private async classifyBatchOutcome(seriesIds: number[], archivedIds: number[], treatNonTerminalAsFailure: boolean): Promise<{ successCount: number; failureCount: number; sampleReason: string | null }> {
+    let successCount = 0;
+    let failureCount = 0;
+    let sampleReason: string | null = null;
+    const noteFailure = (reason: string) => { failureCount++; if (!sampleReason) sampleReason = reason; };
+
+    for (const seriesId of seriesIds) {
+      const progress = await mangaProgressService.getProgress(seriesId);
+      if (!progress) { if (treatNonTerminalAsFailure) noteFailure(`series ${seriesId}: no progress row`); continue; }
+      const tag = progress.scraperId ? ` [${progress.scraperId}]` : '';
+      if (progress.status === 'failed') { noteFailure(`series ${seriesId}${tag}: ${progress.errorMessage || 'scan failed'}`); continue; }
+      if (progress.status === 'source_set') { noteFailure(`series ${seriesId}${tag}: source selected but chapter scan never ran`); continue; }
+      if (progress.status === 'completed') {
+        if (progress.totalChapters === 0) continue; // neutral: legitimately empty series
+        if (progress.downloadedChapters > 0) { successCount++; continue; } // success (incl. partial w/ placeholders)
+        if ((progress.failedChapters ?? 0) > 0) { noteFailure(`series ${seriesId}${tag}: all ${progress.failedChapters} chapter(s) failed`); continue; } // empty completion
+        continue; // neutral (completed but nothing processed — unexpected)
+      }
+      // Non-terminal (downloading/scanning/queued/source_set).
+      if (treatNonTerminalAsFailure) noteFailure(`series ${seriesId}${tag}: stuck in ${progress.status}`);
+    }
+
+    for (const seriesId of archivedIds) {
+      const [job] = await db
+        .select({ status: acquisitionJobs.status })
+        .from(acquisitionJobs)
+        .where(eq(acquisitionJobs.seriesId, seriesId))
+        .orderBy(desc(acquisitionJobs.createdAt))
+        .limit(1);
+      if (!job) { if (treatNonTerminalAsFailure) noteFailure(`series ${seriesId}: no archive job`); continue; }
+      if (job.status === 'done') { successCount++; continue; }
+      if (job.status === 'failed' || job.status === 'needs_review') { noteFailure(`series ${seriesId}: archive ${job.status}`); continue; }
+      if (treatNonTerminalAsFailure) noteFailure(`series ${seriesId}: archive ${job.status}`);
+    }
+
+    return { successCount, failureCount, sampleReason };
+  }
+
+  /**
+   * Update the consecutive-failure streak from a completed batch and auto-pause when it
+   * crosses the threshold. Rule: any success in the batch resets the streak to 0; otherwise
+   * the streak grows by the number of failures. Returns true when the scan was paused.
+   */
+  private async applyBatchOutcomeAndMaybePause(row: typeof catalogScanState.$inferSelect, seriesIds: number[], archivedIds: number[], opts: { treatNonTerminalAsFailure?: boolean }): Promise<boolean> {
+    const { successCount, failureCount, sampleReason } = await this.classifyBatchOutcome(seriesIds, archivedIds, opts.treatNonTerminalAsFailure ?? false);
+    const prevStreak = row.consecutiveFailures ?? 0;
+    const newStreak = successCount >= 1 ? 0 : prevStreak + failureCount;
+
+    await db.update(catalogScanState).set({ consecutiveFailures: newStreak, updatedAt: new Date() }).where(eq(catalogScanState.id, CATALOG_SCAN_STATE_ID));
+    logger.info(`Catalog batch outcome: ${successCount} success, ${failureCount} failure → consecutiveFailures=${newStreak}`, { service: 'catalogScanService' });
+
+    const maxConsecutive = appConfig.catalogScan.maxConsecutiveFailures;
+    if (maxConsecutive > 0 && newStreak >= maxConsecutive) {
+      const rollbackRank = row.currentBatchStart ?? row.nextRank;
+      const pauseReason = `Auto-paused after ${newStreak} consecutive failed batches. Last failure: ${sampleReason || 'unknown'}`;
+      await this.pauseRun(pauseReason, rollbackRank);
+      logger.warn(`Catalog scan auto-paused at rank ${rollbackRank}: ${pauseReason}`, { service: 'catalogScanService' });
+      try {
+        await discordService.notifyCatalogScanPaused(rollbackRank, newStreak, pauseReason);
+      } catch (err) {
+        logger.error(`Failed to send catalog pause Discord notification: ${err}`, { service: 'catalogScanService' });
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /** Pause the scan to idle, preserving pauseReason and rolling the cursor back so the failed batch is re-attempted on resume. */
+  private async pauseRun(pauseReason: string, rollbackToRank: number) {
+    const now = new Date();
+    await db.update(catalogScanState).set({
+      status: 'idle',
+      nextRank: rollbackToRank,
+      pauseReason,
+      currentBatchStart: null,
+      currentBatchEnd: null,
+      currentBatchSeriesIds: [],
+      currentBatchArchivedIds: [],
+      currentBatchStartedAt: null,
+      stoppedAt: now,
+      updatedAt: now,
+    }).where(eq(catalogScanState.id, CATALOG_SCAN_STATE_ID));
   }
 
   async enqueueCoordinatorTick(delayMs = 0): Promise<void> {
@@ -257,6 +352,9 @@ class CatalogScanService {
       currentBatchEnd: null,
       currentBatchSeriesIds: [],
       currentBatchArchivedIds: [],
+      currentBatchStartedAt: null,
+      consecutiveFailures: 0,
+      pauseReason: null,
       totalCatalogCount,
       stats: resume && existing ? existing.stats : EMPTY_STATS,
       startedAt: now,
@@ -307,6 +405,9 @@ class CatalogScanService {
       currentBatchEnd: null,
       currentBatchSeriesIds: [],
       currentBatchArchivedIds: [],
+      currentBatchStartedAt: null,
+      consecutiveFailures: 0,
+      pauseReason: null,
       stats: EMPTY_STATS,
       startedAt: null,
       stoppedAt: null,
@@ -321,6 +422,7 @@ class CatalogScanService {
       currentBatchEnd: null,
       currentBatchSeriesIds: [],
       currentBatchArchivedIds: [],
+      currentBatchStartedAt: null,
       updatedAt: new Date(),
     }).where(eq(catalogScanState.id, CATALOG_SCAN_STATE_ID));
   }
@@ -334,6 +436,8 @@ class CatalogScanService {
       currentBatchEnd: null,
       currentBatchSeriesIds: [],
       currentBatchArchivedIds: [],
+      currentBatchStartedAt: null,
+      pauseReason: null,
       stoppedAt: now,
       updatedAt: now,
     }).where(eq(catalogScanState.id, CATALOG_SCAN_STATE_ID));
@@ -364,8 +468,23 @@ class CatalogScanService {
     if (hasActiveBatch) {
       const complete = await this.isBatchComplete(seriesIds, archivedIds);
       if (!complete) {
-        await this.enqueueCoordinatorTick(appConfig.catalogScan.pollIntervalMs);
-        return;
+        // Watchdog: a batch that never reaches a terminal state (a job wedged so its
+        // progress counters never resolve) would otherwise poll forever. Past the stall
+        // window, force-terminate it and count it as a breaker failure.
+        const stallMs = appConfig.catalogScan.batchStallMs;
+        const startedAtMs = row.currentBatchStartedAt ? row.currentBatchStartedAt.getTime() : null;
+        const stalled = stallMs > 0 && startedAtMs != null && Date.now() - startedAtMs > stallMs;
+        if (!stalled) {
+          await this.enqueueCoordinatorTick(appConfig.catalogScan.pollIntervalMs);
+          return;
+        }
+        logger.warn(
+          `Catalog batch at rank ${row.currentBatchStart} stalled for >${Math.round(stallMs / 60000)}m; force-terminating and counting as failure`,
+          { service: 'catalogScanService' }
+        );
+        if (await this.applyBatchOutcomeAndMaybePause(row, seriesIds, archivedIds, { treatNonTerminalAsFailure: true })) return;
+      } else {
+        if (await this.applyBatchOutcomeAndMaybePause(row, seriesIds, archivedIds, {})) return;
       }
 
       const stats = mergeStats(parseStats(row.stats), { batchesCompleted: 1 });
@@ -458,6 +577,7 @@ class CatalogScanService {
       currentBatchEnd: Math.min(batchEnd, batchStart + result.matched - 1),
       currentBatchSeriesIds: result.enqueuedSeriesIds,
       currentBatchArchivedIds: result.archivedSeriesIds,
+      currentBatchStartedAt: now,
       updatedAt: now,
     }).where(eq(catalogScanState.id, CATALOG_SCAN_STATE_ID));
 

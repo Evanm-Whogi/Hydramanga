@@ -34,7 +34,8 @@ import {
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
-import { ScraperStageError, describeError } from '@/scrapers/lib/scraperError';
+import { ScraperStageError, describeError, isTrue404Error } from '@/scrapers/lib/scraperError';
+import { store404PlaceholderIfMissing } from '@/scrapers/lib/chapterImageDownloader';
 
 const SITE_BASE = appConfig.scraper.mangaFire.baseUrl;
 const DEFAULT_LANG = appConfig.scraper.mangaFire.language || 'en';
@@ -919,13 +920,15 @@ export class MangaFireScraper implements IChapterScraper {
                         `[MangaFire] [${contextLabel}] Page ${pageNum} attempt ${attempt}/${maxRetries}: ${err?.message || err}`,
                         { service: 'mangaFireScraper' },
                     );
+                    if (isTrue404Error(err)) break; // deterministic 404 → placeholder below
                     if (attempt < maxRetries) {
                         await new Promise(resolve => setTimeout(resolve, retryDelayMs * Math.pow(2, attempt - 1)));
                     }
                 }
             }
-            // Exhausted retries → fail the chapter so the queue retries it (and it
-            // stays in the failed set for manual retry) instead of silently placeholdering.
+            // A true 404 → placeholder this one page; any other exhausted failure fails the
+            // chapter (queue retries it, and onFailed records a download_failed ledger row).
+            if (await store404PlaceholderIfMissing(lastError, { storagePrefix, pageIndex: pageNum - 1, imageUrl: byPage.get(pageNum)?.imageUrl ?? '', scraperId: this.metadata.id, service: 'mangaFireScraper' })) return;
             const described = describeError(lastError);
             const stageError = new ScraperStageError({
                 stage: 'download_image',

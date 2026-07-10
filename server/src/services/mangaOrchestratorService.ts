@@ -146,7 +146,7 @@ class MangaOrchestratorService {
       .limit(limit);
 
     const seriesIdsWithChapters = new Set<number>();
-    if (skipWithChapters && rows.length > 0) {
+    if (rows.length > 0) {
       const ids = rows.map((r) => r.id);
       const chapterRows = await db
         .selectDistinct({ seriesId: chapters.seriesId })
@@ -213,10 +213,11 @@ class MangaOrchestratorService {
         }
       }
       const coverUrl = row.cover ? (row.cover as any)?.x350?.x1 || (row.cover as any)?.x250?.x1 || (row.cover as any)?.raw?.url || undefined : undefined;
+      const isFirstScan = !seriesIdsWithChapters.has(row.id);
       await queueService.addJob(
         'mangaChapterImportQueue',
         `Ranked sync ${row.title} (#${start}-${end})`,
-        { mangaTitle: row.title, seriesId: row.id, romanizedTitle: row.romanizedTitle, coverUrl },
+        { mangaTitle: row.title, seriesId: row.id, romanizedTitle: row.romanizedTitle, coverUrl, isFirstScan },
         { jobId: `${jobIdPrefix}-${row.id}`, attempts: 3 }
       );
       queued++;
@@ -358,31 +359,40 @@ class MangaOrchestratorService {
     return { queued: true };
   }
 
+  /** Pending chapter-scan job in mangaChapterImportQueue (catalog, ranked, trending, etc.). */
+  private async getQueuedChapterScanStatus(seriesId: number): Promise<{ scanStatus: string; isQueued: boolean } | null> {
+    const scanQueue = queueService.getQueue('mangaChapterImportQueue');
+    for (const jobId of chapterScanJobIds(seriesId)) {
+      try {
+        const job = await scanQueue.getJob(jobId);
+        if (!job) continue;
+        const state = await job.getState();
+        if (state === 'waiting' || state === 'delayed' || state === 'prioritized' || state === 'active') {
+          return { scanStatus: state === 'active' ? 'scanning' : 'queued', isQueued: state !== 'active' };
+        }
+      } catch {
+        // Job not found, try next prefix
+      }
+    }
+    return null;
+  }
+
   // Get scan status: progress status + whether a job is queued
   async getScanStatus(seriesId: number): Promise<{ scanStatus: string; isQueued: boolean }> {
     const progress = await mangaProgressService.getProgress(seriesId);
     if (progress && (progress.status === 'scanning' || progress.status === 'downloading')) {
       return { scanStatus: progress.status, isQueued: false };
     }
+    // Auto-select sets source_set (or legacy completed+0+scraper) before the scan job runs.
+    // Always prefer the queue when a scan job is still pending — otherwise the catalog
+    // coordinator treats the title as done and advances the batch without importing.
+    const queuedScan = await this.getQueuedChapterScanStatus(seriesId);
+    if (queuedScan) return queuedScan;
     if (progress && isSourceOnlyProgress(progress)) {
       return { scanStatus: 'source_set', isQueued: false };
     }
     if (progress && (progress.status === 'completed' || progress.status === 'failed')) {
       return { scanStatus: progress.status, isQueued: false };
-    }
-    const scanQueue = queueService.getQueue('mangaChapterImportQueue');
-    for (const jobId of chapterScanJobIds(seriesId)) {
-      try {
-        const job = await scanQueue.getJob(jobId);
-        if (job) {
-          const state = await job.getState();
-          if (state === 'waiting' || state === 'delayed' || state === 'active') {
-            return { scanStatus: state === 'active' ? 'scanning' : 'queued', isQueued: state !== 'active' };
-          }
-        }
-      } catch {
-        // Job not found, try next
-      }
     }
     return { scanStatus: 'idle', isQueued: false };
   }

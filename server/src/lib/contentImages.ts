@@ -6,7 +6,7 @@ const CODE_RE = /(```[\s\S]*?```|`[^`\n]+`)/g;
 const BARE_IMAGE_REF_RE = /(?:https?:\/\/[^\s<>"'()]+|\/[^\s<>"'()]+)/gi;
 const MARKDOWN_IMAGE_REF_RE = /!\[[^\]]*]\(([^)]+)\)/gi;
 
-function hasTraversalSegments(value: string): boolean {
+export function hasTraversalSegments(value: string): boolean {
   const lower = value.toLowerCase();
   return lower.includes('..') || lower.includes('\\') || lower.includes('\0') || lower.includes('%2e%2e');
 }

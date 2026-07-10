@@ -14,6 +14,7 @@ import { Readable } from 'stream';
 import sharp from 'sharp';
 import { appConfig } from '@/config/appConfig';
 import { S3Bucket } from '@/lib/s3Bucket';
+import { NOT_FOUND_PLACEHOLDER_WEBP } from '@/assets/notFoundPlaceholder';
 
 /**
  * Per-page transform tuning. Defaults suit already-degraded scraped web images
@@ -64,9 +65,11 @@ class ObjectStorageService {
         return `${storagePrefix}/${formatPageNumber(pageIndex + 1)}.webp`;
     }
 
-    /** Public read URL for a given storage prefix and 1-based page number. */
-    publicUrl(storagePrefix: string, pageNumber: number): string {
-        return this.bucket.publicUrl(`${storagePrefix}/${formatPageNumber(pageNumber)}.webp`);
+    /** Public read URL for a given storage prefix and 1-based page number. Optional cacheBust appends ?v= for browser/CDN busting after in-place overwrites. */
+    publicUrl(storagePrefix: string, pageNumber: number, cacheBust?: number): string {
+        const url = this.bucket.publicUrl(`${storagePrefix}/${formatPageNumber(pageNumber)}.webp`);
+        if (cacheBust == null) return url;
+        return `${url}?v=${cacheBust}`;
     }
 
     /** Low-level upload of an already-prepared body. */
@@ -108,11 +111,9 @@ class ObjectStorageService {
 
     private async getPlaceholderBuffer(): Promise<Buffer> {
         if (this.placeholderBuffer) return this.placeholderBuffer;
-        this.placeholderBuffer = await sharp({
-            create: { width: 400, height: 600, channels: 3, background: { r: 45, g: 45, b: 48 } },
-        })
-            .webp({ quality: 80, effort: 1 })
-            .toBuffer();
+        // Upload the embedded "not found" WebP verbatim (no re-encode), so every
+        // placeholder slot has identical bytes and a stable, version-independent ETag.
+        this.placeholderBuffer = NOT_FOUND_PLACEHOLDER_WEBP;
         return this.placeholderBuffer;
     }
 

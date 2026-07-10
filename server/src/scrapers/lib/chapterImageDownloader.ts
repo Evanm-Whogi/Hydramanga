@@ -22,7 +22,8 @@ import { objectStorageService, type PageTransformOptions } from '@/services/obje
 import { buildAxios } from './scraperEgress';
 import logger from '@/services/loggerService';
 import { matchKnownBrokenImage } from './knownBrokenImages';
-import { ScraperStageError, describeError } from './scraperError';
+import { ScraperStageError, describeError, isTrue404Error } from './scraperError';
+import { placeholderTrackingService, seriesIdFromStoragePrefix, type PlaceholderReason } from '@/services/placeholderTrackingService';
 
 /**
  * True when sharp rejected the downloaded bytes because they aren't a decodable
@@ -58,6 +59,25 @@ export function isNetworkRetryableError(err: any): boolean {
         err?.code === 'ECONNABORTED' ||
         err?.code === 'ETIMEDOUT'
     );
+}
+
+/**
+ * For scrapers that run their own per-image download loop (not `downloadAndStoreChapter`):
+ * if `err` is a genuine HTTP 404, store a placeholder for this one page, record it in the
+ * ledger, and return `true` so the caller continues instead of failing the chapter. Returns
+ * `false` for any other error — the caller must then throw and fail the chapter (which the
+ * queue `onFailed` handler records as `download_failed`).
+ */
+export async function store404PlaceholderIfMissing(err: unknown, ctx: { storagePrefix: string; pageIndex: number; imageUrl: string; scraperId?: string; service?: string }): Promise<boolean> {
+    if (!isTrue404Error(err)) return false;
+    const described = describeError(err);
+    logger.warn(`Image ${ctx.pageIndex + 1} not found (HTTP 404); storing placeholder`, { service: ctx.service ?? 'chapterImageDownloader' });
+    await objectStorageService.uploadPlaceholderSlot(ctx.storagePrefix, ctx.pageIndex);
+    const seriesId = seriesIdFromStoragePrefix(ctx.storagePrefix);
+    if (seriesId != null) {
+        await placeholderTrackingService.record({ seriesId, storagePrefix: ctx.storagePrefix, pageNumber: ctx.pageIndex + 1, reason: 'http_404', imageUrl: ctx.imageUrl, httpStatus: 404, errorMessage: described.message, scraperId: ctx.scraperId ?? null });
+    }
+    return true;
 }
 
 export interface DownloadAndStoreOptions {
@@ -104,6 +124,12 @@ export interface DownloadAndStoreOptions {
      * the failure and there's no way to tell a chapter needs re-downloading.
      */
     placeholderOnFailure?: boolean;
+    /**
+     * When `true`, a genuine HTTP 404 is thrown like any other failure instead of being
+     * substituted with a placeholder. Used by scrapers with a whole-chapter fallback path
+     * (e.g. Onisaga's canvas capture) that may still recover a page whose direct URL 404s.
+     */
+    throw404?: boolean;
     /** Whether a thrown error should be retried (default: always retry until maxRetries). */
     isRetryable?: (err: any) => boolean;
     /** Per-page webp transform overrides (quality/effort/width); e.g. higher quality for clean line-art sources. */
@@ -141,6 +167,7 @@ export async function downloadAndStoreChapter(
         isPlaceholder,
         detectKnownBrokenImages = false,
         placeholderOnFailure = false,
+        throw404 = false,
         isRetryable,
         transform,
     } = opts;
@@ -152,9 +179,22 @@ export async function downloadAndStoreChapter(
     const timed = process.env.STORE_TIMING === '1';
     let dlMs = 0, stMs = 0, dlBytes = 0;
 
+    // Durable per-page failure/placeholder ledger. Every placeholder we write (and any
+    // permanent per-page failure) is recorded so the admin panel has a reliable history —
+    // the BullMQ failed set is a rolling buffer and can't be relied on.
+    const seriesId = seriesIdFromStoragePrefix(storagePrefix);
+    const placeholderedPages: number[] = [];
+    const storePlaceholder = async (i: number, reason: PlaceholderReason, imageUrl: string, httpStatus?: number | null, errorMessage?: string | null) => {
+        await objectStorageService.uploadPlaceholderSlot(storagePrefix, i);
+        placeholderedPages.push(i + 1);
+        if (seriesId != null) {
+            await placeholderTrackingService.record({ seriesId, storagePrefix, pageNumber: i + 1, reason, imageUrl, httpStatus: httpStatus ?? null, errorMessage: errorMessage ?? null, scraperId: scraperId ?? null });
+        }
+    };
+
     const downloadOne = async (imageUrl: string, i: number) => {
         if (isPlaceholder?.(imageUrl)) {
-            await objectStorageService.uploadPlaceholderSlot(storagePrefix, i);
+            await storePlaceholder(i, 'source_placeholder', imageUrl);
             return;
         }
 
@@ -187,7 +227,7 @@ export async function downloadAndStoreChapter(
                             `Image ${i + 1} is ${brokenSource}'s broken-image graphic; storing placeholder`,
                             { service }
                         );
-                        await objectStorageService.uploadPlaceholderSlot(storagePrefix, i);
+                        await storePlaceholder(i, 'known_broken', imageUrl, null, `matched ${brokenSource} broken-image graphic`);
                         return;
                     }
                     try {
@@ -201,7 +241,7 @@ export async function downloadAndStoreChapter(
                                 `Image ${i + 1} downloaded but is not a decodable image (${transformErr.message}); storing placeholder`,
                                 { service }
                             );
-                            await objectStorageService.uploadPlaceholderSlot(storagePrefix, i);
+                            await storePlaceholder(i, 'undecodable', imageUrl, null, transformErr.message);
                             return;
                         }
                         throw transformErr;
@@ -212,7 +252,9 @@ export async function downloadAndStoreChapter(
                 return; // success
             } catch (err: any) {
                 lastError = err;
-                const retryable = isRetryable ? isRetryable(err) : true;
+                // A 404 is deterministic — retrying just re-fetches the 404. Stop early
+                // and fall through to the placeholder branch below.
+                const retryable = (isRetryable ? isRetryable(err) : true) && !isTrue404Error(err);
                 if (retryable && attempt < maxRetries) {
                     const delay = retryDelayMs * Math.pow(2, attempt - 1);
                     logger.warn(
@@ -226,8 +268,22 @@ export async function downloadAndStoreChapter(
             }
         }
 
+        const described = describeError(lastError);
+
+        // A true 404 means the page is genuinely missing: substitute a placeholder for
+        // this one page (recorded as http_404) rather than failing the whole chapter.
+        // This is independent of `placeholderOnFailure` — 404s always placeholder — unless
+        // the scraper opted into `throw404` to run a whole-chapter fallback instead.
+        if (!throw404 && isTrue404Error(lastError)) {
+            logger.warn(
+                `Image ${i + 1} not found (HTTP 404); storing placeholder`,
+                { service }
+            );
+            await storePlaceholder(i, 'http_404', imageUrl, 404, described.message);
+            return;
+        }
+
         if (!placeholderOnFailure) {
-            const described = describeError(lastError);
             const stageError = new ScraperStageError({
                 stage: 'download_image',
                 message: described.message,
@@ -250,7 +306,7 @@ export async function downloadAndStoreChapter(
             `Failed to download image ${i + 1} after ${maxRetries} attempts, using placeholder: ${lastError?.message}`,
             { service }
         );
-        await objectStorageService.uploadPlaceholderSlot(storagePrefix, i);
+        await storePlaceholder(i, 'download_failed', imageUrl, described.httpStatus ?? null, lastError?.message ?? null);
     };
 
     // Sliding-window pool: keep `batchSize` page tasks in flight instead of fixed
@@ -276,6 +332,13 @@ export async function downloadAndStoreChapter(
     };
     const wallStart = Date.now();
     await Promise.all(Array.from({ length: Math.min(concurrency, images.length) }, () => runWorker()));
+
+    // Any page that previously had a placeholder/failure row but succeeded this run is
+    // now resolved. One query per chapter (keyed on the indexed storage prefix), and
+    // only pages still placeholdered this run stay unresolved.
+    if (seriesId != null) {
+        await placeholderTrackingService.resolveByPrefixExcept(storagePrefix, placeholderedPages);
+    }
 
     if (timed) {
         const wall = Date.now() - wallStart;

@@ -3,6 +3,7 @@ import { auditAdminMiddleware } from '@/middlewares/auditAdminMiddleware';
 import { listAdminAuditLogs } from '@/controllers/adminAuditController';
 import { triggerMangaSync, triggerMonitoredRescan, triggerTrendingRescan, triggerRankedScan } from '@/controllers/mangaImportController';
 import { getCatalogScanState, startCatalogScan, stopCatalogScan, forceStopCatalogScan, resetCatalogScan } from '@/controllers/catalogScanController';
+import { listPlaceholders, redownloadPlaceholder, replacePlaceholderPage } from '@/controllers/placeholderController';
 import { adminScraperSearch, adminSetSource, adminAddSecondaryTitle, adminTriggerRescan, adminTriggerArchiveImport, adminReingestArchive, adminGetSource, adminClearSource, adminCancelScan, adminDeleteChapters, adminUpdateSeries, adminMigrateSeries } from '@/controllers/adminMangaController';
 import { listAdminManga, listAdminMangaScraperFilters, listAdminMangaTypeFilters } from '@/controllers/adminMangaListController';
 import { getAdminOverviewStats, getAdminTimeseries } from '@/controllers/adminStatsController';
@@ -97,6 +98,9 @@ router.post('/manga/catalog-scan/start', requireRole('admin'), startCatalogScan 
 router.post('/manga/catalog-scan/stop', requireRole('admin'), stopCatalogScan as RequestHandler);
 router.post('/manga/catalog-scan/force-stop', requireRole('admin'), forceStopCatalogScan as RequestHandler);
 router.post('/manga/catalog-scan/reset', requireRole('admin'), resetCatalogScan as RequestHandler);
+router.get('/placeholders', requireRole('admin'), listPlaceholders as RequestHandler);
+router.post('/placeholders/redownload', requireRole('admin'), redownloadPlaceholder as RequestHandler);
+router.post('/placeholders/replace', requireRole('admin'), replacePlaceholderPage as RequestHandler);
 router.get('/manga/:id/scraper-search', requireRole('admin'), adminScraperSearch as RequestHandler);
 router.get('/manga/:id/source', requireRole('admin'), adminGetSource as RequestHandler);
 router.delete('/manga/:id/source', requireRole('admin'), adminClearSource as RequestHandler);

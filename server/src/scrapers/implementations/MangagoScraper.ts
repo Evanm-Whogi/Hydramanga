@@ -7,9 +7,9 @@
  * Chromium so the site's own JS decrypts the image list for us.
  *
  * Chapter image extraction uses keiyoushi's input#curl + total_pages pattern: one browser
- * load captures AES keys from chapter.js, decrypts the embedded imgsrcs, then batch-fetches
- * any missing pg-N slices via sync XHR in the same session. Works for both /read-manga/ scroll
- * readers and /chapter/ mirror readers on mangago.zone / youhim.me.
+ * load decrypts imgsrcs via hooked AES keys, then batch-fetches any missing pg-N slices.
+ * chapter.js (fetched from Node) supplies tile `cols` and per-image desckeys via `_imgkeys_`
+ * hash lookup + the special replacePos branch used by chapter.js?895.
  *
  * Some pages are pixel-scrambled (tile-shuffled) on hosts containing "cspiclink";
  * those carry a per-image `desckey` + a chapter-wide `cols`, and we unscramble the
@@ -30,12 +30,12 @@
 import { chromium } from 'playwright';
 import sharp from 'sharp';
 import { JSDOM } from 'jsdom';
-import { downloadAndStoreChapter } from '../lib/chapterImageDownloader';
+import { downloadAndStoreChapter, store404PlaceholderIfMissing } from '../lib/chapterImageDownloader';
 import { buildAxios } from '@/scrapers/lib/scraperEgress';
 import { objectStorageService } from '@/services/objectStorageService';
 import { IChapterScraper, ScrapedChapter, DownloadedChapter, MangaSearchResult, SearchOptions, ScraperMetadata } from '../interfaces/IChapterScraper';
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
-import { ScraperStageError } from '../lib/scraperError';
+import { ScraperStageError, describeError, isTrue404Error } from '../lib/scraperError';
 import { requestFlareSolverr, resolveFlareSolverrUrl, type FlareSolverrResult } from '@/lib/flareSolverrClient';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
@@ -148,6 +148,95 @@ function dedupeLatestPerChapter(rows: ChapterRow[]): ScrapedChapter[] {
         .map(c => c.entry);
 }
 
+/** Deobfuscate mangago's sojson.v4 chapter.js wrapper (keiyoushi SoJsonV4Deobfuscator). */
+function decodeSoJsonV4(jsf: string): string {
+    if (!jsf.startsWith("['sojson.v4']")) return jsf;
+    return jsf.substring(240, jsf.length - 59).split(/[a-zA-Z]+/).map((a) => String.fromCharCode(parseInt(a, 10))).join('');
+}
+
+/** Tile grid size for cspiclink descrambling (`var widthnum = heightnum = N;`). */
+function parseMangagoCols(chapterJs: string): number | undefined {
+    const m = chapterJs.match(/var\s*widthnum\s*=\s*heightnum\s*=\s*(\d+);/);
+    const cols = m ? parseInt(m[1], 10) : 0;
+    return cols > 1 ? cols : undefined;
+}
+
+/** Parse `_imgkeys_["hash"]="tilekey"` entries from chapter.js renImg. */
+function parseImgKeys(chapterJs: string): Record<string, string> {
+    const map: Record<string, string> = {};
+    const re = /_imgkeys_\["([0-9a-f]+)"\]\s*=\s*"([^"]+)"/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(chapterJs)) !== null) map[m[1]] = m[2];
+    return map;
+}
+
+function mangagoReplacePos(str: string, pos: number, repl: string): string {
+    return str.substr(0, pos) + repl + str.substring(pos + 1);
+}
+
+/** Newer chapter.js?895: two URL markers use embedded strings + replacePos instead of _imgkeys_. */
+function computeSpecialDescKey(url: string, chapterJs: string): string | undefined {
+    const markerA = '5ce6f0e2e1ca981a5e24996a3b9e46f4';
+    const markerB = '522283049908fa5c1e74f903238e13a8';
+    if (url.indexOf(markerA) <= 0 && url.indexOf(markerB) <= 0) return undefined;
+    const re = new RegExp(`img\\.src\\.indexOf\\("${markerA}"\\)>0\\?"([^"]+)":"([^"]+)"`);
+    const match = chapterJs.match(re);
+    if (!match) return undefined;
+    const enc = url.indexOf(markerA) > 0 ? match[1] : match[2];
+    let str = enc.slice(0, 19) + enc.slice(20, 23) + enc.slice(24, 31) + enc.slice(32, 39) + enc.slice(40);
+    const keyDigits = enc.charAt(19) + enc.charAt(23) + enc.charAt(31) + enc.charAt(39);
+    const strlen = str.length;
+    const swapPass = (fromJ: number, toJ: number) => {
+        for (let j = toJ; j >= fromJ; j--) {
+            const offset = keyDigits.charCodeAt(j) - 48;
+            for (let i = strlen - 1; i - offset >= 0; i--) {
+                if (i % 2 !== 0) {
+                    const temp = str[i - offset];
+                    str = mangagoReplacePos(str, i - offset, str[i]);
+                    str = mangagoReplacePos(str, i, temp);
+                }
+            }
+        }
+    };
+    swapPass(2, 3);
+    swapPass(0, 1);
+    return str;
+}
+
+/** Mirror renImg: `_imgkeys_` hash substring match, then the special-marker branch. */
+function lookupDescKey(url: string, imgKeys: Record<string, string>, chapterJs: string): string | undefined {
+    const special = computeSpecialDescKey(url, chapterJs);
+    if (special) return special;
+    for (const [hash, key] of Object.entries(imgKeys)) {
+        if (url.indexOf(hash) > 0) return key;
+    }
+    return undefined;
+}
+
+function resolveDescKeys(chapterJs: string, urls: string[]): Record<string, string> {
+    if (!chapterJs) return {};
+    const imgKeys = parseImgKeys(chapterJs);
+    const out: Record<string, string> = {};
+    for (const url of urls) {
+        if (!url.includes('cspiclink')) continue;
+        const key = lookupDescKey(url, imgKeys, chapterJs);
+        if (key) out[url] = key;
+    }
+    return out;
+}
+
+/** mangapicgallery CDNs with underscores in the hostname reject TLS from Node; HTTP works. */
+function normalizeMangagoImageUrl(url: string): string {
+    try {
+        const parsed = new URL(url);
+        if (parsed.protocol === 'https:' && parsed.hostname.includes('_') && parsed.hostname.includes('mangapicgallery')) {
+            parsed.protocol = 'http:';
+            return parsed.toString();
+        }
+    } catch { /* ignore */ }
+    return url;
+}
+
 /**
  * Unscramble a tile-shuffled mangago page. Mirrors the reference reader math: the
  * image is a `cols × cols` grid; `key.split('a')` gives, for each source tile index,
@@ -193,6 +282,12 @@ export class MangagoScraper implements IChapterScraper {
     private static readonly MAX_BROWSERS = 2;
     private static cfSessionCache: CfSession | null = null;
 
+    /** Warm reader sessions: one shared Chromium, N contexts (cf_clearance + hooks persist across chapters). */
+    private static readerBrowser: any | null = null;
+    private static readerSessions: Array<{ context: any; userAgent: string; busy: boolean }> = [];
+    private static readerPoolLock: Promise<void> = Promise.resolve();
+    private static readonly READER_POOL_SIZE = Math.max(1, parseInt(process.env.MANGAGO_CONTEXT_POOL_SIZE || process.env.CHAPTER_DOWNLOAD_MANGAGO_CONCURRENCY || '4', 10));
+
     // Egress (agents + proxy + ban detection) centralized in scraperEgress; flag off → plain keep-alive axios.
     private static readonly axiosInstance = buildAxios({
         scraperId: 'mangago',
@@ -228,6 +323,81 @@ export class MangagoScraper implements IChapterScraper {
         } catch {
             await browser.close().catch(() => {});
         }
+    }
+
+    private static async withReaderPoolLock<T>(fn: () => Promise<T>): Promise<T> {
+        let unlock!: () => void;
+        const gate = new Promise<void>((resolve) => { unlock = resolve; });
+        const prev = MangagoScraper.readerPoolLock;
+        MangagoScraper.readerPoolLock = gate;
+        await prev;
+        try { return await fn(); } finally { unlock(); }
+    }
+
+    private async ensureReaderBrowser(): Promise<any> {
+        if (MangagoScraper.readerBrowser?.isConnected()) return MangagoScraper.readerBrowser;
+        const headless = !process.env.DISPLAY;
+        logger.info(`[Mangago] Launching shared reader browser (headless=${headless}, pool=${MangagoScraper.READER_POOL_SIZE})`, { service: SERVICE });
+        MangagoScraper.readerBrowser = await chromium.launch({ headless, args: ['--disable-dev-shm-usage', '--no-sandbox', '--disable-blink-features=AutomationControlled'] });
+        return MangagoScraper.readerBrowser;
+    }
+
+    private async ensureReaderCookies(context: any, targetUrl?: string): Promise<void> {
+        if (!targetUrl) return;
+        try { await context.addCookies([{ name: '_m_superu', value: '1', url: new URL(targetUrl).origin }]); } catch { /* ignore bad url */ }
+    }
+
+    private async createReaderSession(targetUrl?: string): Promise<{ context: any; userAgent: string; busy: boolean }> {
+        const browser = await this.ensureReaderBrowser();
+        const { context, userAgent } = await this.createContext(browser, targetUrl);
+        const session = { context, userAgent, busy: true };
+        MangagoScraper.readerSessions.push(session);
+        return session;
+    }
+
+    /** Lease a warm browser context for chapter read/extract (reuses cf_clearance between chapters). */
+    private async leaseReaderSession(targetUrl?: string): Promise<{ context: any; userAgent: string; release: () => Promise<void>; dispose: () => Promise<void> }> {
+        while (true) {
+            const session = await MangagoScraper.withReaderPoolLock(async () => {
+                const idle = MangagoScraper.readerSessions.find((s) => !s.busy);
+                if (idle) {
+                    idle.busy = true;
+                    await this.ensureReaderCookies(idle.context, targetUrl);
+                    return idle;
+                }
+                if (MangagoScraper.readerSessions.length < MangagoScraper.READER_POOL_SIZE) {
+                    return this.createReaderSession(targetUrl);
+                }
+                return null;
+            });
+            if (session) {
+                return {
+                    context: session.context,
+                    userAgent: session.userAgent,
+                    release: async () => this.releaseReaderSession(session),
+                    dispose: async () => this.disposeReaderSession(session),
+                };
+            }
+            await new Promise((resolve) => setTimeout(resolve, 150));
+        }
+    }
+
+    private async releaseReaderSession(session: { context: any; userAgent: string; busy: boolean }): Promise<void> {
+        await MangagoScraper.withReaderPoolLock(async () => {
+            for (const p of session.context.pages()) await p.close().catch(() => {});
+            session.busy = false;
+        });
+    }
+
+    /** Drop a session after CF/auth failure — don't return a poisoned context to the pool. */
+    private async disposeReaderSession(session: { context: any; userAgent: string; busy: boolean }): Promise<void> {
+        await MangagoScraper.withReaderPoolLock(async () => {
+            const idx = MangagoScraper.readerSessions.indexOf(session);
+            if (idx >= 0) MangagoScraper.readerSessions.splice(idx, 1);
+            for (const p of session.context.pages()) await p.close().catch(() => {});
+            await session.context.close().catch(() => {});
+            session.busy = false;
+        });
     }
 
     /** Resolve a cf_clearance cookie to seed a fresh context (cache → env → FlareSolverr); null → rely on in-browser solve. */
@@ -497,23 +667,22 @@ export class MangagoScraper implements IChapterScraper {
     }
 
     private async scanChaptersViaPlaywright(pageUrl: string): Promise<ChapterRow[]> {
-        const browser = await MangagoScraper.getBrowser();
-        const { context, userAgent } = await this.createContext(browser, pageUrl);
-        const page = await context.newPage();
+        const session = await this.leaseReaderSession(pageUrl);
+        const page = await session.context.newPage();
         try {
             await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
             try {
                 await this.waitForCloudflare(page, pageUrl, 'scan');
             } catch (error) {
                 this.invalidateCfSession();
+                await session.dispose();
                 throw error;
             }
-            await this.harvestCfSession(context, userAgent);
+            await this.harvestCfSession(session.context, session.userAgent);
             return this.parseChapterListHtml(await page.content());
         } finally {
             await page.close().catch(() => {});
-            await context.close().catch(() => {});
-            await MangagoScraper.releaseBrowser(browser);
+            await session.release();
         }
     }
 
@@ -558,17 +727,35 @@ export class MangagoScraper implements IChapterScraper {
 
     /**
      * Resolve all page image URLs via input#curl + total_pages (keiyoushi Mangago.kt pageListParse).
-     * Decrypts the embedded imgsrcs on the loaded page, then batch-fetches any missing pg-N slices
-     * via parallel fetch in the same browser session. Works for /read-manga/ and /chapter/ mirror readers.
-     * In-page code must not use async/await — Playwright serializes evaluate() into the browser
-     * where TypeScript's __awaiter helper does not exist; use Promise chains instead.
+ * chapter.js is fetched from Node for tile `cols` and per-image desckeys (`_imgkeys_` hash
+ * lookup + special replacePos branch in chapter.js?895). URL decryption stays on the
+ * original browser hook path — do not unscramble the URL list or downloads break.
      */
+    private async fetchChapterJs(page: any): Promise<string> {
+        await page.waitForSelector('script[src*="chapter.js"]', { timeout: 15000 }).catch(() => {});
+        const chapterJsUrl = await page.evaluate(() => (document.querySelector('script[src*="chapter.js"]') as HTMLScriptElement | null)?.src || '').catch(() => '');
+        if (!chapterJsUrl) return '';
+        try {
+            const referer = page.url();
+            const resp = await page.context().request.get(chapterJsUrl, { headers: { Referer: referer } });
+            if (!resp.ok()) {
+                logger.warn(`[Mangago] chapter.js HTTP ${resp.status()} from ${chapterJsUrl}`, { service: SERVICE });
+                return '';
+            }
+            return decodeSoJsonV4(await resp.text());
+        } catch (error: any) {
+            logger.warn(`[Mangago] chapter.js fetch failed: ${error?.message || error}`, { service: SERVICE });
+            return '';
+        }
+    }
+
     private async extractPages(page: any, chapterUrl: string, expectedCount: number): Promise<MangagoPage[]> {
+        const chapterJs = await this.fetchChapterJs(page);
         const raw = await page.evaluate((expectedHint: number) => {
-            return new Promise<{ images: string[]; cols: number | null; descKeys: Record<string, string>; diag: string }>((resolve) => {
-                const out: { images: string[]; cols: number | null; descKeys: Record<string, string>; diag: string } = { images: [], cols: null, descKeys: {}, diag: '' };
+            return new Promise<{ images: string[]; diag: string }>((resolve) => {
+                const out: { images: string[]; diag: string } = { images: [], diag: '' };
                 const w = window as any;
-                const isImg = (s: any) => typeof s === 'string' && (/^https?:\/\/[^\s'"]+\.(?:jpe?g|png|webp|gif)/i.test(s.trim()) || /^https?:\/\/[^\s'"]*(?:cspiclink|mangapicgallery)/i.test(s.trim()));
+                const isImg = (s: any) => typeof s === 'string' && (/^https?:\/\/[^\s'"]+\.(?:jpe?g|png|webp|gif)/i.test(s.trim()) || /^https?:\/\/[^\s'"]*(?:cspiclink|mangapicgallery|nepiclink)/i.test(s.trim()));
                 const C = w.CryptoJS;
                 const hexes: string[] = Array.isArray(w.__mangago_keys) ? w.__mangago_keys.slice() : [];
                 const scriptJoin = () => Array.from(document.scripts).map(s => s.textContent || '').join('\n');
@@ -593,14 +780,14 @@ export class MangagoScraper implements IChapterScraper {
                     cands.sort((a, b) => b.length - a.length);
                     const enc = cands[0];
                     if (!enc) return [];
-                    const keyCands = hexes.filter((h: string) => h.length >= 48);
-                    const ivCands = hexes.filter((h: string) => h.length === 32);
                     const tryDec = (kHex: string, ivHex: string): string[] => {
                         try {
                             const pt = C.AES.decrypt({ ciphertext: C.enc.Base64.parse(enc) }, C.enc.Hex.parse(kHex), { iv: C.enc.Hex.parse(ivHex), mode: C.mode.CBC, padding: C.pad.ZeroPadding }).toString(C.enc.Utf8);
                             return pt && pt.includes('http') ? pt.split(',').map((x: string) => x.trim()).filter(isImg) : [];
                         } catch { return []; }
                     };
+                    const keyCands = hexes.filter((h: string) => h.length >= 48);
+                    const ivCands = hexes.filter((h: string) => h.length === 32);
                     let best: string[] = [];
                     outer: for (const k of (keyCands.length ? keyCands : hexes)) for (const iv of (ivCands.length ? ivCands : hexes)) {
                         const got = tryDec(k, iv);
@@ -639,14 +826,6 @@ export class MangagoScraper implements IChapterScraper {
                     while (images.length > 0 && !images[images.length - 1]) images.pop();
                     out.images = images;
                     out.diag = `curl script=${scriptTotal} tip=${tipTotal} total=${totalPages} first=${firstList.length} fetched=${fetched} got=${out.images.length}`;
-                    if (typeof w.cols === 'number') out.cols = w.cols;
-                    if (typeof w.getDescramblingKey === 'function') {
-                        for (const u of out.images) {
-                            if (u.includes('cspiclink')) {
-                                try { out.descKeys[u] = String(w.getDescramblingKey(u)); } catch { /* ignore */ }
-                            }
-                        }
-                    }
                     resolve(out);
                 };
 
@@ -674,17 +853,29 @@ export class MangagoScraper implements IChapterScraper {
         if (images.length === 0) {
             throw new ScraperStageError({ stage: 'extract_images', scraperId: this.metadata.id, scraperName: this.metadata.name, url: chapterUrl, message: `Reader found no images (${raw?.diag || 'none'})` });
         }
+
+        const cols = parseMangagoCols(chapterJs);
+        const descKeys = resolveDescKeys(chapterJs, images);
+        let descCount = 0;
+        const pages: MangagoPage[] = images.map((url) => {
+            const normalized = normalizeMangagoImageUrl(url);
+            const descKey = descKeys[url] || descKeys[normalized];
+            if (descKey && cols) { descCount++; return { url: normalized, descKey, cols }; }
+            return { url: normalized };
+        });
+
+        const diag = `${raw?.diag || 'none'} cjs=${chapterJs ? 'y' : 'n'} cols=${cols || 0} desc=${descCount}`;
         if (expectedCount > 0 && images.length < expectedCount) {
-            logger.warn(`[Mangago] Resolved ${images.length}/${expectedCount} page(s) for ${chapterUrl} (${raw?.diag || 'none'})`, { service: SERVICE });
+            logger.warn(`[Mangago] Resolved ${images.length}/${expectedCount} page(s) for ${chapterUrl} (${diag})`, { service: SERVICE });
         } else {
-            logger.info(`[Mangago] Resolved ${images.length} page(s) for ${chapterUrl} (${raw?.diag || 'none'})`, { service: SERVICE });
+            logger.info(`[Mangago] Resolved ${images.length} page(s) for ${chapterUrl} (${diag})`, { service: SERVICE });
         }
 
-        const cols = typeof raw.cols === 'number' && raw.cols > 1 ? raw.cols : undefined;
-        return images.map(url => {
-            const descKey = raw.descKeys?.[url];
-            return descKey && cols ? { url, descKey, cols } : { url };
-        });
+        const missingDesc = pages.filter(p => p.url.includes('cspiclink') && !p.descKey).length;
+        if (missingDesc > 0) {
+            logger.warn(`[Mangago] ${missingDesc} cspiclink page(s) missing descKey for ${chapterUrl} (${diag})`, { service: SERVICE });
+        }
+        return pages;
     }
 
     /** Read the "(1/24)" page-count hint if present (sanity check only). */
@@ -696,9 +887,9 @@ export class MangagoScraper implements IChapterScraper {
 
     async downloadChapter(url: string, seriesId: number, chapterNumber: string, mangaName: string, folderName: string): Promise<DownloadedChapter> {
         logger.info(`[Mangago] Downloading chapter ${chapterNumber} from ${url}`, { service: SERVICE });
-        const browser = await MangagoScraper.getBrowser();
-        const { context, userAgent } = await this.createContext(browser, url);
-        const page = await context.newPage();
+        const session = await this.leaseReaderSession(url);
+        const page = await session.context.newPage();
+        let disposed = false;
 
         try {
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
@@ -706,9 +897,11 @@ export class MangagoScraper implements IChapterScraper {
                 await this.waitForCloudflare(page, url, 'navigate');
             } catch (error) {
                 this.invalidateCfSession();
+                await session.dispose();
+                disposed = true;
                 throw error;
             }
-            await this.harvestCfSession(context, userAgent);
+            await this.harvestCfSession(session.context, session.userAgent);
 
             const expectedCount = await this.readExpectedCount(page);
             const pages = await this.extractPages(page, url, expectedCount);
@@ -719,13 +912,12 @@ export class MangagoScraper implements IChapterScraper {
             // Referer must be the reader's own (possibly mirror) origin — the CDN checks it.
             let referer = `${SITE_BASE}/`;
             try { referer = `${new URL(page.url()).origin}/`; } catch { /* keep default */ }
-            const headers: Record<string, string> = { Referer: referer, 'User-Agent': cfSession?.userAgent || userAgent };
+            const headers: Record<string, string> = { Referer: referer, 'User-Agent': cfSession?.userAgent || session.userAgent };
             if (cfSession?.cookie) headers.Cookie = `cf_clearance=${cfSession.cookie}; _m_superu=1`;
             else headers.Cookie = '_m_superu=1';
 
             const scrambled = pages.some(p => p.descKey);
             if (!scrambled) {
-                // Fast path: no descramble needed → hand the ordered URLs to the shared downloader.
                 await downloadAndStoreChapter({
                     storagePrefix,
                     images: pages.map(p => p.url),
@@ -743,8 +935,7 @@ export class MangagoScraper implements IChapterScraper {
             return { storagePrefix, pageCount: pages.length };
         } finally {
             await page.close().catch(() => {});
-            await context.close().catch(() => {});
-            await MangagoScraper.releaseBrowser(browser);
+            if (!disposed) await session.release();
         }
     }
 
@@ -756,7 +947,9 @@ export class MangagoScraper implements IChapterScraper {
     private async downloadWithDescramble(pages: MangagoPage[], storagePrefix: string, headers: Record<string, string>, chapterUrl: string): Promise<void> {
         const concurrency = Math.max(1, MANGAGO_IMAGE_BATCH_SIZE);
         const maxRetries = 3;
+        const launchSpacingMs = concurrency > 0 ? Math.ceil(200 / concurrency) : 0;
         let nextIndex = 0;
+        let nextLaunchAt = 0;
 
         const downloadOne = async (pageInfo: MangagoPage, index: number) => {
             let lastError: Error | undefined;
@@ -769,16 +962,26 @@ export class MangagoScraper implements IChapterScraper {
                     return;
                 } catch (err: any) {
                     lastError = err;
+                    if (isTrue404Error(err)) break;
                     if (attempt < maxRetries) await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
                 }
             }
-            throw new ScraperStageError({ stage: 'download_image', scraperId: this.metadata.id, scraperName: this.metadata.name, url: chapterUrl, pageNumber: index + 1, pageCount: pages.length, imageUrl: pageInfo.url, attempts: maxRetries, message: lastError?.message || 'download failed', cause: lastError });
+            if (await store404PlaceholderIfMissing(lastError, { storagePrefix, pageIndex: index, imageUrl: pageInfo.url, scraperId: this.metadata.id, service: 'mangagoScraper' })) return;
+            // Surface the HTTP status/code on the failure so onFailed can record it.
+            const described = describeError(lastError);
+            throw new ScraperStageError({ stage: 'download_image', scraperId: this.metadata.id, scraperName: this.metadata.name, url: chapterUrl, pageNumber: index + 1, pageCount: pages.length, imageUrl: pageInfo.url, attempts: maxRetries, httpStatus: described.httpStatus, code: described.code, message: described.message || lastError?.message || 'download failed', cause: lastError });
         };
 
         const runWorker = async () => {
             while (true) {
                 const i = nextIndex++;
                 if (i >= pages.length) return;
+                if (launchSpacingMs > 0) {
+                    const now = Date.now();
+                    const scheduledAt = Math.max(now, nextLaunchAt);
+                    nextLaunchAt = scheduledAt + launchSpacingMs;
+                    if (scheduledAt > now) await new Promise(resolve => setTimeout(resolve, scheduledAt - now));
+                }
                 await downloadOne(pages[i], i);
             }
         };
