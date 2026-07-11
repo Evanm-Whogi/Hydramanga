@@ -3,6 +3,7 @@ import { eq, or, ilike, desc, count, and, SQL } from 'drizzle-orm';
 import { notificationService } from '@/services/notificationService';
 import { isNovelType } from '@/config/contentFilter';
 import { badgeService } from '@/services/badgeService';
+import { seriesDisplayTitleSql } from '@/lib/seriesTitleSql';
 
 const VALID_STATUSES = ['pending', 'in_progress', 'completed', 'rejected'] as const;
 export type ImportRequestStatus = (typeof VALID_STATUSES)[number];
@@ -95,7 +96,7 @@ class ImportRequestService {
         status: schema.importRequests.status,
         createdAt: schema.importRequests.createdAt,
         updatedAt: schema.importRequests.updatedAt,
-        seriesTitle: schema.series.title,
+        seriesTitle: seriesDisplayTitleSql,
       })
       .from(schema.importRequests)
       .leftJoin(schema.series, eq(schema.importRequests.seriesId, schema.series.id))
@@ -117,7 +118,7 @@ class ImportRequestService {
           ilike(schema.importRequests.requestedTitle, term),
           ilike(schema.user.name, term),
           ilike(schema.user.email, term),
-          ilike(schema.series.title, term)
+          ilike(schema.series.searchText, term)
         )!
       );
     }
@@ -142,7 +143,7 @@ class ImportRequestService {
           updatedAt: schema.importRequests.updatedAt,
           userName: schema.user.name,
           userEmail: schema.user.email,
-          seriesTitle: schema.series.title,
+          seriesTitle: seriesDisplayTitleSql,
         })
         .from(schema.importRequests)
         .innerJoin(schema.user, eq(schema.importRequests.userId, schema.user.id))
@@ -268,7 +269,7 @@ class ImportRequestService {
         updatedAt: schema.importRequests.updatedAt,
         userName: schema.user.name,
         userEmail: schema.user.email,
-        seriesTitle: schema.series.title,
+        seriesTitle: seriesDisplayTitleSql,
       })
       .from(schema.importRequests)
       .innerJoin(schema.user, eq(schema.importRequests.userId, schema.user.id))

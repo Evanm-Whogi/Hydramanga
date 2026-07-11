@@ -133,3 +133,11 @@ export async function redownloadPlaceholder(storagePrefix: string): Promise<{ me
 export async function replacePlaceholderPage(args: { storagePrefix: string; pageNumber: number; imageUrl: string }): Promise<{ message: string }> {
   return apiPost('/admin/placeholders/replace', args) as Promise<{ message: string }>;
 }
+
+export async function dismissPlaceholder(args: { storagePrefix: string; pageNumber?: number }): Promise<{ message: string }> {
+  return apiPost('/admin/placeholders/dismiss', args) as Promise<{ message: string }>;
+}
+
+export async function downloadFromPlaceholder(args: { storagePrefix: string; scraperId: string; scraperUrl: string }): Promise<{ message: string; seriesId: number; chapterNumber: string; scraperId: string; chapterUrl: string }> {
+  return apiPost('/admin/placeholders/download-from', args, { timeoutMs: 120_000 }) as Promise<{ message: string; seriesId: number; chapterNumber: string; scraperId: string; chapterUrl: string }>;
+}

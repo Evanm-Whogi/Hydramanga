@@ -2,6 +2,7 @@ import { db, schema } from '@/db/index';
 import { eq, or, ilike, desc, asc, count, and, sql, SQL, isNull, isNotNull } from 'drizzle-orm';
 import { scraperManager } from '@/scrapers';
 import { getExcludeNovelConditions } from '@/config/contentFilter';
+import { seriesDisplayTitleSql } from '@/lib/seriesTitleSql';
 
 export interface AdminMangaListParams {
   page: number;
@@ -48,13 +49,7 @@ class AdminMangaListService {
 
     if (search?.trim()) {
       const term = `%${search.trim()}%`;
-      filters.push(
-        or(
-          ilike(schema.series.title, term),
-          ilike(schema.series.romanizedTitle, term),
-          ilike(schema.series.nativeTitle, term)
-        )!
-      );
+      filters.push(ilike(schema.series.searchText, term));
     }
 
     if (status && status !== 'all') {
@@ -96,7 +91,7 @@ class AdminMangaListService {
 
     const sortExpr =
       sort === 'title'
-        ? schema.series.title
+        ? seriesDisplayTitleSql
         : sort === 'type'
           ? sql`coalesce(${schema.series.type}, '')`
         : sort === 'chapters'
@@ -109,7 +104,7 @@ class AdminMangaListService {
     const rows = await db
       .select({
         id: schema.series.id,
-        title: schema.series.title,
+        title: seriesDisplayTitleSql,
         status: schema.series.status,
         type: schema.series.type,
         cover: schema.series.cover,

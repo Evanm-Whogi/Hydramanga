@@ -400,7 +400,7 @@ export default function MangaAdminClient() {
           mangaId={editModal.row.id}
           mangaTitle={(editModal.manga.title as string) ?? editModal.row.title ?? ""}
           manga={editModal.manga}
-          secondaryTitles={editModal.manga.secondaryTitles}
+          titles={editModal.manga.titles}
           chapters={editModal.chapters}
           currentScraperId={editModal.scraperId}
           currentScraperUrl={editModal.scraperUrl}

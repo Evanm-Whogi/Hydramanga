@@ -41,6 +41,12 @@ export interface CuratedListItem {
   type: string | null;
   status: string | null;
   rating: number | null;
+  popularityGlobalCurrent?: number | null;
+  popularityTypeCurrent?: number | null;
+  popularity?: {
+    global?: { current?: number | null } | null;
+    type?: { current?: number | null } | null;
+  } | null;
   views: number;
   totalChapters: string | null;
   year: number | null;

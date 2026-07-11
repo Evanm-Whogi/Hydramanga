@@ -78,6 +78,41 @@
       "when": 1783556458706,
       "tag": "0010_naive_master_chief",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1783640000000,
+      "tag": "0011_mangabaka_meta_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1783649592924,
+      "tag": "0012_simple_micromax",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1783652000000,
+      "tag": "0013_series_titles_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1783654000000,
+      "tag": "0014_series_search_text_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1783656000000,
+      "tag": "0015_sync_popularity_flat_columns",
+      "breakpoints": true
     }
   ]
 }

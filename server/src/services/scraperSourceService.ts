@@ -2,7 +2,8 @@ import { db } from '@/db';
 import { mangaImportProgress, series } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { scraperManager } from '@/scrapers';
-import { extractSecondaryTitleStrings } from '@/lib/secondaryTitles';
+import { scraperTitleOptions } from '@/lib/catalogTitles';
+import { resolveDisplayTitle } from '@/lib/displayTitle';
 import { mangaProgressService } from '@/services/mangaProgressService';
 import logger from '@/services/loggerService';
 
@@ -34,27 +35,22 @@ export async function autoSelectScraperSource(seriesId: number): Promise<AutoSel
   }
 
   const [row] = await db
-    .select({
-      title: series.title,
-      romanizedTitle: series.romanizedTitle,
-      nativeTitle: series.nativeTitle,
-      secondaryTitles: series.secondaryTitles,
-    })
+    .select({ titles: series.titles })
     .from(series)
     .where(eq(series.id, seriesId))
     .limit(1);
 
-  const mangaName = row?.title?.trim();
+  const mangaName = row ? resolveDisplayTitle(row).trim() : '';
   if (!mangaName) {
     return { selected: false, reason: 'no_title' };
   }
 
-  const secondaryTitles = extractSecondaryTitleStrings(row.secondaryTitles);
+  const titleOpts = scraperTitleOptions(row?.titles);
   const best = await scraperManager.findBestMatch(mangaName, {
     seriesId,
-    romanizedTitle: row.romanizedTitle || undefined,
-    nativeTitle: row.nativeTitle || undefined,
-    secondaryTitles: secondaryTitles.length > 0 ? secondaryTitles : undefined,
+    romanizedTitle: titleOpts.romanizedTitle,
+    nativeTitle: titleOpts.nativeTitle,
+    secondaryTitles: titleOpts.secondaryTitles.length > 0 ? titleOpts.secondaryTitles : undefined,
   });
 
   if (!best) {

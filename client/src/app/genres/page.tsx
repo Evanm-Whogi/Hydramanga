@@ -5,9 +5,9 @@ import { getCollections } from "@/services/mangaService";
 import { buildPageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: 'Collections',
-  description: 'Browse curated manga, manhwa, and manhua collections by genre and theme on HydraManga.',
-  path: '/collections',
+  title: 'Genres',
+  description: 'Browse manga, manhwa, and manhua by genre and theme on HydraManga.',
+  path: '/genres',
 });
 
 export default async function CollectionsPage() {

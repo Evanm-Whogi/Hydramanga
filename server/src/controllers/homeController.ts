@@ -7,6 +7,7 @@ import { userProgressService } from '@/services/userProgressService';
 import { cacheService } from '@/services/cacheService';
 import { getUserSettings, resolveHideNsfw } from '@/services/userSettingsService';
 import { getCatalogFilterConditions } from '@/config/contentFilter';
+import { getTopRatedEligibilityConditions, topRatedSortScoreExpr } from '@/lib/discoverScore';
 import { withResolvedDisplayTitle } from '@/lib/displayTitle';
 import { enrichNestedSeriesExtras, enrichSeriesListExtras, fetchFirstChapterIdsBySeries, seriesCardColumns} from '@/lib/seriesQueries';
 import { badgeService } from '@/services/badgeService';
@@ -175,13 +176,13 @@ export const getHighScores = async (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 14;
     const hideNsfw = await resolveHideNsfw(req);
 
-    const cacheKey = `home:highScores:${hideNsfw}:${type}:${limit}`;
+    const cacheKey = `home:highScores:v7:${hideNsfw}:${type}:${limit}`;
     const nsfwConditions = getCatalogFilterConditions(hideNsfw, series);
     const data = await cacheService.getOrSet(
         { key: cacheKey, ttl: HOME_CACHE_TTL.global },
         async () => {
             const typeCondition = type && type !== 'all' ? eq(series.type, type) : undefined;
-            const whereClause = [typeCondition, ...nsfwConditions].filter(Boolean);
+            const whereParts = [typeCondition, ...nsfwConditions, ...getTopRatedEligibilityConditions(series)].filter(Boolean);
             const rows = await db
                 .select({
                     ...seriesCardColumns,
@@ -189,8 +190,8 @@ export const getHighScores = async (req: Request, res: Response) => {
                 })
                 .from(series)
                 .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
-                .where(whereClause.length ? and(...(whereClause as any)) : undefined)
-                .orderBy(desc(series.weightedScore))
+                .where(whereParts.length ? and(...(whereParts as any)) : undefined)
+                .orderBy(desc(topRatedSortScoreExpr(series)), desc(series.id))
                 .limit(limit);
             return enrichSeriesListExtras(rows, newDaysInterval);
         }

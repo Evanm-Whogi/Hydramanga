@@ -401,10 +401,7 @@ class MetricsService {
         .select({
           seriesId: schema.series.id,
           viewedAt: sql<Date>`MAX(${schema.mangaViews.viewedAt})`.as('viewedAt'),
-          seriesTitle: schema.series.title,
-          seriesNativeTitle: schema.series.nativeTitle,
-          seriesRomanizedTitle: schema.series.romanizedTitle,
-          seriesSecondaryTitles: schema.series.secondaryTitles,
+          seriesTitles: schema.series.titles,
           seriesCover: schema.series.cover,
           rating: schema.series.rating,
         })
@@ -413,10 +410,7 @@ class MetricsService {
         .where(and(eq(schema.mangaViews.userId, userId), ...getExcludeNovelConditions(schema.series)))
         .groupBy(
           schema.series.id,
-          schema.series.title,
-          schema.series.nativeTitle,
-          schema.series.romanizedTitle,
-          schema.series.secondaryTitles,
+          schema.series.titles,
           schema.series.cover,
           schema.series.rating,
         )
@@ -424,14 +418,9 @@ class MetricsService {
         .limit(limit);
 
       // Map reading time into results
-      return viewHistory.map(({ seriesNativeTitle, seriesRomanizedTitle, seriesSecondaryTitles, ...item }) => ({
+      return viewHistory.map(({ seriesTitles, ...item }) => ({
         ...item,
-        seriesTitle: resolveDisplayTitle({
-          title: item.seriesTitle,
-          nativeTitle: seriesNativeTitle,
-          romanizedTitle: seriesRomanizedTitle,
-          secondaryTitles: seriesSecondaryTitles,
-        }),
+        seriesTitle: resolveDisplayTitle({ titles: seriesTitles }),
         readingTimeSeconds: readingTimeMap.get(item.seriesId) || 0,
       }));
     } catch (error) {

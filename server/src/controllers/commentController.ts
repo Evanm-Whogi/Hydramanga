@@ -8,6 +8,7 @@ import { badgeService } from '@/services/badgeService';
 import { isAdminRole } from '@/lib/authHelpers';
 import { discordService } from '@/services/discordService';
 import { notificationService } from '@/services/notificationService';
+import { resolveDisplayTitle } from '@/lib/displayTitle';
 import { recordAuditFromRequest } from '@/audit/record';
 import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
 import { normalizeUserContent } from '@/lib/normalizeUserContent';
@@ -98,17 +99,18 @@ export async function createComment(req: Request, res: Response, next: NextFunct
         });
 
         const [seriesRow] = await db
-            .select({ title: schema.series.title })
+            .select({ titles: schema.series.titles })
             .from(schema.series)
             .where(eq(schema.series.id, seriesId))
             .limit(1);
 
-        if (seriesRow?.title) {
+        const seriesTitle = seriesRow ? resolveDisplayTitle(seriesRow) : null;
+        if (seriesTitle) {
             discordService
                 .notifyComment(
                     req.user.name || 'Unknown',
                     seriesId,
-                    seriesRow.title,
+                    seriesTitle,
                     normalizedContent,
                     newComment[0].id,
                     !!parentId
@@ -123,14 +125,14 @@ export async function createComment(req: Request, res: Response, next: NextFunct
             if (
                 parentComment &&
                 parentComment.userId !== userId &&
-                seriesRow?.title
+                seriesTitle
             ) {
                 notificationService
                     .notifyCommentReply({
                         recipientUserId: parentComment.userId,
                         replierName: req.user.name || 'Someone',
                         seriesId,
-                        seriesTitle: seriesRow.title,
+                        seriesTitle,
                     })
                     .catch(() => undefined);
             }
@@ -143,9 +145,9 @@ export async function createComment(req: Request, res: Response, next: NextFunct
             resourceId: String(newComment[0].id),
             metadata: contentAuditMeta({
                 href: mangaPageHref(seriesId),
-                summary: `Posted a comment${seriesRow?.title ? ` on ${seriesRow.title}` : ''}`,
+                summary: `Posted a comment${seriesTitle ? ` on ${seriesTitle}` : ''}`,
                 content: normalizedContent,
-                extra: { seriesId, seriesTitle: seriesRow?.title ?? null, chapterId, parentId: parentId ?? null },
+                extra: { seriesId, seriesTitle: seriesTitle ?? null, chapterId, parentId: parentId ?? null },
             }),
         });
 

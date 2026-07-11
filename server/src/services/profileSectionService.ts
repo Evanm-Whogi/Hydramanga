@@ -101,10 +101,7 @@ class ProfileSectionService {
         content: schema.comments.content,
         seriesId: schema.comments.seriesId,
         createdAt: schema.comments.createdAt,
-        seriesTitle: schema.series.title,
-        seriesNativeTitle: schema.series.nativeTitle,
-        seriesRomanizedTitle: schema.series.romanizedTitle,
-        seriesSecondaryTitles: schema.series.secondaryTitles,
+        seriesTitles: schema.series.titles,
         seriesCover: schema.series.cover,
       })
       .from(schema.comments)
@@ -122,12 +119,7 @@ class ProfileSectionService {
         createdAt: row.createdAt,
         series: {
           id: row.seriesId,
-          title: resolveDisplayTitle({
-            title: row.seriesTitle,
-            nativeTitle: row.seriesNativeTitle,
-            romanizedTitle: row.seriesRomanizedTitle,
-            secondaryTitles: row.seriesSecondaryTitles,
-          }),
+          title: resolveDisplayTitle({ titles: row.seriesTitles }),
           cover: resolveCoverUrl(row.seriesCover),
         },
       })),
@@ -157,10 +149,7 @@ class ProfileSectionService {
         seriesId: schema.userReadingProgress.seriesId,
         percentageCompleted: schema.userReadingProgress.percentageCompleted,
         updatedAt: schema.userReadingProgress.updatedAt,
-        title: schema.series.title,
-        nativeTitle: schema.series.nativeTitle,
-        romanizedTitle: schema.series.romanizedTitle,
-        secondaryTitles: schema.series.secondaryTitles,
+        titles: schema.series.titles,
         cover: schema.series.cover,
         type: schema.series.type,
       })

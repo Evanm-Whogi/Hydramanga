@@ -168,7 +168,7 @@ export default function CatalogScanPanel() {
         <div>
           <h2 className="text-sm font-semibold text-primary">Full catalog scan</h2>
           <p className="text-xs text-muted mt-1 max-w-3xl">
-            Automatically scan the entire catalog by popularity rank (weighted score), from rank 1 through the end. The coordinator enqueues batches, waits for each batch to finish scanning/downloading, then continues. Stop preserves your cursor and finishes the current batch first; Force stop discards the current batch immediately (use it if you manually cancelled its queue jobs and the scan is stuck). With a type filter, ranks are within that type only (not global).
+            Automatically scan the entire catalog by MangaBaka popularity rank (global), from rank 1 through the end. The coordinator enqueues batches, waits for each batch to finish scanning/downloading, then continues. Stop preserves your cursor and finishes the current batch first; Force stop discards the current batch immediately (use it if you manually cancelled its queue jobs and the scan is stuck). With a type filter, ranks are within that type only (not global).
           </p>
         </div>
         {state && (

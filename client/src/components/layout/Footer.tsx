@@ -46,6 +46,7 @@ export default  function Footer() {
                     <div className="flex flex-col w-full md:w-1/6 space-y-4 text-muted">
                         <h1 className="text-2xl text-primary">Information</h1>
                         <Link href="/community-guidelines" className="hover:text-primary">Community Guidelines</Link>
+                        <Link href="/about" className="hover:text-primary">About</Link>
                         <Link href="/contact" className="hover:text-primary">Contact/DMCA Notice</Link>
                         <Link href="/privacy" className="hover:text-primary">Privacy Policy</Link>
                         <Link href="/pwa" className="hover:text-primary">Progressive Web App</Link>

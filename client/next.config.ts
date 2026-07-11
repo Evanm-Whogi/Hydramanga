@@ -33,6 +33,11 @@ const nextConfig: NextConfig = {
         destination: `https://${canonicalHost}/:path*`,
         permanent: true,
       },
+      {
+        source: '/collections',
+        destination: '/genres',
+        permanent: true,
+      },
     ];
   },
   async rewrites() {

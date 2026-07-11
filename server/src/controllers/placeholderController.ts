@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { Readable } from 'stream';
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/db';
-import { chapters } from '@/db/schema';
+import { chapters, series } from '@/db/schema';
 import logger from '@/services/loggerService';
 import { placeholderTrackingService } from '@/services/placeholderTrackingService';
 import { objectStorageService } from '@/services/objectStorageService';
@@ -12,6 +12,39 @@ import { cacheService } from '@/services/cacheService';
 import { invalidateCatalogCaches } from '@/lib/catalogCache';
 import { fetchAdminExternalImageStream } from '@/lib/externalImageValidation';
 import { CONTENT_LIMITS } from '@/lib/securityLimits';
+import { scraperManager } from '@/scrapers';
+import { resolveDisplayTitle } from '@/lib/displayTitle';
+import { scraperTitleOptions } from '@/lib/catalogTitles';
+import { getAllChapterDownloadQueueNames } from '@/lib/chapterDownloadQueues';
+import type { ScrapedChapter } from '@/scrapers/interfaces/IChapterScraper';
+
+/** Exact string match, or equal numeric values ("100" ≈ "100.0"). */
+function chapterNumbersMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  const na = Number(a);
+  const nb = Number(b);
+  return Number.isFinite(na) && Number.isFinite(nb) && na === nb;
+}
+
+function parseStoragePrefix(storagePrefix: string): { seriesId: number; chapterNumber: string } | null {
+  const slash = storagePrefix.indexOf('/');
+  if (slash <= 0 || slash === storagePrefix.length - 1) return null;
+  const seriesId = Number(storagePrefix.slice(0, slash));
+  const chapterNumber = storagePrefix.slice(slash + 1);
+  if (!Number.isFinite(seriesId) || seriesId <= 0 || !chapterNumber) return null;
+  return { seriesId, chapterNumber };
+}
+
+async function clearExistingChapterDownloadJob(seriesId: number, chapterNumber: string): Promise<void> {
+  const jobId = `chapter-${seriesId}-${chapterNumber}`;
+  for (const queueName of getAllChapterDownloadQueueNames()) {
+    try {
+      await queueService.removeJob(queueName, jobId, { force: true });
+    } catch {
+      // Job may not exist on this queue — ignore.
+    }
+  }
+}
 
 /** GET /admin/placeholders — unresolved placeholder/failure ledger rows (default filter http_404). */
 export const listPlaceholders = async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
@@ -112,6 +145,150 @@ export const replacePlaceholderPage = async (req: Request, res: Response, next: 
       return res.status(400).json({ error: message });
     }
     logger.error(`Failed to replace placeholder page: ${message}`, { service: 'placeholderController' });
+    return next(error);
+  }
+};
+
+/**
+ * POST /admin/placeholders/dismiss — mark ledger row(s) resolved without repairing.
+ * Accepts `{ storagePrefix, pageNumber? }`. Omit pageNumber to dismiss the whole chapter prefix.
+ */
+export const dismissPlaceholder = async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
+  try {
+    const storagePrefix = typeof req.body?.storagePrefix === 'string' ? req.body.storagePrefix.trim() : '';
+    const parsed = parseStoragePrefix(storagePrefix);
+    if (!parsed) {
+      return res.status(400).json({ error: 'storagePrefix ("seriesId/chapterNumber") is required' });
+    }
+
+    const hasPageNumber = req.body?.pageNumber != null && req.body?.pageNumber !== '';
+    if (hasPageNumber) {
+      const pageNumber = Number(req.body.pageNumber);
+      if (!Number.isFinite(pageNumber) || pageNumber < 0 || !Number.isInteger(pageNumber)) {
+        return res.status(400).json({ error: 'pageNumber must be a non-negative integer' });
+      }
+      await placeholderTrackingService.resolvePage(storagePrefix, pageNumber);
+      logger.info(`Placeholder dismiss: resolved ${storagePrefix}#${pageNumber}`, { service: 'placeholderController' });
+      return res.json({ message: `Dismissed page ${pageNumber} for ${storagePrefix}` });
+    }
+
+    await placeholderTrackingService.resolveByPrefix(storagePrefix);
+    logger.info(`Placeholder dismiss: resolved all pages for ${storagePrefix}`, { service: 'placeholderController' });
+    return res.json({ message: `Dismissed all unresolved pages for ${storagePrefix}` });
+  } catch (error: any) {
+    logger.error(`Failed to dismiss placeholder: ${error.message}`, { service: 'placeholderController' });
+    return next(error);
+  }
+};
+
+/**
+ * POST /admin/placeholders/download-from — delete the chapter and re-download it from an
+ * alternate scraper match. Does NOT change the series scraper pin.
+ * Accepts `{ storagePrefix, scraperId, scraperUrl }`.
+ */
+export const downloadFromPlaceholder = async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
+  try {
+    const storagePrefix = typeof req.body?.storagePrefix === 'string' ? req.body.storagePrefix.trim() : '';
+    const scraperId = typeof req.body?.scraperId === 'string' ? req.body.scraperId.trim() : '';
+    const scraperUrl = typeof req.body?.scraperUrl === 'string' ? req.body.scraperUrl.trim() : '';
+    const parsed = parseStoragePrefix(storagePrefix);
+    if (!parsed) {
+      return res.status(400).json({ error: 'storagePrefix ("seriesId/chapterNumber") is required' });
+    }
+    if (!scraperId || !scraperUrl) {
+      return res.status(400).json({ error: 'scraperId and scraperUrl are required' });
+    }
+
+    const resolvedScraper = scraperManager.getScraperById(scraperId);
+    if (!resolvedScraper) {
+      return res.status(400).json({ error: `Unknown scraper "${scraperId}"` });
+    }
+    if (!resolvedScraper.getMetadata().enabled) {
+      return res.status(400).json({ error: `Scraper "${scraperId}" is disabled` });
+    }
+
+    const { seriesId } = parsed;
+    const [existingChapter] = await db
+      .select({ id: chapters.id, chapterNumber: chapters.chapterNumber })
+      .from(chapters)
+      .where(and(eq(chapters.seriesId, seriesId), eq(chapters.storagePrefix, storagePrefix)))
+      .limit(1);
+    const chapterNumber = existingChapter?.chapterNumber ?? parsed.chapterNumber;
+
+    const [seriesRow] = await db
+      .select({ titles: series.titles })
+      .from(series)
+      .where(eq(series.id, seriesId))
+      .limit(1);
+    if (!seriesRow) return res.status(404).json({ error: 'Manga not found' });
+
+    const mangaName = resolveDisplayTitle(seriesRow);
+    if (!mangaName) return res.status(400).json({ error: 'Series has no title' });
+    const titleOpts = scraperTitleOptions(seriesRow.titles);
+
+    // Locate the chapter on the alternate source without touching the series pin
+    // (scrapeChapters only persists a pin when it runs findBestMatch).
+    let matched: ScrapedChapter | null = null;
+    for await (const chapter of scraperManager.scrapeChapters(
+      mangaName,
+      async (num) => !chapterNumbersMatch(num, chapterNumber),
+      seriesId,
+      titleOpts.romanizedTitle,
+      titleOpts.nativeTitle,
+      titleOpts.secondaryTitles.length > 0 ? titleOpts.secondaryTitles : undefined,
+      undefined,
+      scraperUrl,
+      scraperId,
+    )) {
+      if (chapterNumbersMatch(chapter.number, chapterNumber)) {
+        matched = chapter;
+        break;
+      }
+    }
+
+    if (!matched?.url) {
+      return res.status(404).json({ error: `Chapter ${chapterNumber} not found on ${scraperId}` });
+    }
+
+    if (existingChapter) {
+      await db.delete(chapters).where(eq(chapters.id, existingChapter.id));
+    }
+    await queueService.addJob('storageCleanupQueue', 'cleanupChapterStorage', { seriesId, prefixes: [storagePrefix], deleteSeriesFolder: false });
+    await placeholderTrackingService.resolveByPrefix(storagePrefix);
+    await clearExistingChapterDownloadJob(seriesId, chapterNumber);
+
+    // Keep our chapterNumber so storage prefix / DB identity stay stable; only the
+    // chapter URL + job scraperId come from the alternate source.
+    await queueService.addChapterDownloadJob(
+      `Download ${matched.title}`,
+      {
+        seriesId,
+        mangaTitle: mangaName,
+        chapterTitle: matched.title,
+        chapterNumber,
+        chapterUrl: matched.url,
+        scraperId: matched.scraperId || scraperId,
+      },
+      { jobId: `chapter-${seriesId}-${chapterNumber}` },
+    );
+
+    await cacheService.invalidatePattern(`manga:${seriesId}:*`);
+    await cacheService.invalidatePattern(`series:${seriesId}:*`);
+    await invalidateCatalogCaches();
+
+    logger.info(
+      `Placeholder download-from: queued chapter ${chapterNumber} for series ${seriesId} from ${scraperId} (pin unchanged)`,
+      { service: 'placeholderController' },
+    );
+    return res.json({
+      message: `Queued chapter ${chapterNumber} from ${scraperId} (series pin unchanged)`,
+      seriesId,
+      chapterNumber,
+      scraperId: matched.scraperId || scraperId,
+      chapterUrl: matched.url,
+    });
+  } catch (error: any) {
+    logger.error(`Failed to download placeholder from alternate scraper: ${error.message}`, { service: 'placeholderController' });
     return next(error);
   }
 };

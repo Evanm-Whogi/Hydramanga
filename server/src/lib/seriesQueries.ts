@@ -3,7 +3,7 @@ import { db, schema } from '@/db/index';
 import { series } from '@/db/schema';
 import { withResolvedDisplayTitle, type SeriesTitleFields } from '@/lib/displayTitle';
 
-/** Card/list selects — omits search_text until DB migration (see sql/add_series_search_text.sql). */
+/** Card/list selects — omits search_text (large denormalized field; search uses search_text via ilike). */
 const { searchText: _searchText, ...seriesCardColumns } = getTableColumns(series);
 export { seriesCardColumns };
 

@@ -21,6 +21,8 @@ import { recordAuditFromRequest } from '@/audit/record';
 import { contentAuditMeta, mangaPageHref } from '@/audit/metadataHelpers';
 import { badgeService } from '@/services/badgeService';
 import { withResolvedDisplayTitle, resolveDisplayTitle } from '@/lib/displayTitle';
+import { seriesDisplayTitleSql } from '@/lib/seriesTitleSql';
+import { getTopRatedEligibilityConditions, topRatedSortScoreExpr } from '@/lib/discoverScore';
 import { siteSettingsService } from '@/services/siteSettingsService';
 
 // Normalize curly/smart quotes to ASCII so search matches titles regardless of apostrophe type
@@ -45,10 +47,7 @@ function buildTextSearchCondition(normalizedSearch: string) {
 
 const discoverSeriesSelect = {
     id: schema.series.id,
-    title: schema.series.title,
-    nativeTitle: schema.series.nativeTitle,
-    romanizedTitle: schema.series.romanizedTitle,
-    secondaryTitles: schema.series.secondaryTitles,
+    titles: schema.series.titles,
     cover: schema.series.cover,
     type: schema.series.type,
     status: schema.series.status,
@@ -56,12 +55,15 @@ const discoverSeriesSelect = {
     totalChapters: schema.series.totalChapters,
     rating: schema.series.rating,
     weightedScore: schema.series.weightedScore,
+    popularityGlobalCurrent: schema.series.popularityGlobalCurrent,
+    popularityTypeCurrent: schema.series.popularityTypeCurrent,
+    popularity: schema.series.popularity,
     description: schema.series.description,
     lastUpdatedAt: schema.series.lastUpdatedAt,
 };
 
 const DISCOVER_SORT_KEYS = [
-    'weightedScore', 'totalChapters', 'lastUpdatedAt', 'title', 'year', 'trending', 'popular', 'recentlyUpdated', 'mostPopular', 'topRated'] as const;
+    'weightedScore', 'totalChapters', 'lastUpdatedAt', 'title', 'year', 'trending', 'trending7d', 'trending30d', 'popular', 'recentlyUpdated', 'mostPopular', 'topRated'] as const;
 type DiscoverSortKey = (typeof DISCOVER_SORT_KEYS)[number];
 type DiscoverSortType = 'number' | 'timestamp' | 'text';
 
@@ -69,16 +71,48 @@ type DiscoverSortType = 'number' | 'timestamp' | 'text';
 // kept broad so the catalog still returns plenty of results per page.
 const DISCOVER_TRENDING_WINDOW_DAYS = 30;
 const DISCOVER_POPULAR_WINDOW_DAYS = 90;
+const DISCOVER_RANK_NULL_SENTINEL = 2_147_483_647;
 
 interface DiscoverSortPlan {
     orderExpr: any;
     type: DiscoverSortType;
     joins: { table: any; on: any }[];
+    /** When set, overrides the request `order` query param (rank sorts are always ascending). */
+    direction?: 'asc' | 'desc';
+    nulls?: 'first' | 'last';
+}
+
+function popularityGlobalCurrentExpr() {
+    return sql`COALESCE((${schema.series.popularity}->'global'->>'current')::int, ${schema.series.popularityGlobalCurrent}, ${DISCOVER_RANK_NULL_SENTINEL})`;
+}
+
+function popularityGlobalCurrentFromJsonExpr() {
+    return sql`COALESCE((${schema.series.popularity}->'global'->>'current')::int, ${schema.series.popularityGlobalCurrent})`;
+}
+
+function popularityTrendGainExpr(window: '1w' | '1mo') {
+    const currentExpr = popularityGlobalCurrentFromJsonExpr();
+    const historyExpr = sql`(${schema.series.popularity}->'global'->'history'->>${window})::int`;
+    return sql`(${historyExpr} - ${currentExpr})`;
+}
+
+function popularityTrendingFilterConditions(window: '1w' | '1mo') {
+    const currentExpr = popularityGlobalCurrentFromJsonExpr();
+    const historyExpr = sql`(${schema.series.popularity}->'global'->'history'->>${window})::int`;
+    return [
+        sql`${historyExpr} IS NOT NULL`,
+        sql`${currentExpr} IS NOT NULL`,
+        sql`(${historyExpr} - ${currentExpr}) > 0`,
+    ];
 }
 
 function resolveDiscoverSortKey(sort: unknown): DiscoverSortKey {
-    const key = String(sort || 'topRated');
-    return (DISCOVER_SORT_KEYS as readonly string[]).includes(key) ? (key as DiscoverSortKey) : 'topRated';
+    const key = String(sort || 'mostPopular');
+    return (DISCOVER_SORT_KEYS as readonly string[]).includes(key) ? (key as DiscoverSortKey) : 'mostPopular';
+}
+
+function resolveDiscoverSortDirection(sortPlan: DiscoverSortPlan, queryAsc: boolean): boolean {
+    return sortPlan.direction ? sortPlan.direction === 'asc' : queryAsc;
 }
 
 /** Per-series view count within the last `days`, used by Popular/Trending sorts. */
@@ -108,18 +142,19 @@ function buildDiscoverSortPlan(sortKey: DiscoverSortKey): DiscoverSortPlan {
         case 'lastUpdatedAt':
             return { orderExpr: schema.series.lastUpdatedAt, type: 'timestamp', joins: [] };
         case 'title':
-            return { orderExpr: schema.series.title, type: 'text', joins: [] };
+            return { orderExpr: seriesDisplayTitleSql, type: 'text', joins: [] };
         case 'year':
             return { orderExpr: schema.series.year, type: 'number', joins: [] };
         case 'topRated':
+            return { orderExpr: topRatedSortScoreExpr(schema.series), type: 'number', joins: [], direction: 'desc', nulls: 'last' };
         case 'weightedScore':
-            return { orderExpr: schema.series.weightedScore, type: 'number', joins: [] };
+            return { orderExpr: schema.series.weightedScore, type: 'number', joins: [], direction: 'desc', nulls: 'last' };
         case 'mostPopular':
-            return {
-                orderExpr: sql`COALESCE(${schema.mangaViewStats.totalViews}, 0)`,
-                type: 'number',
-                joins: [{ table: schema.mangaViewStats, on: eq(schema.series.id, schema.mangaViewStats.seriesId) }],
-            };
+            return { orderExpr: popularityGlobalCurrentExpr(), type: 'number', joins: [], direction: 'asc', nulls: 'last' };
+        case 'trending7d':
+            return { orderExpr: popularityTrendGainExpr('1w'), type: 'number', joins: [], direction: 'desc', nulls: 'last' };
+        case 'trending30d':
+            return { orderExpr: popularityTrendGainExpr('1mo'), type: 'number', joins: [], direction: 'desc', nulls: 'last' };
         case 'recentlyUpdated': {
             const sub = db
                 .select({
@@ -146,8 +181,18 @@ function buildDiscoverSortPlan(sortKey: DiscoverSortKey): DiscoverSortPlan {
             };
         }
         default:
-            return { orderExpr: schema.series.weightedScore, type: 'number', joins: [] };
+            return { orderExpr: popularityGlobalCurrentExpr(), type: 'number', joins: [], direction: 'asc', nulls: 'last' };
     }
+}
+
+function buildDiscoverOrderBy(sortPlan: DiscoverSortPlan, effectiveSort: any, effectiveAsc: boolean) {
+    const nulls = sortPlan.nulls ?? 'last';
+    const dir = effectiveAsc ? sql`ASC` : sql`DESC`;
+    const nullsClause = nulls === 'last' ? sql`NULLS LAST` : sql`NULLS FIRST`;
+    return [
+        sql`${effectiveSort} ${dir} ${nullsClause}`,
+        effectiveAsc ? asc(schema.series.id) : desc(schema.series.id),
+    ];
 }
 
 /**
@@ -377,19 +422,27 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
 
         // Content Restrictions: user preference "Hide NSFW" and optional server-wide block
         const serverBlocksNsfw = getBlockedGenres().length > 0;
+        const sortKey = resolveDiscoverSortKey(sort);
         conditions.push(...getCatalogFilterConditions(hideNsfw || serverBlocksNsfw, schema.series));
-        conditions.push(or(ne(schema.series.state, 'merged'), isNull(schema.series.state)));
 
         // 2. Sorting & Pagination Setup
-        const sortKey = resolveDiscoverSortKey(sort);
         const sortPlan = buildDiscoverSortPlan(sortKey);
         const effectiveSort = sortPlan.orderExpr;
+        const effectiveAsc = resolveDiscoverSortDirection(sortPlan, isAsc);
+
+        if (sortKey === 'trending7d') {
+            conditions.push(...popularityTrendingFilterConditions('1w'));
+        } else if (sortKey === 'trending30d') {
+            conditions.push(...popularityTrendingFilterConditions('1mo'));
+        } else if (sortKey === 'topRated') {
+            conditions.push(...getTopRatedEligibilityConditions(schema.series));
+        }
 
         const baseConditions = [...conditions];
 
         if (cursor) {
             const [cursorVal, cursorId] = String(cursor).split('|');
-            const operator = isAsc ? sql`>` : sql`<`;
+            const operator = effectiveAsc ? sql`>` : sql`<`;
 
             let typedVal: any;
             if (sortPlan.type === 'timestamp') {
@@ -416,10 +469,7 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                 }
                 const data = await query
                     .where(and(...conditions))
-                    .orderBy(
-                        isAsc ? asc(effectiveSort) : desc(effectiveSort),
-                        isAsc ? asc(schema.series.id) : desc(schema.series.id),
-                    )
+                    .orderBy(...buildDiscoverOrderBy(sortPlan, effectiveSort, effectiveAsc))
                     .limit(DISCOVER_PAGE_SIZE + 1);
 
                 const hasNextPage = data.length > DISCOVER_PAGE_SIZE;
@@ -442,7 +492,7 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                         total,
                         hasNextPage,
                         sort: String(sort),
-                        order: isAsc ? 'asc' : 'desc',
+                        order: effectiveAsc ? 'asc' : 'desc',
                     },
                     items,
                     nextCursor,
@@ -560,8 +610,13 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
 
     const hideNsfw = await resolveHideNsfw(req);
     const mangaGenres = Array.isArray(mangaData.genres) ? mangaData.genres as string[] : null;
-    if (shouldFilterManga(mangaGenres) || isSeriesHiddenByUserNsfw({ contentRating: mangaData.contentRating as string | null, genres: mangaGenres }, hideNsfw) || isNovelType(mangaData.type)) {
+    // Server-wide blocks and novels stay as 404. User NSFW preference gets a distinct
+    // code so the client can show an enable-NSFW interstitial instead of a not-found page.
+    if (shouldFilterManga(mangaGenres) || isNovelType(mangaData.type)) {
         return res.status(404).json({ status: 404, message: "Not found" });
+    }
+    if (isSeriesHiddenByUserNsfw({ contentRating: mangaData.contentRating as string | null, genres: mangaGenres }, hideNsfw)) {
+        return res.status(403).json({ code: 'NSFW_HIDDEN', message: 'This title is marked NSFW. Enable NSFW content to view it.' });
     }
 
     // Get user's bookmark status if logged in
@@ -593,30 +648,34 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
     // Replace chapters with enriched chapters
     manga.chapters = enrichedChapters;
 
-    // Fetch related series data
+    // Fetch related series data (legacy relationships map + relationships_v2 entries)
     let enrichedRelationships: any = null;
+    const relationshipIds: number[] = [];
     if (manga.relationships && typeof manga.relationships === 'object' && !Array.isArray(manga.relationships)) {
-        // Extract all IDs from all relationship categories
-        const relationshipIds: number[] = [];
         Object.values(manga.relationships).forEach((ids: any) => {
             if (Array.isArray(ids)) {
                 relationshipIds.push(...ids.filter((id: any) => id !== undefined && id !== null));
             }
         });
-        
-        if (relationshipIds.length > 0) {
-            const relatedSeries = await db.select({
-                id: schema.series.id,
-                name: schema.series.title,
-                nativeTitle: schema.series.nativeTitle,
-                romanizedTitle: schema.series.romanizedTitle,
-                secondaryTitles: schema.series.secondaryTitles,
-                image: schema.series.cover,
-            })
-            .from(schema.series)
-            .where(and(inArray(schema.series.id, relationshipIds), ...getExcludeNovelConditions(schema.series)));
-            
-            // Enrich the relationships object with fetched data
+    }
+    if (Array.isArray(manga.relationshipsV2)) {
+        for (const rel of manga.relationshipsV2) {
+            const toId = rel && typeof rel === 'object' ? (rel as { to_series_id?: number }).to_series_id : undefined;
+            if (typeof toId === 'number') relationshipIds.push(toId);
+        }
+    }
+
+    if (relationshipIds.length > 0) {
+        const uniqueIds = [...new Set(relationshipIds)];
+        const relatedSeries = await db.select({
+            id: schema.series.id,
+            titles: schema.series.titles,
+            image: schema.series.cover,
+        })
+        .from(schema.series)
+        .where(and(inArray(schema.series.id, uniqueIds), ...getExcludeNovelConditions(schema.series)));
+
+        if (manga.relationships && typeof manga.relationships === 'object' && !Array.isArray(manga.relationships)) {
             enrichedRelationships = {};
             Object.entries(manga.relationships).forEach(([category, ids]: [string, any]) => {
                 enrichedRelationships[category] = ids.map((id: number) => {
@@ -624,9 +683,25 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
                     if (!relatedData) return { id };
                     return {
                         ...relatedData,
-                        name: resolveDisplayTitle({ title: relatedData.name, nativeTitle: relatedData.nativeTitle, romanizedTitle: relatedData.romanizedTitle, secondaryTitles: relatedData.secondaryTitles }),
+                        name: resolveDisplayTitle(relatedData),
                     };
                 });
+            });
+        }
+
+        if (Array.isArray(manga.relationshipsV2) && manga.relationshipsV2.length > 0) {
+            (manga as { relationshipsV2?: unknown[] }).relationshipsV2 = manga.relationshipsV2.map((rel: any) => {
+                const toId = typeof rel?.to_series_id === 'number' ? rel.to_series_id : null;
+                if (!toId) return rel;
+                const relatedData = relatedSeries.find((s) => s.id === toId);
+                if (!relatedData) return rel;
+                return {
+                    ...rel,
+                    series: {
+                        ...relatedData,
+                        name: resolveDisplayTitle(relatedData),
+                    },
+                };
             });
         }
     }
@@ -736,14 +811,14 @@ export async function triggerMangaScan(req: Request, res: Response, next: NextFu
         }
         
         // Get manga title from database
-        const [manga] = await db.select({ title: series.title, type: series.type }).from(series).where(eq(series.id, mangaId));
+        const [manga] = await db.select({ titles: series.titles, type: series.type }).from(series).where(eq(series.id, mangaId));
         if (!manga) {
             return res.status(404).json({ error: 'Manga not found' });
         }
         if (isNovelType(manga.type)) {
             return res.status(400).json({ error: 'Novels are not supported for chapter import' });
         }
-        const mangaTitle = (manga.title || '').trim();
+        const mangaTitle = resolveDisplayTitle(manga).trim();
         if (!mangaTitle) {
             return res.status(400).json({ error: 'Manga has no title; cannot scan. Add a title in admin first.' });
         }
@@ -795,12 +870,12 @@ export async function trackMangaViewEndpoint(req: Request, res: Response, next: 
     }
 
     const [seriesRow] = await db
-        .select({ title: schema.series.title })
+        .select({ titles: schema.series.titles })
         .from(schema.series)
         .where(eq(schema.series.id, id))
         .limit(1);
 
-    const seriesTitle = seriesRow?.title ?? `Series #${id}`;
+    const seriesTitle = seriesRow ? resolveDisplayTitle(seriesRow) : `Series #${id}`;
 
     recordAuditFromRequest(req, {
         action: 'manga.view',
@@ -844,7 +919,7 @@ export async function trackChapterViewEndpoint(req: Request, res: Response, next
 
     const [contextRow] = await db
         .select({
-            seriesTitle: schema.series.title,
+            seriesTitles: schema.series.titles,
             chapterNumber: schema.chapters.chapterNumber,
         })
         .from(schema.chapters)
@@ -852,7 +927,7 @@ export async function trackChapterViewEndpoint(req: Request, res: Response, next
         .where(eq(schema.chapters.id, numericChapterId))
         .limit(1);
 
-    const seriesTitle = contextRow?.seriesTitle ?? `Series #${numericId}`;
+    const seriesTitle = contextRow ? resolveDisplayTitle({ titles: contextRow.seriesTitles }) : `Series #${numericId}`;
     const chapterLabel =
         contextRow?.chapterNumber != null
             ? `Chapter ${contextRow.chapterNumber}`
@@ -980,10 +1055,7 @@ export async function getRecommendedManga(req: Request, res: Response, next: Nex
                 const recommendations = await db
                     .select({
                         id: schema.series.id,
-                        title: schema.series.title,
-                        nativeTitle: schema.series.nativeTitle,
-                        romanizedTitle: schema.series.romanizedTitle,
-                        secondaryTitles: schema.series.secondaryTitles,
+                        titles: schema.series.titles,
                         cover: schema.series.cover,
                         genres: schema.series.genres,
                         weightedScore: schema.series.weightedScore,
@@ -1102,10 +1174,7 @@ export async function randomManga(req: Request, res: Response, next: NextFunctio
         try {
             const randomManga = await db.select({
                 id: schema.series.id,
-                title: schema.series.title,
-                nativeTitle: schema.series.nativeTitle,
-                romanizedTitle: schema.series.romanizedTitle,
-                secondaryTitles: schema.series.secondaryTitles,
+                titles: schema.series.titles,
                 cover: schema.series.cover,
             })
             .from(schema.series)

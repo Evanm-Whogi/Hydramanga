@@ -386,7 +386,7 @@ class CuratedListService {
     const items = await enrichSeriesListExtras(
       itemRows.map((row) => ({
         id: row.id,
-        title: row.title,
+        titles: row.titles,
         cover: row.cover,
         type: row.type,
         status: row.status,
@@ -686,14 +686,11 @@ class CuratedListService {
     const rows = await db
       .select({
         id: schema.series.id,
-        title: schema.series.title,
-        nativeTitle: schema.series.nativeTitle,
-        romanizedTitle: schema.series.romanizedTitle,
-        secondaryTitles: schema.series.secondaryTitles,
+        titles: schema.series.titles,
         cover: schema.series.cover,
       })
       .from(schema.series)
-      .where(and(ilike(schema.series.title, `%${term}%`), ...getExcludeNovelConditions(schema.series)))
+      .where(and(ilike(schema.series.searchText, `%${term}%`), ...getExcludeNovelConditions(schema.series)))
       .limit(Math.min(limit, 20));
     return rows.map((r) => {
       const resolved = withResolvedDisplayTitle(r);

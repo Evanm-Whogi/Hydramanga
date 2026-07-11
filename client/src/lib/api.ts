@@ -2,6 +2,7 @@ import axios, { InternalAxiosRequestConfig } from 'axios';
 import { getServerApiBase, getClientApiBase } from './env';
 import { parseRateLimitedResponse } from './rateLimit';
 import { handleBannedApiResponse, handleUnauthorizedApiResponse } from './authSession';
+import { NsfwHiddenError } from './nsfwHiddenError';
 
 let serverInstance: ReturnType<typeof axios.create> | null = null;
 
@@ -57,6 +58,10 @@ const handleBackendError = async (error: any) => {
         redirect('/login?banned=1');
     }
 
+    if (status === 403 && data?.code === 'NSFW_HIDDEN') {
+        throw new NsfwHiddenError(data?.message);
+    }
+
     if (status === 401) {
         redirect('/login');
     }
@@ -100,6 +105,9 @@ const clientFetch = async (url: string, options: RequestInit & { timeoutMs?: num
         if (res.status === 403 && data?.code === 'BANNED') {
             await handleBannedApiResponse(data?.message);
         }
+        if (res.status === 403 && data?.code === 'NSFW_HIDDEN') {
+            throw new NsfwHiddenError(data?.message);
+        }
         if (res.status === 401) {
             await handleUnauthorizedApiResponse();
         }
@@ -118,14 +126,14 @@ const clientFetch = async (url: string, options: RequestInit & { timeoutMs?: num
     }
 };
 
-export const apiPost = async (url: string, data?: any) => {
+export const apiPost = async (url: string, data?: any, options?: { timeoutMs?: number }) => {
     if (typeof window !== 'undefined') {
-        return clientFetch(url, { method: 'POST', body: JSON.stringify(data ?? {}) });
+        return clientFetch(url, { method: 'POST', body: JSON.stringify(data ?? {}), timeoutMs: options?.timeoutMs });
     }
 
     try {
         const instance = await getServerInstance();
-        const res = await instance.post(url, data);
+        const res = await instance.post(url, data, options?.timeoutMs != null ? { timeout: options.timeoutMs } : undefined);
         return res.data;
     } catch (error: any) {
         if (error.response) await handleBackendError(error);
@@ -205,6 +213,9 @@ export const apiPostFormData = async (url: string, formData: FormData) => {
         if (!res.ok) {
             if (res.status === 403 && data?.code === 'BANNED') {
                 await handleBannedApiResponse(data?.message);
+            }
+            if (res.status === 403 && data?.code === 'NSFW_HIDDEN') {
+                throw new NsfwHiddenError(data?.message);
             }
             if (res.status === 401) {
                 await handleUnauthorizedApiResponse();

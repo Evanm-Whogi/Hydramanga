@@ -23,6 +23,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description: data.list.description || `A curated manga list on ${name}`,
       path: `/lists/${id}`,
       noIndex: data.list.visibility === "private",
+      includeSiteKeywords: false,
     });
   } catch {
     return buildPageMetadata({ title: "List", description: "Curated manga list", path: "/lists" });

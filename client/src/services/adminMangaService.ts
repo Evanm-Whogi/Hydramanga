@@ -26,8 +26,8 @@ export async function adminSetSource(mangaId: number, scraperId: string, scraper
   return apiPatch(`/admin/manga/${mangaId}/source`, { scraperId, scraperUrl });
 }
 
-/** Admin: add a title variant to series.secondaryTitles */
-export async function adminAddSecondaryTitle(mangaId: number, payload: { title: string; language?: string; type?: string }): Promise<{ success: boolean; seriesId: number; secondaryTitles: Record<string, unknown> }> {
+/** Admin: add a title variant to series.titles */
+export async function adminAddSecondaryTitle(mangaId: number, payload: { title: string; language?: string; type?: string }): Promise<{ success: boolean; seriesId: number; titles: unknown }> {
   return apiPatch(`/admin/manga/${mangaId}/secondary-titles`, payload);
 }
 

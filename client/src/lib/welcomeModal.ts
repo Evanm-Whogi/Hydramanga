@@ -1,8 +1,12 @@
+import { isBrowserCrawler } from '@/lib/crawler';
+
 const STORAGE_KEY = 'welcome-modal-dismissed-at';
 const DISMISS_MS = 24 * 60 * 60 * 1000;
 
 export function shouldShowWelcomeModal(): boolean {
   if (typeof window === 'undefined') return false;
+  // Crawlers must not see the welcome interstitial (SEO / JS renderers).
+  if (isBrowserCrawler()) return false;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return true;

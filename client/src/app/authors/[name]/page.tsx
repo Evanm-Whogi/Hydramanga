@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { fetchAuthorDetail } from "@/services/authorService";
 import AuthorDetailClient from "./components/AuthorDetailClient";
 import { buildPageMetadata, getSiteConfig } from "@/lib/seo";
+import { authorPath } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     return buildPageMetadata({
       title: detail.name,
       description: `Manga and works by ${detail.name} on ${siteName}.`,
-      path: `/authors/${name}`,
+      path: authorPath(detail.name),
+      includeSiteKeywords: false,
     });
   } catch {
     return buildPageMetadata({ title: "Author", description: "Manga author", path: "/authors" });

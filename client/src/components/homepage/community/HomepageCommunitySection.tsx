@@ -42,7 +42,7 @@ export default function HomepageCommunitySection() {
       {collections.length === 0 ? (
         <HomepageCarouselEmpty title="Collections" icon={LibraryBig} message="No collections available yet." />
       ) : (
-        <HomepageCarouselSection title="Collections" headerTrailing={<HomepageSectionLink href="/collections" label="View all" />}>
+        <HomepageCarouselSection title="Collections" headerTrailing={<HomepageSectionLink href="/genres" label="View all" />}>
           {collections.map(([genre, data]) => (
             <HomepageCarouselItem key={`collection-${genre}`}>
               <HomepageCollectionCarouselCard collection={{ name: genre, description: data.description, topManga: data.topManga }} />

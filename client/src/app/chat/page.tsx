@@ -7,6 +7,7 @@ export const metadata: Metadata = buildPageMetadata({
   title: 'Community Chat',
   description: 'Chat with other manga readers in real time on HydraManga.',
   path: '/chat',
+  noIndex: true,
 });
 
 export default function ChatPage() {

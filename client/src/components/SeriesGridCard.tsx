@@ -1,29 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { BookOpen, Eye, Plus, Star } from "lucide-react";
+import { BookOpen, Plus } from "lucide-react";
 import { memo, type MouseEvent } from "react";
 import CoverImage from "@/components/CoverImage";
+import PopularityRankDisplay from "@/components/PopularityRankDisplay";
 import { authClient } from "@/lib/auth";
 import { requireAuth } from "@/lib/requireAuth";
-import { formatCompactNumber, formatToRating } from "@/lib/utils";
 import { formatChapterCount, formatDisplayStatus } from "@/lib/seriesFormat";
+import { resolveGlobalRank, resolveTypeRank, type PopularityFields } from "@/lib/popularityRank";
 
-function SeriesGridCard({ seriesId, title, cover, href, type, status, rating, views, totalChapters, isNew, priority, onSaveClick, onNavigate }: {
+function SeriesGridCard({ seriesId, title, cover, href, type, status, totalChapters, isNew, priority, onSaveClick, onNavigate, popularityGlobalCurrent, popularityTypeCurrent, popularity }: {
   seriesId: number;
   title: string;
   cover: unknown;
   href: string;
   type?: string | null;
   status?: string | null;
-  rating?: number | null;
-  views?: number | null;
   totalChapters?: string | number | null;
   isNew?: boolean;
   priority?: boolean;
   onSaveClick?: (seriesId: number, title: string) => void;
   onNavigate?: () => void;
-}) {
+} & PopularityFields) {
   const shouldHandleNavigate = (e: MouseEvent<HTMLAnchorElement>) =>
     e.button === 0 &&
     !e.metaKey &&
@@ -50,6 +49,9 @@ function SeriesGridCard({ seriesId, title, cover, href, type, status, rating, vi
     });
   };
 
+  const popularityFields = { popularityGlobalCurrent, popularityTypeCurrent, popularity };
+  const hasPopularityRank = resolveGlobalRank(popularityFields) != null || resolveTypeRank(popularityFields) != null;
+
   return (
     <Link href={href} prefetch={false} className="group flex h-full w-full flex-col" onPointerDown={handlePointerDown} onClick={handleClick}>
       <div className="relative aspect-2/3 w-full overflow-hidden rounded-md bg-foreground">
@@ -60,17 +62,13 @@ function SeriesGridCard({ seriesId, title, cover, href, type, status, rating, vi
             <span className="rounded-full bg-accent/90 px-3 py-1.5 text-xs font-bold text-white shadow-lg">NEW</span>
           </div>
         ) : null}
-        <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-x-2 bg-black/50 px-3 py-2 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-          <div className="flex items-center text-sm font-semibold text-white">
-            <Star className="mr-1 size-3.5 fill-yellow-400 text-yellow-400" />
-            {formatToRating(rating ?? null)}
-          </div>
-          <span aria-hidden className="text-white/60">·</span>
-          <div className="flex items-center text-sm font-semibold text-white">
-            <Eye className="mr-1 size-3.5 text-blue-300" />
-            {views != null && views > 0 ? formatCompactNumber(views) : "0"}
-          </div>
-          <span aria-hidden className="text-white/60">·</span>
+        <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-x-1 bg-black/50 px-3 py-2 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+          {hasPopularityRank ? (
+            <>
+              <PopularityRankDisplay compact fields={popularityFields} seriesType={type} />
+              <span aria-hidden className="text-white/60">·</span>
+            </>
+          ) : null}
           <div className="flex items-center text-sm font-semibold text-white">
             <BookOpen className="mr-1 size-3.5 text-emerald-300" />
             {formatChapterCount(totalChapters)}

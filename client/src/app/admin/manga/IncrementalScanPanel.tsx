@@ -62,7 +62,7 @@ export default function IncrementalScanPanel() {
       <div>
         <h2 className="text-sm font-semibold text-primary">Incremental ranked scan</h2>
         <p className="text-xs text-muted mt-1 max-w-3xl">
-          Queue chapter scans by global popularity rank (weighted score). Run batches like 1–100, then 101–200. With auto-select on, each title gets a scraper source using the same cross-scraper title match scoring (and scraper priority) as manual source search, then the scan job is queued. With archive backfill on, completed / large back-catalog titles are acquired from a torrent archive first (when the pipeline is enabled), and scraping becomes the gap-fill — everything else is scraped as before.
+          Queue chapter scans by global MangaBaka popularity rank. Run batches like 1–100, then 101–200. With auto-select on, each title gets a scraper source using the same cross-scraper title match scoring (and scraper priority) as manual source search, then the scan job is queued. With archive backfill on, completed / large back-catalog titles are acquired from a torrent archive first (when the pipeline is enabled), and scraping becomes the gap-fill — everything else is scraped as before.
         </p>
       </div>
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">

@@ -1,6 +1,6 @@
 import { db } from '@/db';
 import { series, chapters } from '@/db/schema';
-import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { cacheService } from '@/services/cacheService';
 import { queueService } from '@/services/queueService';
@@ -8,6 +8,8 @@ import { getAllChapterDownloadQueueNames } from '@/lib/chapterDownloadQueues';
 import { mangaProgressService, isSourceOnlyProgress } from '@/services/mangaProgressService';
 import { autoSelectScraperSource } from '@/services/scraperSourceService';
 import { acquisitionRouterService } from '@/services/acquisitionRouterService';
+import { resolveDisplayTitle } from '@/lib/displayTitle';
+import { scraperTitleOptions } from '@/lib/catalogTitles';
 import { getExcludeNovelConditions, isNovelType } from '@/config/contentFilter';
 
 // Constants
@@ -18,8 +20,12 @@ const TRENDING_CACHE_TTL = 60 * 60; // 1 hour
 const IGNORED_TITLES = new Set(['one piece', "hajime no ippo: fighting spirit!"]); // Add more titles as needed
 const isIgnored = (title: string | null | undefined) => IGNORED_TITLES.has((title || '').trim().toLowerCase());
 const MAX_RANKED_SCAN_BATCH = 500;
+const rankedCatalogOrder = [
+  sql`COALESCE((${series.popularity}->'global'->>'current')::int, ${series.popularityGlobalCurrent}) ASC NULLS LAST`,
+  asc(series.id),
+] as const;
 const notMergedCondition = or(isNull(series.state), ne(series.state, 'merged'));
-const CHAPTER_SCAN_JOB_PREFIXES = ['rescan', 'ondemand', 'trending', 'ranked', 'monitored', 'catalog'] as const;
+const CHAPTER_SCAN_JOB_PREFIXES = ['rescan', 'ondemand', 'trending', 'ranked', 'monitored', 'catalog', 'recovery', 'archive-scrape'] as const;
 
 function chapterScanJobIds(seriesId: number): string[] {
   return CHAPTER_SCAN_JOB_PREFIXES.map((prefix) => `${prefix}-${seriesId}`);
@@ -82,13 +88,15 @@ class MangaOrchestratorService {
       }
 
       const rows = await db
-        .select({ id: series.id, title: series.title })
+        .select({ id: series.id, titles: series.titles })
         .from(series)
         .where(and(...getExcludeNovelConditions(series)))
         .orderBy(desc(series.weightedScore), desc(series.lastUpdatedAt))
         .limit(limit);
 
-      const filtered = rows.filter((r) => !isIgnored(r.title));
+      const filtered = rows
+        .map((r) => ({ id: r.id, title: resolveDisplayTitle(r) }))
+        .filter((r) => !isIgnored(r.title));
 
       await cacheService.set(TRENDING_CACHE_KEY, JSON.stringify(filtered), TRENDING_CACHE_TTL);
       return filtered;
@@ -114,7 +122,7 @@ class MangaOrchestratorService {
     return row?.count ?? 0;
   }
 
-  // Schedule chapter scans for a 1-based global rank range (by weightedScore).
+  // Schedule chapter scans for a 1-based global rank range (by MangaBaka global popularity).
   async enqueueRankedChapterScans(options: RankedChapterScanOptions): Promise<RankedChapterScanResult> {
     const start = Math.max(1, Math.floor(options.start));
     const end = Math.max(start, Math.floor(options.end));
@@ -135,13 +143,12 @@ class MangaOrchestratorService {
     const rows = await db
       .select({
         id: series.id,
-        title: series.title,
-        romanizedTitle: series.romanizedTitle,
+        titles: series.titles,
         cover: series.cover,
       })
       .from(series)
       .where(and(...conditions))
-      .orderBy(desc(series.weightedScore), desc(series.lastUpdatedAt))
+      .orderBy(...rankedCatalogOrder)
       .offset(offset)
       .limit(limit);
 
@@ -166,12 +173,25 @@ class MangaOrchestratorService {
     const enqueuedSeriesIds: number[] = [];
     const archivedSeriesIds: number[] = [];
     for (const row of rows) {
-      if (!row.title || isIgnored(row.title)) {
+      const displayTitle = resolveDisplayTitle(row);
+      const titleOpts = scraperTitleOptions(row.titles);
+      if (!displayTitle || isIgnored(displayTitle)) {
         skippedIgnored++;
         continue;
       }
       if (skipWithChapters && seriesIdsWithChapters.has(row.id)) {
         skippedWithChapters++;
+        continue;
+      }
+      // Don't stack a second scan on top of an active import or another queued scan job —
+      // overlapping scans used to reset totalChapters to the on-disk count and falsely
+      // mark the series completed.
+      const busy = await this.isChapterScanBusy(row.id);
+      if (busy.busy) {
+        logger.info(
+          `Skipping ranked scan for series ${row.id}: already ${busy.reason}`,
+          { service: 'mangaOrchestratorService' }
+        );
         continue;
       }
       if (autoSelectSource) {
@@ -216,8 +236,8 @@ class MangaOrchestratorService {
       const isFirstScan = !seriesIdsWithChapters.has(row.id);
       await queueService.addJob(
         'mangaChapterImportQueue',
-        `Ranked sync ${row.title} (#${start}-${end})`,
-        { mangaTitle: row.title, seriesId: row.id, romanizedTitle: row.romanizedTitle, coverUrl, isFirstScan },
+        `Ranked sync ${displayTitle} (#${start}-${end})`,
+        { mangaTitle: displayTitle, seriesId: row.id, romanizedTitle: titleOpts.romanizedTitle, coverUrl, isFirstScan },
         { jobId: `${jobIdPrefix}-${row.id}`, attempts: 3 }
       );
       queued++;
@@ -273,25 +293,13 @@ class MangaOrchestratorService {
     const existingChapters = await db.select().from(chapters).where(eq(chapters.seriesId, seriesId)).limit(1);
     if (existingChapters.length > 0) return logger.info(`Manga ${mangaTitle} already has chapters, skipping first scan notification`, { service: 'mangaOrchestratorService' });
 
-    // Check if manga is already being scanned or downloaded
-    const progress = await mangaProgressService.getProgress(seriesId);
-    if (progress && (progress.status === 'scanning' || progress.status === 'downloading')) {
-      logger.info(`Manga ${mangaTitle} (${seriesId}) is already ${progress.status}, skipping duplicate scan`, { service: 'mangaOrchestratorService' });
+    const busy = await this.isChapterScanBusy(seriesId);
+    if (busy.busy) {
+      logger.info(`Manga ${mangaTitle} (${seriesId}) is already ${busy.reason}, skipping duplicate scan`, { service: 'mangaOrchestratorService' });
       return;
     }
 
     const jobId = `ondemand-${seriesId}`;
-    const queue = queueService.getQueue('mangaChapterImportQueue');
-    
-    // Check if job already exists in queue (any state except failed)
-    const existingJob = await queue.getJob(jobId);
-    if (existingJob) {
-      const state = await existingJob.getState();
-      if (state !== 'failed') {
-        logger.info(`Job ${jobId} already exists (state: ${state}), skipping`, { service: 'mangaOrchestratorService' });
-        return;
-      }
-    }
     
     // Initialize progress to 'scanning' state for a first scan (no existing chapters yet)
     // This ensures WebSocket clients see the scanning state before the job is processed
@@ -313,8 +321,9 @@ class MangaOrchestratorService {
     }
 
     // Fetch romanizedTitle and cover from database
-    const [manga] = await db.select({ romanizedTitle: series.romanizedTitle, cover: series.cover }).from(series).where(eq(series.id, seriesId));
-    const romanizedTitle = manga?.romanizedTitle || undefined;
+    const [manga] = await db.select({ titles: series.titles, cover: series.cover }).from(series).where(eq(series.id, seriesId));
+    const titleOpts = scraperTitleOptions(manga?.titles);
+    const romanizedTitle = titleOpts.romanizedTitle;
     const coverUrl = manga?.cover ? (manga.cover as any)?.x350?.x1 || (manga.cover as any)?.x250?.x1 || (manga.cover as any)?.raw?.url || undefined : undefined;
     
     await queueService.addJob('mangaChapterImportQueue', `On-demand sync ${mangaTitle}`, { mangaTitle, seriesId, romanizedTitle, isFirstScan: true, coverUrl }, { 
@@ -330,11 +339,12 @@ class MangaOrchestratorService {
   // Enqueue a single rescan for one series (admin or manual). Always enqueues a chapter-scan job to check for new chapters.
   async enqueueSingleRescan(seriesId: number): Promise<{ queued: boolean; reason?: string }> {
     const [manga] = await db
-      .select({ title: series.title, romanizedTitle: series.romanizedTitle, cover: series.cover, type: series.type })
+      .select({ titles: series.titles, cover: series.cover, type: series.type })
       .from(series)
       .where(eq(series.id, seriesId))
       .limit(1);
-    if (!manga?.title) {
+    const displayTitle = manga ? resolveDisplayTitle(manga) : '';
+    if (!displayTitle) {
       logger.warn(`enqueueSingleRescan: series ${seriesId} not found`, { service: 'mangaOrchestratorService' });
       return { queued: false, reason: 'series_not_found' };
     }
@@ -342,20 +352,21 @@ class MangaOrchestratorService {
       logger.info(`enqueueSingleRescan: skipping novel series ${seriesId}`, { service: 'mangaOrchestratorService' });
       return { queued: false, reason: 'novel' };
     }
-    const progress = await mangaProgressService.getProgress(seriesId);
-    if (progress && (progress.status === 'scanning' || progress.status === 'downloading')) {
-      logger.info(`Series ${seriesId} is already ${progress.status}, skipping rescan`, { service: 'mangaOrchestratorService' });
+    const busy = await this.isChapterScanBusy(seriesId);
+    if (busy.busy) {
+      logger.info(`Series ${seriesId} is already ${busy.reason}, skipping rescan`, { service: 'mangaOrchestratorService' });
       return { queued: false, reason: 'already_active' };
     }
+    const titleOpts = scraperTitleOptions(manga.titles);
     const coverUrl = manga.cover ? (manga.cover as any)?.x350?.x1 || (manga.cover as any)?.x250?.x1 || (manga.cover as any)?.raw?.url : undefined;
-    await queueService.addJob('mangaChapterImportQueue', `Rescan ${manga.title}`, {
-      mangaTitle: manga.title,
+    await queueService.addJob('mangaChapterImportQueue', `Rescan ${displayTitle}`, {
+      mangaTitle: displayTitle,
       seriesId,
-      romanizedTitle: manga.romanizedTitle || undefined,
+      romanizedTitle: titleOpts.romanizedTitle,
       isFirstScan: false,
       coverUrl,
     }, { jobId: `rescan-${seriesId}`, attempts: 2 });
-    logger.info(`Queued rescan for series ${seriesId} (${manga.title})`, { service: 'mangaOrchestratorService' });
+    logger.info(`Queued rescan for series ${seriesId} (${displayTitle})`, { service: 'mangaOrchestratorService' });
     return { queued: true };
   }
 
@@ -375,6 +386,22 @@ class MangaOrchestratorService {
       }
     }
     return null;
+  }
+
+  /**
+   * True when this series already has an in-flight import or any chapter-scan job queued/active.
+   * All enqueue paths should call this so catalog/ondemand/monitored/recovery cannot stack.
+   */
+  async isChapterScanBusy(seriesId: number): Promise<{ busy: boolean; reason?: string }> {
+    const progress = await mangaProgressService.getProgress(seriesId);
+    if (progress && (progress.status === 'scanning' || progress.status === 'downloading')) {
+      return { busy: true, reason: progress.status };
+    }
+    const queuedScan = await this.getQueuedChapterScanStatus(seriesId);
+    if (queuedScan) {
+      return { busy: true, reason: queuedScan.scanStatus };
+    }
+    return { busy: false };
   }
 
   // Get scan status: progress status + whether a job is queued
@@ -481,28 +508,35 @@ class MangaOrchestratorService {
       // numbers would collide with the volume numbering.
       const notVolumeSourced = ne(series.volumeSourced, true);
       const novelFilter = getExcludeNovelConditions(series);
-      let results: Array<{ id: number; title: string | null; cover: unknown }>;
+      let results: Array<{ id: number; titles: unknown; cover: unknown }>;
       
       if (trendingIds.length > 0) {
         results = await db
-          .selectDistinct({ id: series.id, title: series.title, cover: series.cover })
+          .selectDistinct({ id: series.id, titles: series.titles, cover: series.cover })
           .from(series)
           .innerJoin(chapters, eq(chapters.seriesId, series.id))
           .where(and(sql`NOT ${inArray(series.id, trendingIds)}`, notCompleted, notVolumeSourced, ...novelFilter));
       } else {
         results = await db
-          .selectDistinct({ id: series.id, title: series.title, cover: series.cover })
+          .selectDistinct({ id: series.id, titles: series.titles, cover: series.cover })
           .from(series)
           .innerJoin(chapters, eq(chapters.seriesId, series.id))
           .where(and(notCompleted, notVolumeSourced, ...novelFilter));
       }
 
-      // Filter out results with null titles
-      const monitored = results.filter((m): m is { id: number; title: string; cover: unknown } => m.title !== null && m.title !== undefined);
+      const monitored = results
+        .map((m) => ({ ...m, title: resolveDisplayTitle(m) }))
+        .filter((m): m is { id: number; titles: unknown; cover: unknown; title: string } => Boolean(m.title));
       
       let enqueuedCount = 0;
+      let skippedActive = 0;
       for (const manga of monitored) {
         if (isIgnored(manga.title)) continue;
+        const busy = await this.isChapterScanBusy(manga.id);
+        if (busy.busy) {
+          skippedActive++;
+          continue;
+        }
         const coverUrl = manga.cover ? (manga.cover as any)?.x350?.x1 || (manga.cover as any)?.x250?.x1 || (manga.cover as any)?.raw?.url || undefined : undefined;
         await queueService.addJob('mangaChapterImportQueue', `Monitored rescan ${manga.title}`,
           { mangaTitle: manga.title, seriesId: manga.id, coverUrl },
@@ -511,7 +545,7 @@ class MangaOrchestratorService {
         enqueuedCount++;
       }
       
-      logger.info(`Queued ${enqueuedCount} monitored manga rescans (${monitored.length - enqueuedCount} ignored)`, { service: 'mangaOrchestratorService' });
+      logger.info(`Queued ${enqueuedCount} monitored manga rescans (${skippedActive} already active, ${monitored.length - enqueuedCount - skippedActive} ignored)`, { service: 'mangaOrchestratorService' });
     } catch (err) {
       logger.error(`Failed to enqueue monitored rescans: ${(err as Error).message}`, { service: 'mangaOrchestratorService' });
     }

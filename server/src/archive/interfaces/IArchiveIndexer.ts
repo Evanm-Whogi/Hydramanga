@@ -7,7 +7,7 @@
 import type { ArchiveCandidate } from './types';
 
 export interface ArchiveSearchInput {
-    /** Primary search title (usually `series.title`). */
+    /** Primary search title (resolved from `series.titles`). */
     query: string;
     /** Native + secondary titles, used to widen matching (titles often dual-encode). */
     altTitles?: string[];

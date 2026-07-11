@@ -2,12 +2,14 @@
 import { useEffect, useState, memo, useTransition, Fragment, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { getMangaAnalytics } from '@/services/mangaService';
-import { formatToRating, formatTimeAgo, formatCompactNumber as formatNumber } from '@/lib/utils';
+import { formatTimeAgo, formatCompactNumber as formatNumber } from '@/lib/utils';
+import PopularityRankDisplay from '@/components/PopularityRankDisplay';
+import { resolveGlobalRank, resolveTypeRank } from '@/lib/popularityRank';
 import Link from 'next/link';
 import MangaActions from './MangaActions';
 import RecommendedManga from './RecommendedManga';
 import FeaturedInLists from './FeaturedInLists';
-import { Eye, Bookmark, UserCheck, TriangleAlert, Star, Pencil, ShareIcon, StickyNote } from 'lucide-react';
+import { Eye, Bookmark, UserCheck, TriangleAlert, Pencil, ShareIcon, StickyNote } from 'lucide-react';
 import { useMangaViewTracking } from '@/hooks/useViewTracking';
 import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
 import { useVisibilityAwareInterval } from '@/hooks/useVisibilityAwareInterval';
@@ -28,7 +30,8 @@ const MangaHeader = memo(({ cover }: { cover: string }) => {
   );
 });
 
-const getLinkName = (url: string) => {
+const getLinkName = (url: string, displayName?: string | null) => {
+  if (displayName?.trim()) return displayName.trim();
   try {
     const urlObj = new URL(url);
     const hostname = urlObj.hostname.toLowerCase().replace('www.', '');
@@ -114,13 +117,21 @@ const MangaDetails = memo(({ manga }: { manga: any }) => (
     </div>
     <div className="flex gap-2 items-center flex-wrap mb-5">
       <strong className="text-muted">External Links:</strong>
-      {manga.links &&
+      {Array.isArray(manga.linksV2) && manga.linksV2.length > 0
+        ? manga.linksV2.slice(0, 8).map((link: { url: string; name_display?: string | null }, index: number) => (
+          <a key={index} href={link.url} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-foreground rounded-md text-sm hover:bg-foreground/70 shadow-md">
+            {getLinkName(link.url, link.name_display)}
+          </a>
+        ))
+        : manga.links &&
         manga.links.slice(0, 8).map((link: string, index: number) => (
           <a key={index} href={link} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-foreground rounded-md text-sm hover:bg-foreground/70 shadow-md">
             {getLinkName(link)}
           </a>
         ))}
-      {manga.links?.length > 8 && <span className="text-xs text-muted">+{manga.links.length - 8} more</span>}
+      {(Array.isArray(manga.linksV2) ? manga.linksV2.length : manga.links?.length || 0) > 8 && (
+        <span className="text-xs text-muted">+{(Array.isArray(manga.linksV2) ? manga.linksV2.length : manga.links.length) - 8} more</span>
+      )}
     </div>
   </div>
 ));
@@ -395,6 +406,15 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
       </div>
     ) : null;
 
+  const popularityFields = {
+    popularityGlobalCurrent: manga.popularityGlobalCurrent,
+    popularityTypeCurrent: manga.popularityTypeCurrent,
+    popularity: manga.popularity,
+  };
+  const globalRank = resolveGlobalRank(popularityFields);
+  const typeRank = resolveTypeRank(popularityFields);
+  const hasPopularityRank = globalRank != null || typeRank != null;
+
   return (
     <>
       <MangaHeader cover={manga?.cover?.x350?.x3 || manga?.cover?.raw?.url || "/notFound.png"} />
@@ -405,26 +425,14 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
             <div className={`space-y-3 flex flex-col ${isLg && sidebarHeight != null ? "shrink-0" : ""}`}>
               {mangaNote && mangaNoteBanner}
               {containsAdultContent && containsAdultWarning}
-            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
-              {manga.title} 
-               {analytics?.manga && (
-                <span className="text-sm md:text-base text-muted items-center">
-                  <Star className="inline mr-1 mb-1 size-4 fill-green-600 text-green-600 items-center" />
-                  {analytics?.manga?.reviewRating || formatToRating(manga.rating) || 0} <span className="text-sm text-muted">({analytics?.manga?.reviewCount || 0} Reviews)</span>
-                </span>
-               )}
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => setAdminModalOpen(true)}
-                  className="p-2 cursor-pointer rounded-md bg-foreground hover:bg-foreground/80 text-muted hover:text-primary"
-                  title="Edit manga (admin)"
-                  aria-label="Edit manga"
-                >
-                  <Pencil className="size-5" />
-                </button>
-              )}
-            </h1>
+            <div className="flex flex-row items-start justify-between gap-4">
+              <h1 className="text-2xl md:text-3xl font-bold min-w-0 flex-1">
+                {manga.title}
+              </h1>
+              {hasPopularityRank ? (
+                <PopularityRankDisplay fields={popularityFields} seriesType={manga.type} className="font-normal shrink-0" />
+              ) : null}
+            </div>
             { manga.romanizedTitle || manga.nativeTitle ? (
             <h2 className="text-base md:text-lg text-muted font-semibold">[{manga.romanizedTitle} | {manga.nativeTitle}]</h2>
             ): null }
@@ -463,13 +471,26 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
                 ))}
             </div>
 
-            <button
-              onClick={() => startTransition(() => setShowDetails((prev) => !prev))}
-              disabled={isPending}
-              className="mt-4 px-4 py-2 bg-foreground text-primary rounded-lg w-fit text-sm hover:bg-foreground/50 hover:cursor-pointer disabled:opacity-50 shadow-md"
-            >
-              {showDetails ? 'Hide Details' : 'Show Details...'}
-            </button>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => startTransition(() => setShowDetails((prev) => !prev))}
+                disabled={isPending}
+                className="px-4 py-2 bg-foreground text-primary rounded-lg w-fit text-sm hover:bg-foreground/50 hover:cursor-pointer disabled:opacity-50 shadow-md"
+              >
+                {showDetails ? 'Hide Details' : 'Show Details...'}
+              </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setAdminModalOpen(true)}
+                  className="px-4 py-2 bg-foreground text-primary rounded-lg w-fit text-sm hover:bg-foreground/50 hover:cursor-pointer shadow-md"
+                  title="Edit manga (admin)"
+                >
+                  <Pencil className="inline size-4 mr-1" aria-hidden />
+                  Edit
+                </button>
+              )}
+            </div>
             </div>
 
             <MangaActions 
@@ -503,6 +524,11 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
                 <div className="flex justify-between text-muted">
                   Release Year <span>{manga.year}</span>
                 </div>
+                {manga.published?.start_date && (
+                  <div className="flex justify-between text-muted">
+                    Published <span>{formatTimeAgo(manga.published.start_date)}{manga.published.end_date ? ` – ${formatTimeAgo(manga.published.end_date)}` : ''}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-muted">
                   Total Chapters <span>{manga.totalChapters}</span>
                 </div>
@@ -595,7 +621,7 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
           mangaId={mangaId}
           mangaTitle={manga.title}
           manga={manga}
-          secondaryTitles={manga.secondaryTitles}
+          titles={manga.titles}
           chapters={localChapters.map((ch: any) => ({ id: ch.id, chapterNumber: ch.chapterNumber, title: ch.title }))}
           currentScraperId={progress?.scraperId}
           currentScraperUrl={progress?.scraperUrl}

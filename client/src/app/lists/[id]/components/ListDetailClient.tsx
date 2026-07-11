@@ -174,21 +174,22 @@ export default function ListDetailClient({ list: initialList, initialComments, i
               <>
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-8 gap-4 pt-2">
                   {list.items.map((item, i) => (
-                    <SeriesGridCard
-                      key={item.id}
-                      seriesId={item.id}
-                      title={item.title ?? "Untitled"}
-                      cover={item.cover}
-                      href={mangaPath(item.id)}
-                      type={item.type}
-                      status={item.status}
-                      rating={item.rating}
-                      views={item.views}
-                      totalChapters={item.totalChapters}
-                      isNew={item.isNew}
-                      onSaveClick={(seriesId, title) => setSaveTarget({ seriesId, title })}
-                      priority={i < 8}
-                    />
+                <SeriesGridCard
+                  key={item.id}
+                  seriesId={item.id}
+                  title={item.title ?? "Untitled"}
+                  cover={item.cover}
+                  href={mangaPath(item.id)}
+                  type={item.type}
+                  status={item.status}
+                  totalChapters={item.totalChapters}
+                  isNew={item.isNew}
+                  popularityGlobalCurrent={item.popularityGlobalCurrent}
+                  popularityTypeCurrent={item.popularityTypeCurrent}
+                  popularity={item.popularity}
+                  onSaveClick={(seriesId, title) => setSaveTarget({ seriesId, title })}
+                  priority={i < 8}
+                />
                   ))}
                 </div>
                 {!list.items.length && <p className="text-muted text-center py-8">This list has no manga yet.</p>}

@@ -14,6 +14,8 @@ import { mangaProgressService } from '@/services/mangaProgressService';
 import { mangaOrchestratorService } from '@/services/mangaOrchestratorService';
 import logger from '@/services/loggerService';
 import { isNovelType } from '@/config/contentFilter';
+import { resolveDisplayTitle } from '@/lib/displayTitle';
+import { scraperTitleOptions } from '@/lib/catalogTitles';
 
 class MangaRecoveryService {
   /**
@@ -85,7 +87,7 @@ class MangaRecoveryService {
 
     // Get manga details
     const [manga]: any = await db
-      .select({ title: series.title, romanizedTitle: series.romanizedTitle, type: series.type })
+      .select({ titles: series.titles, type: series.type })
       .from(series)
       .where(eq(series.id, seriesId));
 
@@ -95,8 +97,11 @@ class MangaRecoveryService {
       return;
     }
 
+    const displayTitle = resolveDisplayTitle(manga);
+    const titleOpts = scraperTitleOptions(manga.titles);
+
     if (isNovelType(manga.type)) {
-      logger.info(`[RECOVERY] Skipping novel "${manga.title}" (${seriesId})`, { service: 'mangaRecoveryService' });
+      logger.info(`[RECOVERY] Skipping novel "${displayTitle}" (${seriesId})`, { service: 'mangaRecoveryService' });
       await mangaProgressService.markFailed(seriesId, 'Novels are not supported for chapter import');
       return;
     }
@@ -110,12 +115,22 @@ class MangaRecoveryService {
     const actualCount = actualChapters[0]?.count || 0;
 
     logger.info(
-      `[RECOVERY] Manga "${manga.title}" (${seriesId}): status=${status}, expected=${totalChapters}, actual=${actualCount}, recorded=${downloadedChapters}`,
+      `[RECOVERY] Manga "${displayTitle}" (${seriesId}): status=${status}, expected=${totalChapters}, actual=${actualCount}, recorded=${downloadedChapters}`,
       { service: 'mangaRecoveryService' }
     );
 
     // Case 1: Already complete (all chapters downloaded)
+    // Only trust this when nothing is still queued — an overlapping scan can temporarily
+    // undercount totalChapters to the on-disk count (e.g. 10) while 87 jobs are still pending.
     if (totalChapters > 0 && actualCount >= totalChapters) {
+      const pendingJobs = await queueService.countPendingChapterJobsForSeries(seriesId);
+      if (pendingJobs > 0) {
+        logger.info(
+          `[RECOVERY] Manga ${seriesId} looks complete by counters (${actualCount}/${totalChapters}) but ${pendingJobs} chapter job(s) still pending; not marking completed`,
+          { service: 'mangaRecoveryService' }
+        );
+        return;
+      }
       logger.info(
         `[RECOVERY] Manga ${seriesId} is already complete (${actualCount}/${totalChapters}), marking as completed`,
         { service: 'mangaRecoveryService' }
@@ -154,7 +169,7 @@ class MangaRecoveryService {
         `[RECOVERY] Manga ${seriesId} stuck in scanning state, re-queuing scan`,
         { service: 'mangaRecoveryService' }
       );
-      await this.requeueScan(seriesId, manga.title, manga.romanizedTitle);
+      await this.requeueScan(seriesId, displayTitle, titleOpts.romanizedTitle);
       return;
     }
 
@@ -178,7 +193,7 @@ class MangaRecoveryService {
 
       // Re-queue a scan to find and download missing chapters
       // The scanner will skip chapters that already exist
-      await this.requeueScan(seriesId, manga.title, manga.romanizedTitle, false);
+      await this.requeueScan(seriesId, displayTitle, titleOpts.romanizedTitle, false);
       return;
     }
 
@@ -202,10 +217,25 @@ class MangaRecoveryService {
     romanizedTitle?: string | null,
     isFirstScan: boolean = false
   ): Promise<void> {
-    const jobId = `recovery-${seriesId}-${Date.now()}`;
-    
-    // Reset progress to scanning state
-    await mangaProgressService.initializeProgress(seriesId);
+    // Stable job id so getScanStatus / cancelScan can see recovery jobs (and so we don't
+    // stack multiple recovery-{id}-{timestamp} scans). Do NOT initializeProgress(0,0) here —
+    // that wiped in-flight totals and let Case 1 falsely mark series completed.
+    const jobId = `recovery-${seriesId}`;
+    const queue = queueService.getQueue('mangaChapterImportQueue');
+    const existingJob = await queue.getJob(jobId);
+    if (existingJob) {
+      const state = await existingJob.getState();
+      if (state === 'waiting' || state === 'delayed' || state === 'prioritized' || state === 'active') {
+        logger.info(
+          `[RECOVERY] Recovery scan already ${state} for series ${seriesId}, skipping re-queue`,
+          { service: 'mangaRecoveryService' }
+        );
+        return;
+      }
+      if (state === 'completed' || state === 'failed') {
+        await existingJob.remove().catch(() => undefined);
+      }
+    }
 
     await queueService.addJob(
       'mangaChapterImportQueue',

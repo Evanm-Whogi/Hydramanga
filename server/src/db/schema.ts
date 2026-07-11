@@ -61,18 +61,19 @@ export const series = pgTable('series', {
   id: integer('id').primaryKey(),
   state: text('state'),
   mergedWith: integer('merged_with'),
-  title: text('title'),
-  nativeTitle: text('native_title'),
-  romanizedTitle: text('romanized_title'),
-  secondaryTitles: jsonb('secondary_titles'),
+  titles: jsonb('titles'),
   cover: jsonb('cover'),
   authors: jsonb('authors'),
-  /** Lowercased titles + authors for GIN trgm search (maintained by DB trigger). */
+  // Denormalized lowercase title strings + authors (maintained by series_search_text_trigger from titles)
   searchText: text('search_text'),
   artists: jsonb('artists'),
   description: text('description'),
   note: text('note'),
   year: integer('year'),
+  published: jsonb('published'),
+  popularity: jsonb('popularity'),
+  popularityGlobalCurrent: integer('popularity_global_current'),
+  popularityTypeCurrent: integer('popularity_type_current'),
   status: text('status'),
   isLicensed: boolean('is_licensed'),
   hasAnime: boolean('has_anime'),
@@ -84,16 +85,15 @@ export const series = pgTable('series', {
   finalChapter: text('final_chapter'),
   totalChapters: text('total_chapters'),
   links: jsonb('links'),
+  linksV2: jsonb('links_v2'),
   publishers: jsonb('publishers'),
   relationships: jsonb('relationships'),
+  relationshipsV2: jsonb('relationships_v2'),
   genres: jsonb('genres'),
   genresV2: jsonb('genres_v2'),
   tags: jsonb('tags'),
   tagsV2: jsonb('tags_v2'),
   lastUpdatedAt: timestamp('last_updated_at', { withTimezone: true }),
-  // Set when an archive volume-pack was ingested as whole-volume "chapters". Such a
-  // series is volume-organised; the scraper writes real per-chapter numbers that would
-  // collide on (seriesId, chapterNumber), so chapter scanning is skipped for it.
   volumeSourced: boolean('volume_sourced').notNull().default(false),
   source: jsonb('source'),
   weightedScore: real('weighted_score').generatedAlwaysAs(
@@ -125,8 +125,7 @@ export const series = pgTable('series', {
   // Author browse: containment lookups (authors @> '["Name"]')
   authorsGin: index('idx_series_authors').using('gin', t.authors),
 
-  // Fuzzy Search Title (Requires pg_trgm extension)
-  titleTrgmIdx: index('idx_series_title_trgm').using('gin', t.title.op('gin_trgm_ops')),
+  // Fuzzy Search (pg_trgm on denormalized search_text)
   searchTextTrgmIdx: index('idx_series_search_text_trgm').using('gin', t.searchText.op('gin_trgm_ops')),
   
   // Composite Filter Logic
@@ -135,6 +134,9 @@ export const series = pgTable('series', {
 
   // Discovery default sort (weighted score + id for cursor pagination)
   weightedScoreIdIdx: index('idx_series_weighted_score_id').on(t.weightedScore.desc(), t.id),
+
+  // MangaBaka popularity rank (ascending — rank 1 is most popular)
+  popularityGlobalCurrentIdx: index('idx_series_popularity_global_current').on(t.popularityGlobalCurrent),
 }));
 
 export const bookmarkStatusEnum = pgEnum('bookmark_status', ['reading', 'rereading', 'planned', 'completed', 'paused', 'dropped']);

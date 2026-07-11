@@ -401,6 +401,28 @@ class QueueService {
         return job ?? undefined;
     }
 
+    /**
+     * Count chapter-download jobs still in flight for a series (waiting/prioritized/active/delayed).
+     * Used to avoid marking an import "completed" while downloads from a prior scan are still queued.
+     * Fetches the full job lists (end=-1) so a busy queue cannot under-count and allow a false complete.
+     */
+    public async countPendingChapterJobsForSeries(seriesId: number): Promise<number> {
+        const seriesIdNum = Number(seriesId);
+        const jobIdPrefix = `chapter-${seriesIdNum}-`;
+        let pending = 0;
+        for (const downloadQueueName of getAllChapterDownloadQueueNames()) {
+            const downloadQueue = this.getQueue(downloadQueueName);
+            const jobs = await downloadQueue.getJobs(['waiting', 'prioritized', 'active', 'delayed'], 0, -1, true);
+            for (const job of jobs) {
+                const id = job?.id != null ? String(job.id) : '';
+                if (id.startsWith(jobIdPrefix) || Number(job?.data?.seriesId) === seriesIdNum) {
+                    pending++;
+                }
+            }
+        }
+        return pending;
+    }
+
     public async retryJob(queueName: string, jobId: string): Promise<void> {
         const job = await this.getJob(queueName, jobId);
         if (!job) throw new Error('Job not found');

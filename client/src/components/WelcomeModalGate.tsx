@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { shouldShowWelcomeModal } from '@/lib/welcomeModal';
+import { isBrowserCrawler } from '@/lib/crawler';
 import { WelcomeModal } from '@/components/WelcomeModal';
 import type { PublicSiteSettings } from '@/services/siteSettingsService';
 
@@ -10,6 +11,7 @@ export default function WelcomeModalGate({ siteSettings }: { siteSettings: Publi
 
   useEffect(() => {
     if (!siteSettings.welcomeModalEnabled) return;
+    if (isBrowserCrawler()) return;
     if (shouldShowWelcomeModal()) {
       setIsOpen(true);
     }

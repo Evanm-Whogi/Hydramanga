@@ -8,6 +8,10 @@ const DEFAULT_PROFILE_PUBLIC = true;
 const DEFAULT_INCOGNITO_MODE = false;
 const SETTINGS_CACHE_TTL_MS = 60_000; // 1 minute
 
+/** Crawlers should see the full public catalog for SEO; UI guests still default to hide. */
+export const CRAWLER_UA_RE =
+  /googlebot|google-inspectiontool|storebot-google|adsbot-google|bingbot|yandex(bot|images)|duckduckbot|slurp|baiduspider|facebookexternalhit|twitterbot|linkedinbot|applebot|semrushbot|ahrefsbot|mj12bot|dotbot|petalbot|bytespider|gptbot|claudebot|ccbot/i;
+
 interface CachedSettings {
   settings: UserSettings;
   expiresAt: number;
@@ -24,8 +28,21 @@ export interface UserSettings {
 /** Cookie used to persist the NSFW preference for logged-out (guest) visitors. */
 export const GUEST_HIDE_NSFW_COOKIE = 'guest_hide_nsfw';
 
-/** Read the guest NSFW preference from a request's cookie header. Defaults to showing NSFW. */
-export function getGuestHideNsfw(req: { headers?: { cookie?: string } }): boolean {
+export function isCrawlerRequest(req: { headers?: { 'user-agent'?: string | string[] } }): boolean {
+  const raw = req.headers?.['user-agent'];
+  const ua = Array.isArray(raw) ? raw[0] : raw;
+  return typeof ua === 'string' && CRAWLER_UA_RE.test(ua);
+}
+
+/**
+ * Read the guest NSFW preference from a request's cookie header.
+ * - Known crawlers: always show NSFW (so sitemap URLs and SSR metadata can index).
+ * - Humans with no cookie: hide NSFW (matches UI default).
+ * - Explicit cookie: honor it.
+ */
+export function getGuestHideNsfw(req: { headers?: { cookie?: string; 'user-agent'?: string | string[] } }): boolean {
+  if (isCrawlerRequest(req)) return false;
+
   const raw = req.headers?.cookie;
   if (!raw) return DEFAULT_HIDE_NSFW;
   for (const part of raw.split(';')) {
@@ -41,13 +58,14 @@ export function getGuestHideNsfw(req: { headers?: { cookie?: string } }): boolea
 
 /**
  * Resolve the effective "hide NSFW" preference for a request.
- * Logged-in users are governed by their saved profile setting; guests fall back to
- * the {@link GUEST_HIDE_NSFW_COOKIE} cookie. This means a guest preference is ignored
- * the moment they authenticate (their account setting takes over).
+ * Crawlers always see NSFW (SEO). Logged-in humans use their account setting;
+ * guests use {@link GUEST_HIDE_NSFW_COOKIE}.
  */
 export async function resolveHideNsfw(
-  req: { headers?: { cookie?: string }; user?: { id?: string } | null },
+  req: { headers?: { cookie?: string; 'user-agent'?: string | string[] }; user?: { id?: string } | null },
 ): Promise<boolean> {
+  // Bots first — never apply a human NSFW preference to crawlers indexing sitemap URLs.
+  if (isCrawlerRequest(req)) return false;
   const userId = req.user?.id;
   if (userId) return (await getUserSettings(userId)).hideNsfw;
   return getGuestHideNsfw(req);

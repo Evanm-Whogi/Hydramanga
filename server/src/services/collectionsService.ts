@@ -92,7 +92,7 @@ export async function getCollectionsList(hideNsfw = false) {
                         SELECT 
                             jsonb_array_elements_text(${schema.series.genres}) as genre,
                             ${schema.series.id} as id,
-                            ${schema.series.title} as title,
+                            series_display_title(${schema.series.titles}) as title,
                             ${schema.series.cover} as cover,
                             ${schema.series.weightedScore} as "weightedScore",
                             CASE WHEN ${schema.series.weightedScore} >= 75 THEN 1 ELSE 2 END as priority

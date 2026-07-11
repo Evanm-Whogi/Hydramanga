@@ -5,6 +5,7 @@ import { X, Search, RefreshCw, Check, Loader2, Trash2, StopCircle, AlertCircle, 
 import { adminScraperSearch, adminSetSource, adminTriggerRescan, adminAddSecondaryTitle, adminGetSource, adminClearSource, adminCancelScan, adminDeleteChapters, adminUpdateSeries, adminMigrateSeries, type ScraperSourceResult, type ScraperSearchResult } from "@/services/adminMangaService";
 import { getSeriesArchiveStatus, triggerArchiveImport, reingestArchive, type ArchiveJob } from "@/services/adminArchiveService";
 import { fetchMangaById } from "@/services/mangaService";
+import { applyAdminPrimaryTitleEdits, catalogTitlesToVariantList } from "@/lib/catalogTitles";
 import { toast } from "react-toastify";
 
 interface ChapterInfo { id: number; chapterNumber: string; title?: string | null; }
@@ -25,7 +26,7 @@ interface AdminMangaEditModalProps {
   mangaId: number;
   mangaTitle: string;
   manga?: MangaMetadata & Record<string, unknown>;
-  secondaryTitles?: unknown;
+  titles?: unknown;
   chapters?: ChapterInfo[];
   currentScraperId?: string | null;
   currentScraperUrl?: string | null;
@@ -37,26 +38,7 @@ interface AdminMangaEditModalProps {
   onMetadataUpdated?: () => void;
 }
 
-function flattenSecondaryTitles(secondaryTitles: unknown): Array<{ lang: string; title: string; type?: string }> {
-  if (!secondaryTitles || typeof secondaryTitles !== "object" || Array.isArray(secondaryTitles)) return [];
-  const out: Array<{ lang: string; title: string; type?: string }> = [];
-  for (const [lang, arr] of Object.entries(secondaryTitles as Record<string, unknown>)) {
-    if (!Array.isArray(arr)) continue;
-    for (const item of arr) {
-      const t = item && typeof item === "object" && "title" in item ? (item as { title: string; type?: string }).title : null;
-      if (typeof t === "string" && t.trim()) {
-        out.push({
-          lang,
-          title: t.trim(),
-          type: (item as { type?: string }).type,
-        });
-      }
-    }
-  }
-  return out;
-}
-
-export default function AdminMangaEditModal({mangaId, mangaTitle, manga, secondaryTitles, chapters = [], currentScraperId, currentScraperUrl, isScanActive, onClose, onSourceSet, onVariantAdded, onChaptersDeleted, onMetadataUpdated}: AdminMangaEditModalProps) {
+export default function AdminMangaEditModal({mangaId, mangaTitle, manga, titles, chapters = [], currentScraperId, currentScraperUrl, isScanActive, onClose, onSourceSet, onVariantAdded, onChaptersDeleted, onMetadataUpdated}: AdminMangaEditModalProps) {
   const [searchQuery, setSearchQuery] = useState(mangaTitle);
   const [sources, setSources] = useState<ScraperSourceResult[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -105,7 +87,7 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
   const [migrating, setMigrating] = useState(false);
 
   // Local state for variants so the modal updates immediately after successful PATCH
-  const [variantsList, setVariantsList] = useState(() => flattenSecondaryTitles(secondaryTitles));
+  const [variantsList, setVariantsList] = useState(() => catalogTitlesToVariantList(titles ?? manga?.titles));
 
   const fetchSource = useCallback(async () => {
     setSourceLoading(true);
@@ -166,10 +148,9 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
     }
   };
 
-  // Sync local variants if the parent ever provides updated secondaryTitles
   useEffect(() => {
-    setVariantsList(flattenSecondaryTitles(secondaryTitles));
-  }, [secondaryTitles]);
+    setVariantsList(catalogTitlesToVariantList(titles ?? manga?.titles));
+  }, [titles, manga?.titles]);
 
   useEffect(() => {
     if (manga) {
@@ -294,9 +275,17 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
     setSavingMetadata(true);
     try {
       const updates: Record<string, unknown> = {};
-      if (metadataForm.title !== (manga?.title ?? "")) updates.title = metadataForm.title || null;
-      if (metadataForm.nativeTitle !== (manga?.nativeTitle ?? "")) updates.nativeTitle = metadataForm.nativeTitle || null;
-      if (metadataForm.romanizedTitle !== (manga?.romanizedTitle ?? "")) updates.romanizedTitle = metadataForm.romanizedTitle || null;
+      const currentTitles = (manga?.titles ?? titles) as unknown;
+      const nextTitles = applyAdminPrimaryTitleEdits(currentTitles, {
+        english: metadataForm.title,
+        native: metadataForm.nativeTitle,
+        romanized: metadataForm.romanizedTitle,
+      });
+      const titleFieldsChanged =
+        metadataForm.title !== (manga?.title ?? "") ||
+        metadataForm.nativeTitle !== (manga?.nativeTitle ?? "") ||
+        metadataForm.romanizedTitle !== (manga?.romanizedTitle ?? "");
+      if (titleFieldsChanged) updates.titles = nextTitles;
       if (metadataForm.description !== (manga?.description ?? "")) updates.description = metadataForm.description || null;
       if (metadataForm.status !== (manga?.status ?? "")) updates.status = metadataForm.status || null;
       const yearVal = metadataForm.year ? parseInt(String(metadataForm.year), 10) : null;
@@ -392,8 +381,8 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, seconda
       });
       toast.success("Title variant added.");
       setVariantTitle("");
-      if (res?.secondaryTitles) {
-        setVariantsList(flattenSecondaryTitles(res.secondaryTitles));
+      if (res?.titles) {
+        setVariantsList(catalogTitlesToVariantList(res.titles));
       }
       onVariantAdded?.();
     } catch (e) {

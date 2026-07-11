@@ -8,6 +8,7 @@ import { queueService } from '@/services/queueService';
 import { scraperVpnRotationService } from '@/services/scraperVpnRotationService';
 import { appConfig } from '@/config/appConfig';
 import logger from '@/services/loggerService';
+import { seriesDisplayTitleSql } from '@/lib/seriesTitleSql';
 
 const ARCHIVE_STATUSES = acquisitionJobStatusEnum.enumValues;
 type ArchiveStatus = (typeof ARCHIVE_STATUSES)[number];
@@ -44,7 +45,7 @@ export async function listAdminArchiveJobs(req: Request, res: Response, next: Ne
                 .select({
                     id: acquisitionJobs.id,
                     seriesId: acquisitionJobs.seriesId,
-                    seriesTitle: series.title,
+                    seriesTitle: seriesDisplayTitleSql,
                     protocol: acquisitionJobs.protocol,
                     indexer: acquisitionJobs.indexer,
                     candidateTitle: acquisitionJobs.candidateTitle,

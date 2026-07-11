@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { redirect, notFound } from "next/navigation";
-import { fetchOne } from '@/services/mangaService';
+import { fetchOneForPage } from '@/services/mangaService';
 import { useSession } from '@/lib/useUser';
 import { getSiteSettings } from '@/services/siteSettingsService';
 import ReadContent from './components/ReadContent';
+import NsfwBlockedContent from '@/components/NsfwBlockedContent';
 import { buildPageMetadata, getSiteConfig } from '@/lib/seo';
 
 interface Props {
@@ -13,8 +14,16 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   try {
     const { id, chapterId } = await params;
-    const data = await fetchOne(id);
-    const manga = data.manga;
+    const result = await fetchOneForPage(id);
+    if (result.kind === 'nsfw_hidden') {
+      return buildPageMetadata({
+        title: 'NSFW Title Hidden',
+        description: `This title is marked NSFW. Enable NSFW content to view it on ${getSiteConfig().name}.`,
+        path: `/manga/${id}/read/${chapterId}`,
+        noIndex: true,
+      });
+    }
+    const manga = result.data.manga;
     const coverUrl = manga.cover?.raw?.url || manga.cover?.x350?.x3 || undefined;
 
     return buildPageMetadata({
@@ -43,8 +52,12 @@ export default async function ReadPage({ params }: Props) {
     redirect(`/login?returnTo=${encodeURIComponent(`/manga/${id}/read/${chapterId}`)}`);
   }
 
-  const data = await fetchOne(id);
-  const manga = data.manga;
+  const result = await fetchOneForPage(id);
+  if (result.kind === 'nsfw_hidden') {
+    return <NsfwBlockedContent />;
+  }
+
+  const manga = result.data.manga;
 
   if (!manga.chapters) {
     return (

@@ -22,62 +22,10 @@ import { appConfig } from '@/config/appConfig';
 import * as Sentry from "@sentry/node";
 import { withSpan, addBreadcrumb } from '@/utils/sentryHelper';
 import { clampProgress, setJobProgress } from '@/utils/jobProgress';
+import { scraperTitleOptions } from '@/lib/catalogTitles';
 import { isNovelType } from '@/config/contentFilter';
 
 export class ChapterScannerService {
-    private static extractSecondaryTitleStrings(secondaryTitles: unknown): string[] {
-        if (!secondaryTitles) return [];
-
-        let parsed: unknown = secondaryTitles;
-        if (typeof secondaryTitles === 'string') {
-            try {
-                parsed = JSON.parse(secondaryTitles);
-            } catch {
-                parsed = secondaryTitles;
-            }
-        }
-
-        const titles: string[] = [];
-
-        const visit = (value: unknown) => {
-            if (!value) return;
-
-            if (typeof value === 'string') {
-                const trimmed = value.trim();
-                if (trimmed) titles.push(trimmed);
-                return;
-            }
-
-            if (Array.isArray(value)) {
-                for (const item of value) visit(item);
-                return;
-            }
-
-            if (typeof value === 'object') {
-                const record = value as Record<string, unknown>;
-                if (typeof record.title === 'string') {
-                    const trimmed = record.title.trim();
-                    if (trimmed) titles.push(trimmed);
-                    return;
-                }
-
-                for (const nested of Object.values(record)) {
-                    visit(nested);
-                }
-            }
-        };
-
-        visit(parsed);
-
-        const seen = new Set<string>();
-        return titles.filter((title) => {
-            const key = title.toLowerCase();
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
-    }
-
     /**
      * Scan for missing chapters and queue them for download
      * @param mangaTitle - Title of the manga to scan
@@ -130,11 +78,20 @@ export class ChapterScannerService {
         // Initialize progress tracking:
         // - First scan: baseChapterCount will be 0 (no chapters yet)
         // - Rescans: baseChapterCount represents already downloaded chapters
-        await withSpan(
+        // Returns false when an in-flight import with a higher total was preserved
+        // (overlapping rescan/recovery must not wipe 97 → 10 mid-download).
+        const progressReset = await withSpan(
             'initialize_progress_tracking',
             async () => mangaProgressService.initializeProgress(seriesId, baseChapterCount, baseChapterCount),
             { op: 'db.write', tags: { series_id: String(seriesId) } }
         );
+        if (!progressReset) {
+            // In-flight totals preserved — keep discovering/queueing without having wiped progress.
+            logger.info(
+                `[SCANNER] Continuing scan for ${mangaTitle} (${seriesId}) without resetting in-flight progress`,
+                { service: 'chapterScannerService' }
+            );
+        }
         await setJobProgress(job, 10);
 
         // Fetch cover image, native title for Discord notifications and search filtering
@@ -144,8 +101,7 @@ export class ChapterScannerService {
                 return db
                     .select({ 
                         cover: series.cover,
-                        nativeTitle: series.nativeTitle,
-                        secondaryTitles: series.secondaryTitles,
+                        titles: series.titles,
                         genres: series.genres,
                         genresV2: series.genresV2,
                     })
@@ -162,7 +118,7 @@ export class ChapterScannerService {
               undefined
             : undefined;
 
-                const secondaryTitles = this.extractSecondaryTitleStrings(manga?.secondaryTitles);
+                const titleOpts = scraperTitleOptions(manga?.titles);
 
         // Fetch saved scraper URL from import progress (avoids re-searching on rescans)
         const [progress] = await db
@@ -209,9 +165,9 @@ export class ChapterScannerService {
                             return exists;
                         },
                         seriesId,
-                        romanizedTitle,
-                        manga?.nativeTitle || undefined,
-                        secondaryTitles,
+                        titleOpts.romanizedTitle,
+                        titleOpts.nativeTitle,
+                        titleOpts.secondaryTitles,
                         coverUrl,
                         progress?.scraperUrl ?? undefined,
                         progress?.scraperId ?? undefined,
@@ -310,8 +266,35 @@ export class ChapterScannerService {
                 // .announceNewlyDownloadedChapters), so users aren't notified for chapters
                 // that were only queued and then failed — and recovery retries don't re-spam.
             } else {
-                // No NEW chapters found during this scan
-                if (isFirstScan) {
+                // No NEW chapters queued during this scan. Before marking complete, ensure
+                // we are not racing an in-flight download (pending jobs) or an undercounted
+                // total left by an overlapping initializeProgress.
+                const pendingJobs = await queueService.countPendingChapterJobsForSeries(seriesId);
+                const currentProgress = await mangaProgressService.getProgress(seriesId);
+
+                if (pendingJobs > 0) {
+                    const expectedTotal = Math.max(
+                        currentProgress?.totalChapters ?? 0,
+                        baseChapterCount + pendingJobs
+                    );
+                    logger.info(
+                        `[SCANNER] Rescan for ${mangaTitle} queued nothing new but ${pendingJobs} chapter job(s) still pending; keeping downloading (expected total ${expectedTotal})`,
+                        { service: 'chapterScannerService' }
+                    );
+                    if (currentProgress?.status === 'scanning' || currentProgress?.status === 'downloading') {
+                        await mangaProgressService.setTotalChapters(seriesId, expectedTotal, firstScraperId);
+                    }
+                } else if (
+                    currentProgress &&
+                    (currentProgress.status === 'downloading' || currentProgress.status === 'scanning') &&
+                    currentProgress.totalChapters > baseChapterCount
+                ) {
+                    // Overlapping scan found nothing, but prior import still expects more than on disk.
+                    logger.info(
+                        `[SCANNER] Rescan for ${mangaTitle} found no new chapters but in-flight total ${currentProgress.totalChapters} > ${baseChapterCount} on disk; leaving progress unchanged`,
+                        { service: 'chapterScannerService' }
+                    );
+                } else if (isFirstScan) {
                     // First scan with no chapters - mark as completed with 0 total
                     await withSpan(
                         'mark_first_scan_no_chapters',
@@ -319,7 +302,7 @@ export class ChapterScannerService {
                         { op: 'db.write', tags: { series_id: String(seriesId) } }
                     );
                 } else {
-                    // Mark as completed with all existing chapters already downloaded
+                    // Genuine idle rescan: nothing new from source, nothing pending.
                     await withSpan(
                         'mark_monitored_rescan_complete',
                         async () => mangaProgressService.markCompleted(seriesId, baseChapterCount),

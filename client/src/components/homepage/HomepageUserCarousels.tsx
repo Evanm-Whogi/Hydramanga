@@ -35,6 +35,8 @@ export default function HomepageUserCarousels({ userId, onSaveClick }: { userId:
                 title={progress.seriesTitle}
                 cover={progress.seriesCover}
                 href={progressReadHref(progress)}
+                type={progress.seriesType}
+                status={progress.seriesStatus}
                 onSaveClick={onSaveClick}
               />
             </HomepageCarouselItem>
@@ -54,10 +56,11 @@ export default function HomepageUserCarousels({ userId, onSaveClick }: { userId:
                   href={mangaReadPath(item.series.id, item.chapter.id)}
                   type={item.series.type}
                   status={item.series.status}
-                  rating={item.series.rating}
-                  views={item.series.views}
                   totalChapters={item.series.totalChapters}
                   isNew={item.series.isNew}
+                  popularityGlobalCurrent={item.series.popularityGlobalCurrent}
+                  popularityTypeCurrent={item.series.popularityTypeCurrent}
+                  popularity={item.series.popularity}
                   onSaveClick={onSaveClick}
                 />
               </HomepageCarouselItem>

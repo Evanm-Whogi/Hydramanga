@@ -47,7 +47,7 @@ const CACHE_TTL = {
 };
 
 const CACHE_KEYS = {
-  USER_PROGRESS: (userId: string, hideNsfw: boolean, limit: number) => `user:${userId}:progress:v2:${hideNsfw}:${limit}`,
+  USER_PROGRESS: (userId: string, hideNsfw: boolean, limit: number) => `user:${userId}:progress:v3:${hideNsfw}:${limit}`,
   MANGA_PROGRESS: (userId: string, seriesId: number) => `user:${userId}:series:${seriesId}:progress`,
   USER_STATS: (userId: string) => `user:${userId}:stats`,
 };
@@ -233,11 +233,10 @@ class UserProgressService {
           lastPageNumber: schema.userReadingProgress.lastPageNumber,
           percentageCompleted: schema.userReadingProgress.percentageCompleted,
           updatedAt: schema.userReadingProgress.updatedAt,
-          seriesTitle: schema.series.title,
-          seriesNativeTitle: schema.series.nativeTitle,
-          seriesRomanizedTitle: schema.series.romanizedTitle,
-          seriesSecondaryTitles: schema.series.secondaryTitles,
+          seriesTitles: schema.series.titles,
           seriesCover: schema.series.cover,
+          seriesType: schema.series.type,
+          seriesStatus: schema.series.status,
           chapterNumber: schema.chapters.chapterNumber,
           chapterTitle: schema.chapters.title,
           readingTimeSeconds: sql<number>`COALESCE(SUM(${schema.userReadingTime.seconds}), 0)`.as('reading_time_seconds'),
@@ -261,11 +260,10 @@ class UserProgressService {
           schema.userReadingProgress.percentageCompleted,
           schema.userReadingProgress.updatedAt,
           schema.series.id,
-          schema.series.title,
-          schema.series.nativeTitle,
-          schema.series.romanizedTitle,
-          schema.series.secondaryTitles,
+          schema.series.titles,
           schema.series.cover,
+          schema.series.type,
+          schema.series.status,
           schema.chapters.id,
           schema.chapters.chapterNumber,
           schema.chapters.title
@@ -273,14 +271,11 @@ class UserProgressService {
         .orderBy(sql`${schema.userReadingProgress.updatedAt} DESC`)
         .limit(limit);
 
-      const resolvedProgressList = progressList.map(({ seriesNativeTitle, seriesRomanizedTitle, seriesSecondaryTitles, ...row }) => ({
+      const resolvedProgressList = progressList.map(({ seriesTitles, seriesType, seriesStatus, ...row }) => ({
         ...row,
-        seriesTitle: resolveDisplayTitle({
-          title: row.seriesTitle,
-          nativeTitle: seriesNativeTitle,
-          romanizedTitle: seriesRomanizedTitle,
-          secondaryTitles: seriesSecondaryTitles,
-        }),
+        seriesTitle: resolveDisplayTitle({ titles: seriesTitles }),
+        seriesType,
+        seriesStatus,
       }));
 
       // Cache the result
@@ -584,7 +579,7 @@ class UserProgressService {
         .select({
           seriesId: schema.userReadingTime.seriesId,
           totalSeconds: sql<number>`SUM(${schema.userReadingTime.seconds})`.as('total_seconds'),
-          title: schema.series.title,
+          titles: schema.series.titles,
           image: schema.series.cover,
         })
         .from(schema.userReadingTime)
@@ -592,9 +587,14 @@ class UserProgressService {
         .where(eq(schema.userReadingTime.userId, userId))
         .groupBy(
           schema.userReadingTime.seriesId,
-          schema.series.title,
+          schema.series.titles,
           schema.series.cover
         );
+
+      const resolvedReadingTimes = (readingTimes || []).map((row) => ({
+        ...row,
+        title: resolveDisplayTitle(row),
+      }));
 
       // Return aggregated stats with safe defaults
       const result = {
@@ -603,7 +603,7 @@ class UserProgressService {
           averageCompletion: 0,
           totalPagesRead: 0,
         }),
-        readingTimes: readingTimes || [],
+        readingTimes: resolvedReadingTimes,
         seriesSaved,
         comments: Number(commentsRow?.count ?? 0),
         chaptersRead: Number(chaptersReadRow?.count ?? 0),

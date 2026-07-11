@@ -190,20 +190,7 @@ class AuthorService {
 
     if (rows.length === 0) return null;
 
-    const works = await enrichSeriesListExtras(
-      rows.map((row) => ({
-        id: row.id,
-        title: row.title,
-        nativeTitle: row.nativeTitle,
-        romanizedTitle: row.romanizedTitle,
-        cover: row.cover,
-        type: row.type,
-        status: row.status,
-        rating: row.rating,
-        views: row.views ?? 0,
-        totalChapters: row.totalChapters,
-      }))
-    );
+    const works = await enrichSeriesListExtras(rows);
 
     // Dominant media type across the author's works
     const typeCounts = new Map<string, number>();
@@ -213,6 +200,12 @@ class AuthorService {
     const type = [...typeCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
     return { name: trimmed, type, worksCount: works.length, works };
+  }
+
+  /** Author names for sitemap.xml (uses the cached aggregate). */
+  async listForSitemap(): Promise<Array<{ name: string; lastUpdatedAt: string | null }>> {
+    const rows = await this.getAggregate();
+    return rows.map((r) => ({ name: r.name, lastUpdatedAt: r.recent }));
   }
 }
 

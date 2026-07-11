@@ -20,7 +20,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     if (!title) {
       return buildPageMetadata({ title: 'Forum Post', path: `/forum/${postId}` });
     }
-    return buildPageMetadata({ title, description: `Forum discussion: ${title}`, path: `/forum/${postId}` });
+    return buildPageMetadata({ title, description: `Forum discussion: ${title}`, path: `/forum/${postId}`, ogType: 'article', includeSiteKeywords: false });
   } catch {
     return buildPageMetadata({ title: 'Forum Post', path: `/forum/${postId}` });
   }

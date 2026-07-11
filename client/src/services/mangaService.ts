@@ -1,5 +1,7 @@
 import { apiPost, apiGet, apiDelete } from '@/lib/api';
 import { cache } from 'react';
+import { unstable_rethrow } from 'next/navigation';
+import { isNsfwHiddenError } from '@/lib/nsfwHiddenError';
 import { UserStatsResponse } from '@/types/stats';
 
 export async function getIndex(): Promise<any> {
@@ -10,6 +12,26 @@ export async function getIndex(): Promise<any> {
 // This endpoint returns public data for bots/unauthenticated and full data for authenticated users
 export const fetchOne = cache(async (id: any): Promise<any> => {
     return await apiGet(`/manga/${id}`);
+});
+
+export type MangaPageLoadResult =
+  | { kind: 'ok'; data: any }
+  | { kind: 'nsfw_hidden' };
+
+/**
+ * Like {@link fetchOne}, but maps the NSFW preference block to a result instead of throwing.
+ * Still propagates Next.js notFound()/redirect() via unstable_rethrow so 404 and auth
+ * flows are not swallowed by callers' try/catch.
+ */
+export const fetchOneForPage = cache(async (id: any): Promise<MangaPageLoadResult> => {
+    try {
+        const data = await fetchOne(id);
+        return { kind: 'ok', data };
+    } catch (error) {
+        unstable_rethrow(error);
+        if (isNsfwHiddenError(error)) return { kind: 'nsfw_hidden' };
+        throw error;
+    }
 });
 
 export async function fetchMangaById(id: number): Promise<{ manga: { id: number; title: string | null; cover?: unknown } }> {

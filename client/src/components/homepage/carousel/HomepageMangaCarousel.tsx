@@ -33,10 +33,11 @@ export default function HomepageMangaCarousel({ title, items, loading, headerTra
             href={getHref(item)}
             type={item.type}
             status={item.status}
-            rating={item.rating}
-            views={item.views}
             totalChapters={item.totalChapters}
             isNew={item.isNew}
+            popularityGlobalCurrent={item.popularityGlobalCurrent}
+            popularityTypeCurrent={item.popularityTypeCurrent}
+            popularity={item.popularity}
             onSaveClick={onSaveClick}
           />
         </HomepageCarouselItem>

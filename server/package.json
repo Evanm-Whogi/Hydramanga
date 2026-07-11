@@ -66,6 +66,8 @@
     "placeholders:scan": "npx ts-node -r tsconfig-paths/register scripts/scan-placeholders.ts",
     "placeholders:redownload": "npx ts-node -r tsconfig-paths/register scripts/redownload-placeholders.ts",
     "rescan:stuck": "npx ts-node -r tsconfig-paths/register scripts/rescan-stuck-imports.ts",
+    "rescan:partial": "npx ts-node -r tsconfig-paths/register scripts/rescan-partial-completed.ts",
+    "queues:titles": "npx ts-node --transpile-only scripts/list-queue-titles.ts",
     "smoke:authors": "npx ts-node -r tsconfig-paths/register scripts/smoke-authors.ts"
   },
   "author": "",

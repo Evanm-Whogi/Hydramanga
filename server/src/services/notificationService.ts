@@ -2,6 +2,7 @@ import { db, schema } from '@/db/index';
 import { eq, and, desc, ilike, isNull, isNotNull, inArray, sql } from 'drizzle-orm';
 import type { ImportRequestStatus } from '@/services/importRequestService';
 import { resolveCoverUrl } from '@/lib/coverUtils';
+import { resolveDisplayTitle } from '@/lib/displayTitle';
 import { discordService } from '@/services/discordService';
 import { invalidateCatalogCaches } from '@/lib/catalogCache';
 import { ChapterNumberParser } from '@/utils/chapterNumberParser';
@@ -61,7 +62,7 @@ class NotificationService {
     const [match] = await db
       .select({ cover: schema.series.cover })
       .from(schema.series)
-      .where(ilike(schema.series.title, title))
+      .where(ilike(schema.series.searchText, title))
       .limit(1);
 
     return resolveCoverUrl(match?.cover);
@@ -206,7 +207,7 @@ class NotificationService {
       const isFirstImport = announcedCount === 0;
 
       const [seriesRow] = await db
-        .select({ title: schema.series.title, cover: schema.series.cover })
+        .select({ titles: schema.series.titles, cover: schema.series.cover })
         .from(schema.series)
         .where(eq(schema.series.id, seriesId))
         .limit(1);
@@ -216,7 +217,7 @@ class NotificationService {
         return;
       }
 
-      const mangaTitle = seriesRow.title ?? 'Unknown title';
+      const mangaTitle = resolveDisplayTitle(seriesRow);
       const chapterCount = pending.length;
       const chapterRange = ChapterNumberParser.formatRange(pending.map((c) => c.chapterNumber));
       const coverUrl = resolveCoverUrl(seriesRow.cover) ?? undefined;

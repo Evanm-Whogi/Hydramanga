@@ -23,6 +23,7 @@ import { mangaProgressService } from '@/services/mangaProgressService';
 import { cacheService } from '@/services/cacheService';
 import { invalidateCatalogCaches } from '@/lib/catalogCache';
 import logger from '@/services/loggerService';
+import { resolveDisplayTitle } from '@/lib/displayTitle';
 import { setJobProgress } from '@/utils/jobProgress';
 
 export interface SeriesMigrationJobPayload {
@@ -65,8 +66,8 @@ class SeriesMigrationService {
     }
 
     const [sourceRow, targetRow] = await Promise.all([
-      db.select({ id: series.id, title: series.title }).from(series).where(eq(series.id, sourceSeriesId)).limit(1),
-      db.select({ id: series.id, title: series.title }).from(series).where(eq(series.id, targetSeriesId)).limit(1),
+      db.select({ id: series.id, titles: series.titles }).from(series).where(eq(series.id, sourceSeriesId)).limit(1),
+      db.select({ id: series.id, titles: series.titles }).from(series).where(eq(series.id, targetSeriesId)).limit(1),
     ]);
 
     if (!sourceRow[0]) return { ...base, valid: false, error: 'Source series not found' };
@@ -78,7 +79,7 @@ class SeriesMigrationService {
       .where(eq(chapters.seriesId, sourceSeriesId));
 
     if (sourceChapters.length === 0) {
-      return { ...base, valid: false, error: 'Source series has no chapters to migrate', sourceTitle: sourceRow[0].title ?? undefined, targetTitle: targetRow[0].title ?? undefined };
+      return { ...base, valid: false, error: 'Source series has no chapters to migrate', sourceTitle: resolveDisplayTitle(sourceRow[0]), targetTitle: resolveDisplayTitle(targetRow[0]) };
     }
 
     const targetChapterNumbers = new Set(
@@ -92,8 +93,8 @@ class SeriesMigrationService {
       valid: true,
       sourceSeriesId,
       targetSeriesId,
-      sourceTitle: sourceRow[0].title ?? undefined,
-      targetTitle: targetRow[0].title ?? undefined,
+      sourceTitle: resolveDisplayTitle(sourceRow[0]),
+      targetTitle: resolveDisplayTitle(targetRow[0]),
       sourceChapterCount: sourceChapters.length,
       toMigrateCount: toMigrate.length,
       conflictCount: conflicts.length,

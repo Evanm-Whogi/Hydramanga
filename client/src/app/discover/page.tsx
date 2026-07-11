@@ -14,7 +14,7 @@ function CatalogInner() {
     search: '',
     genres: [],
     tags: [],
-    sort: 'topRated',
+    sort: 'mostPopular',
     type: '',
     status: '',
   };

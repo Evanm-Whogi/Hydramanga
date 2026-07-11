@@ -4,6 +4,7 @@ import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import logger from '@/services/loggerService';
 import { getCatalogFilterConditions, getExcludeNovelConditions, isNovelType } from '@/config/contentFilter';
 import { withResolvedDisplayTitle } from '@/lib/displayTitle';
+import { seriesDisplayTitleSql } from '@/lib/seriesTitleSql';
 
 export const BOOKMARK_STATUSES = ['reading', 'rereading', 'planned', 'completed', 'paused', 'dropped'] as const;
 export type BookmarkStatus = typeof BOOKMARK_STATUSES[number];
@@ -68,7 +69,7 @@ export class BookmarkService {
       conditions.push(inArray(schema.series.type, types.map((t) => t.toLowerCase())));
     }
     if (search?.trim()) {
-      conditions.push(ilike(schema.series.title, `%${search.trim()}%`));
+      conditions.push(ilike(schema.series.searchText, `%${search.trim()}%`));
     }
 
     const whereClause = and(...conditions);
@@ -81,14 +82,14 @@ export class BookmarkService {
         createdAt: schema.seriesBookmarks.createdAt,
         updatedAt: schema.seriesBookmarks.updatedAt,
         lastUpdatedAt: schema.series.lastUpdatedAt,
-        title: schema.series.title,
-        nativeTitle: schema.series.nativeTitle,
-        romanizedTitle: schema.series.romanizedTitle,
-        secondaryTitles: schema.series.secondaryTitles,
+        titles: schema.series.titles,
         cover: schema.series.cover,
         type: schema.series.type,
         genres: schema.series.genres,
         weightedScore: schema.series.weightedScore,
+        popularityGlobalCurrent: schema.series.popularityGlobalCurrent,
+        popularityTypeCurrent: schema.series.popularityTypeCurrent,
+        popularity: schema.series.popularity,
         rating: schema.series.rating,
         totalChapters: schema.series.totalChapters,
         description: schema.series.description,
@@ -161,7 +162,7 @@ export class BookmarkService {
       case 'lastRead':
         return [sql`${schema.userReadingProgress.updatedAt} DESC NULLS LAST`, desc(schema.seriesBookmarks.createdAt)];
       case 'title':
-        return [asc(schema.series.title)];
+        return [asc(seriesDisplayTitleSql)];
       case 'ranking':
         return [desc(schema.series.weightedScore), desc(schema.seriesBookmarks.createdAt)];
       case 'bookmarked':

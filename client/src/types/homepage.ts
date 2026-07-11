@@ -8,6 +8,12 @@ export type HomepageSeriesCard = {
   type?: string | null;
   status?: string | null;
   rating?: number | null;
+  popularityGlobalCurrent?: number | null;
+  popularityTypeCurrent?: number | null;
+  popularity?: {
+    global?: { current?: number | null } | null;
+    type?: { current?: number | null } | null;
+  } | null;
   views?: number | null;
   totalChapters?: string | number | null;
   isNew?: boolean;
@@ -20,6 +26,8 @@ export type HomepageReadingProgress = {
   seriesId: number;
   seriesTitle: string;
   seriesCover?: unknown;
+  seriesType?: string | null;
+  seriesStatus?: string | null;
   lastChapterId: number;
   lastPageNumber: number;
 };

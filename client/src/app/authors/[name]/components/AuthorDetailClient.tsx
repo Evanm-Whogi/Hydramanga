@@ -92,10 +92,11 @@ export default function AuthorDetailClient({ detail }: { detail: AuthorDetail })
                   href={mangaPath(item.id)}
                   type={item.type}
                   status={item.status}
-                  rating={item.rating}
-                  views={item.views}
                   totalChapters={item.totalChapters}
                   isNew={item.isNew}
+                  popularityGlobalCurrent={item.popularityGlobalCurrent}
+                  popularityTypeCurrent={item.popularityTypeCurrent}
+                  popularity={item.popularity}
                   onSaveClick={(seriesId, title) => setSaveTarget({ seriesId, title })}
                   priority={i < 8}
                 />

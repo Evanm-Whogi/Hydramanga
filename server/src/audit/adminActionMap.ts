@@ -30,11 +30,25 @@ export function resolveAdminAuditAction(method: string, path: string, params: Re
       normalized === '/admin/archive/jobs' ||
       normalized === '/admin/scrapers/egress-status' ||
       normalized.match(/^\/admin\/manga\/[^/]+\/archive-status$/) ||
+      normalized === '/admin/placeholders' ||
       normalized === '/admin/audit' ||
       normalized === '/admin/settings'
     ) {
       return null;
     }
+  }
+
+  if (normalized === '/admin/placeholders/dismiss') {
+    return { action: 'admin.placeholders.dismiss', category: 'admin', resourceType: 'placeholder' };
+  }
+  if (normalized === '/admin/placeholders/download-from') {
+    return { action: 'admin.placeholders.download_from', category: 'admin', resourceType: 'placeholder' };
+  }
+  if (normalized === '/admin/placeholders/redownload') {
+    return { action: 'admin.placeholders.redownload', category: 'admin', resourceType: 'placeholder' };
+  }
+  if (normalized === '/admin/placeholders/replace') {
+    return { action: 'admin.placeholders.replace', category: 'admin', resourceType: 'placeholder' };
   }
 
   if (normalized === '/admin/settings' && method === 'PATCH') {

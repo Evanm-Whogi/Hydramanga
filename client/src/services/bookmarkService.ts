@@ -24,6 +24,12 @@ export interface SeriesBookmark {
   genres: string[] | null;
   weightedScore: number | null;
   rating: number | null;
+  popularityGlobalCurrent?: number | null;
+  popularityTypeCurrent?: number | null;
+  popularity?: {
+    global?: { current?: number | null } | null;
+    type?: { current?: number | null } | null;
+  } | null;
   totalChapters: number | null;
   description: string | null;
   views: number | null;

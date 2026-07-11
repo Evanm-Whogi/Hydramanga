@@ -1,4 +1,4 @@
-import { sql, SQL, or, isNull } from 'drizzle-orm';
+import { sql, SQL, or, isNull, ne } from 'drizzle-orm';
 
 /**
  * Content Filter Configuration
@@ -135,8 +135,13 @@ export function getExcludeNovelConditions(seriesTable: { type: any }): SQL[] {
   return [or(isNull(seriesTable.type), sql`lower(trim(${seriesTable.type})) <> 'novel'`)!];
 }
 
-/** NSFW preference + always hide novels from catalog surfaces. */
-export function getCatalogFilterConditions(hideNsfw: boolean, seriesTable: { contentRating: any; genres: any; id: any; type: any }): SQL[] {
-  return [...getExcludeNovelConditions(seriesTable), ...getNsfwFilterConditions(hideNsfw, seriesTable)];
+/** Exclude series merged into another catalog entry (duplicate titles / stale ids). */
+export function getExcludeMergedConditions(seriesTable: { state: any }): SQL[] {
+  return [or(isNull(seriesTable.state), ne(seriesTable.state, 'merged'))!];
+}
+
+/** NSFW preference + always hide novels and merged duplicates from catalog surfaces. */
+export function getCatalogFilterConditions(hideNsfw: boolean, seriesTable: { contentRating: any; genres: any; id: any; type: any; state: any }): SQL[] {
+  return [...getExcludeNovelConditions(seriesTable), ...getExcludeMergedConditions(seriesTable), ...getNsfwFilterConditions(hideNsfw, seriesTable)];
 }
 

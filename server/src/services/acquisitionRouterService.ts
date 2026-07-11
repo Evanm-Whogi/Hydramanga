@@ -21,6 +21,8 @@ import {
     ARCHIVE_ACQUIRE_QUEUE,
     type ArchiveAcquireJobData,
 } from '@/jobs/handlers/archiveQueueNames';
+import { extractCatalogTitleStrings, scraperTitleOptions } from '@/lib/catalogTitles';
+import { resolveDisplayTitle } from '@/lib/displayTitle';
 
 export type AcquisitionTrigger = 'initial-import' | 'manual-backfill';
 export type AcquisitionStrategy = 'archive_then_scrape' | 'archive_only' | 'scrape';
@@ -86,10 +88,7 @@ class AcquisitionRouterService {
 
         const [row] = await db
             .select({
-                title: series.title,
-                romanizedTitle: series.romanizedTitle,
-                nativeTitle: series.nativeTitle,
-                secondaryTitles: series.secondaryTitles,
+                titles: series.titles,
                 cover: series.cover,
                 status: series.status,
                 totalChapters: series.totalChapters,
@@ -99,7 +98,8 @@ class AcquisitionRouterService {
             .where(eq(series.id, seriesId))
             .limit(1);
 
-        if (!row?.title) {
+        const displayTitle = row ? resolveDisplayTitle(row) : '';
+        if (!displayTitle) {
             logger.warn(`[ROUTER] Series ${seriesId} not found; defaulting to scrape`, { service: 'acquisitionRouter' });
             return 'scrape';
         }
@@ -110,7 +110,7 @@ class AcquisitionRouterService {
             .where(eq(chapters.seriesId, seriesId));
 
         const strategy = this.resolveStrategy(row, count, trigger);
-        logger.info(`[ROUTER] Series ${seriesId} ("${row.title}") → ${strategy} (have=${count}, status=${row.status}, trigger=${trigger})`, {
+        logger.info(`[ROUTER] Series ${seriesId} ("${displayTitle}") → ${strategy} (have=${count}, status=${row.status}, trigger=${trigger})`, {
             service: 'acquisitionRouter',
         });
 
@@ -144,7 +144,7 @@ class AcquisitionRouterService {
             expectedChapters: parseCount(row.totalChapters) ?? parseCount(row.finalChapter),
             scrapeAfter,
         };
-        await queueService.addJob(ARCHIVE_ACQUIRE_QUEUE, `Archive acquire ${row.title}`, data, {
+        await queueService.addJob(ARCHIVE_ACQUIRE_QUEUE, `Archive acquire ${displayTitle}`, data, {
             jobId: `acquire-${seriesId}-${trigger}`,
             attempts: 1,
         });
@@ -157,54 +157,44 @@ class AcquisitionRouterService {
      * ingest. Serialized after ingest by the caller (never concurrent, §11.3).
      */
     async enqueueScrape(seriesId: number, reason: string): Promise<void> {
+        const { mangaOrchestratorService } = await import('@/services/mangaOrchestratorService');
+        const busy = await mangaOrchestratorService.isChapterScanBusy(seriesId);
+        if (busy.busy) {
+            logger.info(
+                `[ROUTER] Skipping ${reason} scrape for series ${seriesId}: already ${busy.reason}`,
+                { service: 'acquisitionRouter' }
+            );
+            return;
+        }
         const [row] = await db
-            .select({ title: series.title, romanizedTitle: series.romanizedTitle, cover: series.cover })
+            .select({ titles: series.titles, cover: series.cover })
             .from(series)
             .where(eq(series.id, seriesId))
             .limit(1);
-        if (!row?.title) {
+        const displayTitle = row ? resolveDisplayTitle(row) : '';
+        if (!displayTitle) {
             logger.warn(`[ROUTER] Cannot enqueue scrape for unknown series ${seriesId}`, { service: 'acquisitionRouter' });
             return;
         }
+        const titleOpts = scraperTitleOptions(row!.titles);
         await queueService.addJob(
             'mangaChapterImportQueue',
-            `Archive ${reason} ${row.title}`,
+            `Archive ${reason} ${displayTitle}`,
             {
-                mangaTitle: row.title,
+                mangaTitle: displayTitle,
                 seriesId,
-                romanizedTitle: row.romanizedTitle || undefined,
-                coverUrl: coverUrlOf(row.cover),
+                romanizedTitle: titleOpts.romanizedTitle,
+                coverUrl: coverUrlOf(row!.cover),
             },
             { jobId: `archive-scrape-${seriesId}`, attempts: 2 }
         );
-        logger.info(`[ROUTER] Enqueued ${reason} scrape for series ${seriesId} (${row.title})`, {
+        logger.info(`[ROUTER] Enqueued ${reason} scrape for series ${seriesId} (${displayTitle})`, {
             service: 'acquisitionRouter',
         });
     }
 
-    private collectTitles(row: {
-        title: string | null;
-        romanizedTitle: string | null;
-        nativeTitle: string | null;
-        secondaryTitles: unknown;
-    }): string[] {
-        const titles: string[] = [];
-        const push = (t?: string | null) => {
-            const trimmed = (t || '').trim();
-            if (trimmed && !titles.some((x) => x.toLowerCase() === trimmed.toLowerCase())) titles.push(trimmed);
-        };
-        push(row.title);
-        push(row.romanizedTitle);
-        push(row.nativeTitle);
-        // secondaryTitles is jsonb (array of strings or objects with .title).
-        const sec = row.secondaryTitles;
-        if (Array.isArray(sec)) {
-            for (const item of sec) {
-                if (typeof item === 'string') push(item);
-                else if (item && typeof item === 'object' && typeof (item as any).title === 'string') push((item as any).title);
-            }
-        }
-        return titles;
+    private collectTitles(row: { titles?: unknown }): string[] {
+        return extractCatalogTitleStrings(row.titles);
     }
 }
 

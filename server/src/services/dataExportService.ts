@@ -1,5 +1,6 @@
 import { db, schema } from '@/db/index';
 import { and, desc, eq, inArray, max, or, sql } from 'drizzle-orm';
+import { resolveDisplayTitle } from '@/lib/displayTitle';
 import { CONTENT_LIMITS } from '@/lib/securityLimits';
 
 export const DATA_EXPORT_VERSION = 3;
@@ -153,7 +154,7 @@ class DataExportService {
         seriesId: schema.seriesBookmarks.seriesId,
         status: schema.seriesBookmarks.status,
         updatedAt: schema.seriesBookmarks.updatedAt,
-        title: schema.series.title,
+        titles: schema.series.titles,
         anilistId: sql<string | null>`${schema.series.source}->'anilist'->>'id'`,
         malId: sql<string | null>`${schema.series.source}->'my_anime_list'->>'id'`,
         percentageCompleted: schema.userReadingProgress.percentageCompleted,
@@ -175,7 +176,7 @@ class DataExportService {
       lines.push(
         [
           r.seriesId,
-          r.title ?? '',
+          resolveDisplayTitle(r) ?? '',
           r.status,
           r.anilistId ?? '',
           r.malId ?? '',
@@ -194,7 +195,7 @@ class DataExportService {
     const rows = await db
       .select({
         status: schema.seriesBookmarks.status,
-        title: schema.series.title,
+        titles: schema.series.titles,
         malId: sql<string | null>`${schema.series.source}->'my_anime_list'->>'id'`,
       })
       .from(schema.seriesBookmarks)
@@ -211,7 +212,7 @@ class DataExportService {
         (r) =>
           `  <manga>\n` +
           `    <manga_mangadb_id>${r.malId}</manga_mangadb_id>\n` +
-          `    <manga_title><![CDATA[${xmlEscape(r.title ?? '')}]]></manga_title>\n` +
+          `    <manga_title><![CDATA[${xmlEscape(resolveDisplayTitle(r) ?? '')}]]></manga_title>\n` +
           `    <my_status>${MAL_STATUS_LABELS[r.status] ?? 'Reading'}</my_status>\n` +
           `    <update_on_import>1</update_on_import>\n` +
           `  </manga>`,

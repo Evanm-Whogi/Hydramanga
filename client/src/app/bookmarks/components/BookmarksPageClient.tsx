@@ -147,9 +147,10 @@ export default function BookmarksPageClient({ identifier, readOnly = false }: { 
                 href={mangaPath(bookmark.seriesId)}
                 type={bookmark.type}
                 status={bookmark.seriesStatus}
-                rating={bookmark.rating}
-                views={bookmark.views}
                 totalChapters={bookmark.totalChapters}
+                popularityGlobalCurrent={bookmark.popularityGlobalCurrent}
+                popularityTypeCurrent={bookmark.popularityTypeCurrent}
+                popularity={bookmark.popularity}
                 onSaveClick={readOnly ? undefined : (seriesId, title) => setSaveTarget({ seriesId, title })}
                 priority={index < 16}
               />

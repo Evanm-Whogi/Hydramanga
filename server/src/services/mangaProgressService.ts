@@ -64,10 +64,10 @@ export interface MangaProgress {
 class ProgressStateMachine {
   private static readonly VALID_TRANSITIONS: Record<ProgressStatus, ProgressStatus[]> = {
     'scanning': ['downloading', 'failed', 'completed'], // completed if 0 chapters found
-    'downloading': ['completed', 'failed'],
-    'completed': [], // terminal state
-    'failed': ['scanning'], // can retry after failure
-    'source_set': ['scanning', 'failed'],
+    'downloading': ['downloading', 'completed', 'failed'], // downloading→downloading: bump total mid-import
+    'completed': ['downloading'], // reopen when a follow-up scan discovers chapters after a false/empty complete
+    'failed': ['scanning', 'downloading'], // retry via initializeProgress (scanning) or direct rediscovery
+    'source_set': ['scanning', 'failed', 'downloading'],
   };
 
   static canTransition(fromState: ProgressStatus, toState: ProgressStatus): boolean {
@@ -103,19 +103,48 @@ class MangaProgressService {
     return this.redis;
   }
 
-  // Initialize progress tracking for a manga import (first scan or rescan)
+  // Initialize progress tracking for a manga import (first scan or rescan).
+  // Returns false when an in-flight import was preserved (caller must not treat this as a fresh scan).
   async initializeProgress(
     seriesId: number,
     initialTotalChapters: number = 0,
     initialDownloadedChapters: number = 0,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
+      const [existing] = await db
+        .select()
+        .from(mangaImportProgress)
+        .where(eq(mangaImportProgress.seriesId, seriesId))
+        .limit(1);
+
+      // Never clobber an active download — that is what falsely flips series to completed
+      // mid-import (e.g. reset 10/97 → 10/10, then markCompleted). Also refuse to lower
+      // totals while still scanning, or to reset while chapter jobs are already queued.
+      if (existing && existing.status === 'downloading') {
+        logger.warn(
+          `Preserving in-flight download progress for series ${seriesId}: ${existing.downloadedChapters}/${existing.totalChapters}; refusing reset to ${initialDownloadedChapters}/${initialTotalChapters}`,
+          { service: 'mangaProgressService' }
+        );
+        return false;
+      }
+      if (existing && existing.status === 'scanning') {
+        const pendingJobs = await queueService.countPendingChapterJobsForSeries(seriesId);
+        if (pendingJobs > 0 || existing.totalChapters > initialTotalChapters) {
+          logger.warn(
+            `Preserving in-flight scan progress for series ${seriesId}: ${existing.downloadedChapters}/${existing.totalChapters}, pendingJobs=${pendingJobs}; refusing reset to ${initialDownloadedChapters}/${initialTotalChapters}`,
+            { service: 'mangaProgressService' }
+          );
+          return false;
+        }
+      }
+
       // Insert or reset progress in database
       await db.insert(mangaImportProgress)
         .values({
           seriesId,
           totalChapters: initialTotalChapters,
           downloadedChapters: initialDownloadedChapters,
+          failedChapters: 0,
           status: 'scanning',
           startedAt: new Date(),
           updatedAt: new Date(),
@@ -125,6 +154,7 @@ class MangaProgressService {
           set: {
             totalChapters: initialTotalChapters,
             downloadedChapters: initialDownloadedChapters,
+            failedChapters: 0,
             status: 'scanning',
             startedAt: new Date(),
             updatedAt: new Date(),
@@ -138,6 +168,7 @@ class MangaProgressService {
         seriesId,
         totalChapters: initialTotalChapters,
         downloadedChapters: initialDownloadedChapters,
+        failedChapters: 0,
         status: 'scanning',
         percentage: initialTotalChapters > 0
           ? Math.round((initialDownloadedChapters / Math.max(initialTotalChapters, 1)) * 100)
@@ -156,6 +187,7 @@ class MangaProgressService {
       await this.publishProgress(seriesId, progressData);
 
       logger.info(`Progress initialized for series ${seriesId}`, { service: 'mangaProgressService' });
+      return true;
     } catch (error) {
       logger.error(`Failed to initialize progress for series ${seriesId}: ${error}`, { service: 'mangaProgressService' });
       throw error;
@@ -172,8 +204,17 @@ class MangaProgressService {
         return;
       }
 
-      // If no chapters found, mark as completed immediately
+      // If no chapters found, mark as completed immediately — but never wipe an in-flight import.
       if (totalChapters === 0) {
+        const pendingJobs = await queueService.countPendingChapterJobsForSeries(seriesId);
+        if (pendingJobs > 0 || progress.totalChapters > 0 || progress.downloadedChapters > 0 || progress.status === 'downloading') {
+          logger.warn(
+            `Refusing setTotalChapters(0) for series ${seriesId}: status=${progress.status}, total=${progress.totalChapters}, downloaded=${progress.downloadedChapters}, pendingJobs=${pendingJobs}`,
+            { service: 'mangaProgressService' }
+          );
+          return;
+        }
+
         const newStatus: ProgressStatus = 'completed';
         ProgressStateMachine.assertTransition(progress.status, newStatus);
 
@@ -228,10 +269,13 @@ class MangaProgressService {
       const newStatus: ProgressStatus = 'downloading';
       ProgressStateMachine.assertTransition(progress.status, newStatus);
 
+      // Never shrink total mid-import (overlapping scan may pass base+found while prior total was higher)
+      const resolvedTotal = Math.max(progress.totalChapters, totalChapters);
+
       // Update database
       await db.update(mangaImportProgress)
         .set({
-          totalChapters,
+          totalChapters: resolvedTotal,
           status: newStatus,
           scraperId: scraperId || null,
           updatedAt: new Date(),
@@ -240,11 +284,14 @@ class MangaProgressService {
 
       // Update Redis
       const mergedScraperId = scraperId ?? progress.scraperId ?? null;
+      const percentage = resolvedTotal > 0
+        ? Math.round(((progress.downloadedChapters + (progress.failedChapters ?? 0)) / resolvedTotal) * 100)
+        : 0;
       const updatedProgress: MangaProgress = {
         ...progress,
-        totalChapters,
+        totalChapters: resolvedTotal,
         status: newStatus,
-        percentage: 0,
+        percentage: Math.min(percentage, 99),
         updatedAt: new Date(),
         scraperId: mergedScraperId,
       };
@@ -258,7 +305,7 @@ class MangaProgressService {
       // Publish update
       await this.publishProgress(seriesId, updatedProgress);
 
-      logger.info(`Total chapters set to ${totalChapters} for series ${seriesId}`, { service: 'mangaProgressService' });
+      logger.info(`Total chapters set to ${resolvedTotal} for series ${seriesId}`, { service: 'mangaProgressService' });
     } catch (error) {
       logger.error(`Failed to set total chapters for series ${seriesId}: ${error}`, { service: 'mangaProgressService' });
       throw error;
@@ -553,12 +600,31 @@ class MangaProgressService {
     }
   }
 
-  // Mark import as completed without downloading (for rescans with no new chapters)
+  // Mark import as completed without downloading (for rescans with no new chapters).
+  // Refuses to complete when chapter-download jobs are still queued for this series.
   async markCompleted(seriesId: number, totalChapters: number): Promise<void> {
     try {
       const progress = await this.getProgress(seriesId);
       if (!progress) {
         logger.warn(`No progress found for series ${seriesId} when marking as completed`, { service: 'mangaProgressService' });
+        return;
+      }
+
+      const pendingJobs = await queueService.countPendingChapterJobsForSeries(seriesId);
+      if (pendingJobs > 0) {
+        logger.warn(
+          `Refusing to mark series ${seriesId} completed: ${pendingJobs} chapter download job(s) still pending (would have set total=${totalChapters})`,
+          { service: 'mangaProgressService' }
+        );
+        return;
+      }
+
+      // Also refuse if we still believe more chapters were expected than are on disk.
+      if (progress.totalChapters > totalChapters && (progress.status === 'downloading' || progress.status === 'scanning')) {
+        logger.warn(
+          `Refusing to mark series ${seriesId} completed at ${totalChapters}: in-flight total is ${progress.totalChapters} (${progress.status})`,
+          { service: 'mangaProgressService' }
+        );
         return;
       }
 
@@ -572,6 +638,7 @@ class MangaProgressService {
         .set({
           totalChapters,
           downloadedChapters: totalChapters, // All chapters already downloaded
+          failedChapters: 0,
           status: newStatus,
           updatedAt: new Date(),
           completedAt: new Date(),
@@ -583,6 +650,7 @@ class MangaProgressService {
         ...progress,
         totalChapters,
         downloadedChapters: totalChapters,
+        failedChapters: 0,
         status: newStatus,
         percentage: 100,
         updatedAt: new Date(),

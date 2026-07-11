@@ -14,7 +14,7 @@ import { toastApiError } from "@/lib/rateLimit";
 
 const MAX_FAVORITES = 10;
 
-type FavoriteManga = { id: number; title?: string | null; cover?: unknown; type?: string | null; status?: string | null; rating?: number | null; views?: number | null; totalChapters?: string | number | null; isNew?: boolean };
+type FavoriteManga = { id: number; title?: string | null; cover?: unknown; type?: string | null; status?: string | null; totalChapters?: string | number | null; isNew?: boolean; popularityGlobalCurrent?: number | null; popularityTypeCurrent?: number | null; popularity?: { global?: { current?: number | null } | null; type?: { current?: number | null } | null } | null };
 
 function favoriteToCardProps(item: FavoriteManga) {
   return {
@@ -24,10 +24,11 @@ function favoriteToCardProps(item: FavoriteManga) {
     href: mangaPath(item.id),
     type: item.type,
     status: item.status,
-    rating: item.rating,
-    views: item.views,
     totalChapters: item.totalChapters,
     isNew: item.isNew,
+    popularityGlobalCurrent: item.popularityGlobalCurrent,
+    popularityTypeCurrent: item.popularityTypeCurrent,
+    popularity: item.popularity,
   };
 }
 

@@ -23,8 +23,8 @@ const DISCORD_URL = process.env.NEXT_PUBLIC_DISCORD ?? "https://discord.gg/A27sQ
 
 const DISCOVER_NAV_ITEMS: NavDropdownItem[] = [
     { label: 'Browse', href: '/discover', icon: <BookOpenIcon className="size-4" /> },
-    { label: 'Top Rated', href: '/discover?sort=topRated', icon: <FlameIcon className="size-4" /> },
     { label: 'Most Popular', href: '/discover?sort=mostPopular', icon: <FlameIcon className="size-4" /> },
+    { label: 'Highest Rated', href: '/discover?sort=topRated', icon: <StarIcon className="size-4" /> },
     { label: 'Recent', href: '/discover?sort=recentlyUpdated', icon: <ClockIcon className="size-4" /> },
     { label: 'Genres', href: '/genres', icon: <LibraryBig className="size-4" /> },
     { label: 'Lists', href: '/lists', icon: <ListIcon className="size-4" /> },

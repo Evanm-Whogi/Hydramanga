@@ -241,7 +241,7 @@ export default function AdminImportRequestModal({request, onClose, onSaved}: Adm
           mangaId={effectiveSeriesId}
           mangaTitle={(importModal.manga.title as string) ?? request.requestedTitle}
           manga={importModal.manga}
-          secondaryTitles={importModal.manga.secondaryTitles as unknown}
+          titles={importModal.manga.titles as unknown}
           chapters={importModal.chapters}
           currentScraperId={importModal.scraperId}
           currentScraperUrl={importModal.scraperUrl}
