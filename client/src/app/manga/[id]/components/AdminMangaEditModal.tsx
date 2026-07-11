@@ -170,6 +170,13 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, titles,
 
   const displayScraperId = source?.scraperId ?? currentScraperId;
   const displayScraperUrl = source?.scraperUrl ?? currentScraperUrl;
+  const displayScraperLabel = displayScraperId || (() => {
+    try {
+      return displayScraperUrl ? new URL(displayScraperUrl).hostname.replace(/^www\./, "") : null;
+    } catch {
+      return null;
+    }
+  })() || "source";
 
   const runSearch = useCallback(async () => {
     setSearching(true);
@@ -474,7 +481,7 @@ export default function AdminMangaEditModal({mangaId, mangaTitle, manga, titles,
               <p className="text-muted">Loading…</p>
             ) : displayScraperId || displayScraperUrl ? (
               <>
-              <a href={displayScraperUrl ?? ""} target="_blank" rel="noopener noreferrer">{displayScraperId ?? "—"}</a>
+              <a href={displayScraperUrl ?? ""} target="_blank" rel="noopener noreferrer">{displayScraperLabel}</a>
               <button
                 type="button"
                 onClick={handleClearSource}

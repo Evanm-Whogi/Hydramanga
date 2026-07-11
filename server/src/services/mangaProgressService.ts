@@ -63,7 +63,7 @@ export interface MangaProgress {
  */
 class ProgressStateMachine {
   private static readonly VALID_TRANSITIONS: Record<ProgressStatus, ProgressStatus[]> = {
-    'scanning': ['downloading', 'failed', 'completed'], // completed if 0 chapters found
+    'scanning': ['downloading', 'failed', 'completed'], // completed only when chapters exist (see markCompleted)
     'downloading': ['downloading', 'completed', 'failed'], // downloading→downloading: bump total mid-import
     'completed': ['downloading'], // reopen when a follow-up scan discovers chapters after a false/empty complete
     'failed': ['scanning', 'downloading'], // retry via initializeProgress (scanning) or direct rediscovery
@@ -204,64 +204,15 @@ class MangaProgressService {
         return;
       }
 
-      // If no chapters found, mark as completed immediately — but never wipe an in-flight import.
+      // Hard rule: never mark completed with 0 chapters. Also never mark failed here —
+      // idle rescans that find nothing new must not trip a failure via this helper.
+      // Callers that mean "empty first scan" should call markFailed explicitly.
       if (totalChapters === 0) {
         const pendingJobs = await queueService.countPendingChapterJobsForSeries(seriesId);
-        if (pendingJobs > 0 || progress.totalChapters > 0 || progress.downloadedChapters > 0 || progress.status === 'downloading') {
-          logger.warn(
-            `Refusing setTotalChapters(0) for series ${seriesId}: status=${progress.status}, total=${progress.totalChapters}, downloaded=${progress.downloadedChapters}, pendingJobs=${pendingJobs}`,
-            { service: 'mangaProgressService' }
-          );
-          return;
-        }
-
-        const newStatus: ProgressStatus = 'completed';
-        ProgressStateMachine.assertTransition(progress.status, newStatus);
-
-        logger.debug(`No new chapters found for series ${seriesId}, transitioning from ${progress.status} to ${newStatus}`, { service: 'mangaProgressService' });
-
-        // Update database
-        await db.update(mangaImportProgress)
-          .set({
-            totalChapters: 0,
-            downloadedChapters: 0,
-            status: newStatus,
-            scraperId: scraperId || null,
-            updatedAt: new Date(),
-            completedAt: new Date(),
-          })
-          .where(eq(mangaImportProgress.seriesId, seriesId));
-
-        logger.debug(`Database updated for series ${seriesId}: status=${newStatus}, totalChapters=0`, { service: 'mangaProgressService' });
-
-        // Update Redis
-        const mergedScraperId = scraperId ?? progress.scraperId ?? null;
-        const updatedProgress: MangaProgress = {
-          ...progress,
-          totalChapters: 0,
-          downloadedChapters: 0,
-          status: newStatus,
-          percentage: 100,
-          updatedAt: new Date(),
-          completedAt: new Date(),
-          scraperId: mergedScraperId,
-        };
-
-        await this.getRedis().setex(
-          `${PROGRESS_CHANNEL_PREFIX}${seriesId}`,
-          PROGRESS_TTL,
-          JSON.stringify(updatedProgress)
+        logger.warn(
+          `Refusing setTotalChapters(0) for series ${seriesId}: status=${progress.status}, total=${progress.totalChapters}, downloaded=${progress.downloadedChapters}, pendingJobs=${pendingJobs}`,
+          { service: 'mangaProgressService' }
         );
-
-        logger.debug(`Redis updated for series ${seriesId}: published completion status`, { service: 'mangaProgressService' });
-
-        // Publish update to all listeners
-        await this.publishProgress(seriesId, updatedProgress);
-
-        logger.info(`No new chapters found for series ${seriesId}, marked as completed`, { service: 'mangaProgressService' });
-        
-        // Auto-cleanup after 5 minutes
-        setTimeout(() => this.cleanupProgress(seriesId), 5 * 60 * 1000);
         return;
       }
 
@@ -602,8 +553,17 @@ class MangaProgressService {
 
   // Mark import as completed without downloading (for rescans with no new chapters).
   // Refuses to complete when chapter-download jobs are still queued for this series.
+  // Hard rule: completed requires totalChapters > 0.
   async markCompleted(seriesId: number, totalChapters: number): Promise<void> {
     try {
+      if (totalChapters <= 0) {
+        logger.warn(
+          `Refusing to mark series ${seriesId} completed with totalChapters=${totalChapters}`,
+          { service: 'mangaProgressService' }
+        );
+        return;
+      }
+
       const progress = await this.getProgress(seriesId);
       if (!progress) {
         logger.warn(`No progress found for series ${seriesId} when marking as completed`, { service: 'mangaProgressService' });

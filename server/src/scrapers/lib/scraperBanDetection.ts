@@ -41,6 +41,7 @@ const BAN_BODY_MARKERS = [
     'access denied',
     'access is denied',
     'you have been blocked',
+    'unable to access',
     'ip address has been',
     'your ip',
     'temporarily blocked',
@@ -53,7 +54,26 @@ const CHALLENGE_BODY_MARKERS = [
     'cf-browser-verification',
     'checking your browser',
     'cf_chl_opt',
+    'attention required',
 ];
+
+/**
+ * Detect Cloudflare challenge / hard-block pages from Playwright title+body.
+ * Used when navigation "succeeds" (often HTTP 200) but the DOM is an interstitial.
+ */
+export function isCloudflareInterstitial(title: string, body: string): 'ban' | 'challenge' | null {
+    const titleLower = lower(title);
+    const bodyLower = lower(body);
+    if (BAN_BODY_MARKERS.some((m) => bodyLower.includes(m))) return 'ban';
+    if (
+        titleLower.includes('attention required') ||
+        titleLower.includes('just a moment') ||
+        CHALLENGE_BODY_MARKERS.some((m) => bodyLower.includes(m) || titleLower.includes(m))
+    ) {
+        return 'challenge';
+    }
+    return null;
+}
 
 function lower(value: unknown): string {
     return typeof value === 'string' ? value.toLowerCase() : '';
@@ -92,12 +112,14 @@ export function classifySignal(errOrResponse: any): BanSignal {
     // Hard rate limit.
     if (status === 429) return 'ban';
 
-    // A 403 only counts when it carries an IP/rate-block marker (or Retry-After);
+    // Hard IP/rate block markers — Playwright often lands on these with status 200.
+    if (BAN_BODY_MARKERS.some((m) => bodyLower.includes(m))) return 'ban';
+
+    // A 403 only counts when it carries Retry-After (body markers already handled above);
     // a generic 403 is auth/permission noise → ignore.
     if (status === 403) {
         const retryAfter = headerBag['retry-after'] ?? (headerBag as any)['Retry-After'];
         if (retryAfter) return 'ban';
-        if (BAN_BODY_MARKERS.some((m) => bodyLower.includes(m))) return 'ban';
         return 'ignore';
     }
 

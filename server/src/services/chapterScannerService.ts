@@ -295,20 +295,20 @@ export class ChapterScannerService {
                         { service: 'chapterScannerService' }
                     );
                 } else if (isFirstScan) {
-                    // First scan with no chapters - mark as completed with 0 total
-                    await withSpan(
-                        'mark_first_scan_no_chapters',
-                        async () => mangaProgressService.setTotalChapters(seriesId, 0),
-                        { op: 'db.write', tags: { series_id: String(seriesId) } }
+                    // First scan with no chapters — never "completed" at 0.
+                    logger.warn(
+                        `[SCANNER] First scan for ${mangaTitle} found 0 chapters; marking failed`,
+                        { service: 'chapterScannerService' }
                     );
-                } else {
-                    // Genuine idle rescan: nothing new from source, nothing pending.
+                    await mangaProgressService.markFailed(seriesId, 'Scan found 0 chapters');
+                } else if (baseChapterCount > 0) {
+                    // Idle rescan: source had nothing new. Series already has chapters — completed, not failed.
                     await withSpan(
                         'mark_monitored_rescan_complete',
                         async () => mangaProgressService.markCompleted(seriesId, baseChapterCount),
                         { op: 'db.write', tags: { series_id: String(seriesId) } }
                     );
-                    
+
                     logger.info(
                         `[SCANNER] Monitored rescan for ${mangaTitle}: no new chapters found. Series has ${baseChapterCount} chapters.`,
                         { service: 'chapterScannerService' }
@@ -322,6 +322,35 @@ export class ChapterScannerService {
                             existing_chapters: baseChapterCount,
                         },
                     });
+                } else {
+                    // Rescan of a series with nothing on disk and nothing from source — keep source, don't complete.
+                    const pinnedSource = !!(progress?.scraperUrl || progress?.scraperId || firstScraperId);
+                    if (pinnedSource) {
+                        logger.warn(
+                            `[SCANNER] Rescan for ${mangaTitle} still has 0 chapters; restoring source_set`,
+                            { service: 'chapterScannerService' }
+                        );
+                        await db
+                            .update(mangaImportProgress)
+                            .set({
+                                status: 'source_set',
+                                totalChapters: 0,
+                                downloadedChapters: 0,
+                                failedChapters: 0,
+                                errorMessage: null,
+                                completedAt: null,
+                                updatedAt: new Date(),
+                                ...(firstScraperId ? { scraperId: firstScraperId } : {}),
+                            })
+                            .where(eq(mangaImportProgress.seriesId, seriesId));
+                        await mangaProgressService.cleanupProgress(seriesId);
+                    } else {
+                        logger.warn(
+                            `[SCANNER] Rescan for ${mangaTitle} found 0 chapters and no source; marking failed`,
+                            { service: 'chapterScannerService' }
+                        );
+                        await mangaProgressService.markFailed(seriesId, 'Scan found 0 chapters');
+                    }
                 }
             }
 

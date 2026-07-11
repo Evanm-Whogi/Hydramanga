@@ -37,10 +37,13 @@ export async function getSitemapSeries(req: Request, res: Response, next: NextFu
   }
 }
 
-export async function getSitemapAuthors(_req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+export async function getSitemapAuthors(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
   try {
-    const items = await authorService.listForSitemap();
-    return res.json({ items });
+    const limit = Math.min(Math.max(Number(req.query.limit) || 5000, 1), 10000);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+    const result = await authorService.listForSitemap({ limit, offset });
+    return res.json(result);
   } catch (error) {
     next(error);
   }

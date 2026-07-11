@@ -234,7 +234,11 @@ class CatalogScanService {
       if (progress.status === 'failed') { noteFailure(`series ${seriesId}${tag}: ${progress.errorMessage || 'scan failed'}`); continue; }
       if (progress.status === 'source_set') { noteFailure(`series ${seriesId}${tag}: source selected but chapter scan never ran`); continue; }
       if (progress.status === 'completed') {
-        if (progress.totalChapters === 0) continue; // neutral: legitimately empty series
+        // completed-with-0 is never valid — treat as failure for the circuit breaker.
+        if (progress.totalChapters === 0) {
+          noteFailure(`series ${seriesId}${tag}: completed with 0 chapters`);
+          continue;
+        }
         if (progress.downloadedChapters > 0) { successCount++; continue; } // success (incl. partial w/ placeholders)
         if ((progress.failedChapters ?? 0) > 0) { noteFailure(`series ${seriesId}${tag}: all ${progress.failedChapters} chapter(s) failed`); continue; } // empty completion
         continue; // neutral (completed but nothing processed — unexpected)

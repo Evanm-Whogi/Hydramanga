@@ -43,6 +43,8 @@ const SCRAPER_DISPLAY_NAMES: Record<string, string> = {
 
 /** Conservative defaults for rate-sensitive sources; env vars override per scraper. */
 const SCRAPER_DOWNLOAD_OVERRIDES: Record<string, Partial<Pick<ChapterDownloadWorkerConfig, 'concurrency'> & { limiterMax: number }>> = {
+    // CF 429 on chapter HTML when bursts are too aggressive
+    weebcentral: { concurrency: 2, limiterMax: 2 },
     mangadex: { concurrency: 1, limiterMax: 2 },
     kagane: { concurrency: 1, limiterMax: 2 },
     // Default when CHAPTER_DOWNLOAD_MANGAGO_* env vars are unset; env always wins (see resolveChapterDownloadQueueConfig).

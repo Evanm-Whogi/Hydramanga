@@ -202,10 +202,47 @@ class AuthorService {
     return { name: trimmed, type, worksCount: works.length, works };
   }
 
-  /** Author names for sitemap.xml (uses the cached aggregate). */
-  async listForSitemap(): Promise<Array<{ name: string; lastUpdatedAt: string | null }>> {
-    const rows = await this.getAggregate();
-    return rows.map((r) => ({ name: r.name, lastUpdatedAt: r.recent }));
+  /**
+   * Authors for sitemap chunks — same rule as series sitemap: only count series that have at least one chapter.
+   */
+  private async getSitemapAggregate(): Promise<Array<{ name: string; lastUpdatedAt: string | null }>> {
+    return cacheService.getOrSet({ key: 'authors:sitemap:v1', ttl: AGGREGATE_TTL }, async () => {
+      const conditions = [
+        sql`${schema.series.authors} IS NOT NULL AND jsonb_typeof(${schema.series.authors}) = 'array'`,
+        sql`btrim(author) <> ''`,
+        ...getExcludeNovelConditions(schema.series),
+        notMerged!,
+        sql`EXISTS (SELECT 1 FROM ${schema.chapters} c WHERE c.series_id = ${schema.series.id})`,
+      ];
+      const whereSql = sql.join(conditions, sql` AND `);
+
+      const result = await db.execute(sql`
+        SELECT author AS name,
+               MAX(${schema.series.lastUpdatedAt}) AS recent
+        FROM ${schema.series}, jsonb_array_elements_text(${schema.series.authors}) AS author
+        WHERE ${whereSql}
+        GROUP BY author
+        ORDER BY author
+      `);
+
+      const rows = (result.rows ?? result) as unknown as Array<{ name: string; recent: Date | string | null }>;
+      return rows.map((r) => ({
+        name: r.name,
+        lastUpdatedAt: r.recent ? new Date(r.recent).toISOString() : null,
+      }));
+    });
+  }
+
+  async listForSitemap(opts: { limit?: number; offset?: number } = {}): Promise<{ items: Array<{ name: string; lastUpdatedAt: string | null }>; total: number; nextOffset: number | null }> {
+    const limit = Math.min(Math.max(opts.limit ?? 5000, 1), 10000);
+    const offset = Math.max(opts.offset ?? 0, 0);
+
+    const rows = await this.getSitemapAggregate();
+    const total = rows.length;
+    const items = rows.slice(offset, offset + limit);
+    const nextOffset = offset + limit < total ? offset + limit : null;
+
+    return { items, total, nextOffset };
   }
 }
 

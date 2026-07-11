@@ -186,6 +186,27 @@ export class ToonilyScraper implements IChapterScraper {
         }
     }
 
+    /** Retry navigation on transient TLS/proxy failures (ERR_SSL_PROTOCOL_ERROR, etc.). */
+    private async gotoWithRetry(page: any, url: string, attempts = 3): Promise<void> {
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= attempts; attempt++) {
+            try {
+                await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                return;
+            } catch (err) {
+                lastError = err;
+                const message = err instanceof Error ? err.message : String(err);
+                const transient = /ERR_SSL_PROTOCOL_ERROR|ERR_CONNECTION_|ERR_TUNNEL|ERR_NETWORK|ERR_EMPTY_RESPONSE|Timeout/i.test(message);
+                if (!transient || attempt === attempts) throw err;
+                logger.warn(
+                    `[Toonily] Navigation failed (attempt ${attempt}/${attempts}): ${message.split('\n')[0]}`,
+                    { service: 'toonilyScraper' }
+                );
+                await page.waitForTimeout(1000 * attempt);
+            }
+        }
+        throw lastError;
+    }
 
     async canHandle(_mangaName: string, _seriesId?: number): Promise<boolean> {
         return true;
@@ -239,10 +260,7 @@ export class ToonilyScraper implements IChapterScraper {
                 );
 
                 try {
-                    await page.goto(searchUrl, {
-                        waitUntil: 'domcontentloaded',
-                        timeout: 30000,
-                    });
+                    await this.gotoWithRetry(page, searchUrl);
 
                     // Wait briefly for results to render
                     await page.waitForTimeout(500);
@@ -346,7 +364,7 @@ export class ToonilyScraper implements IChapterScraper {
         try {
             const slug = titleToSlug(q);
             const searchUrl = `${SITE_BASE}/search/${encodeURIComponent(slug)}`;
-            await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await this.gotoWithRetry(page, searchUrl);
             await page.waitForTimeout(500);
 
             const results: Array<{ href: string; title: string }> = await page.evaluate(() => {
@@ -435,7 +453,7 @@ export class ToonilyScraper implements IChapterScraper {
                 );
             }
 
-            await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await this.gotoWithRetry(page, pageUrl);
 
             // Wait for chapter list
             try {
@@ -522,7 +540,7 @@ export class ToonilyScraper implements IChapterScraper {
                 { service: 'toonilyScraper' }
             );
 
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await this.gotoWithRetry(page, url);
 
             // Click the "LOAD ALL IMAGES AT ONCE" toggle if present
             try {

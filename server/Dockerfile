@@ -8,7 +8,7 @@ RUN npm ci
 
 # Build TypeScript
 COPY . .
-RUN npm run build && npm run db:generate
+RUN npm run build
 
 # Cached Playwright browsers (only re-downloads when PLAYWRIGHT_VERSION changes)
 # Uses BuildKit cache mount so repeat builds reuse the download (no 30min wait)

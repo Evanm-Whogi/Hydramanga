@@ -130,6 +130,9 @@ class QueueService {
         } else if (queueConfig && 'concurrency' in queueConfig) {
             concurrency = queueConfig.concurrency;
             timeout = queueConfig.timeout;
+            if ('limiter' in queueConfig && queueConfig.limiter) {
+                limiter = queueConfig.limiter as { max: number; duration: number };
+            }
         }
 
         const worker = new Worker(queueName, async (job: any) => {

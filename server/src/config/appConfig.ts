@@ -44,6 +44,11 @@ export interface QueueConfig {
         concurrency: number;
         timeout: number;
         retries: number;
+        // BullMQ worker limiter — spaces chapter-list scans so burst ranked/catalog jobs don't hammer scrapers.
+        limiter: {
+            max: number;
+            duration: number;
+        };
     };
     chapterDownload: {
         timeout: number;
@@ -551,9 +556,14 @@ export class AppConfigService {
                     retries: parseEnvNumber('MANGA_IMPORT_QUEUE_RETRIES', 0),
                 },
                 mangaChapterImportQueue: {
-                    concurrency: parseEnvNumber('CHAPTER_SCAN_CONCURRENCY', 1), // RESTORED to 1 (rate limiting)
+                    concurrency: parseEnvNumber('CHAPTER_SCAN_CONCURRENCY', 1), // keep at 1 — rate limiting + scraper politeness
                     timeout: parseEnvNumber('CHAPTER_SCAN_TIMEOUT', 30 * 60 * 1000), // 30 minutes
                     retries: parseEnvNumber('CHAPTER_SCAN_RETRIES', 1),
+                    // Default: at most 1 scan start every 5s (avoids ban-risk when queuing hundreds/thousands at once)
+                    limiter: {
+                        max: parseEnvNumber('CHAPTER_SCAN_RATE_MAX', 1),
+                        duration: parseEnvNumber('CHAPTER_SCAN_RATE_DURATION', 5000),
+                    },
                 },
                 chapterDownload: {
                     timeout: parseEnvNumber('CHAPTER_DOWNLOAD_TIMEOUT', 15 * 60 * 1000), // 15 minutes
@@ -945,7 +955,7 @@ Application Configuration Summary:
   Queue Concurrency:
     - Email: ${config.queues.emailQueue.concurrency}
     - Manga Import: ${config.queues.mangaImportQueue.concurrency}
-    - Chapter Scan: ${config.queues.mangaChapterImportQueue.concurrency}
+    - Chapter Scan: ${config.queues.mangaChapterImportQueue.concurrency} (rate ${config.queues.mangaChapterImportQueue.limiter.max}/${config.queues.mangaChapterImportQueue.limiter.duration}ms)
     - Chapter Download (default): ${config.queues.chapterDownload.defaultConcurrency} per scraper queue
   Cache TTL: ${config.cache.trendingTTL}s
   Object Storage @ ${config.storage.endpoint} — manga: ${config.storage.manga.bucket}, profile: ${config.storage.profilePictures.bucket}, stickers: ${config.storage.stickers.bucket}
