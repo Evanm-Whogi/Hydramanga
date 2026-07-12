@@ -2,12 +2,13 @@ import express, { Express } from 'express';
 import 'tsconfig-paths/register';
 import cors from 'cors';
 import helmet from 'helmet';
-import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { toNodeHandler } from "better-auth/node";
 import { auth } from '@/utils/auth';
 import { auditAuthHandler } from '@/middlewares/auditAuthHandler';
 import { trackingMiddleware } from '@/middlewares/tracking';
+import { requestLoggingMiddleware } from '@/middlewares/requestLogging';
+import { initPrometheusMetrics, metricsHandler, metricsMiddleware } from '@/middlewares/prometheusMetrics';
 import http from 'http';
 import { Server } from 'socket.io';
 import { setupProgressSocket } from '@/sockets/progressSocket';
@@ -16,6 +17,7 @@ import { karmaService } from '@/services/karmaService';
 import { readingActivityService } from '@/services/readingActivityService';
 import * as Sentry from "@sentry/node";
 import { initSentry } from "@/sentry";
+import { appConfig } from '@/config/appConfig';
 dotenv.config();
 
 // Initialize Sentry if enabled
@@ -40,13 +42,6 @@ initializeScrapers();
 // Constants
 const app: Express = express();
 
-// Morgan
-morgan.token("username", (req) => {return (req as any).user?.username || "Unknown"});
-morgan.token("ip", (req) => {return (req as any).ip || "Unknown"});
-app.use(morgan(':username [:ip] :\n:method :url :status :response-time ms\n', {
-    skip: (req, res) => req.originalUrl.includes('/heartbeat') || req.originalUrl.includes('/socket.io')
-}));
-
 const corsOrigins = ['https://hydramanga.com', process.env.PUBLIC_APP_URL].filter(Boolean) as string[];
 app.use(cors({ origin: corsOrigins, credentials: true }));
 app.use(
@@ -57,8 +52,17 @@ app.use(
 );
 app.set('trust proxy', 1);
 
+// Tracking + structured access logs early so every request (incl. /auth) gets IP/UA + Option-A fields
+app.use(trackingMiddleware);
+app.use(requestLoggingMiddleware);
+
+if (appConfig.metrics.httpMetricsEnabled) {
+  initPrometheusMetrics();
+  app.use(metricsMiddleware);
+  app.get('/metrics', metricsHandler);
+}
+
 // Auth Routes (tracking for IP/UA on auth events)
-app.use('/auth', trackingMiddleware);
 app.use('/auth', oauthSettingsMiddleware);
 app.use(['/auth/sign-in', '/auth/sign-up', '/auth/forget-password', '/auth/reset-password', '/auth/request-password-reset'], authRateLimiter);
 app.all("/auth/{*any}", auditAuthHandler(toNodeHandler(auth)));

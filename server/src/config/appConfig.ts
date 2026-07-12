@@ -271,6 +271,8 @@ export interface TimeoutConfig {
 export interface MetricsConfig {
     queueMetricsEnabled: boolean;
     queueMetricsIntervalMs: number;
+    /** Expose /metrics and record HTTP request Prometheus metrics. Default true when DOCKER=true. */
+    httpMetricsEnabled: boolean;
 }
 
 /**
@@ -846,6 +848,7 @@ export class AppConfigService {
             metrics: {
                 queueMetricsEnabled: parseEnvBoolean('QUEUE_METRICS_ENABLED', false),
                 queueMetricsIntervalMs: parseEnvNumber('QUEUE_METRICS_INTERVAL_MS', 60000),
+                httpMetricsEnabled: parseEnvBoolean('HTTP_METRICS_ENABLED', process.env.DOCKER === 'true'),
             },
 
             // Timeout Settings

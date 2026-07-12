@@ -35,15 +35,23 @@ const logger = winston.createLogger({
     ]
 });
 
-// Always log to console in Docker (for docker logs visibility)
-// or if not in production
-// if (process.env.NODE_ENV !== 'production' || process.env.DOCKER === 'true') {
+// Docker: JSON to stdout so Alloy/Loki can parse structured fields (access logs, etc.).
+// Local/dev: colorized human-readable console.
+if (process.env.DOCKER === 'true') {
+    logger.add(new winston.transports.Console({
+        format: winston.format.combine(
+            winston.format.timestamp(),
+            winston.format.errors({ stack: true }),
+            winston.format.json()
+        )
+    }));
+} else {
     logger.add(new winston.transports.Console({
         format: winston.format.combine(
             winston.format.colorize(),
             winston.format.printf(({ level, message, timestamp }) => `${timestamp} ${level}: ${message}`)
         )
     }));
-// }
+}
 
 export default logger;

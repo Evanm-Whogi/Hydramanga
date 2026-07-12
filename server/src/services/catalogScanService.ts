@@ -216,6 +216,44 @@ class CatalogScanService {
   }
 
   /**
+   * True when a non-terminal scrape series still has in-flight work (scan job, chapter
+   * downloads, or recent progress updates). Long manga downloads routinely exceed the
+   * stall window — those must keep waiting. Wedged = non-terminal with nothing moving.
+   */
+  private async isScrapeSeriesWedged(seriesId: number, stallMs: number): Promise<boolean> {
+    if (await this.isScrapeSeriesTerminal(seriesId)) return false;
+    const pendingJobs = await queueService.countPendingChapterJobsForSeries(seriesId);
+    if (pendingJobs > 0) return false;
+    const { scanStatus, isQueued } = await mangaOrchestratorService.getScanStatus(seriesId);
+    if (scanStatus === 'scanning' || scanStatus === 'queued' || isQueued) return false;
+    const progress = await mangaProgressService.getProgress(seriesId);
+    if (progress?.updatedAt && Date.now() - progress.updatedAt.getTime() < stallMs) return false;
+    return true;
+  }
+
+  /** True when the batch still has real work in flight (not just a wedged progress row). */
+  private async isBatchActivelyWorking(seriesIds: number[], archivedIds: number[], stallMs: number): Promise<boolean> {
+    for (const seriesId of seriesIds) {
+      if (!(await this.isScrapeSeriesTerminal(seriesId)) && !(await this.isScrapeSeriesWedged(seriesId, stallMs))) {
+        return true;
+      }
+    }
+    for (const seriesId of archivedIds) {
+      if (!(await this.isArchivedSeriesTerminal(seriesId))) {
+        const [job] = await db
+          .select({ status: acquisitionJobs.status, updatedAt: acquisitionJobs.updatedAt })
+          .from(acquisitionJobs)
+          .where(eq(acquisitionJobs.seriesId, seriesId))
+          .orderBy(desc(acquisitionJobs.createdAt))
+          .limit(1);
+        if (job && ACTIVE_ARCHIVE_STATUSES.has(job.status)) return true;
+        if (job?.updatedAt && Date.now() - job.updatedAt.getTime() < stallMs) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Circuit-breaker classification for a completed batch (order-independent, batch-level):
    * count clear successes vs. failures across both the scrape and archive series.
    * `treatNonTerminalAsFailure` is set only by the stall watchdog, where a series still
@@ -472,18 +510,26 @@ class CatalogScanService {
     if (hasActiveBatch) {
       const complete = await this.isBatchComplete(seriesIds, archivedIds);
       if (!complete) {
-        // Watchdog: a batch that never reaches a terminal state (a job wedged so its
-        // progress counters never resolve) would otherwise poll forever. Past the stall
-        // window, force-terminate it and count it as a breaker failure.
+        // Watchdog: only force-terminate when past the stall window AND nothing is still
+        // working (no chapter jobs, no active scan, no recent progress). Long series often
+        // download for well over batchStallMs — those must keep waiting.
         const stallMs = appConfig.catalogScan.batchStallMs;
         const startedAtMs = row.currentBatchStartedAt ? row.currentBatchStartedAt.getTime() : null;
-        const stalled = stallMs > 0 && startedAtMs != null && Date.now() - startedAtMs > stallMs;
-        if (!stalled) {
+        const pastStallWindow = stallMs > 0 && startedAtMs != null && Date.now() - startedAtMs > stallMs;
+        if (!pastStallWindow) {
+          await this.enqueueCoordinatorTick(appConfig.catalogScan.pollIntervalMs);
+          return;
+        }
+        if (await this.isBatchActivelyWorking(seriesIds, archivedIds, stallMs)) {
+          logger.info(
+            `Catalog batch at rank ${row.currentBatchStart} past ${Math.round(stallMs / 60000)}m stall window but still downloading; waiting`,
+            { service: 'catalogScanService' }
+          );
           await this.enqueueCoordinatorTick(appConfig.catalogScan.pollIntervalMs);
           return;
         }
         logger.warn(
-          `Catalog batch at rank ${row.currentBatchStart} stalled for >${Math.round(stallMs / 60000)}m; force-terminating and counting as failure`,
+          `Catalog batch at rank ${row.currentBatchStart} stalled for >${Math.round(stallMs / 60000)}m with no in-flight work; force-terminating and counting as failure`,
           { service: 'catalogScanService' }
         );
         if (await this.applyBatchOutcomeAndMaybePause(row, seriesIds, archivedIds, { treatNonTerminalAsFailure: true })) return;
