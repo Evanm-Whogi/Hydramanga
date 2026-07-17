@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next';
-import { absoluteUrl, getSiteConfig } from '@/lib/seo';
+import { getSiteConfig } from '@/lib/seo';
 
 export default function robots(): MetadataRoute.Robots {
   const site = getSiteConfig();
@@ -14,7 +14,6 @@ export default function robots(): MetadataRoute.Robots {
           '/',
           '/api/home/',
           '/api/manga/',
-          '/api/authors/',
           '/api/lists/',
           '/api/forum/',
           '/api/leaderboard/',
@@ -40,6 +39,7 @@ export default function robots(): MetadataRoute.Robots {
           '/reset-password',
           '/error-500',
           '/manga/*/read/',
+          '/authors',
           // Blanket API block (overridden by Allow prefixes above)
           '/api/',
           // Private API paths under otherwise-allowed prefixes (longest-match wins)
@@ -58,10 +58,11 @@ export default function robots(): MetadataRoute.Robots {
           '/api/analytics/stats',
           '/api/admin/',
           '/api/auth/',
+          '/api/authors/',
         ],
       },
     ],
-    sitemap: absoluteUrl('/sitemap.xml'),
+    sitemap: `${site.url}/sitemap.xml`,
     host: site.url,
   };
 }

@@ -3,9 +3,21 @@ import {Request, Response, NextFunction} from 'express';
 import logger from '@/services/loggerService';
 
 const SKIP_PATH_FRAGMENTS = ['/heartbeat', '/socket.io', '/metrics'];
+/** Uptime / probe clients — skip access logs (Loki + files); they already have their own metrics. */
+const SKIP_USER_AGENT_FRAGMENTS = ['blackbox-exporter', 'hetrixtools'];
 
-function shouldSkip(url: string): boolean {
-  return SKIP_PATH_FRAGMENTS.some((fragment) => url.includes(fragment));
+function requestUserAgent(req: Request): string {
+  const tracking = (req as any).trackingData?.userAgent;
+  if (typeof tracking === 'string' && tracking) return tracking;
+  const header = req.headers['user-agent'];
+  return (Array.isArray(header) ? header[0] : header) || '';
+}
+
+function shouldSkip(req: Request): boolean {
+  const url = req.originalUrl || req.url;
+  if (SKIP_PATH_FRAGMENTS.some((fragment) => url.includes(fragment))) return true;
+  const ua = requestUserAgent(req).toLowerCase();
+  return SKIP_USER_AGENT_FRAGMENTS.some((fragment) => ua.includes(fragment));
 }
 
 function contentLengthHeader(value: string | number | string[] | undefined): number | undefined {
@@ -25,7 +37,7 @@ export function requestLoggingMiddleware(req: Request, res: Response, next: Next
   res.setHeader('x-request-id', requestId);
   (req as any).requestId = requestId;
 
-  if (shouldSkip(req.originalUrl || req.url)) {
+  if (shouldSkip(req)) {
     next();
     return;
   }

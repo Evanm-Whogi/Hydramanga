@@ -1,13 +1,15 @@
 import express, { RequestHandler } from 'express';
 import { authMiddleware } from '@/middlewares/auth';
 import { optionalAuthMiddleware } from '@/middlewares/optionalAuth';
-import { searchManga, getOne, getPages, triggerMangaScan, trackMangaViewEndpoint, trackChapterViewEndpoint, getRecommendedManga, getGallery, getCollections, randomManga, getMangaTags }  from '@/controllers/mangaController';
+import { searchManga, getOne, getPages, triggerMangaScan, trackMangaViewEndpoint, trackChapterViewEndpoint, getRecommendedManga, getGallery, getCollections, randomManga, getMangaTags, getSitemapSeries }  from '@/controllers/mangaController';
 import { requireRole } from '@/middlewares/requireRole';
 import { mangaSearchRateLimit } from '@/middlewares/userActionRateLimit';
 
 const router = express.Router();
 
 router.get('/search', mangaSearchRateLimit, searchManga as RequestHandler);
+
+router.get('/sitemap', getSitemapSeries as RequestHandler);
 
 router.get('/tags', getMangaTags as RequestHandler);
 

@@ -137,6 +137,11 @@ export const series = pgTable('series', {
 
   // MangaBaka popularity rank (ascending — rank 1 is most popular)
   popularityGlobalCurrentIdx: index('idx_series_popularity_global_current').on(t.popularityGlobalCurrent),
+
+  // Default discover (mostPopular + hide NSFW): partial index for keyset + COUNT
+  discoverSfwPopularityIdx: index('idx_series_discover_sfw_popularity')
+    .on(t.popularityGlobalCurrent, t.id)
+    .where(sql`${t.type} IS DISTINCT FROM 'novel' AND ${t.state} IS DISTINCT FROM 'merged' AND (${t.contentRating} IS NULL OR ${t.contentRating} IS DISTINCT FROM 'pornographic') AND (${t.genres} IS NULL OR NOT (${t.genres} @> '["Hentai"]'::jsonb OR ${t.genres} @> '["Lolicon"]'::jsonb OR ${t.genres} @> '["Shotacon"]'::jsonb OR ${t.genres} @> '["Smut"]'::jsonb'))`),
 }));
 
 export const bookmarkStatusEnum = pgEnum('bookmark_status', ['reading', 'rereading', 'planned', 'completed', 'paused', 'dropped']);

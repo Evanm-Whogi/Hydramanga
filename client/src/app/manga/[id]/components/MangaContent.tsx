@@ -2,7 +2,7 @@
 import { useEffect, useState, memo, useTransition, Fragment, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { getMangaAnalytics } from '@/services/mangaService';
-import { formatTimeAgo, formatCompactNumber as formatNumber } from '@/lib/utils';
+import { formatTimeAgo, formatDisplayDate, formatCompactNumber as formatNumber } from '@/lib/utils';
 import PopularityRankDisplay from '@/components/PopularityRankDisplay';
 import { resolveGlobalRank, resolveTypeRank } from '@/lib/popularityRank';
 import Link from 'next/link';
@@ -526,7 +526,7 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
                 </div>
                 {manga.published?.start_date && (
                   <div className="flex justify-between text-muted">
-                    Published <span>{formatTimeAgo(manga.published.start_date)}{manga.published.end_date ? ` – ${formatTimeAgo(manga.published.end_date)}` : ''}</span>
+                    Published <span>{formatDisplayDate(manga.published.start_date)}{manga.published.end_date ? ` – ${formatDisplayDate(manga.published.end_date)}` : ''}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-muted">

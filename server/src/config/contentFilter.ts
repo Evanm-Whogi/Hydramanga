@@ -1,4 +1,4 @@
-import { sql, SQL, or, isNull, ne } from 'drizzle-orm';
+import { sql, SQL } from 'drizzle-orm';
 
 /**
  * Content Filter Configuration
@@ -113,16 +113,26 @@ export function isSeriesHiddenByUserNsfw(
  * Filters out: contentRating 'pornographic' and genres containing any of NSFW_BLOCKED_GENRES (case-insensitive).
  * Use with and(...conditions) in queries. When hideNsfw is false, returns [] (no filter).
  */
+/**
+ * Genres in the catalog are Title Case (`Hentai`, not `hentai`). Prefer GIN-friendly
+ * `@>` containment over `jsonb_array_elements_text` — the unnest form forces a correlated
+ * SubPlan and turns cold discover COUNT(*) into multi-second seq scans on ~600k rows.
+ * Predicate shape must stay aligned with `idx_series_discover_sfw_popularity` so COUNT
+ * can use an index-only scan (~25ms vs ~500ms seq scan).
+ */
+function nsfwGenreContainmentSql(genresColumn: any): SQL {
+  const titled = NSFW_BLOCKED_GENRES.map((g) => g.charAt(0).toUpperCase() + g.slice(1));
+  const checks = titled.map((g) => sql`${genresColumn} @> ${JSON.stringify([g])}::jsonb`);
+  return sql`(${genresColumn} IS NULL OR NOT (${sql.join(checks, sql` OR `)}))`;
+}
+
 export function getNsfwFilterConditions(hideNsfw: boolean, seriesTable: { contentRating: any; genres: any; id: any }): SQL[] {
   if (!hideNsfw) return [];
-  const genreList = NSFW_BLOCKED_GENRES.map((g) => `'${g}'`).join(',');
-  const ratingList = NSFW_BLOCKED_RATINGS.map((r) => `'${r}'`).join(',');
+  // Predicate must match idx_series_discover_sfw_popularity exactly (including the
+  // `IS NULL OR …` form) or Postgres falls back from index-only COUNT to a heap scan.
   return [
-    sql`(${seriesTable.contentRating} IS NULL OR ${seriesTable.contentRating} NOT IN (${sql.raw(ratingList)}))`,
-    sql`(${seriesTable.genres} IS NULL OR NOT EXISTS (
-      SELECT 1 FROM jsonb_array_elements_text(${seriesTable.genres}) AS g
-      WHERE lower(trim(g)) IN (${sql.raw(genreList)})
-    ))`,
+    sql`(${seriesTable.contentRating} IS NULL OR ${seriesTable.contentRating} IS DISTINCT FROM 'pornographic')`,
+    nsfwGenreContainmentSql(seriesTable.genres),
   ];
 }
 
@@ -130,14 +140,14 @@ export function isNovelType(type: string | null | undefined): boolean {
   return (type ?? '').trim().toLowerCase() === 'novel';
 }
 
-/** Exclude light novels from catalog/browse queries. */
+/** Exclude light novels from catalog/browse queries. Types are stored lowercase; avoid lower(trim()) so planners can use partial/btree indexes. */
 export function getExcludeNovelConditions(seriesTable: { type: any }): SQL[] {
-  return [or(isNull(seriesTable.type), sql`lower(trim(${seriesTable.type})) <> 'novel'`)!];
+  return [sql`${seriesTable.type} IS DISTINCT FROM 'novel'`];
 }
 
 /** Exclude series merged into another catalog entry (duplicate titles / stale ids). */
 export function getExcludeMergedConditions(seriesTable: { state: any }): SQL[] {
-  return [or(isNull(seriesTable.state), ne(seriesTable.state, 'merged'))!];
+  return [sql`${seriesTable.state} IS DISTINCT FROM 'merged'`];
 }
 
 /** NSFW preference + always hide novels and merged duplicates from catalog surfaces. */

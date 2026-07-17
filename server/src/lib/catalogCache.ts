@@ -9,14 +9,17 @@ export const CATALOG_CACHE_TTL = 0;
 // keys from these constants so the version can never drift out of sync again — a past bug
 // left invalidation pinned to v6 while reads moved to v7, so the (TTL=0, never-expiring)
 // cache was effectively impossible to clear.
-export const DISCOVER_SEARCH_CACHE_PREFIX = 'manga:search:v15';
-export const DISCOVER_SEARCH_COUNT_CACHE_PREFIX = 'manga:search:count:v15';
+export const DISCOVER_SEARCH_CACHE_PREFIX = 'manga:search:v16';
+export const DISCOVER_SEARCH_COUNT_CACHE_PREFIX = 'manga:search:count:v16';
+/** Lean id list for Next.js sitemap.xml — bump when payload shape changes. */
+export const SITEMAP_SERIES_CACHE_KEY = 'manga:sitemap:series:v1';
 
 export async function invalidateCatalogCaches(): Promise<void> {
     await Promise.all([
         cacheService.invalidatePattern(`${DISCOVER_SEARCH_CACHE_PREFIX}:*`),
         cacheService.invalidatePattern(`${DISCOVER_SEARCH_COUNT_CACHE_PREFIX}:*`),
         cacheService.del('manga:tags:all'),
+        cacheService.del(SITEMAP_SERIES_CACHE_KEY),
         cacheService.invalidatePattern('collections:genres:v*'),
     ]);
     logger.info('Catalog caches invalidated', { service: 'catalogCache' });

@@ -36,7 +36,7 @@ export function isCrawlerRequest(req: { headers?: { 'user-agent'?: string | stri
 
 /**
  * Read the guest NSFW preference from a request's cookie header.
- * - Known crawlers: always show NSFW (so sitemap URLs and SSR metadata can index).
+ * - Known crawlers: always show NSFW (so SSR metadata can index the full public catalog).
  * - Humans with no cookie: hide NSFW (matches UI default).
  * - Explicit cookie: honor it.
  */
@@ -64,7 +64,7 @@ export function getGuestHideNsfw(req: { headers?: { cookie?: string; 'user-agent
 export async function resolveHideNsfw(
   req: { headers?: { cookie?: string; 'user-agent'?: string | string[] }; user?: { id?: string } | null },
 ): Promise<boolean> {
-  // Bots first — never apply a human NSFW preference to crawlers indexing sitemap URLs.
+  // Bots first — never apply a human NSFW preference to crawlers indexing public URLs.
   if (isCrawlerRequest(req)) return false;
   const userId = req.user?.id;
   if (userId) return (await getUserSettings(userId)).hideNsfw;

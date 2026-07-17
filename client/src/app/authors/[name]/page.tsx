@@ -25,9 +25,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description: `Manga and works by ${detail.name} on ${siteName}.`,
       path: authorPath(detail.name),
       includeSiteKeywords: false,
+      noIndex: true,
     });
   } catch {
-    return buildPageMetadata({ title: "Author", description: "Manga author", path: "/authors" });
+    return buildPageMetadata({ title: "Author", description: "Manga author", path: "/authors", noIndex: true });
   }
 }
 

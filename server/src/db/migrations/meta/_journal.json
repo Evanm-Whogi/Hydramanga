@@ -113,6 +113,13 @@
       "when": 1783656000000,
       "tag": "0015_sync_popularity_flat_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1783658000000,
+      "tag": "0016_discover_sfw_popularity_index",
+      "breakpoints": true
     }
   ]
 }

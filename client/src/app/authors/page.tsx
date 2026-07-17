@@ -8,6 +8,7 @@ export const metadata: Metadata = buildPageMetadata({
   title: "Authors",
   description: "Browse manga authors and discover their works.",
   path: "/authors",
+  noIndex: true,
 });
 
 export default function AuthorsPage() {

@@ -29,27 +29,38 @@ export const formatToStars = (score: number) => {
   return stars + emptyStars;
 };
 
-export const formatTimeAgo = (value?: string | Date | null): string => {
-    if (!value) return 'unknown';
+function parseDisplayDate(value?: string | Date | null): Date | null {
+    if (!value) return null;
 
-    let date: Date;
     if (value instanceof Date) {
-      date = value;
-    } else {
-        let normalized = value.replace(' ', 'T');
-        // Trim fractional seconds to 3 digits (JS Date only supports up to milliseconds)
-        normalized = normalized.replace(/\.\d+/, (m) => m.slice(0, 4));
-        // Normalize timezone offset to ±HH:MM format
-        normalized = normalized.replace(/([+-])(\d{2}):?(\d{2})$/, '$1$2:$3');
-        normalized = normalized.replace(/([+-])(\d{2})$/, '$1$2:00');
-        // If no timezone present, assume UTC (server timestamps are UTC)
-        if (!/([zZ]|[+-]\d{2}:\d{2})$/.test(normalized)) {
-            normalized += 'Z';
-        }
-      date = new Date(normalized);
+        return Number.isNaN(value.getTime()) ? null : value;
     }
 
-    if (Number.isNaN(date.getTime())) return 'unknown';
+    // Date-only ISO (YYYY-MM-DD): skip timezone-offset rewrites — the day
+    // segment (e.g. -11) matches ±HH and would become "YYYY-MM-DD:00".
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        const date = new Date(`${value}T00:00:00Z`);
+        return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    let normalized = value.replace(' ', 'T');
+    // Trim fractional seconds to 3 digits (JS Date only supports up to milliseconds)
+    normalized = normalized.replace(/\.\d+/, (m) => m.slice(0, 4));
+    // Normalize timezone offset to ±HH:MM format
+    normalized = normalized.replace(/([+-])(\d{2}):?(\d{2})$/, '$1$2:$3');
+    normalized = normalized.replace(/([+-])(\d{2})$/, '$1$2:00');
+    // If no timezone present, assume UTC (server timestamps are UTC)
+    if (!/([zZ]|[+-]\d{2}:\d{2})$/.test(normalized)) {
+        normalized += 'Z';
+    }
+    const date = new Date(normalized);
+
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export const formatTimeAgo = (value?: string | Date | null): string => {
+    const date = parseDisplayDate(value);
+    if (!date) return 'unknown';
 
     const now = Date.now();
     const diffMs = Math.max(0, now - date.getTime());
@@ -72,24 +83,10 @@ export const formatTimeAgo = (value?: string | Date | null): string => {
     return `${years} year${years === 1 ? '' : 's'} ago`;
 };
 
-function parseDisplayDate(value?: string | Date | null): Date | null {
-    if (!value) return null;
-
-    let date: Date;
-    if (value instanceof Date) {
-        date = value;
-    } else {
-        let normalized = value.replace(' ', 'T');
-        normalized = normalized.replace(/\.\d+/, (m) => m.slice(0, 4));
-        normalized = normalized.replace(/([+-])(\d{2}):?(\d{2})$/, '$1$2:$3');
-        normalized = normalized.replace(/([+-])(\d{2})$/, '$1$2:00');
-        if (!/([zZ]|[+-]\d{2}:\d{2})$/.test(normalized)) {
-            normalized += 'Z';
-        }
-        date = new Date(normalized);
-    }
-
-    return Number.isNaN(date.getTime()) ? null : date;
+export function formatDisplayDate(value?: string | Date | null): string {
+    const date = parseDisplayDate(value);
+    if (!date) return 'unknown';
+    return date.toLocaleDateString('en-US', {year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'});
 }
 
 export function formatTimeUntil(value?: string | Date | null): string {

@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { Loader2, RefreshCw, Download, Link2, X, Globe2, Check } from "lucide-react";
 import { toast } from "react-toastify";
+import ThemeCheckbox from "@/components/ThemeCheckbox";
 import { dismissPlaceholder, downloadFromPlaceholder, getPlaceholderPages, redownloadPlaceholder, replacePlaceholderPage, type PlaceholderPage } from "@/services/adminScanService";
 import { adminScraperSearch, type ScraperSourceResult } from "@/services/adminMangaService";
 
@@ -26,6 +27,10 @@ const reasonBadge = (reason: string): string => {
   }
 };
 
+function uniquePrefixes(selected: PlaceholderPage[]): string[] {
+  return Array.from(new Set(selected.map((p) => p.storagePrefix)));
+}
+
 export default function PlaceholdersAdminClient() {
   const [reason, setReason] = useState("http_404");
   const [pages, setPages] = useState<PlaceholderPage[]>([]);
@@ -41,6 +46,8 @@ export default function PlaceholdersAdminClient() {
   const [sourceCache, setSourceCache] = useState<Record<number, ScraperSourceResult[]>>({});
   const [searchingSeriesId, setSearchingSeriesId] = useState<number | null>(null);
   const [queuingFrom, setQueuingFrom] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkOperating, setBulkOperating] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -66,6 +73,43 @@ export default function PlaceholdersAdminClient() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [reason]);
+
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const valid = new Set(pages.map((p) => p.id));
+      const next = new Set([...prev].filter((id) => valid.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [pages]);
+
+  const allSelected = pages.length > 0 && selectedIds.size === pages.length;
+  const hasSelection = selectedIds.size > 0;
+  const selectedPages = pages.filter((p) => selectedIds.has(p.id));
+  const selectedPrefixes = uniquePrefixes(selectedPages);
+  const rowBusy = bulkOperating || busyPrefix != null || replacingId != null || dismissingId != null || queuingFrom != null;
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const toggleOne = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+      return;
+    }
+    setSelectedIds(new Set(pages.map((p) => p.id)));
+  };
 
   const ensureSources = async (seriesId: number) => {
     if (sourceCache[seriesId]) return;
@@ -162,14 +206,58 @@ export default function PlaceholdersAdminClient() {
     }
   };
 
+  const runBulkAction = useCallback(async (action: () => Promise<void>, successMessage: string) => {
+    if (selectedIds.size === 0 || bulkOperating) return;
+    setBulkOperating(true);
+    try {
+      await action();
+      toast.success(successMessage);
+      clearSelection();
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : "Bulk action failed");
+    } finally {
+      await refresh();
+      setBulkOperating(false);
+    }
+  }, [selectedIds.size, bulkOperating, refresh]);
+
+  const handleBulkDismiss = () => {
+    const targets = selectedPages;
+    if (targets.length === 0) return;
+    if (!window.confirm(`Dismiss ${targets.length} selected page(s)? They will leave the ledger without repairing.`)) return;
+    void runBulkAction(async () => {
+      const results = await Promise.allSettled(
+        targets.map((p) => dismissPlaceholder({ storagePrefix: p.storagePrefix, pageNumber: p.pageNumber })),
+      );
+      const failed = results.filter((r) => r.status === "rejected").length;
+      if (failed > 0) {
+        throw new Error(`Dismissed ${targets.length - failed}/${targets.length}; ${failed} failed`);
+      }
+    }, `Dismissed ${targets.length} page(s)`);
+  };
+
+  const handleBulkRedownload = () => {
+    const prefixes = selectedPrefixes;
+    if (prefixes.length === 0) return;
+    if (!window.confirm(`Redownload ${prefixes.length} chapter(s)? This deletes their pages and re-fetches from the pinned source.`)) return;
+    void runBulkAction(async () => {
+      const results = await Promise.allSettled(prefixes.map((prefix) => redownloadPlaceholder(prefix)));
+      const failed = results.filter((r) => r.status === "rejected").length;
+      if (failed > 0) {
+        throw new Error(`Queued ${prefixes.length - failed}/${prefixes.length}; ${failed} failed`);
+      }
+    }, `Queued redownload for ${prefixes.length} chapter(s)`);
+  };
+
   const sourcesForPanel = downloadFromSeriesId != null ? sourceCache[downloadFromSeriesId] : undefined;
   const searchingPanel = downloadFromSeriesId != null && searchingSeriesId === downloadFromSeriesId;
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${hasSelection ? "pb-24" : ""}`}>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <p className="text-sm text-muted max-w-3xl">
-          Durable ledger of pages that got a placeholder (404 / known-broken / undecodable) or failed to download. Replace a single page with a custom image URL, redownload from the pinned source, download the chapter from a different scraper match (pin unchanged), or dismiss without repairing.
+          Durable ledger of pages that got a placeholder (404 / known-broken / undecodable) or failed to download. Replace a single page with a custom image URL, redownload from the pinned source, download the chapter from a different scraper match (pin unchanged), or dismiss without repairing. Select rows for bulk dismiss / redownload.
         </p>
         <span className="inline-flex shrink-0 self-start px-2.5 py-1 rounded-full text-xs font-medium bg-foreground border border-borders text-muted">
           {total} unresolved
@@ -189,7 +277,7 @@ export default function PlaceholdersAdminClient() {
         <button
           type="button"
           onClick={() => void refresh()}
-          disabled={loading}
+          disabled={loading || bulkOperating}
           className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-foreground border border-borders text-primary text-sm font-medium hover:bg-background disabled:opacity-50"
         >
           {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
@@ -210,6 +298,15 @@ export default function PlaceholdersAdminClient() {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-borders bg-background/50">
+                  <th className="w-10 px-4 py-3">
+                    <ThemeCheckbox
+                      checked={allSelected}
+                      indeterminate={hasSelection && !allSelected}
+                      onCheckedChange={toggleAll}
+                      disabled={rowBusy}
+                      ariaLabel="Select all placeholder pages"
+                    />
+                  </th>
                   <th className="px-4 py-3 font-semibold text-muted">Chapter (prefix)</th>
                   <th className="px-4 py-3 font-semibold text-muted">Page</th>
                   <th className="px-4 py-3 font-semibold text-muted">Reason</th>
@@ -222,9 +319,19 @@ export default function PlaceholdersAdminClient() {
                 </tr>
               </thead>
               <tbody>
-                {pages.map((p) => (
+                {pages.map((p) => {
+                  const isSelected = selectedIds.has(p.id);
+                  return (
                   <Fragment key={p.id}>
-                    <tr className="border-b border-borders/50 hover:bg-background/30 transition-colors">
+                    <tr className={`border-b border-borders/50 transition-colors ${isSelected ? "bg-background/60" : "hover:bg-background/30"}`}>
+                      <td className="px-4 py-3">
+                        <ThemeCheckbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleOne(p.id)}
+                          disabled={rowBusy}
+                          ariaLabel={`Select ${p.storagePrefix} page ${p.pageNumber}`}
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         <a href={`/manga/${p.seriesId}`} target="_blank" rel="noreferrer" className="text-accent hover:underline">
                           {p.storagePrefix}
@@ -244,7 +351,8 @@ export default function PlaceholdersAdminClient() {
                           value={urlDrafts[p.id] ?? ""}
                           onChange={(e) => setUrlDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))}
                           placeholder={p.imageUrl ?? "https://…"}
-                          className="w-full min-w-[200px] px-2.5 py-1.5 rounded-lg bg-background border border-borders text-primary text-xs placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/50"
+                          disabled={bulkOperating}
+                          className="w-full min-w-[200px] px-2.5 py-1.5 rounded-lg bg-background border border-borders text-primary text-xs placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/50 disabled:opacity-50"
                         />
                       </td>
                       <td className="px-4 py-3">
@@ -252,7 +360,7 @@ export default function PlaceholdersAdminClient() {
                           <button
                             type="button"
                             onClick={() => void handleReplace(p)}
-                            disabled={replacingId === p.id}
+                            disabled={rowBusy || replacingId === p.id}
                             className="inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:opacity-90 disabled:opacity-50"
                           >
                             {replacingId === p.id ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
@@ -261,7 +369,7 @@ export default function PlaceholdersAdminClient() {
                           <button
                             type="button"
                             onClick={() => void handleRedownload(p.storagePrefix)}
-                            disabled={busyPrefix === p.storagePrefix}
+                            disabled={rowBusy || busyPrefix === p.storagePrefix}
                             className="inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-foreground border border-borders text-primary text-xs font-medium hover:bg-background disabled:opacity-50"
                           >
                             {busyPrefix === p.storagePrefix ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
@@ -270,6 +378,7 @@ export default function PlaceholdersAdminClient() {
                           <button
                             type="button"
                             onClick={() => void openDownloadFrom(p)}
+                            disabled={bulkOperating}
                             className={`inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium disabled:opacity-50 ${
                               downloadFromPageId === p.id
                                 ? "bg-accent/15 border-accent text-accent"
@@ -282,7 +391,7 @@ export default function PlaceholdersAdminClient() {
                           <button
                             type="button"
                             onClick={() => void handleDismiss(p)}
-                            disabled={dismissingId === p.id}
+                            disabled={rowBusy || dismissingId === p.id}
                             className="inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-foreground border border-borders text-muted text-xs font-medium hover:bg-background hover:text-primary disabled:opacity-50"
                           >
                             {dismissingId === p.id ? <Loader2 className="size-3.5 animate-spin" /> : <X className="size-3.5" />}
@@ -293,7 +402,7 @@ export default function PlaceholdersAdminClient() {
                     </tr>
                     {downloadFromPageId === p.id && downloadFromPrefix === p.storagePrefix && (
                       <tr className="border-b border-borders/50 bg-background/40">
-                        <td colSpan={9} className="px-4 py-4">
+                        <td colSpan={10} className="px-4 py-4">
                           <div className="space-y-3">
                             <div className="flex items-center justify-between gap-2">
                               <p className="text-sm text-primary font-medium">
@@ -353,7 +462,7 @@ export default function PlaceholdersAdminClient() {
                                                 <button
                                                   type="button"
                                                   onClick={() => void handleDownloadFrom(p.storagePrefix, src.scraperId, r.href)}
-                                                  disabled={queuingFrom != null}
+                                                  disabled={queuingFrom != null || bulkOperating}
                                                   className="text-xs px-2 py-1 bg-accent text-white rounded hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1"
                                                 >
                                                   {busy ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
@@ -374,12 +483,44 @@ export default function PlaceholdersAdminClient() {
                       </tr>
                     )}
                   </Fragment>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {hasSelection ? (
+        <div className="fixed inset-x-0 bottom-0 z-50 border-t border-borders bg-background/95 shadow-[0_-8px_32px_rgba(0,0,0,0.35)] backdrop-blur-md">
+          <div className="container mx-auto flex flex-wrap items-center gap-2 px-4 py-3">
+            <span className="text-sm text-muted">
+              {selectedIds.size} page{selectedIds.size === 1 ? "" : "s"}
+              {selectedPrefixes.length !== selectedIds.size ? ` · ${selectedPrefixes.length} chapter${selectedPrefixes.length === 1 ? "" : "s"}` : ""}
+            </span>
+            <button
+              type="button"
+              onClick={handleBulkRedownload}
+              disabled={bulkOperating}
+              className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50"
+            >
+              {bulkOperating ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-3.5" />}
+              Redownload
+            </button>
+            <button
+              type="button"
+              onClick={handleBulkDismiss}
+              disabled={bulkOperating}
+              className="inline-flex items-center gap-1.5 rounded-md border border-borders px-3 py-1.5 text-sm text-muted hover:bg-foreground hover:text-primary disabled:opacity-50"
+            >
+              <X className="size-3.5" /> Dismiss
+            </button>
+            <button type="button" onClick={clearSelection} disabled={bulkOperating} className="rounded-md px-3 py-1.5 text-sm text-muted hover:text-primary disabled:opacity-50">
+              Clear
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

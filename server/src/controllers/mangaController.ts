@@ -12,7 +12,7 @@ import { getUserSettings, resolveHideNsfw } from '@/services/userSettingsService
 import { mangaProgressService } from '@/services/mangaProgressService';
 import { cacheService } from '@/services/cacheService';
 import { objectStorageService } from '@/services/objectStorageService';
-import { CATALOG_CACHE_TTL, DISCOVER_SEARCH_CACHE_PREFIX, DISCOVER_SEARCH_COUNT_CACHE_PREFIX } from '@/lib/catalogCache';
+import { CATALOG_CACHE_TTL, DISCOVER_SEARCH_CACHE_PREFIX, DISCOVER_SEARCH_COUNT_CACHE_PREFIX, SITEMAP_SERIES_CACHE_KEY } from '@/lib/catalogCache';
 import axios from 'axios';
 import { getCollectionsList } from '@/services/collectionsService';
 import { fetchSeriesChapterFlags } from '@/lib/seriesQueries';
@@ -71,7 +71,6 @@ type DiscoverSortType = 'number' | 'timestamp' | 'text';
 // kept broad so the catalog still returns plenty of results per page.
 const DISCOVER_TRENDING_WINDOW_DAYS = 30;
 const DISCOVER_POPULAR_WINDOW_DAYS = 90;
-const DISCOVER_RANK_NULL_SENTINEL = 2_147_483_647;
 
 interface DiscoverSortPlan {
     orderExpr: any;
@@ -82,8 +81,14 @@ interface DiscoverSortPlan {
     nulls?: 'first' | 'last';
 }
 
+/**
+ * Sort by the denormalized btree column — not JSON extraction.
+ * Wrapping `popularity->'global'->>'current'` in COALESCE prevents
+ * `idx_series_popularity_global_current` and forces a ~600ms seq scan on cold pages.
+ * Flat column is kept in sync with JSON (migration 0015 + importer).
+ */
 function popularityGlobalCurrentExpr() {
-    return sql`COALESCE((${schema.series.popularity}->'global'->>'current')::int, ${schema.series.popularityGlobalCurrent}, ${DISCOVER_RANK_NULL_SENTINEL})`;
+    return schema.series.popularityGlobalCurrent;
 }
 
 function popularityGlobalCurrentFromJsonExpr() {
@@ -467,10 +472,18 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                 for (const join of sortPlan.joins) {
                     query = query.leftJoin(join.table, join.on);
                 }
-                const data = await query
+
+                // Page query + total count in parallel on first page. Cursor pages skip COUNT
+                // entirely (client only reads meta.total from the initial fetch).
+                const pagePromise = query
                     .where(and(...conditions))
                     .orderBy(...buildDiscoverOrderBy(sortPlan, effectiveSort, effectiveAsc))
                     .limit(DISCOVER_PAGE_SIZE + 1);
+                const totalPromise = hasCursor
+                    ? Promise.resolve(null as number | null)
+                    : getCachedDiscoverTotal(countCacheKey, baseConditions);
+
+                const [data, total] = await Promise.all([pagePromise, totalPromise]);
 
                 const hasNextPage = data.length > DISCOVER_PAGE_SIZE;
                 const items = hasNextPage ? data.slice(0, DISCOVER_PAGE_SIZE) : data;
@@ -480,11 +493,6 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                     const last = items[items.length - 1];
                     const val = serializeDiscoverCursorValue(last.__sortVal ?? 0, sortPlan.type);
                     nextCursor = `${val}|${last.id}`;
-                }
-
-                let total: number | null = null;
-                if (!hasCursor) {
-                    total = await getCachedDiscoverTotal(countCacheKey, baseConditions);
                 }
 
                 return {
@@ -499,10 +507,6 @@ export async function searchManga(req: Request, res: Response, next: NextFunctio
                 };
             },
         );
-
-        if (skeleton.meta.total === null) {
-            skeleton.meta.total = await getCachedDiscoverTotal(countCacheKey, baseConditions);
-        }
 
         const responsePayload = await enrichDiscoverSearchPayload(skeleton);
         const slicedItems = responsePayload.items.slice(0, pageSize);
@@ -566,44 +570,36 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
         return res.status(400).json({ status: 400, message: "Invalid manga ID" });
     }
 
+    const chapterCols = {
+        id: true,
+        seriesId: true,
+        title: true,
+        chapterNumber: true,
+        volumeNumber: true,
+        createdAt: true,
+        updatedAt: true,
+        pageCount: true,
+        scraperId: true,
+    } as const;
+
     const mangaData = userId
         ? await db.query.series.findFirst({
-            where: (seriesTable, { eq: eqFn }) => eqFn(seriesTable.id, id),
+            where: eq(schema.series.id, id),
             with: {
-            chapters: {
-                columns: {
-                    id: true,
-                    seriesId: true,
-                    title: true,
-                    chapterNumber: true,
-                    volumeNumber: true,
-                    createdAt: true,
-                    updatedAt: true,
-                    pageCount: true,
-                    scraperId: true,
+                chapters: {
+                    columns: chapterCols,
+                    orderBy: (chaptersTable, { asc: ascFn }) => [ascFn(chaptersTable.chapterNumber)],
                 },
-                orderBy: (chaptersTable, { asc }) => [asc(chaptersTable.chapterNumber)],
-            },
-            bookmarks: { where: (b, { eq: eqFn }) => eqFn(b.userId, userId) },
+                bookmarks: { where: eq(schema.seriesBookmarks.userId, userId) },
             },
         })
         : await db.query.series.findFirst({
-            where: (seriesTable, { eq: eqFn }) => eqFn(seriesTable.id, id),
+            where: eq(schema.series.id, id),
             with: {
-            chapters: {
-                columns: {
-                    id: true,
-                    seriesId: true,
-                    title: true,
-                    chapterNumber: true,
-                    volumeNumber: true,
-                    createdAt: true,
-                    updatedAt: true,
-                    pageCount: true,
-                    scraperId: true,
+                chapters: {
+                    columns: chapterCols,
+                    orderBy: (chaptersTable, { asc: ascFn }) => [ascFn(chaptersTable.chapterNumber)],
                 },
-                orderBy: (chaptersTable, { asc }) => [asc(chaptersTable.chapterNumber)],
-            },
             },
         });
     if (!mangaData) return res.status(404).json({ status: 404, message: "Not found" });
@@ -1164,6 +1160,34 @@ export async function getCollections(req: Request, res: Response, next: NextFunc
     } catch (error) {
         logger.error(`Error fetching collections: ${(error as Error).message}`, { service: 'mangaController' });
         return res.status(500).json({ error: "Failed to fetch collections" });
+    }
+}
+
+/** Lean indexable series for Next.js /sitemap.xml — imported chapters only, crawler NSFW policy. */
+export async function getSitemapSeries(req: Request, res: Response, next: NextFunction): Promise<Response | void> {
+    try {
+        const serverBlocksNsfw = getBlockedGenres().length > 0;
+        const items = await cacheService.getOrSet(
+            { key: SITEMAP_SERIES_CACHE_KEY, ttl: CATALOG_CACHE_TTL },
+            async () => {
+                return db
+                    .select({
+                        id: schema.series.id,
+                        lastUpdatedAt: schema.series.lastUpdatedAt,
+                    })
+                    .from(schema.series)
+                    .where(
+                        and(
+                            ...getCatalogFilterConditions(serverBlocksNsfw, schema.series),
+                            sql`EXISTS (SELECT 1 FROM ${chapters} WHERE ${chapters.seriesId} = ${schema.series.id})`,
+                        ),
+                    )
+                    .orderBy(asc(schema.series.id));
+            },
+        );
+        return res.json({ items });
+    } catch (error) {
+        return next(error);
     }
 }
 
