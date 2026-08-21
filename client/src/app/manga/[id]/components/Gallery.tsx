@@ -1,13 +1,20 @@
-import { useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 
-export default function Gallery({ gallery, mangaTitle }: { gallery: any, mangaTitle: string }) {
+function normalizeGallery(gallery: unknown): any[] {
+    if (Array.isArray(gallery)) return gallery;
+    if (gallery && typeof gallery === "object" && Array.isArray((gallery as { gallery?: unknown }).gallery)) {
+        return (gallery as { gallery: any[] }).gallery;
+    }
+    return [];
+}
+
+export default function Gallery({ gallery, mangaTitle }: { gallery: unknown, mangaTitle: string }) {
     const [selectedLanguage, setSelectedLanguage] = useState("all");
-    const [filteredGallery, setFilteredGallery] = useState(gallery);
-
-    useEffect(() => {
-        const filteredGallery = selectedLanguage === "all" ? gallery : gallery.filter((item: any) => item.language === selectedLanguage);
-        setFilteredGallery(filteredGallery);
-    }, [selectedLanguage]);
+    const galleryItems = useMemo(() => normalizeGallery(gallery), [gallery]);
+    const filteredGallery = useMemo(() => {
+        if (selectedLanguage === "all") return galleryItems;
+        return galleryItems.filter((item: any) => item.language === selectedLanguage);
+    }, [galleryItems, selectedLanguage]);
 
     return (
         <>

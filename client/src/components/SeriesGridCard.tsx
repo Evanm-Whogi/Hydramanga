@@ -54,7 +54,7 @@ function SeriesGridCard({ seriesId, title, cover, href, type, status, totalChapt
 
   return (
     <Link href={href} prefetch={false} className="group flex h-full w-full flex-col" onPointerDown={handlePointerDown} onClick={handleClick}>
-      <div className="relative aspect-2/3 w-full overflow-hidden rounded-md bg-foreground">
+      <div className="@container relative aspect-2/3 w-full overflow-hidden rounded-md bg-foreground">
         <CoverImage cover={cover} alt={title} priority={priority} className="h-full w-full object-cover transition-transform duration-300 ease-in-out group-hover:scale-105" />
         <div className="pointer-events-none absolute inset-0 bg-black/20 transition-colors duration-300 ease-in-out group-hover:bg-black/0" />
         {isNew ? (
@@ -62,16 +62,18 @@ function SeriesGridCard({ seriesId, title, cover, href, type, status, totalChapt
             <span className="rounded-full bg-accent/90 px-3 py-1.5 text-xs font-bold text-white shadow-lg">NEW</span>
           </div>
         ) : null}
-        <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-x-1 bg-black/50 px-3 py-2 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-          {hasPopularityRank ? (
-            <>
-              <PopularityRankDisplay compact fields={popularityFields} seriesType={type} />
-              <span aria-hidden className="text-white/60">·</span>
-            </>
-          ) : null}
-          <div className="flex items-center text-sm font-semibold text-white">
-            <BookOpen className="mr-1 size-3.5 text-emerald-300" />
-            {formatChapterCount(totalChapters)}
+        <div className="absolute inset-x-0 bottom-0 flex items-center justify-center bg-black/50 px-2 py-1.5 opacity-0 transition-opacity duration-300 group-hover:opacity-100 [font-size:clamp(0.5rem,10cqw,0.875rem)]">
+          <div className="flex min-w-0 max-w-full items-center justify-center gap-x-0.5 whitespace-nowrap">
+            {hasPopularityRank ? (
+              <>
+                <PopularityRankDisplay compact fluid fields={popularityFields} seriesType={type} />
+                <span aria-hidden className="shrink-0 text-white/60">·</span>
+              </>
+            ) : null}
+            <div className="flex min-w-0 shrink items-center font-semibold text-white">
+              <BookOpen className="mr-0.5 size-[1em] shrink-0 text-emerald-300" />
+              <span>{formatChapterCount(totalChapters)}</span>
+            </div>
           </div>
         </div>
         {onSaveClick ? (

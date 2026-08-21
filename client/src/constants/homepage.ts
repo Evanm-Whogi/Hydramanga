@@ -4,10 +4,10 @@ export const HOMEPAGE_TRENDING_PERIOD = "2weeks" as const;
 const carouselItemBase = "min-w-0 shrink-0 grow-0";
 
 export const HOMEPAGE_CAROUSEL_ITEM_CLASS =
-  `${carouselItemBase} basis-[calc((100%-1rem)/2)] sm:basis-[calc((100%-2rem)/3)] lg:basis-[calc((100%-11rem)/10)]`;
+  `${carouselItemBase} basis-[calc((100%-1rem)/2)] sm:basis-[calc((100%-2rem)/3)] lg:basis-[calc((100%-7rem)/8)] 3xl:basis-[calc((100%-9rem)/10)]`;
 
 export const HOMEPAGE_COMMENTER_CAROUSEL_ITEM_CLASS =
-  `${carouselItemBase} basis-[calc((100%-1rem)/2)] sm:basis-[calc((100%-2rem)/3)] lg:basis-[calc((100%-11rem)/10)]`;
+  `${carouselItemBase} basis-[calc((100%-1rem)/2)] sm:basis-[calc((100%-2rem)/3)] lg:basis-[calc((100%-7rem)/8)] 3xl:basis-[calc((100%-9rem)/10)]`;
 
 export const HOMEPAGE_COMMENT_CAROUSEL_ITEM_CLASS =
   `${carouselItemBase} basis-full sm:basis-[calc((100%-1rem)/2)] lg:basis-[calc((100%-2rem)/3)]`;

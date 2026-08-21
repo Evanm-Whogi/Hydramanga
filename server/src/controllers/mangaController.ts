@@ -24,6 +24,7 @@ import { withResolvedDisplayTitle, resolveDisplayTitle } from '@/lib/displayTitl
 import { seriesDisplayTitleSql } from '@/lib/seriesTitleSql';
 import { getTopRatedEligibilityConditions, topRatedSortScoreExpr } from '@/lib/discoverScore';
 import { siteSettingsService } from '@/services/siteSettingsService';
+import { seriesBannerService } from '@/services/seriesBannerService';
 
 // Normalize curly/smart quotes to ASCII so search matches titles regardless of apostrophe type
 function normalizeApostrophes(s: string): string {
@@ -706,9 +707,13 @@ export async function getOne(req: Request, res: Response, next: NextFunction): P
     (manga as { comments?: unknown; commentPagination?: unknown }).comments = commentResult.comments;
     (manga as { commentPagination?: unknown }).commentPagination = commentResult.pagination;
 
+    await seriesBannerService.ensureBannerForSeries(id);
+    const refreshedCover = await seriesBannerService.getCoverBySeriesId(id);
+    const mangaWithBanner = refreshedCover ? { ...manga, cover: refreshedCover } : manga;
+
     return res.json({
         status: 200,
-        manga: withResolvedDisplayTitle(enrichedRelationships ? { ...manga, relationships: enrichedRelationships } : manga),
+        manga: withResolvedDisplayTitle(enrichedRelationships ? { ...mangaWithBanner, relationships: enrichedRelationships } : mangaWithBanner),
         userStatus
     })
 }
@@ -1120,7 +1125,7 @@ export async function getGallery(req: Request, res: Response, next: NextFunction
 
     const cacheKey = `gallery:mangabaka:${mangaId}`;
     const cacheTtlSeconds = 5 * 24 * 60 * 60; // 5 days
-    const requestUrl = `https://api.mangabaka.dev/v1/series/${mangaId}/images?language=en&language=ja`;
+    const requestUrl = `https://api.mangabaka.org/v1/series/${mangaId}/images?language=en&language=ja`;
 
     try {
         const gallery = await cacheService.getOrSet(
@@ -1148,7 +1153,7 @@ export async function getGallery(req: Request, res: Response, next: NextFunction
         return res.json(gallery);
     } catch (error) {
         logger.error(`Error fetching gallery: ${(error as Error).message}`, { service: 'mangaController' });
-        return res.status(200).json({ gallery: [] }); // Return empty gallery on error to avoid breaking the client
+        return res.status(200).json([]); // Return empty gallery on error to avoid breaking the client
     }
 }
 

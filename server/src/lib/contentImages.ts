@@ -12,7 +12,10 @@ export function hasTraversalSegments(value: string): boolean {
 }
 
 function looksLikeImageReference(url: string): boolean {
-  if (url.startsWith('/')) return true;
+  if (url.startsWith('/')) {
+    const pathOnly = url.split('?')[0].split('#')[0];
+    return isAllowedStickerImageUrl(pathOnly) || IMAGE_EXT_RE.test(pathOnly);
+  }
   try {
     return IMAGE_EXT_RE.test(new URL(url).pathname);
   } catch {

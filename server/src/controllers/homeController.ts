@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { db, schema } from '@/db/index';
-import { eq, desc, sql, gte, gt, inArray, and, getTableColumns } from 'drizzle-orm';
+import { eq, desc, asc, sql, gte, gt, inArray, and, isNotNull, getTableColumns } from 'drizzle-orm';
 import { chapters, series } from '@/db/schema';
 import dotenv from 'dotenv';
 import { userProgressService } from '@/services/userProgressService';
@@ -12,7 +12,7 @@ import { withResolvedDisplayTitle } from '@/lib/displayTitle';
 import { enrichNestedSeriesExtras, enrichSeriesListExtras, fetchFirstChapterIdsBySeries, seriesCardColumns} from '@/lib/seriesQueries';
 import { badgeService } from '@/services/badgeService';
 import { getThreshold } from '@/lib/periodUtils';
-import { anilistBannerService } from '@/services/anilistBannerService';
+import { seriesBannerService } from '@/services/seriesBannerService';
 
 dotenv.config();
 
@@ -137,6 +137,30 @@ async function loadPopularManga(period: string, limit: number, hideNsfw = false)
     );
 }
 
+/** Discover "Most Popular" sort — popularity rank ascending (lower = more popular). */
+async function loadDiscoverMostPopular(limit: number, hideNsfw = false) {
+    const cacheKey = `home:discoverMostPopular:v1:${hideNsfw}:${limit}`;
+    const nsfwConditions = getCatalogFilterConditions(hideNsfw, series);
+    return cacheService.getOrSet(
+        { key: cacheKey, ttl: HOME_CACHE_TTL.global },
+        async () => {
+            const baseConditions = nsfwConditions.length ? and(...nsfwConditions) : undefined;
+            const whereParts = [baseConditions, isNotNull(series.popularityGlobalCurrent)].filter(Boolean);
+            const rows = await db
+                .select({
+                    ...seriesCardColumns,
+                    views: schema.mangaViewStats.totalViews,
+                })
+                .from(series)
+                .leftJoin(schema.mangaViewStats, eq(series.id, schema.mangaViewStats.seriesId))
+                .where(whereParts.length ? and(...(whereParts as any)) : undefined)
+                .orderBy(asc(series.popularityGlobalCurrent))
+                .limit(limit);
+            return enrichSeriesListExtras(rows, newDaysInterval);
+        }
+    );
+}
+
 export const getPopularManga = async (req: Request, res: Response) => {
     const period = (req.query.period as string) || 'week';
     const limit = parseInt(req.query.limit as string) || 14;
@@ -148,17 +172,22 @@ export const getHeroManga = async (req: Request, res: Response) => {
     const period = (req.query.period as string) || 'week';
     const heroCount = Math.min(parseInt(req.query.heroCount as string) || 6, 12);
     const fetchLimit = Math.max(parseInt(req.query.limit as string) || heroCount, heroCount);
-    const results = await loadPopularManga(period, fetchLimit, await resolveHideNsfw(req));
-    const list = Array.isArray(results) ? results : [];
+    const hideNsfw = await resolveHideNsfw(req);
+    let results = await loadPopularManga(period, fetchLimit, hideNsfw);
+    let list = Array.isArray(results) ? results : [];
+    if (list.length === 0) {
+        results = await loadDiscoverMostPopular(fetchLimit, hideNsfw);
+        list = Array.isArray(results) ? results : [];
+    }
     const heroIds = list.slice(0, heroCount).map((manga: { id: number }) => manga.id).filter(Boolean);
 
     if (heroIds.length === 0) {
         return res.json(list);
     }
 
-    await anilistBannerService.ensureBannersForSeries(heroIds);
+    await seriesBannerService.ensureBannersForSeries(heroIds);
     const [coverById, firstChapterBySeriesId] = await Promise.all([
-        anilistBannerService.getCoversBySeriesIds(heroIds),
+        seriesBannerService.getCoversBySeriesIds(heroIds),
         fetchFirstChapterIdsBySeries(heroIds),
     ]);
     const enriched = list.map((manga: { id: number; cover?: unknown }) => {

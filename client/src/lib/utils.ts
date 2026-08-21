@@ -89,6 +89,30 @@ export function formatDisplayDate(value?: string | Date | null): string {
     return date.toLocaleDateString('en-US', {year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'});
 }
 
+export function formatCompactDisplayDate(value?: string | Date | null): string {
+    const date = parseDisplayDate(value);
+    if (!date) return 'unknown';
+    return date.toLocaleDateString('en-US', {year: 'numeric', month: 'short', timeZone: 'UTC'});
+}
+
+export function formatPublishedRange(start?: string | Date | null, end?: string | Date | null): string {
+    const startDate = parseDisplayDate(start);
+    if (!startDate) return 'unknown';
+    const endDate = parseDisplayDate(end);
+    if (!endDate || startDate.getTime() === endDate.getTime()) return formatCompactDisplayDate(startDate);
+    const startYear = startDate.getUTCFullYear();
+    const endYear = endDate.getUTCFullYear();
+    const startMonth = startDate.toLocaleDateString('en-US', {month: 'short', timeZone: 'UTC'});
+    const endMonth = endDate.toLocaleDateString('en-US', {month: 'short', timeZone: 'UTC'});
+    if (startYear === endYear) return `${startMonth} – ${endMonth} ${endYear}`;
+    return `${startMonth} ${startYear} – ${endMonth} ${endYear}`;
+}
+
+/** Cross-year ranges (e.g. "Jan 2020 – Mar 2022") are long enough to warrant smaller sidebar text. */
+export function isLongPublishedRange(text: string): boolean {
+    return text.length > 18;
+}
+
 export function formatTimeUntil(value?: string | Date | null): string {
     const date = parseDisplayDate(value);
     if (!date) return 'unknown';

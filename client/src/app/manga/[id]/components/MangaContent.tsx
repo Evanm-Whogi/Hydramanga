@@ -1,15 +1,16 @@
 "use client";
-import { useEffect, useState, memo, useTransition, Fragment, useRef } from 'react';
+import { useEffect, useState, memo, useTransition, Fragment, useRef, useMemo } from 'react';
+import { extractCatalogTitleStrings } from '@/lib/catalogTitles';
 import { useRouter } from 'next/navigation';
 import { getMangaAnalytics } from '@/services/mangaService';
-import { formatTimeAgo, formatDisplayDate, formatCompactNumber as formatNumber } from '@/lib/utils';
+import { formatTimeAgo, formatPublishedRange, formatCompactNumber as formatNumber, isLongPublishedRange } from '@/lib/utils';
 import PopularityRankDisplay from '@/components/PopularityRankDisplay';
 import { resolveGlobalRank, resolveTypeRank } from '@/lib/popularityRank';
 import Link from 'next/link';
 import MangaActions from './MangaActions';
 import RecommendedManga from './RecommendedManga';
 import FeaturedInLists from './FeaturedInLists';
-import { Eye, Bookmark, UserCheck, TriangleAlert, Pencil, ShareIcon, StickyNote } from 'lucide-react';
+import { Eye, Bookmark, UserCheck, TriangleAlert, Pencil, ShareIcon, StickyNote, LibraryBig, Tags, PenLine, Brush, Building2, ExternalLink, type LucideIcon } from 'lucide-react';
 import { useMangaViewTracking } from '@/hooks/useViewTracking';
 import { useMangaImportProgress } from '@/hooks/useMangaImportProgress';
 import { useVisibilityAwareInterval } from '@/hooks/useVisibilityAwareInterval';
@@ -17,16 +18,18 @@ import { useUser } from '@/providers/UserProvider';
 import { updateImportProgressToast, dismissImportProgressToast } from '@/components/ImportProgressToast';
 import AdminMangaEditModal from './AdminMangaEditModal';
 import ReportMangaModal from './ReportMangaModal';
+import MangaTrackerGrid from './MangaTrackerGrid';
 import { WARNING_GENRES, WARNING_RATINGS } from '@/constants/filters';
 import { toast } from 'react-toastify';
+import SeriesBannerBackground from '@/components/SeriesBannerBackground';
+import NavIconTooltip from '@/components/layout/NavIconTooltip';
 
-// Memoized Header to prevent blur/filter recalculations on state changes
-const MangaHeader = memo(({ cover }: { cover: string }) => {
+// Memoized header — wide banner or gradient fallback, never stretched portrait cover.
+const MangaHeader = memo(({ cover }: { cover: unknown }) => {
   return (
-    <div
-      className="h-82 z-10 absolute lg:relative overflow-hidden before:content-[''] before:absolute before:inset-0 before:-z-10 before:bg-(image:--manga-cover) before:bg-cover before:bg-center before:brightness-[0.7] before:blur-[6px] before:scale-110"
-      style={{ '--manga-cover': `url(${cover})` } as React.CSSProperties}
-    ></div>
+    <div className="h-82 z-10 absolute inset-x-0 lg:relative overflow-hidden">
+      <SeriesBannerBackground cover={cover} className="absolute inset-0" variant="hero" />
+    </div>
   );
 });
 
@@ -62,77 +65,84 @@ const getLinkName = (url: string, displayName?: string | null) => {
   }
 };
 
-const PLATFORM_URLS: Record<string, string> = {
-  kitsu: "https://kitsu.io/manga/",
-  anilist: "https://anilist.co/manga/",
-  shikimori: "https://shikimori.one/mangas/",
-  anime_planet: "https://www.anime-planet.com/manga/",
-  manga_updates: "https://www.mangaupdates.com/series.html?id=",
-  my_anime_list: "https://myanimelist.net/manga/",
-  anime_news_network: "https://www.animenewsnetwork.com/encyclopedia/manga.php?id="
-};
-
 MangaHeader.displayName = 'MangaHeader';
 
+const INITIAL_CATALOG_ITEM_COUNT_MOBILE = 4;
+const INITIAL_CATALOG_ITEM_COUNT_DESKTOP = 8;
+
+function getAdditionalNames(manga: { titles?: unknown; title?: string | null; romanizedTitle?: string | null; nativeTitle?: string | null }): string[] {
+  const exclude = new Set(
+    [manga.title, manga.romanizedTitle, manga.nativeTitle]
+      .map((name) => name?.trim().toLowerCase())
+      .filter(Boolean) as string[],
+  );
+  return extractCatalogTitleStrings(manga.titles).filter((name) => !exclude.has(name.toLowerCase()));
+}
+
+function CatalogRowIcon({ label, icon: Icon }: { label: string; icon: LucideIcon }) {
+  return (
+    <NavIconTooltip label={label}>
+      <span className="inline-flex shrink-0 cursor-default text-muted">
+        <Icon className="size-4" aria-hidden />
+        <span className="sr-only">{label}</span>
+      </span>
+    </NavIconTooltip>
+  );
+}
+
 const MangaDetails = memo(({ manga }: { manga: any }) => (
-  <div className="mt-2 flex flex-col gap-3">
-    <div className="flex gap-2 items-center flex-wrap">
-      <strong className="text-muted">Authors:</strong>
-      {manga.authors &&
-        manga.authors.slice(0, 10).map((author: string, index: number) => (
-          <Link key={index} href={`/discover?search=${author}`} className="px-2 py-1 bg-foreground rounded-md shadow-md text-sm hover:bg-foreground/70 hover:cursor-pointer">
+  <div className="flex flex-col gap-3">
+    {manga.authors?.length > 0 ? (
+      <div className="flex gap-2 items-center flex-wrap">
+        <CatalogRowIcon label="Authors" icon={PenLine} />
+        {manga.authors.slice(0, 10).map((author: string, index: number) => (
+          <Link key={index} href={`/discover?search=${encodeURIComponent(author)}`} className="bg-foreground w-fit px-2 py-1 rounded-lg text-xs md:text-sm hover:bg-foreground/50 shadow-md">
             {author}
           </Link>
         ))}
-      {manga.authors?.length > 10 && <span className="text-xs text-muted">+{manga.authors.length - 10} more</span>}
-    </div>
-    <div className="flex gap-2 items-center flex-wrap">
-      <strong className="text-muted">Artists:</strong>
-      {manga.artists &&
-        manga.artists.slice(0, 10).map((artist: string, index: number) => (
-          <div key={index} className="px-2 py-1 bg-foreground rounded-md text-sm shadow-md">
+        {manga.authors.length > 10 ? <span className="text-xs text-muted">+{manga.authors.length - 10} more</span> : null}
+      </div>
+    ) : null}
+    {manga.artists?.length > 0 ? (
+      <div className="flex gap-2 items-center flex-wrap">
+        <CatalogRowIcon label="Artists" icon={Brush} />
+        {manga.artists.slice(0, 10).map((artist: string, index: number) => (
+          <span key={index} className="bg-foreground w-fit px-2 py-1 rounded-lg text-xs md:text-sm shadow-md">
             {artist}
-          </div>
+          </span>
         ))}
-      {manga.artists?.length > 10 && <span className="text-xs text-muted">+{manga.artists.length - 10} more</span>}
-    </div>
-    <div className="flex gap-2 items-center flex-wrap">
-      <strong className="text-muted">Publishers:</strong>
-      {manga.publishers &&
-        manga.publishers.map((publisher: { name: string, note: string, type: string }, index: number) => (
-          <span key={index} className="px-2 py-1 bg-foreground rounded-md text-sm hover:bg-foreground/70 shadow-md">
+        {manga.artists.length > 10 ? <span className="text-xs text-muted">+{manga.artists.length - 10} more</span> : null}
+      </div>
+    ) : null}
+    {manga.publishers?.length > 0 ? (
+      <div className="flex gap-2 items-center flex-wrap">
+        <CatalogRowIcon label="Publishers" icon={Building2} />
+        {manga.publishers.map((publisher: { name: string, note: string, type: string }, index: number) => (
+          <span key={index} className="bg-foreground w-fit px-2 py-1 rounded-lg text-xs md:text-sm shadow-md">
             {publisher.name}
           </span>
         ))}
-    </div>
-    <div className="flex gap-2 items-center flex-wrap">
-      <strong className="text-muted">Track Manga:</strong>
-      {Object.entries(manga.source).map(([key, platform]: [key: any, platform: any], index) => {
-          return (
-            <a key={index} href={`${PLATFORM_URLS[key]}${platform.id}`} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-foreground rounded-md text-sm shadow-md hover:bg-foreground/50 transition-colors flex gap-2 items-center">
-              <span className="capitalize">{key.replace(/_/g, ' ')}</span>
+      </div>
+    ) : null}
+    {(Array.isArray(manga.linksV2) && manga.linksV2.length > 0) || manga.links?.length > 0 ? (
+      <div className="flex gap-2 items-center flex-wrap mb-5">
+        <CatalogRowIcon label="External links" icon={ExternalLink} />
+        {Array.isArray(manga.linksV2) && manga.linksV2.length > 0
+          ? manga.linksV2.slice(0, 8).map((link: { url: string; name_display?: string | null }, index: number) => (
+            <a key={index} href={link.url} target="_blank" rel="noopener noreferrer" className="bg-foreground w-fit px-2 py-1 rounded-lg text-xs md:text-sm hover:bg-foreground/50 shadow-md">
+              {getLinkName(link.url, link.name_display)}
             </a>
-          );
-        })}
-    </div>
-    <div className="flex gap-2 items-center flex-wrap mb-5">
-      <strong className="text-muted">External Links:</strong>
-      {Array.isArray(manga.linksV2) && manga.linksV2.length > 0
-        ? manga.linksV2.slice(0, 8).map((link: { url: string; name_display?: string | null }, index: number) => (
-          <a key={index} href={link.url} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-foreground rounded-md text-sm hover:bg-foreground/70 shadow-md">
-            {getLinkName(link.url, link.name_display)}
-          </a>
-        ))
-        : manga.links &&
-        manga.links.slice(0, 8).map((link: string, index: number) => (
-          <a key={index} href={link} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-foreground rounded-md text-sm hover:bg-foreground/70 shadow-md">
-            {getLinkName(link)}
-          </a>
-        ))}
-      {(Array.isArray(manga.linksV2) ? manga.linksV2.length : manga.links?.length || 0) > 8 && (
-        <span className="text-xs text-muted">+{(Array.isArray(manga.linksV2) ? manga.linksV2.length : manga.links.length) - 8} more</span>
-      )}
-    </div>
+          ))
+          : manga.links.slice(0, 8).map((link: string, index: number) => (
+            <a key={index} href={link} target="_blank" rel="noopener noreferrer" className="bg-foreground w-fit px-2 py-1 rounded-lg text-xs md:text-sm hover:bg-foreground/50 shadow-md">
+              {getLinkName(link)}
+            </a>
+          ))}
+        {(Array.isArray(manga.linksV2) ? manga.linksV2.length : manga.links?.length || 0) > 8 ? (
+          <span className="text-xs text-muted">+{(Array.isArray(manga.linksV2) ? manga.linksV2.length : manga.links.length) - 8} more</span>
+        ) : null}
+      </div>
+    ) : null}
   </div>
 ));
 
@@ -147,6 +157,10 @@ interface MangaContentProps {
 export default function MangaContent({ manga, initialBookmarkStatus, gallery }: MangaContentProps) {
   const [analytics, setAnalytics] = useState<any>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [showAllTags, setShowAllTags] = useState(false);
+  const [showAllGenres, setShowAllGenres] = useState(false);
+  const [showAllAdditionalTitles, setShowAllAdditionalTitles] = useState(false);
+  const [isMdUp, setIsMdUp] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [wasActiveOnLoad, setWasActiveOnLoad] = useState(false);
   const [initialProgressReceived, setInitialProgressReceived] = useState(false);
@@ -162,6 +176,14 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
   const router = useRouter();
   const isFetchingAnalytics = useRef(false);
   const analyticsRefreshRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 768px)");
+    const update = () => setIsMdUp(mql.matches);
+    update();
+    mql.addEventListener("change", update);
+    return () => mql.removeEventListener("change", update);
+  }, []);
 
   // Track sidebar height (lg only, when side-by-side)
   useEffect(() => {
@@ -414,11 +436,20 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
   const globalRank = resolveGlobalRank(popularityFields);
   const typeRank = resolveTypeRank(popularityFields);
   const hasPopularityRank = globalRank != null || typeRank != null;
+  const additionalNames = useMemo(() => getAdditionalNames(manga), [manga]);
+  const initialCatalogItemCount = isMdUp ? INITIAL_CATALOG_ITEM_COUNT_DESKTOP : INITIAL_CATALOG_ITEM_COUNT_MOBILE;
+  const visibleTags = showAllTags ? (manga.tags ?? []) : (manga.tags ?? []).slice(0, initialCatalogItemCount);
+  const hiddenTagCount = Math.max(0, (manga.tags?.length ?? 0) - initialCatalogItemCount);
+  const visibleGenres = showAllGenres ? (manga.genres ?? []) : (manga.genres ?? []).slice(0, initialCatalogItemCount);
+  const hiddenGenreCount = Math.max(0, (manga.genres?.length ?? 0) - initialCatalogItemCount);
+  const publishedRange = manga.published?.start_date ? formatPublishedRange(manga.published.start_date, manga.published.end_date) : null;
+  const altTitleParts = [manga.romanizedTitle, manga.nativeTitle].filter(Boolean);
+  const altTitleLabel = altTitleParts.join(' | ');
 
   return (
     <>
-      <MangaHeader cover={manga?.cover?.x350?.x3 || manga?.cover?.raw?.url || "/notFound.png"} />
-      <div className="container mx-auto pt-5 px-4 xl:px-0 mt-25 md:mt-0">
+      <MangaHeader cover={manga?.cover} />
+      <div className="container mx-auto pt-5 px-4 xl:px-0 mt-25 lg:mt-0 relative z-20">
         <div className="flex flex-col lg:flex-row gap-6 lg:place-content-evenly mb-5 lg:items-start">
           {/* Main Content */}
           <div className="flex flex-col space-y-3 w-full lg:w-2/3 mb-5">
@@ -433,9 +464,41 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
                 <PopularityRankDisplay fields={popularityFields} seriesType={manga.type} className="font-normal shrink-0" />
               ) : null}
             </div>
-            { manga.romanizedTitle || manga.nativeTitle ? (
-            <h2 className="text-base md:text-lg text-muted font-semibold">[{manga.romanizedTitle} | {manga.nativeTitle}]</h2>
-            ): null }
+            {altTitleLabel || additionalNames.length > 0 ? (
+              <div className="space-y-2">
+                {altTitleLabel ? (
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <h2 className="text-base md:text-lg text-muted font-semibold">[{altTitleLabel}]</h2>
+                    {additionalNames.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllAdditionalTitles((prev) => !prev)}
+                        className="text-sm text-accent hover:underline"
+                      >
+                        {showAllAdditionalTitles ? 'Show less' : `Show more (${additionalNames.length})`}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : additionalNames.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllAdditionalTitles((prev) => !prev)}
+                    className="text-sm text-accent hover:underline"
+                  >
+                    {showAllAdditionalTitles ? 'Show less' : `Show more (${additionalNames.length})`}
+                  </button>
+                ) : null}
+                {showAllAdditionalTitles && additionalNames.length > 0 ? (
+                  <div className="flex gap-2 flex-wrap">
+                    {additionalNames.map((name, index) => (
+                      <Link key={index} href={`/discover?search=${encodeURIComponent(name)}`} className="bg-foreground w-fit px-2 py-1 rounded-lg text-xs md:text-sm hover:bg-foreground/50 shadow-md">
+                        {name}
+                      </Link>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <div className="flex gap-2 items-center flex-wrap">
               <span className="bg-green-400/20 w-fit px-2 py-1 rounded-lg capitalize text-sm">{manga.status}</span>
               {analytics?.manga && (
@@ -460,16 +523,48 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
             </div>
 
             <p className={`text-muted text-sm md:text-base${showDetails ? '' : ' line-clamp-4'}`}>{formattedDescription}</p>
-            {showDetails && <MangaDetails manga={manga} />}
 
-            <div className="flex gap-2 flex-wrap">
-              {manga.genres &&
-                manga.genres.map((item: string, index: number) => (
-                  <Link href={`/discover?genres=${item}`} key={index} className="bg-foreground w-fit px-2 py-1 rounded-lg text-xs md:text-sm capitalize hover:bg-foreground/50 shadow-md">
+            {manga.genres?.length > 0 ? (
+              <div className="flex gap-2 flex-wrap items-center">
+                <CatalogRowIcon label="Genres" icon={LibraryBig} />
+                {visibleGenres.map((item: string, index: number) => (
+                  <Link href={`/discover?genres=${encodeURIComponent(item)}`} key={index} className="bg-foreground w-fit px-2 py-1 rounded-lg text-xs md:text-sm capitalize hover:bg-foreground/50 shadow-md">
                     {item}
                   </Link>
                 ))}
-            </div>
+                {hiddenGenreCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllGenres((prev) => !prev)}
+                    className="bg-foreground w-fit px-2 py-1 rounded-lg text-xs md:text-sm capitalize hover:bg-foreground/50 shadow-md"
+                  >
+                    {showAllGenres ? 'Show less' : `Show more (${hiddenGenreCount})`}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {manga.tags?.length > 0 ? (
+              <div className="flex gap-2 items-center flex-wrap">
+                <CatalogRowIcon label="Tags" icon={Tags} />
+                {visibleTags.map((item: string, index: number) => (
+                  <Link href={`/discover?tags=${encodeURIComponent(item)}`} key={index} className="bg-foreground w-fit px-2 py-1 rounded-lg text-xs md:text-sm capitalize hover:bg-foreground/50 shadow-md">
+                    {item}
+                  </Link>
+                ))}
+                {hiddenTagCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllTags((prev) => !prev)}
+                    className="bg-foreground w-fit px-2 py-1 rounded-lg text-xs md:text-sm capitalize hover:bg-foreground/50 shadow-md"
+                  >
+                    {showAllTags ? 'Show less' : `Show more (${hiddenTagCount})`}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {showDetails ? <MangaDetails manga={manga} /> : null}
 
             <div className="flex gap-2 flex-wrap">
               <button
@@ -524,11 +619,11 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
                 <div className="flex justify-between text-muted">
                   Release Year <span>{manga.year}</span>
                 </div>
-                {manga.published?.start_date && (
-                  <div className="flex justify-between text-muted">
-                    Published <span>{formatDisplayDate(manga.published.start_date)}{manga.published.end_date ? ` – ${formatDisplayDate(manga.published.end_date)}` : ''}</span>
+                {publishedRange ? (
+                  <div className="flex justify-between gap-2 text-muted">
+                    Published <span className={`text-right leading-snug tabular-nums min-w-0${isLongPublishedRange(publishedRange) ? ' text-xs' : ''}`}>{publishedRange}</span>
                   </div>
-                )}
+                ) : null}
                 <div className="flex justify-between text-muted">
                   Total Chapters <span>{manga.totalChapters}</span>
                 </div>
@@ -554,6 +649,7 @@ export default function MangaContent({ manga, initialBookmarkStatus, gallery }: 
                     </button>
                   </div>
                 </div>
+                <MangaTrackerGrid mangaId={manga.id} source={manga.source} title={manga.title} />
               </div>
             </div>
 
