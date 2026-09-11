@@ -1,0 +1,320 @@
+# `.env` files:
+#   - ./.env Compose-level interpolation:
+#   - ./server/.env Backend app config + secrets (S3, DB creds, scrapers, …).
+#   - ./client/.env Frontend public config.
+services:
+  db:
+    image: postgres:16
+    shm_size: '2gb'
+    restart: unless-stopped
+    command: postgres -c max_connections=200 -c shared_buffers=256MB
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./data/db/data:/var/lib/postgresql/data
+      - ./data/db/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5433:5432"  # Expose on 5433 to avoid conflict with local PostgreSQL
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "6380:6379"  # Expose on 6380 to avoid conflict with local Redis
+    volumes:
+      - ./data/redis:/data:rw
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # flaresolverr is used for the server and worker
+  flaresolverr:
+      image: ghcr.io/flaresolverr/flaresolverr:latest
+      restart: unless-stopped
+      shm_size: 2gb
+      environment: { LOG_LEVEL: info, LOG_HTML: 'false', CAPTCHA_SOLVER: none }
+      deploy: { resources: { limits: { cpus: '6', memory: 12G } } }
+
+  # flaresolverr-2 is used for the scraper
+  flaresolverr-2:
+      image: ghcr.io/flaresolverr/flaresolverr:latest
+      restart: unless-stopped
+      shm_size: 2gb
+      environment: { LOG_LEVEL: info, LOG_HTML: 'false', CAPTCHA_SOLVER: none }
+      deploy: { resources: { limits: { cpus: '6', memory: 12G } } }
+
+  prowlarr:
+    image: ghcr.io/linuxserver/prowlarr:latest
+    restart: unless-stopped
+    environment:
+      PUID: '1000'
+      PGID: '1000'
+      TZ: Etc/UTC
+    # ports:
+    #   - "9696:9696"  # Prowlarr UI (manage indexers, get API key)
+    volumes:
+      - ./data/prowlarr:/config
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9696/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    restart: unless-stopped
+    profiles: ["vpn"]
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      VPN_SERVICE_PROVIDER: ${VPN_SERVICE_PROVIDER:-mullvad}
+      VPN_TYPE: ${VPN_TYPE:-wireguard}
+      WIREGUARD_PRIVATE_KEY: ${MULLVAD_WIREGUARD_PRIVATE_KEY:-}
+      WIREGUARD_ADDRESSES: ${MULLVAD_WIREGUARD_ADDRESSES:-}
+      SERVER_CITIES: ${MULLVAD_SERVER_CITIES:-}
+      HTTP_CONTROL_SERVER_ADDRESS: ":8000"
+      FIREWALL_INPUT_PORTS: "8080"
+      FIREWALL_OUTBOUND_SUBNETS: "172.16.0.0/12"
+    volumes:
+      - ./data/gluetun/:/gluetun
+    ports:
+      - "8000:8000"   # gluetun control server (vpnGuardService)
+
+  # Second gluetun, dedicated to SCRAPER egress (separate from the torrent gluetun)
+  gluetun-scraper:
+    image: qmcgaw/gluetun:latest
+    restart: unless-stopped
+    profiles: ["scraper-vpn"]
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      VPN_SERVICE_PROVIDER: ${VPN_SERVICE_PROVIDER:-mullvad}
+      VPN_TYPE: ${VPN_TYPE:-wireguard}
+      WIREGUARD_PRIVATE_KEY: ${MULLVAD_WIREGUARD_PRIVATE_KEY:-}
+      WIREGUARD_ADDRESSES: ${MULLVAD_WIREGUARD_ADDRESSES:-}
+      SERVER_COUNTRIES: ${MULLVAD_SERVER_COUNTRIES:-Canada,USA,UK}
+      SERVER_CITIES: ${MULLVAD_SERVER_CITIES:-}
+      HTTP_CONTROL_SERVER_ADDRESS: ":8000"
+      HTTPPROXY: "on"
+      HTTPPROXY_LISTENING_ADDRESS: ":8888"
+      PUBLICIP_PERIOD: "15s"
+      FIREWALL_OUTBOUND_SUBNETS: "172.16.0.0/12"
+    volumes:
+      - ./data/gluetun/:/gluetun
+    ports:
+      - "8001:8000"
+
+  qbittorrent:
+    image: ghcr.io/linuxserver/qbittorrent:latest
+    restart: unless-stopped
+    environment:
+      PUID: '1000'
+      PGID: '1000'
+      TZ: Etc/UTC
+      WEBUI_PORT: '8080'
+    ports:
+      # - "8085:8080"  # qBittorrent webui (set the password the worker uses here)
+      - "6881:6881"        # BT listening port (TCP+UDP)
+      - "6881:6881/udp"    # BT listening port (UDP)
+    volumes:
+      - ./data/qbittorrent:/config
+      - ./data/archive-scratch:/data/archive-scratch
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    env_file:
+      - ./server/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      flaresolverr:
+        condition: service_started
+      flaresolverr-2:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      DOCKER: 'true'
+      DOCKER_LOGS_ENABLED: 'true'
+      COMPOSE_PROJECT_NAME: mangascrolls
+      RUN_WORKERS: 'false'
+      DB_POOL_MAX: '25'
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+      ARCHIVE_INGEST_ENABLED: ${ARCHIVE_INGEST_ENABLED:-false}
+      SCRAPER_PROXY_ENABLED: ${SCRAPER_PROXY_ENABLED:-false}
+      SCRAPER_PROXY_URL: ${SCRAPER_PROXY_URL:-http://gluetun-scraper:8888}
+      SCRAPER_PROXY_DISABLED: ${SCRAPER_PROXY_DISABLED:-}
+      SCRAPER_PROXY_MAX_SOCKETS: ${SCRAPER_PROXY_MAX_SOCKETS:-256}
+      SCRAPER_PROXY_MAX_FREE_SOCKETS: ${SCRAPER_PROXY_MAX_FREE_SOCKETS:-32}
+      SCRAPER_GLUETUN_CONTROL_URL: ${SCRAPER_GLUETUN_CONTROL_URL:-http://gluetun-scraper:8000}
+    volumes:
+      - ./data/imports:/data/imports
+      - ./cloudflared-config.yml:/app/cloudflared-config.yml:ro
+      - ${HOME}/.cloudflared:/root/.cloudflared:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.worker
+    env_file:
+      - ./server/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+      flaresolverr:
+        condition: service_started
+      flaresolverr-2:
+        condition: service_started
+      qbittorrent:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      RUN_WORKERS: 'true'
+      # libuv thread pool for sharp transcode + async I/O. ~1.5x the cpu limit above.
+      # Overrides the Dockerfile.worker default; tune via UV_THREADPOOL_SIZE in .env.
+      UV_THREADPOOL_SIZE: ${UV_THREADPOOL_SIZE:-32}
+      DB_POOL_MAX: '50'
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+      ARCHIVE_INGEST_ENABLED: ${ARCHIVE_INGEST_ENABLED:-false}
+      ARCHIVE_VPN_REQUIRED: ${ARCHIVE_VPN_REQUIRED:-false}
+      ARCHIVE_INGEST_CONCURRENCY: ${ARCHIVE_INGEST_CONCURRENCY:-1}
+      ARCHIVE_SCRATCH_DIR: /data/archive-scratch
+      PROWLARR_URL: ${PROWLARR_URL:-http://prowlarr:9696}
+      QBITTORRENT_URL: ${QBITTORRENT_URL:-http://qbittorrent:8080}
+      GLUETUN_CONTROL_URL: ${GLUETUN_CONTROL_URL:-http://gluetun:8000}
+      # Scraper egress proxy (off by default; flip SCRAPER_PROXY_ENABLED=true in .env).
+      SCRAPER_PROXY_ENABLED: ${SCRAPER_PROXY_ENABLED:-false}
+      SCRAPER_PROXY_URL: ${SCRAPER_PROXY_URL:-http://gluetun-scraper:8888}
+      # Comma-separated scraper ids that bypass the proxy even when it's on (e.g. "onisaga,toonily").
+      SCRAPER_PROXY_DISABLED: ${SCRAPER_PROXY_DISABLED:-}
+      # Proxy-agent socket pool (keepAlive tunnel reuse). Tune in root .env.
+      SCRAPER_PROXY_MAX_SOCKETS: ${SCRAPER_PROXY_MAX_SOCKETS:-256}
+      SCRAPER_PROXY_MAX_FREE_SOCKETS: ${SCRAPER_PROXY_MAX_FREE_SOCKETS:-32}
+      SCRAPER_GLUETUN_CONTROL_URL: ${SCRAPER_GLUETUN_CONTROL_URL:-http://gluetun-scraper:8000}
+    volumes:
+      - ./data/imports:/data/imports
+      - ./data/archive-scratch:/data/archive-scratch
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '20'      # host has 28 vCPU; leave ~8 for db/server/web/gluetun
+          memory: 32G     # host has 64G; transcode bitmaps are transient, this is ample headroom
+        reservations:
+          cpus: '2'
+          memory: 4G
+
+  web:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        BACKEND_INTERNAL_URL: http://server:4000
+    env_file:
+      - ./client/.env
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      BACKEND_INTERNAL_URL: http://server:4000
+
+  loki:
+    image: grafana/loki:3.4.2
+    restart: unless-stopped
+    command: -config.file=/etc/loki/config.yml
+    volumes:
+      - ./monitoring/loki-config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    ports:
+      # Localhost for host-side checks; Tailscale IP so grafana.chit.sh / LUNA can scrape.
+      - "127.0.0.1:3100:3100"
+      - "${OBSERVABILITY_BIND}:3100:3100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3100/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+      - "${OBSERVABILITY_BIND}:9090:9090"
+    depends_on:
+      server:
+        condition: service_healthy
+
+  alloy:
+    image: grafana/alloy:v1.7.1
+    restart: unless-stopped
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    volumes:
+      - ./monitoring/alloy-config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    depends_on:
+      loki:
+        condition: service_healthy
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    volumes:
+      - ./cloudflared-config.yml:/etc/cloudflared/config.yml:ro
+      - ${CLOUDFLARED_TUNNEL_CREDS}:/etc/cloudflared/creds.json:ro
+    command: tunnel --config /etc/cloudflared/config.yml run
+    depends_on:
+      server:
+        condition: service_healthy
+      web:
+        condition: service_started
+
+volumes:
+  loki-data:
+  prometheus-data:
+  alloy-data:
