@@ -8,6 +8,5 @@ nginx/nginx-dev.conf
 docker-compose.yml
 docker-compose.*
 .env
-.env.*
 .cursor
 .vscode

@@ -1,0 +1,29 @@
+# Cloudflared Tunnel Configuration
+
+tunnel: <id>
+credentials-file: /etc/cloudflared/creds.json
+
+# Ingress rules (processed in order)
+ingress:
+ 
+  # Route socket.io (WebSocket) traffic to backend
+  - hostname: <domain>
+    path: ^/socket\.io/
+    service: http://server:4000
+  
+  # Route API requests to Next.js so rewrites can proxy to backend
+  - hostname: <domain>
+    path: ^/api/
+    service: http://web:3000
+  
+  # Route auth requests to backend
+  - hostname: <domain>
+    path: ^/auth/
+    service: http://server:4000
+  
+  # Route everything else to Next.js frontend
+  - hostname: <domain>
+    service: http://web:3000
+  
+  # Catch-all (required)
+  - service: http_status:404
